@@ -120,13 +120,95 @@ From `docs/13`, these block or shape foundational work:
 
 ## What's still not decided
 
-- **Tech stack.** Both sources are deliberately stack-neutral. Once chosen (frontend framework,
-  backend language, DB, job queue, file storage, auth provider), add a `## Tech stack` section here
-  with the actual conventions so future sessions inherit them.
 - **12 product decisions** — auth channel, whether non-owner exporter members can approve terms, CHA
   assignment model, etc. See `docs/11` §7. Not blockers: build the state/permission hooks behind
   config flags, lock the decision before enabling the production action.
 - **10 reconciliation decisions** — see `docs/13` §F.
+
+## Tech stack
+
+**Runtime & framework**
+- Next.js 14 (App Router, TypeScript) — server components by default, route handlers for API
+- PostgreSQL 16 — primary data store
+- Prisma ORM — schema, migrations, typed client
+- Tailwind CSS — styling via design tokens in `docs/00-design-system.md`
+- Auth.js (NextAuth) — session auth, credentials + OAuth providers, JWT strategy
+- Background jobs — DB-backed job table (`Job`, `JobAttempt`) with a simple worker process; no external queue for MVP
+
+**Folder structure (monorepo, single Next.js app)**
+
+```
+/src
+  /app                          # Next.js App Router
+    /(auth)                     # Auth group (login, register, callbacks)
+    /app                        # Exporter portal (/app/*)
+      /deals/[dealId]/...
+      /documents/...            # Cross-deal index views (A1)
+      /shipments/...
+      /payments/...
+      /tasks/...                # P0 cross-deal task list
+      layout.tsx                # Exporter shell (navy top bar, left nav, journey rail)
+    /agent                      # Agent portal (/agent/*)
+      layout.tsx                # Agent shell (compact density)
+    /ops                        # Ops console (/ops/*)
+      layout.tsx                # Ops shell
+    /api                        # Route handlers (REST-ish)
+      /v1/...                   # Versioned API surface
+      /auth/[...nextauth]/route.ts
+    layout.tsx                  # Root layout (providers, global styles)
+    globals.css                 # Tailwind + design tokens
+  /components                   # Shared UI components
+    /ui                         # Primitive components (Button, Input, Table, StatusChip, etc.)
+    /portal                     # Portal-specific composed components
+    /shell                      # Layout shell: TopBar, LeftNav, JourneyRail, PageHeader
+    /forms                      # Form primitives with react-hook-form + Zod
+    /data-display               # Tables, cards, badges, timelines, diff views
+  /lib                          # Shared utilities
+    /auth.ts                    # Auth.js config, role helpers, server session
+    /prisma.ts                  # Prisma singleton
+    /api-client.ts              # Typed fetch wrapper with error envelope handling (docs/09 §2)
+    /jobs.ts                    # Job queue helpers (enqueue, poll, retry)
+    /permissions.ts             # Server-side authorization predicates (see below)
+    /config.ts                  # Runtime config (fees, SLA, doc registry) from DB
+    /i18n.ts                    # Locale/currency/date helpers (docs/10 §5)
+    /validators/                # Zod schemas mirroring Prisma models + API envelopes
+  /hooks                        # Client-only React hooks (useJobPoll, useDebounce, etc.)
+  /types                        # Shared TypeScript types (API envelopes, domain enums)
+  /styles                       # Tailwind config extension, CSS variables for tokens
+/prisma
+  schema.prisma                 # Canonical domain model (docs/02)
+  /migrations
+/scripts                        # One-off migration/seed scripts
+/public                         # Static assets
+/tests                          # Playwright e2e + Vitest unit
+```
+
+**Server-side authorization — where it lives**
+
+All authorization is **server-side, in route handlers and server actions**, never in client components. Two layers:
+
+1. **Route-level guards** (middleware + layout server components)
+   - `middleware.ts` — validates session, redirects unauthenticated, attaches `user` + `role` + `exporterOrgId`/`agentId` to request headers for downstream use
+   - Each portal layout (`/app/layout.tsx`, `/agent/layout.tsx`, `/ops/layout.tsx`) reads headers, fetches the active membership/assignment, and throws `403` if the principal lacks portal access
+
+2. **Resource-level predicates** (`src/lib/permissions.ts` — single source of truth)
+   - Pure functions: `canReadDeal(user, deal)`, `canTransitionTask(user, task, nextState)`, `canDownloadDocument(user, document)`, `canSearchBuyers(user, filters)`, etc.
+   - Every route handler / server action calls the relevant predicate **before** querying Prisma
+   - Predicates encode the rules from `docs/01` (RBAC matrix) and `docs/07` (state-machine transition guards)
+   - Search endpoints and file downloads **must** call predicates — these are the two most commonly missed (docs/09 §5, docs/10 §1)
+
+**Conventions derived from docs/09 + docs/10**
+
+- API responses use the envelope shapes in `docs/09` §2 (success list, async 202, validation error with `fields[]`, `blockers[]`, `VERSION_CONFLICT` with `current_version`)
+- Error handling is centralized in `src/lib/api-client.ts` — maps `error.code` to global UI states (docs/03 §7)
+- Background jobs: enqueue via `src/lib/jobs.ts` → returns `job_id`; frontend polls `/api/v1/jobs/:id` with backoff; job state survives refresh/device change (docs/09 §3)
+- Money: Prisma `Decimal` (minor units or precise decimal); API returns `{ amount: number, currency: string }`; never JS floats (docs/09 §1)
+- Files: return metadata + signed download URL (short-lived); never raw bucket URLs (docs/09 §1, docs/10 §1)
+- Pagination: cursor-based with `total` where practical; consistent across all list endpoints (docs/09 §1)
+- Idempotency: mutations that can be double-submitted accept `Idempotency-Key` header; deduplicate server-side (docs/09 §1)
+- Responsive: three density modes via Tailwind theme — exporter `medium`, agent `compact`, ops `compact` (docs/13 D3)
+- Accessibility: every status component renders label + icon; color never sole cue (docs/10 §4)
+- i18n: English first; strings externalized; currency locale-aware; ISO country codes; `dd MMM yyyy` dates (docs/10 §5)
 
 ## Non-negotiables worth repeating
 
