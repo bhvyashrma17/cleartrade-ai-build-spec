@@ -1,0 +1,1344 @@
+// ClearTrade AI — canonical domain model.
+//
+// Field names and enum values are taken verbatim from docs/02-domain-model.md and
+// docs/07-workflow-state-machines.md. They are deliberately snake_case so the database
+// column, the Prisma client field and the JSON API payload all read identically —
+// there is no silent renaming layer between the spec and the wire.
+//
+// Rules encoded here (see AGENTS.md):
+//   - Document keeps FOUR independent status dimensions. Never collapse them.
+//   - Money is always amount + currency. There are no bare numeric money columns.
+//   - Historical records are snapshots (DealSnapshot, FeePolicy version, quoted terms).
+//   - AuditEvent is append-only; the application layer exposes no update path.
+//   - Internal notes are a separate table from exporter-visible messages, not a flag.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums — values exactly as written in the spec
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  exporter_owner
+  exporter_member
+  agent
+  ops_supervisor
+  ops_finance
+  admin
+}
+
+enum IecStatus {
+  unknown
+  not_started
+  pending
+  verified
+}
+
+enum ReadinessStatus {
+  not_started
+  in_progress
+  ready
+  blocked
+}
+
+/// docs/13 A4: 8 canonical states in the data model, rendered as 7 rail segments
+/// (onboarding + ready are two states of the same first segment).
+enum JourneyStage {
+  onboarding
+  ready
+  market_selected
+  buyer_engaged
+  deal_locked
+  docs_cleared
+  shipped
+  payment_realized
+}
+
+enum CertificationStatus {
+  not_started
+  in_progress
+  held
+  expired
+  not_applicable
+}
+
+enum VerificationStatus {
+  unverified
+  partially_verified
+  verified
+}
+
+enum BuyerLeadStage {
+  new
+  shortlisted
+  contacted
+  replied
+  interested
+  negotiation
+  disqualified
+  converted
+}
+
+enum InterestLevel {
+  unknown
+  low
+  medium
+  high
+}
+
+enum DisqualificationReason {
+  no_response
+  not_importing_category
+  volume_too_small
+  price_mismatch
+  risk_flag
+  duplicate
+  other
+}
+
+enum OutreachActivityType {
+  call
+  email
+  message
+  meeting
+  note
+}
+
+enum DealStage {
+  qualifying
+  negotiating
+  terms_agreed
+  deal_locked
+  executing
+  shipped
+  closed_won
+  closed_lost
+  cancelled
+}
+
+enum RiskState {
+  normal
+  watch
+  at_risk
+  blocked
+}
+
+enum TaskState {
+  not_started
+  in_progress
+  waiting
+  done
+  cancelled
+}
+
+enum TaskPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+/// Derived layer — never user-editable (AGT-07-AC03). Persisted only as a
+/// materialized read of due_at/warning_at + SLA config.
+enum SlaState {
+  on_time
+  due_soon
+  overdue
+  escalated
+}
+
+enum Visibility {
+  exporter_visible
+  internal
+}
+
+enum ScopeType {
+  exporter_org
+  buyer_lead
+  deal
+  document
+  shipment
+  payment
+}
+
+enum DocType {
+  PI
+  CI
+  packing_list
+  shipping_bill_draft
+  COO_draft
+  declaration
+  insurance_declaration
+  other
+}
+
+enum DocumentSource {
+  generated
+  uploaded
+  imported
+}
+
+/// Document dimension 1 of 4 — independent from review, approval and filing.
+enum GenerationStatus {
+  queued
+  processing
+  generated
+  failed
+}
+
+/// Document dimension 2 of 4. A new version resets this.
+enum ReviewStatus {
+  not_reviewed
+  agent_reviewed
+  changes_requested
+}
+
+/// Document dimension 3 of 4. Bound to version + checksum.
+enum ApprovalStatus {
+  not_required
+  pending
+  exporter_approved
+  rejected
+}
+
+/// Document dimension 4 of 4. External rejection never deletes the filed attempt.
+enum FilingStatus {
+  not_applicable
+  draft
+  ready
+  filed
+  accepted
+  rejected
+}
+
+enum ShipmentStatus {
+  planning
+  booking
+  pickup
+  customs
+  loaded
+  in_transit
+  arrived
+  delivered
+  exception
+}
+
+enum ShipmentMode {
+  sea
+  air
+  courier
+  road
+  other
+}
+
+enum ExceptionState {
+  none
+  watch
+  blocked
+}
+
+enum MilestoneState {
+  pending
+  in_progress
+  complete
+  skipped
+  exception
+}
+
+enum PaymentStatus {
+  not_due
+  due
+  partially_received
+  received
+  realized
+  overdue
+  disputed
+}
+
+/// Tracked independently of payment status — never inferred from it (EXP-15-AC04).
+enum BrcStatus {
+  not_applicable
+  pending
+  available
+  verified
+}
+
+enum PaymentSource {
+  exporter_update
+  AA
+  bank_partner
+  manual_ops
+}
+
+enum InsuranceCaseStatus {
+  not_started
+  quote_requested
+  quoted
+  bound
+  claim_open
+  claim_settled
+  declined
+}
+
+enum DisputeType {
+  payment
+  quality
+  logistics
+  document
+  LC
+  inspection
+  other
+}
+
+enum DisputeSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum DisputeStatus {
+  open
+  investigating
+  waiting_external
+  proposed_resolution
+  resolved
+  closed
+}
+
+enum NotificationSeverity {
+  info
+  action_required
+  warning
+  critical
+}
+
+enum AuditSource {
+  web
+  api
+  job
+  admin
+}
+
+enum JobStatus {
+  queued
+  processing
+  completed
+  partial
+  failed
+  cancelled
+}
+
+enum JobType {
+  readiness_assessment
+  demand_discovery
+  buyer_discovery
+  document_generation
+  report_export
+}
+
+enum PartnerType {
+  cha
+  freight
+  insurance
+  inspection
+  bank
+}
+
+enum PartnerStatus {
+  active
+  suspended
+  offboarded
+}
+
+enum CommitmentFeeStatus {
+  not_due
+  due
+  paid
+  waived
+  refunded
+}
+
+enum AssignmentStatus {
+  active
+  ended
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------
+
+model ExporterOrg {
+  id                String          @id @default(cuid())
+  legal_name        String?
+  display_name      String
+  gstin             String?
+  /// Status-aware field, not a bare string (docs/02 + glossary).
+  iec               IecStatus       @default(unknown)
+  iec_number        String?
+  country           String          @default("IN")
+  state             String?
+  city              String?
+  assigned_agent_id String?
+  readiness_status  ReadinessStatus @default(not_started)
+  journey_stage     JourneyStage    @default(onboarding)
+  created_at        DateTime        @default(now())
+  updated_at        DateTime        @updatedAt
+
+  assigned_agent        User?                 @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
+  users                 User[]                @relation("OrgMembers")
+  products              Product[]
+  readiness_assessments ReadinessAssessment[]
+  discovery_runs        DiscoveryRun[]
+  buyer_leads           BuyerLead[]
+  buyer_shortlists      BuyerShortlist[]
+  deals                 Deal[]
+  tasks                 Task[]
+  assignments           AgentAssignment[]
+
+  @@index([assigned_agent_id])
+  @@index([readiness_status])
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  phone           String?
+  name            String
+  password_hash   String
+  role            UserRole
+  /// Null for agent / ops / admin principals. Non-null pins an exporter to one tenant.
+  exporter_org_id String?
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  exporter_org        ExporterOrg?       @relation("OrgMembers", fields: [exporter_org_id], references: [id])
+  agent_for_orgs      ExporterOrg[]      @relation("OrgAssignedAgent")
+  agent_assignments   AgentAssignment[]  @relation("AssignmentAgent")
+  assignments_made    AgentAssignment[]  @relation("AssignmentActor")
+  owned_leads         BuyerLead[]        @relation("LeadAgent")
+  created_leads       BuyerLead[]        @relation("LeadCreatedBy")
+  owned_deals         Deal[]             @relation("DealOwnerAgent")
+  owned_tasks         Task[]             @relation("TaskOwner")
+  outreach_activities OutreachActivity[]
+  audit_events        AuditEvent[]
+  notifications       Notification[]
+  messages_sent       Message[]
+  internal_notes      InternalNote[]
+  documents_approved  Document[]         @relation("DocumentApprover")
+  documents_reviewed  Document[]         @relation("DocumentReviewer")
+  disputes_owned      Dispute[]
+  jobs_requested      Job[]
+
+  @@index([exporter_org_id])
+  @@index([role])
+}
+
+/// Assignment history is retained — reassignment ends the current row, never edits it.
+model AgentAssignment {
+  id              String           @id @default(cuid())
+  exporter_org_id String
+  agent_user_id   String
+  assigned_by_id  String?
+  status          AssignmentStatus @default(active)
+  started_at      DateTime         @default(now())
+  ended_at        DateTime?
+  reason          String?
+
+  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  agent        User        @relation("AssignmentAgent", fields: [agent_user_id], references: [id])
+  assigned_by  User?       @relation("AssignmentActor", fields: [assigned_by_id], references: [id])
+
+  @@index([exporter_org_id, status])
+  @@index([agent_user_id, status])
+}
+
+// ---------------------------------------------------------------------------
+// Exporter master data
+// ---------------------------------------------------------------------------
+
+model Product {
+  id              String @id @default(cuid())
+  exporter_org_id String
+  name            String
+  description     String?
+  hs_code         String?
+  /// Provenance of the HS code: ai_suggested | user_confirmed | unknown.
+  hs_code_source  String @default("unknown")
+
+  // capacity = number + unit; never a bare number
+  capacity_value Decimal? @db.Decimal(18, 4)
+  capacity_unit  String?
+
+  // moq = number + unit
+  moq_value Decimal? @db.Decimal(18, 4)
+  moq_unit  String?
+
+  // price_target = money (amount + currency)
+  price_target_amount   Decimal? @db.Decimal(18, 4)
+  price_target_currency String?  @db.VarChar(3)
+
+  packaging  String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  exporter_org       ExporterOrg            @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  certifications     ProductCertification[]
+  market_assessments MarketAssessment[]
+  buyer_leads        BuyerLead[]
+  deals              Deal[]
+
+  @@index([exporter_org_id])
+  @@index([hs_code])
+}
+
+model ProductCertification {
+  id           String              @id @default(cuid())
+  product_id   String
+  code         String
+  name         String
+  status       CertificationStatus @default(not_started)
+  evidence_ref String?
+  valid_until  DateTime?
+  created_at   DateTime            @default(now())
+  updated_at   DateTime            @updatedAt
+
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@unique([product_id, code])
+}
+
+/// Fields derived from EXP-02/EXP-03 (the PRD gives no field dictionary — see docs/02 note).
+model ReadinessAssessment {
+  id              String          @id @default(cuid())
+  exporter_org_id String
+  score           Int?
+  status          ReadinessStatus @default(in_progress)
+  /// Section-keyed questionnaire answers.
+  answers         Json            @default("{}")
+  /// [{ code, severity, summary, remediation_task_id }]
+  blockers        Json            @default("[]")
+  /// [{ code, title, rationale }]
+  recommendations Json            @default("[]")
+  is_current      Boolean         @default(true)
+  submitted_at    DateTime?
+  completed_at    DateTime?
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
+
+  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+
+  @@index([exporter_org_id, is_current])
+}
+
+// ---------------------------------------------------------------------------
+// Demand discovery
+// ---------------------------------------------------------------------------
+
+/// The UI contract is a DiscoveryRun resource plus ranked MarketAssessment records —
+/// no AI provider or algorithm is bound into the schema (docs/02 implementation note).
+model DiscoveryRun {
+  id              String    @id @default(cuid())
+  exporter_org_id String
+  product_id      String?
+  job_id          String?
+  requested_by_id String?
+  status          JobStatus @default(queued)
+  filters         Json      @default("{}")
+  started_at      DateTime?
+  completed_at    DateTime?
+  created_at      DateTime  @default(now())
+
+  exporter_org       ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  market_assessments MarketAssessment[]
+
+  @@index([exporter_org_id, created_at])
+}
+
+model MarketAssessment {
+  id           String @id @default(cuid())
+  run_id       String
+  product_id   String
+  country_code String @db.VarChar(2)
+
+  overall_score     Int
+  demand_score      Int?
+  growth_score      Int?
+  competition_score Int?
+  india_share       Decimal? @db.Decimal(6, 3)
+
+  tariff_summary             Json?
+  certification_requirements Json  @default("[]")
+  logistics_summary          Json?
+
+  // price_band = money range; currency explicit
+  price_band_min      Decimal? @db.Decimal(18, 4)
+  price_band_max      Decimal? @db.Decimal(18, 4)
+  price_band_currency String?  @db.VarChar(3)
+
+  rationale String?
+  /// docs/13 B2: exporter-visible agent annotation on AI output.
+  agent_note   String?
+  generated_at DateTime @default(now())
+  is_selected  Boolean  @default(false)
+
+  run     DiscoveryRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([run_id, overall_score])
+  @@index([product_id, country_code])
+}
+
+// ---------------------------------------------------------------------------
+// Buyers & pipeline
+// ---------------------------------------------------------------------------
+
+/// Global, normalized buyer identity. Deliberately has NO fit score: fit is a function
+/// of buyer x product x market, so it lives on the search projection and on BuyerLead
+/// (docs/13 B5 / R6).
+model Buyer {
+  id                      String             @id @default(cuid())
+  legal_name              String
+  display_name            String
+  country_code            String             @db.VarChar(2)
+  website                 String?
+  buyer_type              String
+  import_activity_summary Json?
+  verification_status     VerificationStatus @default(unverified)
+  /// [{ code, severity, summary }] — never hidden on the detail view.
+  risk_flags              Json               @default("[]")
+  last_activity_at        DateTime?
+  created_at              DateTime           @default(now())
+  updated_at              DateTime           @updatedAt
+
+  contacts        BuyerContact[]
+  source_evidence BuyerSourceEvidence[]
+  buyer_leads     BuyerLead[]
+  shortlists      BuyerShortlist[]
+  deals           Deal[]
+
+  @@index([country_code])
+  @@index([buyer_type])
+  @@index([verification_status])
+}
+
+model BuyerContact {
+  id                  String             @id @default(cuid())
+  buyer_id            String
+  name                String
+  role_title          String?
+  email               String?
+  phone               String?
+  verification_status VerificationStatus @default(unverified)
+  /// Where this contact came from and when — provenance is required before outreach.
+  provenance          String?
+  verified_at         DateTime?
+  created_at          DateTime           @default(now())
+
+  buyer Buyer @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+
+  @@index([buyer_id])
+}
+
+model BuyerSourceEvidence {
+  id          String   @id @default(cuid())
+  buyer_id    String
+  source_type String
+  source_ref  String?
+  summary     String?
+  observed_at DateTime
+  created_at  DateTime @default(now())
+
+  buyer Buyer @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+
+  @@index([buyer_id, observed_at])
+}
+
+/// Shortlisting is a bookmark. It must never silently create a Deal (EXP-06-AC01).
+model BuyerShortlist {
+  id              String   @id @default(cuid())
+  exporter_org_id String
+  buyer_id        String
+  product_id      String?
+  created_by_id   String?
+  created_at      DateTime @default(now())
+
+  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  buyer        Buyer       @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+
+  @@unique([exporter_org_id, buyer_id, product_id])
+  @@index([exporter_org_id])
+}
+
+model BuyerLead {
+  id              String         @id @default(cuid())
+  exporter_org_id String
+  product_id      String
+  buyer_id        String
+  stage           BuyerLeadStage @default(new)
+
+  assigned_agent_id String?
+  created_by_id     String?
+
+  next_action     String?
+  next_action_at  DateTime?
+  last_contact_at DateTime?
+  interest_level  InterestLevel @default(unknown)
+
+  disqualification_reason      DisqualificationReason?
+  disqualification_reason_text String?
+
+  /// Fit is scored per buyer x product x market at lead creation and snapshotted here
+  /// so later engine changes never rewrite the number the exporter acted on.
+  fit_score       Int?
+  fit_score_basis Json?
+
+  /// Set on conversion. Exactly one Deal per lead (AGT-03-AC04).
+  deal_id String? @unique
+
+  source     String   @default("buyer_discovery")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  exporter_org   ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product        Product            @relation(fields: [product_id], references: [id])
+  buyer          Buyer              @relation(fields: [buyer_id], references: [id])
+  assigned_agent User?              @relation("LeadAgent", fields: [assigned_agent_id], references: [id])
+  created_by     User?              @relation("LeadCreatedBy", fields: [created_by_id], references: [id])
+  deal           Deal?              @relation("LeadDeal", fields: [deal_id], references: [id])
+  activities     OutreachActivity[]
+  internal_notes InternalNote[]
+  messages       Message[]
+
+  /// Server-side duplicate prevention (EXP-07-AC02): one lead per org x product x buyer.
+  @@unique([exporter_org_id, product_id, buyer_id])
+  @@index([exporter_org_id, stage])
+  @@index([assigned_agent_id, stage])
+  @@index([next_action_at])
+}
+
+model OutreachActivity {
+  id            String               @id @default(cuid())
+  buyer_lead_id String
+  actor_user_id String
+  type          OutreachActivityType
+  /// Internal by default — outreach logs are not exporter-visible unless marked.
+  visibility    Visibility           @default(internal)
+  outcome       String?
+  summary       String
+  occurred_at   DateTime             @default(now())
+  created_at    DateTime             @default(now())
+
+  buyer_lead BuyerLead @relation(fields: [buyer_lead_id], references: [id], onDelete: Cascade)
+  actor      User      @relation(fields: [actor_user_id], references: [id])
+
+  @@index([buyer_lead_id, occurred_at])
+}
+
+// ---------------------------------------------------------------------------
+// Deal
+// ---------------------------------------------------------------------------
+
+model Deal {
+  id              String  @id @default(cuid())
+  exporter_org_id String
+  buyer_id        String
+  buyer_lead_id   String?
+  product_id      String?
+
+  stage DealStage @default(qualifying)
+
+  // value = money
+  value_amount   Decimal? @db.Decimal(18, 4)
+  value_currency String?  @db.VarChar(3)
+
+  incoterm       String?
+  incoterm_place String?
+
+  // quantity = number + unit
+  quantity Decimal? @db.Decimal(18, 4)
+  unit     String?
+
+  // unit_price / total = money, stored not inferred by the UI
+  unit_price_amount   Decimal? @db.Decimal(18, 4)
+  unit_price_currency String?  @db.VarChar(3)
+  total_amount        Decimal? @db.Decimal(18, 4)
+  total_currency      String?  @db.VarChar(3)
+
+  payment_terms  Json?
+  delivery_terms Json?
+
+  risk_state     RiskState @default(normal)
+  risk_reason    String?
+  owner_agent_id String?
+
+  /// Snapshot of the fee policy in force at lock time — later config changes never
+  /// rewrite it (docs/01 rule of record).
+  quoted_fee_policy Json?
+  locked_at         DateTime?
+
+  closed_reason String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  /// Optimistic concurrency — a stale write returns 409 VERSION_CONFLICT.
+  version       Int      @default(1)
+
+  exporter_org    ExporterOrg     @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  buyer           Buyer           @relation(fields: [buyer_id], references: [id])
+  product         Product?        @relation(fields: [product_id], references: [id])
+  buyer_lead      BuyerLead?      @relation("LeadDeal")
+  owner_agent     User?           @relation("DealOwnerAgent", fields: [owner_agent_id], references: [id])
+  snapshots       DealSnapshot[]
+  documents       Document[]
+  shipments       Shipment[]
+  payments        Payment[]
+  tasks           Task[]
+  messages        Message[]
+  internal_notes  InternalNote[]
+  disputes        Dispute[]
+  insurance_cases InsuranceCase[]
+
+  @@index([exporter_org_id, stage])
+  @@index([owner_agent_id, stage])
+  @@index([risk_state])
+}
+
+/// Frozen at deal_locked. All documents generate from this, never from live deal fields
+/// (docs/13 E1). Immutable once written — amendments create a new version.
+model DealSnapshot {
+  id      String @id @default(cuid())
+  deal_id String
+  version Int    @default(1)
+
+  buyer_id         String
+  buyer_legal_name String
+  product_id       String?
+  product_name     String?
+  sku              String?
+
+  quantity Decimal? @db.Decimal(18, 4)
+  unit     String?
+
+  unit_price_amount   Decimal? @db.Decimal(18, 4)
+  unit_price_currency String?  @db.VarChar(3)
+  total_amount        Decimal? @db.Decimal(18, 4)
+  total_currency      String?  @db.VarChar(3)
+
+  incoterm           String?
+  incoterm_place     String?
+  payment_terms      Json?
+  ship_window_start  DateTime?
+  ship_window_end    DateTime?
+  special_conditions String?
+
+  /// Fee policy in force at the moment of lock.
+  fee_policy Json
+
+  created_by_id String?
+  created_at    DateTime @default(now())
+
+  deal      Deal       @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@unique([deal_id, version])
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+model Task {
+  id         String    @id @default(cuid())
+  scope_type ScopeType
+  scope_id   String
+
+  /// Denormalized tenant key so cross-deal task indexes stay one org-scoped query
+  /// rather than a fan-out over N deals (docs/13 A1 backend impact).
+  exporter_org_id String?
+  deal_id         String?
+
+  title         String
+  description   String?
+  owner_user_id String?
+  owner_role    UserRole
+
+  state    TaskState    @default(not_started)
+  priority TaskPriority @default(normal)
+
+  due_at     DateTime?
+  warning_at DateTime?
+  /// Derived from due_at/warning_at + SLA config. Never user-editable (AGT-07-AC03).
+  sla_state    SlaState  @default(on_time)
+  escalated_at DateTime?
+
+  blocked_reason String?
+  waiting_on     String?
+  cancel_reason  String?
+  completed_at   DateTime?
+
+  visibility Visibility @default(exporter_visible)
+  task_type  String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  exporter_org ExporterOrg? @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  deal         Deal?        @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  owner        User?        @relation("TaskOwner", fields: [owner_user_id], references: [id])
+
+  @@index([exporter_org_id, state, due_at])
+  @@index([owner_user_id, state, due_at])
+  @@index([deal_id, state])
+  @@index([sla_state])
+}
+
+// ---------------------------------------------------------------------------
+// Documents — four independent status dimensions
+// ---------------------------------------------------------------------------
+
+model Document {
+  id          String  @id @default(cuid())
+  deal_id     String?
+  shipment_id String?
+
+  doc_type           DocType
+  version            Int     @default(1)
+  is_current_version Boolean @default(true)
+  source             DocumentSource
+
+  /// Four independent dimensions. Collapsing any two of these is a spec violation
+  /// (docs/07 §7.3, docs/13 A5).
+  generation_status GenerationStatus @default(queued)
+  review_status     ReviewStatus     @default(not_reviewed)
+  approval_status   ApprovalStatus   @default(not_required)
+  filing_status     FilingStatus     @default(not_applicable)
+
+  generation_error         String?
+  changes_requested_reason String?
+  rejection_reason         String?
+  filing_reference         String?
+  filed_at                 DateTime?
+
+  /// Secure object ref — resolved to a short-lived signed URL, never a public bucket URL.
+  file_ref        String?
+  file_name       String?
+  file_size_bytes Int?
+  mime_type       String?
+  checksum        String?
+
+  /// The DealSnapshot the document generated from — enables reproducible regeneration.
+  generated_from_snapshot_id String?
+  generation_inputs          Json?
+
+  reviewed_by_id String?
+  reviewed_at    DateTime?
+  approved_by_id String?
+  /// Approval is bound to this version + checksum, not to the document identity.
+  approved_version  Int?
+  approved_checksum String?
+  approved_at       DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal     Deal?         @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  shipment Shipment?     @relation(fields: [shipment_id], references: [id])
+  snapshot DealSnapshot? @relation(fields: [generated_from_snapshot_id], references: [id])
+  reviewer User?         @relation("DocumentReviewer", fields: [reviewed_by_id], references: [id])
+  approver User?         @relation("DocumentApprover", fields: [approved_by_id], references: [id])
+  disputes Dispute[]
+
+  @@index([deal_id, doc_type, version])
+  @@index([approval_status])
+  @@index([filing_status])
+}
+
+// ---------------------------------------------------------------------------
+// Execution
+// ---------------------------------------------------------------------------
+
+model Shipment {
+  id      String @id @default(cuid())
+  deal_id String
+
+  status ShipmentStatus @default(planning)
+  mode   ShipmentMode?
+
+  origin      Json?
+  destination Json?
+
+  /// Snapshot from the deal at creation, not a live read.
+  incoterm String?
+
+  cha_partner_id     String?
+  freight_partner_id String?
+  booking_ref        String?
+  customs_ref        String?
+  shipping_bill_no   String?
+
+  exception_state    ExceptionState @default(none)
+  exception_reason   String?
+  exception_owner_id String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal            Deal                @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  cha_partner     Partner?            @relation("ChaPartner", fields: [cha_partner_id], references: [id])
+  freight_partner Partner?            @relation("FreightPartner", fields: [freight_partner_id], references: [id])
+  milestones      ShipmentMilestone[]
+  documents       Document[]
+  disputes        Dispute[]
+
+  @@index([deal_id])
+  @@index([status])
+  @@index([exception_state])
+}
+
+/// ETA and actual are distinct columns — EXP-14-AC02 requires both to be visible.
+model ShipmentMilestone {
+  id           String         @id @default(cuid())
+  shipment_id  String
+  code         String
+  label        String
+  state        MilestoneState @default(pending)
+  eta_at       DateTime?
+  actual_at    DateTime?
+  evidence_ref String?
+  sequence     Int
+  created_at   DateTime       @default(now())
+  updated_at   DateTime       @updatedAt
+
+  shipment Shipment @relation(fields: [shipment_id], references: [id], onDelete: Cascade)
+
+  @@unique([shipment_id, code])
+  @@index([shipment_id, sequence])
+}
+
+model Partner {
+  id             String        @id @default(cuid())
+  type           PartnerType
+  legal_name     String
+  display_name   String
+  country_code   String        @db.VarChar(2)
+  contact_email  String?
+  contact_phone  String?
+  partner_status PartnerStatus @default(active)
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+
+  cha_shipments     Shipment[] @relation("ChaPartner")
+  freight_shipments Shipment[] @relation("FreightPartner")
+
+  @@index([type, partner_status])
+}
+
+// ---------------------------------------------------------------------------
+// Money in / risk
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id      String @id @default(cuid())
+  deal_id String
+
+  // money
+  amount   Decimal @db.Decimal(18, 4)
+  currency String  @db.VarChar(3)
+
+  amount_received Decimal? @db.Decimal(18, 4)
+
+  payment_method String?
+  status         PaymentStatus @default(not_due)
+
+  due_at      DateTime?
+  received_at DateTime?
+  realized_at DateTime?
+
+  evidence_refs Json @default("[]")
+
+  /// Independent of status — never inferred from received/realized.
+  brc_status BrcStatus @default(not_applicable)
+
+  /// Provenance is mandatory and rendered on every milestone (docs/13 E3).
+  source PaymentSource @default(exporter_update)
+
+  label      String?
+  sequence   Int      @default(1)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal     Deal      @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  disputes Dispute[]
+
+  @@index([deal_id, sequence])
+  @@index([status, due_at])
+}
+
+model InsuranceCase {
+  id          String @id @default(cuid())
+  deal_id     String
+  shipment_id String?
+
+  status InsuranceCaseStatus @default(not_started)
+
+  provider_name String?
+  policy_ref    String?
+
+  // money
+  premium_amount   Decimal? @db.Decimal(18, 4)
+  premium_currency String?  @db.VarChar(3)
+  covered_amount   Decimal? @db.Decimal(18, 4)
+  covered_currency String?  @db.VarChar(3)
+
+  quote_requested_at DateTime?
+  bound_at           DateTime?
+  claim_opened_at    DateTime?
+  claim_settled_at   DateTime?
+  notes              String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal Deal @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+
+  @@index([deal_id])
+}
+
+model Dispute {
+  id         String    @id @default(cuid())
+  scope_type ScopeType
+  scope_id   String
+
+  deal_id     String?
+  shipment_id String?
+  payment_id  String?
+  document_id String?
+
+  type     DisputeType
+  severity DisputeSeverity @default(medium)
+  status   DisputeStatus   @default(open)
+
+  owner_user_id String?
+  /// User-safe summary. Internal notes live in InternalNote, never here.
+  summary       String
+  resolution    String?
+  accepted_at   DateTime?
+  sla_due_at    DateTime?
+  closed_at     DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  owner          User?          @relation(fields: [owner_user_id], references: [id])
+  deal           Deal?          @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  shipment       Shipment?      @relation(fields: [shipment_id], references: [id])
+  payment        Payment?       @relation(fields: [payment_id], references: [id])
+  document       Document?      @relation(fields: [document_id], references: [id])
+  internal_notes InternalNote[]
+
+  @@index([status, severity])
+  @@index([deal_id])
+  @@index([owner_user_id, status])
+}
+
+// ---------------------------------------------------------------------------
+// Communication — exporter-visible vs internal are separate tables, not a flag
+// ---------------------------------------------------------------------------
+
+model Message {
+  id              String  @id @default(cuid())
+  thread_key      String
+  deal_id         String?
+  buyer_lead_id   String?
+  exporter_org_id String
+
+  author_user_id String
+  body           String
+  /// Structurally exporter-visible. Internal content cannot be stored here.
+  created_at     DateTime  @default(now())
+  read_at        DateTime?
+
+  author     User       @relation(fields: [author_user_id], references: [id])
+  deal       Deal?      @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  buyer_lead BuyerLead? @relation(fields: [buyer_lead_id], references: [id], onDelete: Cascade)
+
+  @@index([thread_key, created_at])
+  @@index([exporter_org_id])
+}
+
+/// Never exporter-visible. A separate table so there is no toggle that can default open
+/// (AGENTS.md: leakage of internal negotiation notes is a top trust risk).
+model InternalNote {
+  id            String    @id @default(cuid())
+  scope_type    ScopeType
+  scope_id      String
+  deal_id       String?
+  buyer_lead_id String?
+  dispute_id    String?
+
+  author_user_id String
+  body           String
+  created_at     DateTime @default(now())
+
+  author     User       @relation(fields: [author_user_id], references: [id])
+  deal       Deal?      @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  buyer_lead BuyerLead? @relation(fields: [buyer_lead_id], references: [id], onDelete: Cascade)
+  dispute    Dispute?   @relation(fields: [dispute_id], references: [id], onDelete: Cascade)
+
+  @@index([scope_type, scope_id])
+}
+
+// ---------------------------------------------------------------------------
+// Governance & platform
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id          String               @id @default(cuid())
+  user_id     String
+  type        String
+  title       String
+  body        String
+  severity    NotificationSeverity @default(info)
+  object_type String?
+  object_id   String?
+  /// A deep link is a convenience, not an authorization grant — the target still authorizes.
+  deep_link   String?
+  read_at     DateTime?
+  dedupe_key  String?
+  created_at  DateTime             @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, dedupe_key])
+  @@index([user_id, read_at, created_at])
+}
+
+/// Append-only. The application layer exposes no update or delete path; corrections
+/// are new events (docs/08 §2).
+model AuditEvent {
+  id            String    @id @default(cuid())
+  actor_user_id String?
+  role          UserRole?
+  action        String
+  object_type   String
+  object_id     String
+  /// Denormalized for tenant-scoped audit reads without joining through the object graph.
+  exporter_org_id String?
+  timestamp      DateTime @default(now())
+  before_summary Json?
+  after_summary  Json?
+  correlation_id String
+  source         AuditSource @default(web)
+
+  actor User? @relation(fields: [actor_user_id], references: [id])
+
+  @@index([object_type, object_id, timestamp])
+  @@index([actor_user_id, timestamp])
+  @@index([exporter_org_id, timestamp])
+  @@index([correlation_id])
+}
+
+/// DB-backed job queue — no external broker. State survives refresh and device change
+/// because it lives here, not in browser memory (docs/09 §3).
+model Job {
+  id              String    @id @default(cuid())
+  type            JobType
+  status          JobStatus @default(queued)
+  exporter_org_id String?
+  requested_by_id String?
+  /// Dedupe key for "an equivalent job is already running" (JOB_ALREADY_RUNNING).
+  dedupe_key      String?
+  idempotency_key String?
+  payload         Json      @default("{}")
+  result          Json?
+  error_code      String?
+  error_message   String?
+  progress        Int       @default(0)
+  target_type     String?
+  target_id       String?
+  attempts        Int       @default(0)
+  max_attempts    Int       @default(3)
+  run_after       DateTime  @default(now())
+  started_at      DateTime?
+  completed_at    DateTime?
+  correlation_id  String
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  requested_by User?        @relation(fields: [requested_by_id], references: [id])
+  job_attempts JobAttempt[]
+
+  @@unique([dedupe_key])
+  @@unique([idempotency_key])
+  @@index([status, run_after])
+  @@index([exporter_org_id, type, status])
+}
+
+/// Retry creates a new attempt row; a historical successful result is never overwritten.
+model JobAttempt {
+  id            String    @id @default(cuid())
+  job_id        String
+  attempt_no    Int
+  status        JobStatus @default(processing)
+  started_at    DateTime  @default(now())
+  finished_at   DateTime?
+  error_code    String?
+  error_message String?
+  result        Json?
+
+  job Job @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@unique([job_id, attempt_no])
+}
+
+/// Business constants live here, versioned — never hardcoded in application code
+/// (docs/01 §2). Reads go through src/lib/config.ts.
+model ConfigSetting {
+  id             String   @id @default(cuid())
+  key            String
+  version        Int      @default(1)
+  value          Json
+  description    String?
+  is_active      Boolean  @default(true)
+  effective_from DateTime @default(now())
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([key, version])
+  @@index([key, is_active])
+}
+
+/// Versioned fee policy. A deal snapshots the version in force at lock time; later
+/// versions never rewrite historical deals.
+model FeePolicy {
+  id      String @id @default(cuid())
+  version Int    @unique
+
+  commitment_fee_amount   Decimal             @db.Decimal(18, 4)
+  commitment_fee_currency String              @db.VarChar(3)
+  commitment_fee_status   CommitmentFeeStatus @default(not_due)
+
+  success_fee_rate Decimal @db.Decimal(6, 4)
+
+  small_shipment_threshold_amount   Decimal @db.Decimal(18, 4)
+  small_shipment_threshold_currency String  @db.VarChar(3)
+  small_shipment_rate               Decimal @db.Decimal(6, 4)
+  small_shipment_flat_amount        Decimal @db.Decimal(18, 4)
+
+  agent_share_rate Decimal @db.Decimal(6, 4)
+
+  minimum_shipment_amount   Decimal @db.Decimal(18, 4)
+  minimum_shipment_currency String  @db.VarChar(3)
+
+  is_active      Boolean  @default(true)
+  effective_from DateTime @default(now())
+  created_at     DateTime @default(now())
+}
