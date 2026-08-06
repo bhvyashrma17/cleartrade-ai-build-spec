@@ -110,13 +110,13 @@ Discovery, Agent Command Center, Deal Workspace) before engineering all 32.
 
 From `docs/13`, these block or shape foundational work:
 
-- **Component naming** — Blueprint set (`StatusBadge`) or PRD set (`StatusChip`)? Record the choice
-  in the Tech stack section below once made.
-- **`/app/tasks`** — the specified mobile bottom nav requires a cross-deal exporter task list that
-  the screen registry doesn't define. Recommended P0.
-- **Buyer fit score placement** — it's a function of buyer × product × market, so it does not belong
-  on the global `Buyer` entity.
-- **Deal tab label** — "Quote" or "Commercial" (route is `/commercial` either way).
+- **Component naming — RESOLVED.** PRD set (`StatusChip`, not the Blueprint's `StatusBadge`). Built
+  in `src/components/ui/StatusChip.tsx` and used by every status-bearing component since.
+- **`/app/tasks`** — still open. The specified mobile bottom nav requires a cross-deal exporter task
+  list that the screen registry doesn't define. Recommended P0.
+- **Buyer fit score placement** — still open. It's a function of buyer × product × market, so it does
+  not belong on the global `Buyer` entity.
+- **Deal tab label** — still open. "Quote" or "Commercial" (route is `/commercial` either way).
 
 ## What's still not decided
 
@@ -127,13 +127,16 @@ From `docs/13`, these block or shape foundational work:
 
 ## Tech stack
 
+What's actually built, not just planned — see the folder structure and authorization notes below
+for where things live today vs. where docs/13 originally sketched them.
+
 **Runtime & framework**
-- Next.js 14 (App Router, TypeScript) — server components by default, route handlers for API
-- PostgreSQL 16 — primary data store
+- Next.js (App Router, TypeScript) — server components by default, route handlers for API
+- PostgreSQL — primary data store
 - Prisma ORM — schema, migrations, typed client
 - Tailwind CSS — styling via design tokens in `docs/00-design-system.md`
-- Auth.js (NextAuth) — session auth, credentials + OAuth providers, JWT strategy
-- Background jobs — DB-backed job table (`Job`, `JobAttempt`) with a simple worker process; no external queue for MVP
+- Auth.js (NextAuth v5) — session auth, credentials provider, JWT strategy (`src/lib/auth.ts`)
+- Background jobs — DB-backed job table (`Job`, `JobAttempt`); no external queue for MVP
 
 **Folder structure (monorepo, single Next.js app)**
 
@@ -167,8 +170,10 @@ From `docs/13`, these block or shape foundational work:
     /auth.ts                    # Auth.js config, role helpers, server session
     /prisma.ts                  # Prisma singleton
     /api-client.ts              # Typed fetch wrapper with error envelope handling (docs/09 §2)
+    /errors.ts                  # ApiError + envelope builders — every route handler's error path
     /jobs.ts                    # Job queue helpers (enqueue, poll, retry)
-    /permissions.ts             # Server-side authorization predicates (see below)
+    /permissions.ts             # Server-side authorization predicates — single source of truth (see below)
+    /state-machines/            # Transition guards + side effects per docs/07 (buyer-lead.ts, deal.ts, task.ts)
     /config.ts                  # Runtime config (fees, SLA, doc registry) from DB
     /i18n.ts                    # Locale/currency/date helpers (docs/10 §5)
     /validators/                # Zod schemas mirroring Prisma models + API envelopes
@@ -185,14 +190,23 @@ From `docs/13`, these block or shape foundational work:
 
 **Server-side authorization — where it lives**
 
-All authorization is **server-side, in route handlers and server actions**, never in client components. Two layers:
+All authorization is **server-side, in route handlers and server actions**, never in client components.
+`src/lib/permissions.ts` is the single source of truth — everything below calls into it rather than
+re-implementing a check.
 
-1. **Route-level guards** (middleware + layout server components)
-   - `middleware.ts` — validates session, redirects unauthenticated, attaches `user` + `role` + `exporterOrgId`/`agentId` to request headers for downstream use
-   - Each portal layout (`/app/layout.tsx`, `/agent/layout.tsx`, `/ops/layout.tsx`) reads headers, fetches the active membership/assignment, and throws `403` if the principal lacks portal access
+1. **Route-level guards** — `middleware.ts` is not built yet, so this layer currently lives at the
+   call site instead of a shared edge middleware:
+   - `src/lib/auth.ts` exports `requirePrincipal()` / `requirePortalAccess(portal)` /
+     `requireExporterPrincipal()`, which re-read the session server-side and throw `UNAUTHENTICATED`
+     or `FORBIDDEN` (`src/lib/errors.ts`)
+   - Every portal page (`src/app/app/**/page.tsx`, `src/app/agent/**/page.tsx`, ...) and every
+     `/api/v1/**` route handler calls one of these first, before touching Prisma. There is no shared
+     `error.tsx` boundary yet either, so a page that calls a guard must catch the thrown `ApiError`
+     itself and render the 401/403 state (see `src/app/app/buyers/page.tsx` for the pattern)
 
-2. **Resource-level predicates** (`src/lib/permissions.ts` — single source of truth)
+2. **Resource-level predicates** (`src/lib/permissions.ts`)
    - Pure functions: `canReadDeal(user, deal)`, `canTransitionTask(user, task, nextState)`, `canDownloadDocument(user, document)`, `canSearchBuyers(user, filters)`, etc.
+   - `tenantScope(principal)` is the scoping helper every list/search query spreads into its Prisma `where` — exporter → own org, agent → assigned orgs, ops → unscoped
    - Every route handler / server action calls the relevant predicate **before** querying Prisma
    - Predicates encode the rules from `docs/01` (RBAC matrix) and `docs/07` (state-machine transition guards)
    - Search endpoints and file downloads **must** call predicates — these are the two most commonly missed (docs/09 §5, docs/10 §1)

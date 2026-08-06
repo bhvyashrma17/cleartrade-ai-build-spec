@@ -127,14 +127,19 @@ export const dealLockPrerequisitesNotMet = (blockers: Blocker[]) =>
 export const versionConflict = (currentVersion: number, currentUpdatedAt: Date) =>
   new ApiError(ERROR_CODES.VERSION_CONFLICT, { currentVersion, currentUpdatedAt });
 
-export const duplicateLead = (existingLeadId: string) =>
+/**
+ * `deepLink` is caller-supplied rather than hardcoded: the same duplicate lands an
+ * agent on `/agent/leads/:id` (AGT-04) but an exporter — who has no lead detail route
+ * — on the buyer's own page (EXP-07), where the existing relationship is shown.
+ */
+export const duplicateLead = (existingLeadId: string, deepLink: string) =>
   new ApiError(ERROR_CODES.DUPLICATE_LEAD, {
     blockers: [
       {
         object_type: 'buyer_lead',
         object_id: existingLeadId,
         reason: 'This buyer is already a lead for this product.',
-        deep_link: `/agent/leads/${existingLeadId}`,
+        deep_link: deepLink,
       },
     ],
   });

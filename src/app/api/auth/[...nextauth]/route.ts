@@ -1,8 +1,3 @@
-import NextAuth from 'next-auth';
+import { handlers } from '@/lib/auth';
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
-  providers: [],
-  callbacks: {
-    authorized: () => false,
-  },
-});
+export const { GET, POST } = handlers;
