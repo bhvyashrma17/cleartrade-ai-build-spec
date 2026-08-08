@@ -205,18 +205,37 @@ const SAMPLE_TEXT_CONTRAST_JS = `(() => {
     return p.length >= 3 ? [p[0], p[1], p[2], p.length > 3 ? p[3] : 1] : null;
   };
   const composite = (fg, bg) => [0, 1, 2].map((i) => fg[i] * (fg[3] === undefined ? 1 : fg[3]) + bg[i] * (1 - (fg[3] === undefined ? 1 : fg[3])));
+  // Two-pass: collect layers nearest-to-farthest, stopping at the first opaque one (or
+  // the root, with white as an implicit opaque base), then fold FARTHEST-to-NEAREST.
+  //
+  // The single-pass version this replaced composited each newly-found ancestor layer
+  // directly as "bg" using its raw (undiluted) channel values — correct only when that
+  // layer is itself opaque. When two translucent layers of the SAME hue stack (e.g. a
+  // StatusChip's 12% tint nested inside a banner's 5% tint of the same colour — a
+  // pattern that exists in this codebase but had never been exercised/rendered before),
+  // fg[i] === bg[i] for every channel and fg*a + bg*(1-a) collapses to that shared value
+  // regardless of either alpha — reporting the pure, fully-saturated hue as the backdrop
+  // instead of the true, much lighter blended tint. Folding outward-in first guarantees
+  // every composite step's backdrop is already fully resolved/opaque, which is what the
+  // "over" formula actually requires.
   const effectiveBackground = (el) => {
+    const layers = [];
     let node = el;
-    let acc = null;
     while (node) {
       const c = parse(getComputedStyle(node).backgroundColor);
       if (c && c[3] > 0) {
-        acc = acc ? composite(acc, c) : c;
-        if (c[3] >= 1) return acc.slice(0, 3);
+        layers.push(c);
+        if (c[3] >= 1) break;
       }
       node = node.parentElement;
     }
-    return acc ? acc.slice(0, 3) : [255, 255, 255];
+    layers.reverse();
+    let acc = [255, 255, 255];
+    for (const c of layers) {
+      const a = c[3] === undefined ? 1 : c[3];
+      acc = [0, 1, 2].map((i) => c[i] * a + acc[i] * (1 - a));
+    }
+    return acc;
   };
 
   const out = [];
@@ -325,18 +344,38 @@ const SAMPLE_ICON_CONTRAST_JS = `(() => {
   const composite = (fg, bg) => [0, 1, 2].map((i) => fg[i] * (fg[3] === undefined ? 1 : fg[3]) + bg[i] * (1 - (fg[3] === undefined ? 1 : fg[3])));
   // Start from the icon's PARENT: the tint the icon sits on is painted by an ancestor
   // (the chip), never by the <svg> itself, which is always transparent.
+  //
+  // Two-pass: collect layers nearest-to-farthest, stopping at the first opaque one (or
+  // the root, with white as an implicit opaque base), then fold FARTHEST-to-NEAREST. The
+  // single-pass version this replaced composited each newly-found ancestor layer
+  // directly as "bg" using its raw (undiluted) channel values — correct only when that
+  // layer is itself opaque. When two translucent layers of the SAME hue stack (e.g. a
+  // StatusChip's 12% tint nested inside a banner's 5% tint of the same colour — exactly
+  // what /app/overview's risk banner does, and which had never been rendered before
+  // seeding a deal with risk_state=blocked), fg[i] === bg[i] for every channel and
+  // fg*a + bg*(1-a) collapses to that shared value regardless of either alpha —
+  // reporting the pure, fully-saturated hue (measured: a false 2.20:1 "failure") instead
+  // of the true, much lighter blended tint (the real ratio is 6.24:1). Folding
+  // outward-in first guarantees every composite step's backdrop is already fully
+  // resolved/opaque, which is what the "over" formula actually requires.
   const effectiveBackground = (el) => {
+    const layers = [];
     let node = el;
-    let acc = null;
     while (node) {
       const c = parse(getComputedStyle(node).backgroundColor);
       if (c && c[3] > 0) {
-        acc = acc ? composite(acc, c) : c;
-        if (c[3] >= 1) return acc.slice(0, 3);
+        layers.push(c);
+        if (c[3] >= 1) break;
       }
       node = node.parentElement;
     }
-    return acc ? acc.slice(0, 3) : [255, 255, 255];
+    layers.reverse();
+    let acc = [255, 255, 255];
+    for (const c of layers) {
+      const a = c[3] === undefined ? 1 : c[3];
+      acc = [0, 1, 2].map((i) => c[i] * a + acc[i] * (1 - a));
+    }
+    return acc;
   };
   const labelFor = (el) => {
     const aria = el.getAttribute('aria-label');

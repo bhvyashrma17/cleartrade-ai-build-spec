@@ -169,10 +169,13 @@ async function main() {
       await sweep(ops.page, surface);
     }
     await ops.ctx.close();
-    // NOT swept: /ops/finance. It is ops_finance/admin-only and the seed has no user
-    // with either role, so a supervisor session renders AccessDenied — sweeping it would
-    // measure the denial page and report a misleading pass for a screen never seen.
-    // Adding a fixture user to fix that is a seed change, out of scope here.
+
+    // ---- Ops finance (a distinct role: /ops/finance denies the supervisor) ----
+    const finance = await loggedInContext(browser, 'finance@cleartrade.example');
+    await finance.page.goto(BASE + '/ops/finance', { waitUntil: 'networkidle' });
+    await sleep(1200);
+    await sweep(finance.page, 'ops-finance /ops/finance');
+    await finance.ctx.close();
   } finally {
     await browser.close();
   }

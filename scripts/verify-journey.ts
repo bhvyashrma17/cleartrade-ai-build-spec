@@ -25,8 +25,22 @@ import {
   type Page,
 } from './verify-harness';
 import { prisma } from '../src/lib/prisma';
+import { deriveJourneyStage } from '../src/lib/journey';
 
 const PAID_ORG = 'seed-org-1';
+
+// Rail labels differ from the JourneyStage enum names — same mapping used by
+// verify-acceptance.ts's EXP-01-AC01, kept in sync rather than re-derived differently.
+const JOURNEY_STAGE_LABEL: Record<string, string> = {
+  onboarding: 'Onboarding',
+  ready: 'Readiness',
+  market_selected: 'Market',
+  buyer_engaged: 'Buyers',
+  deal_locked: 'Deal',
+  docs_cleared: 'Docs',
+  shipped: 'Shipped',
+  payment_realized: 'Paid',
+};
 
 async function gotoStep(page: Page, name: string) {
   await page.getByRole('button', { name: new RegExp(`\\d+\\. ${name}`) }).first().click();
@@ -103,11 +117,18 @@ async function main() {
       await page.goto(BASE + '/app/overview', { waitUntil: 'networkidle' });
       const railAfter = (await page.locator('[aria-current="step"]').first().textContent())?.trim() ?? '';
       const org = await prisma.exporterOrg.findUnique({ where: { id: PAID_ORG }, select: { readiness_status: true } });
-      // The rail is derived, so it must agree with the readiness status the assessment set.
-      // 'ready' -> Readiness segment current; 'blocked'/'in_progress' -> still Readiness.
-      const agrees = railAfter.includes('Readiness');
+      // Assert against the LIVE DERIVATION, not a hardcoded "Readiness". This org also
+      // carries a permanently-seeded locked deal (seed-deal-locked), and
+      // deriveJourneyStage() deliberately ranks deal-stage evidence above readiness —
+      // "a later stage implies every earlier one happened" — so a real paid org with
+      // both a completed readiness assessment AND a locked deal correctly shows "Deal",
+      // not "Readiness". Hardcoding the old expectation would fail the moment realistic
+      // deal fixtures exist, which is a test bug, not a product regression.
+      const derived = await deriveJourneyStage(PAID_ORG);
+      const expectedLabel = JOURNEY_STAGE_LABEL[derived] ?? derived;
+      const agrees = railAfter.includes(expectedLabel);
       record('J3', 'Journey rail reflects the new readiness state', agrees ? 'PASS' : 'FAIL',
-        `rail before="${railBefore}" after="${railAfter}"; server readiness_status=${org?.readiness_status} (derived rail must agree, not drift)`);
+        `rail before="${railBefore}" after="${railAfter}"; server readiness_status=${org?.readiness_status}, live derivation=${derived} -> "${expectedLabel}" (rail must match the derivation, not drift)`);
     });
 
     let runId = '';

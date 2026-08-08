@@ -29,3 +29,5 @@ export type { UpgradeNoticeProps, UpgradeTier } from './UpgradeNotice';
 
 export { JourneyProgress } from './JourneyProgress';
 export type { JourneyProgressProps, JourneyStageValue } from './JourneyProgress';
+
+export { NotBuiltYet } from './NotBuiltYet';

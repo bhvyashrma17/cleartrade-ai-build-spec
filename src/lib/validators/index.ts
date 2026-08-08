@@ -77,3 +77,52 @@ export const registerSchema = z.object({
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+/**
+ * Commercial proposal terms (AGT-05 offer builder / EXP-10).
+ *
+ * Every money field carries its currency explicitly — docs/02 "money = amount + currency,
+ * never a bare number" — and quantity carries its unit, so a proposal can never encode a
+ * price whose denomination is implied.
+ */
+export const proposalTermsSchema = z.object({
+  quantity: z.coerce.number().positive('Quantity must be greater than zero.').nullish(),
+  unit: z.string().trim().min(1).nullish(),
+  unit_price_amount: z.coerce.number().positive('Unit price must be greater than zero.').nullish(),
+  unit_price_currency: z.string().trim().length(3, 'Use a 3-letter currency code.').nullish(),
+  total_amount: z.coerce.number().positive('Total must be greater than zero.').nullish(),
+  total_currency: z.string().trim().length(3, 'Use a 3-letter currency code.').nullish(),
+  incoterm: z.string().trim().min(1).nullish(),
+  incoterm_place: z.string().trim().min(1).nullish(),
+  payment_terms: z
+    .object({
+      type: z.string().trim().min(1, 'Choose a payment type.'),
+      description: z.string().trim().min(1, 'Describe the payment terms.'),
+    })
+    .nullish(),
+  ship_window_start: z.string().trim().min(1).nullish(),
+  ship_window_end: z.string().trim().min(1).nullish(),
+  special_conditions: z.string().trim().nullish(),
+  agent_note: z.string().trim().nullish(),
+  buyer_status: z.string().trim().nullish(),
+  buyer_status_note: z.string().trim().nullish(),
+});
+
+export type ProposalTermsInput = z.infer<typeof proposalTermsSchema>;
+
+/**
+ * Approving a proposal. `version` is the immutable proposal version the exporter is
+ * approving (EXP-10-AC01) and `deal_version` is the Deal row's optimistic-concurrency
+ * token — both are required so a stale approval 409s instead of silently overwriting
+ * (docs/09 §2 VERSION_CONFLICT).
+ */
+export const approveProposalSchema = z.object({
+  version: z.coerce.number().int().positive(),
+  deal_version: z.coerce.number().int().positive(),
+});
+
+export const requestChangesSchema = z.object({
+  version: z.coerce.number().int().positive(),
+  deal_version: z.coerce.number().int().positive(),
+  note: z.string().trim().min(1, 'Say what needs to change.'),
+});

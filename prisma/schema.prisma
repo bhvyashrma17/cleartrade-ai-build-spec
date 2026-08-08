@@ -458,6 +458,9 @@ model User {
   created_leads       BuyerLead[]        @relation("LeadCreatedBy")
   owned_deals         Deal[]             @relation("DealOwnerAgent")
   owned_tasks         Task[]             @relation("TaskOwner")
+  proposals_made      DealProposal[]     @relation("ProposalProposedBy")
+  proposals_approved  DealProposal[]     @relation("ProposalApprovedBy")
+  proposals_changes_requested DealProposal[] @relation("ProposalChangesRequestedBy")
   outreach_activities OutreachActivity[]
   audit_events        AuditEvent[]
   notifications       Notification[]
@@ -846,6 +849,7 @@ model Deal {
   product         Product?        @relation(fields: [product_id], references: [id])
   buyer_lead      BuyerLead?      @relation("LeadDeal")
   owner_agent     User?           @relation("DealOwnerAgent", fields: [owner_agent_id], references: [id])
+  proposals       DealProposal[]
   snapshots       DealSnapshot[]
   documents       Document[]
   shipments       Shipment[]
@@ -859,6 +863,86 @@ model Deal {
   @@index([exporter_org_id, stage])
   @@index([owner_agent_id, stage])
   @@index([risk_state])
+}
+
+/// Status of one commercial proposal version (AGT-05 "Required UI states").
+enum ProposalStatus {
+  draft
+  awaiting_exporter
+  approved
+  changes_requested
+  superseded
+  withdrawn
+}
+
+/// One version of the commercial terms under negotiation (AGT-05-AC01: "Commercial
+/// proposals are versioned"; EXP-10-AC01: "Approval references an immutable proposal
+/// version ID").
+///
+/// A `draft` is the only mutable state. Once it leaves draft the row is frozen and a
+/// revision writes a NEW version instead of editing this one — that is what makes
+/// AGT-05-AC04 ("every revision preserves previous acceptance/change history") and
+/// EXP-10-AC01 structurally true rather than a convention the route has to remember.
+///
+/// `approved_by_id` is deliberately separate from `proposed_by_id`: AGT-05-AC02 requires
+/// the exporter to approve their own terms, and an agent must never be able to record an
+/// approval on their behalf. The route re-checks `canApproveCommercialTerms()` on the
+/// approving principal; this column is the persisted evidence of who actually did it.
+model DealProposal {
+  id      String @id @default(cuid())
+  deal_id String
+  version Int
+
+  status ProposalStatus @default(draft)
+
+  // The terms this version proposes — the same set DealSnapshot freezes at lock, so a
+  // lock can be built from an approved proposal without re-deriving anything.
+  quantity Decimal? @db.Decimal(18, 4)
+  unit     String?
+
+  unit_price_amount   Decimal? @db.Decimal(18, 4)
+  unit_price_currency String?  @db.VarChar(3)
+  total_amount        Decimal? @db.Decimal(18, 4)
+  total_currency      String?  @db.VarChar(3)
+
+  incoterm       String?
+  incoterm_place String?
+
+  payment_terms Json?
+
+  ship_window_start DateTime?
+  ship_window_end   DateTime?
+
+  special_conditions String?
+  /// Exporter-visible rationale from the agent. Internal reasoning lives in InternalNote.
+  agent_note         String?
+
+  /// Structured buyer-side state the agent records (AGT-05 "Buyer status"). Never
+  /// presented as legal acceptance — see the screen copy.
+  buyer_status      String?
+  buyer_status_note String?
+
+  proposed_by_id String?
+  proposed_at    DateTime?
+
+  approved_by_id String?
+  approved_at    DateTime?
+
+  /// Structured change request from the exporter (EXP-10 "Request changes").
+  changes_requested_by_id String?
+  changes_requested_at    DateTime?
+  changes_requested_note  String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal                Deal  @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  proposed_by         User? @relation("ProposalProposedBy", fields: [proposed_by_id], references: [id])
+  approved_by         User? @relation("ProposalApprovedBy", fields: [approved_by_id], references: [id])
+  changes_requested_by User? @relation("ProposalChangesRequestedBy", fields: [changes_requested_by_id], references: [id])
+
+  @@unique([deal_id, version])
+  @@index([deal_id, status])
 }
 
 /// Frozen at deal_locked. All documents generate from this, never from live deal fields

@@ -9,7 +9,21 @@
  * sign in through the real login flow, not just exist as rows.
  */
 
-import { IecStatus, JourneyStage, OrgTier, ReadinessStatus, UserRole, VerificationStatus } from '@prisma/client';
+import {
+  CommitmentFeeStatus,
+  DealStage,
+  IecStatus,
+  JourneyStage,
+  OrgTier,
+  ProposalStatus,
+  ReadinessStatus,
+  RiskState,
+  TaskPriority,
+  TaskState,
+  UserRole,
+  VerificationStatus,
+  Visibility,
+} from '@prisma/client';
 import { hashPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -82,6 +96,22 @@ async function main() {
       name: 'Ananya Iyer',
       password_hash,
       role: UserRole.ops_supervisor,
+    },
+  });
+
+  // Distinct from ops_supervisor: /ops/finance and fee-policy edits are ops_finance/admin
+  // only (docs/06 OPS-05). Without this fixture, /ops/finance can never be exercised by a
+  // logged-in session — a supervisor gets AccessDenied there — so verification scripts
+  // either skip the page or silently measure the wrong thing.
+  const opsFinance = await prisma.user.upsert({
+    where: { email: 'finance@cleartrade.example' },
+    update: {},
+    create: {
+      id: 'seed-user-ops-finance',
+      email: 'finance@cleartrade.example',
+      name: 'Karan Bhatt',
+      password_hash,
+      role: UserRole.ops_finance,
     },
   });
 
@@ -240,6 +270,302 @@ async function main() {
   ]);
 
   // ---------------------------------------------------------------------------
+  // Deals — EXP-08/EXP-09 have no data to render without these. One locked (so the
+  // workspace's "terms are frozen, read-only" state and the risk banner have something
+  // real to show) and one negotiating (so the pipeline differentiates active stages,
+  // EXP-08-AC01). `upsert` by fixed id, same as every other fixture in this file.
+  // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // FeePolicy — a hard prerequisite for deal lock, and it was missing entirely.
+  //
+  // `collectDealLockBlockers()` refuses to lock without an active policy ("No active fee
+  // policy is configured, so the deal's fee terms cannot be frozen") because docs/01 §2
+  // forbids falling back to a hardcoded constant for anything commercial. `getFeePolicy()`
+  // likewise throws rather than inventing one. Until now nothing exercised that path, so
+  // the gap was invisible; the lock flow cannot work at all without this row.
+  // ---------------------------------------------------------------------------
+  await prisma.feePolicy.upsert({
+    where: { version: 1 },
+    update: { is_active: true },
+    create: {
+      id: 'seed-fee-policy-v1',
+      version: 1,
+      commitment_fee_amount: 15000,
+      commitment_fee_currency: 'INR',
+      commitment_fee_status: CommitmentFeeStatus.paid,
+      success_fee_rate: 0.025,
+      small_shipment_threshold_amount: 500000,
+      small_shipment_threshold_currency: 'INR',
+      small_shipment_rate: 0.035,
+      small_shipment_flat_amount: 20000,
+      agent_share_rate: 0.4,
+      minimum_shipment_amount: 100000,
+      minimum_shipment_currency: 'INR',
+      is_active: true,
+      effective_from: new Date('2026-01-01T00:00:00Z'),
+    },
+  });
+
+  const lockedFeePolicySnapshot = {
+    version: 1,
+    commitment_fee_amount: '15000.00',
+    commitment_fee_currency: 'INR',
+    commitment_fee_status: 'paid',
+    success_fee_rate: '0.0250',
+    agent_share_rate: '0.4000',
+  };
+
+  const lockedDeal = await prisma.deal.upsert({
+    where: { id: 'seed-deal-locked' },
+    update: {},
+    create: {
+      id: 'seed-deal-locked',
+      exporter_org_id: org.id,
+      buyer_id: 'seed-buyer-3', // Gulf Foods General Trading (AE) — verified
+      product_id: turmeric.id,
+      stage: DealStage.deal_locked,
+      value_amount: 42000,
+      value_currency: 'USD',
+      quantity: 12000,
+      unit: 'kg',
+      unit_price_amount: 3.5,
+      unit_price_currency: 'USD',
+      total_amount: 42000,
+      total_currency: 'USD',
+      incoterm: 'FOB',
+      incoterm_place: 'Nhava Sheva',
+      payment_terms: { type: 'LC', description: '30% advance, 70% against BL via irrevocable LC at sight' },
+      delivery_terms: {
+        ship_window_start: '2026-08-25',
+        ship_window_end: '2026-09-05',
+        notes: 'Buyer requires pre-shipment sample approval.',
+      },
+      // Locked but blocked — exercises AC04 (risk banner must persist across every tab)
+      // with a reason that is actually plausible for a deal already past lock.
+      risk_state: RiskState.blocked,
+      risk_reason: 'Buyer requested a change to payment terms after lock — pending Ops review before shipment documents proceed.',
+      owner_agent_id: agent.id,
+      quoted_fee_policy: lockedFeePolicySnapshot,
+      locked_at: new Date('2026-07-20T10:00:00Z'),
+    },
+  });
+
+  await prisma.dealSnapshot.upsert({
+    where: { deal_id_version: { deal_id: lockedDeal.id, version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      version: 1,
+      buyer_id: 'seed-buyer-3',
+      buyer_legal_name: 'Gulf Foods General Trading LLC',
+      product_id: turmeric.id,
+      product_name: turmeric.name,
+      sku: null,
+      quantity: 12000,
+      unit: 'kg',
+      unit_price_amount: 3.5,
+      unit_price_currency: 'USD',
+      total_amount: 42000,
+      total_currency: 'USD',
+      incoterm: 'FOB',
+      incoterm_place: 'Nhava Sheva',
+      payment_terms: { type: 'LC', description: '30% advance, 70% against BL via irrevocable LC at sight' },
+      ship_window_start: new Date('2026-08-25T00:00:00Z'),
+      ship_window_end: new Date('2026-09-05T00:00:00Z'),
+      special_conditions: 'Buyer requires pre-shipment sample approval.',
+      fee_policy: lockedFeePolicySnapshot,
+      created_by_id: agent.id,
+      created_at: new Date('2026-07-20T10:00:00Z'),
+    },
+  });
+
+  const negotiatingDeal = await prisma.deal.upsert({
+    where: { id: 'seed-deal-negotiating' },
+    update: {},
+    create: {
+      id: 'seed-deal-negotiating',
+      exporter_org_id: org.id,
+      buyer_id: 'seed-buyer-1', // Spice Trading Co. (US) — verified
+      product_id: bedsheets.id,
+      stage: DealStage.negotiating,
+      value_amount: 14400,
+      value_currency: 'USD',
+      quantity: 800,
+      unit: 'sets',
+      unit_price_amount: 18,
+      unit_price_currency: 'USD',
+      total_amount: 14400,
+      total_currency: 'USD',
+      incoterm: 'CIF',
+      incoterm_place: 'Hamburg',
+      payment_terms: { type: 'TT', description: '50% advance, 50% before shipment' },
+      risk_state: RiskState.normal,
+      owner_agent_id: agent.id,
+    },
+  });
+
+  // One exporter-owned "next action" per deal, so the Overview tab's Next Actions zone
+  // isn't empty — plus one INTERNAL task on the locked deal, seeded specifically so
+  // browser-verify can assert it never reaches the exporter-facing workspace.
+  await prisma.task.upsert({
+    where: { id: 'seed-task-deal-locked-1' },
+    update: {},
+    create: {
+      id: 'seed-task-deal-locked-1',
+      scope_type: 'deal',
+      scope_id: lockedDeal.id,
+      deal_id: lockedDeal.id,
+      exporter_org_id: org.id,
+      title: 'Confirm revised payment terms with buyer',
+      description: 'Gulf Foods proposed a change to the LC terms after lock — confirm acceptance before documents proceed.',
+      owner_user_id: owner.id,
+      owner_role: UserRole.exporter_owner,
+      state: TaskState.in_progress,
+      priority: TaskPriority.high,
+      due_at: new Date(Date.now() + 2 * 86_400_000),
+      visibility: Visibility.exporter_visible,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: 'seed-task-deal-locked-internal' },
+    update: {},
+    create: {
+      id: 'seed-task-deal-locked-internal',
+      scope_type: 'deal',
+      scope_id: lockedDeal.id,
+      deal_id: lockedDeal.id,
+      exporter_org_id: org.id,
+      title: 'Agent commission reconciliation for revised terms',
+      description: 'Recompute agent share if the amended payment terms change the fee basis.',
+      owner_user_id: agent.id,
+      owner_role: UserRole.agent,
+      state: TaskState.not_started,
+      priority: TaskPriority.normal,
+      visibility: Visibility.internal,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: 'seed-task-deal-negotiating-1' },
+    update: {},
+    create: {
+      id: 'seed-task-deal-negotiating-1',
+      scope_type: 'deal',
+      scope_id: negotiatingDeal.id,
+      deal_id: negotiatingDeal.id,
+      exporter_org_id: org.id,
+      title: 'Send revised proforma invoice',
+      description: 'Spice Trading Co. asked for a revised PI reflecting the agreed unit price.',
+      owner_user_id: owner.id,
+      owner_role: UserRole.exporter_owner,
+      state: TaskState.not_started,
+      priority: TaskPriority.normal,
+      due_at: new Date(Date.now() + 5 * 86_400_000),
+      visibility: Visibility.exporter_visible,
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Commercial proposals (EXP-10 / AGT-05).
+  //
+  // The negotiating deal gets a real version history so the diff view has two versions
+  // to compare and the exporter has something live to approve: v1 superseded, v2
+  // awaiting exporter approval with several fields changed against v1.
+  //
+  // The locked deal gets a single approved v1 that matches its DealSnapshot — a locked
+  // deal must have an accepted proposal behind it, or `collectDealLockBlockers()` would
+  // (correctly) say no accepted version is recorded.
+  // ---------------------------------------------------------------------------
+
+  await prisma.dealProposal.upsert({
+    where: { deal_id_version: { deal_id: negotiatingDeal.id, version: 1 } },
+    update: {},
+    create: {
+      deal_id: negotiatingDeal.id,
+      version: 1,
+      status: ProposalStatus.superseded,
+      quantity: 600,
+      unit: 'sets',
+      unit_price_amount: 19.5,
+      unit_price_currency: 'USD',
+      total_amount: 11700,
+      total_currency: 'USD',
+      incoterm: 'FOB',
+      incoterm_place: 'Mundra',
+      payment_terms: { type: 'TT', description: '30% advance, 70% before shipment' },
+      ship_window_start: new Date('2026-09-10T00:00:00Z'),
+      ship_window_end: new Date('2026-09-20T00:00:00Z'),
+      agent_note: 'Opening position based on the buyer’s indicative volume.',
+      proposed_by_id: agent.id,
+      proposed_at: new Date('2026-07-30T09:00:00Z'),
+      created_at: new Date('2026-07-30T09:00:00Z'),
+    },
+  });
+
+  await prisma.dealProposal.upsert({
+    where: { deal_id_version: { deal_id: negotiatingDeal.id, version: 2 } },
+    update: {},
+    create: {
+      deal_id: negotiatingDeal.id,
+      version: 2,
+      status: ProposalStatus.awaiting_exporter,
+      // Changed against v1: quantity, unit price, total, incoterm/place, payment terms,
+      // ship window — enough that the "changed fields highlighted" diff is meaningful.
+      quantity: 800,
+      unit: 'sets',
+      unit_price_amount: 18,
+      unit_price_currency: 'USD',
+      total_amount: 14400,
+      total_currency: 'USD',
+      incoterm: 'CIF',
+      incoterm_place: 'Hamburg',
+      payment_terms: { type: 'TT', description: '50% advance, 50% before shipment' },
+      ship_window_start: new Date('2026-09-05T00:00:00Z'),
+      ship_window_end: new Date('2026-09-18T00:00:00Z'),
+      special_conditions: 'Buyer to confirm carton markings before production.',
+      agent_note: 'Buyer accepted a larger volume in exchange for the lower unit price.',
+      buyer_status: 'verbal_interest',
+      buyer_status_note: 'Buyer confirmed verbally on a call; nothing signed yet.',
+      proposed_by_id: agent.id,
+      proposed_at: new Date('2026-08-04T11:30:00Z'),
+      created_at: new Date('2026-08-04T11:30:00Z'),
+    },
+  });
+
+  await prisma.dealProposal.upsert({
+    where: { deal_id_version: { deal_id: lockedDeal.id, version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      version: 1,
+      status: ProposalStatus.approved,
+      quantity: 12000,
+      unit: 'kg',
+      unit_price_amount: 3.5,
+      unit_price_currency: 'USD',
+      total_amount: 42000,
+      total_currency: 'USD',
+      incoterm: 'FOB',
+      incoterm_place: 'Nhava Sheva',
+      payment_terms: { type: 'LC', description: '30% advance, 70% against BL via irrevocable LC at sight' },
+      ship_window_start: new Date('2026-08-25T00:00:00Z'),
+      ship_window_end: new Date('2026-09-05T00:00:00Z'),
+      special_conditions: 'Buyer requires pre-shipment sample approval.',
+      agent_note: 'Final terms after two rounds; buyer confirmed the LC route with their bank.',
+      buyer_status: 'accepted',
+      buyer_status_note: 'Buyer countersigned the proforma invoice.',
+      proposed_by_id: agent.id,
+      proposed_at: new Date('2026-07-18T10:00:00Z'),
+      // AGT-05-AC02: approval is recorded against the EXPORTER, never the agent.
+      approved_by_id: owner.id,
+      approved_at: new Date('2026-07-19T14:20:00Z'),
+      created_at: new Date('2026-07-18T10:00:00Z'),
+    },
+  });
+
+  // ---------------------------------------------------------------------------
   // Tier fixtures — one org per tier, so the paywall is testable without hand-rolling
   // rows. `seed-org-1` above is the paid tenant; these two are its free and guest peers.
   // ---------------------------------------------------------------------------
@@ -303,11 +629,13 @@ async function main() {
   console.log('ExporterOrg:', org.display_name, `(${org.id})`);
   console.log('Products:', turmeric.name, `(${turmeric.id})`, '|', bedsheets.name, `(${bedsheets.id})`);
   console.log('Buyers:', buyers.map((b) => `${b.display_name} [${b.verification_status}]`).join(', '));
+  console.log(`Deals: ${lockedDeal.id} [deal_locked, blocked] | ${negotiatingDeal.id} [negotiating]`);
   console.log('\nLogin accounts (password for all:', SEED_PASSWORD, '):');
   console.log(`  Exporter owner  ${owner.email}  -> /app  [tier: paid]`);
   console.log(`  Exporter owner  ${freeOwner.email}  -> /app  [tier: free]`);
   console.log(`  Agent           ${agent.email}  -> /agent (assigned to ${org.display_name})`);
   console.log(`  Ops supervisor  ${opsSupervisor.email}  -> /ops`);
+  console.log(`  Ops finance     ${opsFinance.email}  -> /ops/finance`);
   console.log(`\nGuest fixture: org ${guestOrg.id} (no login — guests are minted on first search).`);
 }
 

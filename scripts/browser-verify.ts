@@ -598,14 +598,145 @@ async function main() {
     );
     await ctx15.close();
 
-    // Scenarios 16 (full paid journey) and the trailing contrast sampling used to live
-    // here. Both are superseded and were removed rather than maintained twice:
+    // ---------------------------------------------------------------- 16
+    // EXP-08 Deals List + EXP-09 Deal Workspace shell. Uses the seeded fixtures
+    // (seed-deal-locked: deal_locked stage, risk_state=blocked; seed-deal-negotiating:
+    // negotiating stage, risk_state=normal) rather than creating deals through the UI —
+    // there is no deal-creation flow yet, and building one is not this scenario's job.
+    const ctx16 = await browser.newContext();
+    const p16 = await ctx16.newPage();
+    await loginAs(p16, 'owner@sunriseagro.example');
+
+    await p16.goto(BASE + '/app/deals', { waitUntil: 'networkidle' });
+    await sleep(1000);
+    const listBody = (await p16.locator('body').textContent()) ?? '';
+    // AC02: risk/blocked state visible on the LIST ITSELF, without opening the row.
+    const blockedVisibleOnList = /Blocked/.test(listBody) && /Gulf Foods/.test(listBody);
+    // The stage column is CSS `capitalize` (visual only — doesn't change textContent),
+    // and the raw DealStage enum value is "negotiating"/"deal_locked" rendered with
+    // underscores replaced by spaces, so match the actual lowercase DOM text rather than
+    // the visually-styled or literal-enum forms.
+    const stagesDifferentiated = /negotiating/i.test(listBody) && /deal locked/i.test(listBody);
+    const summaryRendered = /Open value/i.test(listBody) && /Negotiating/i.test(listBody) && /Executing/i.test(listBody);
+    record(
+      '16:list',
+      'EXP-08 Deals List shows risk/stage without opening a row, plus summary aggregates',
+      blockedVisibleOnList && stagesDifferentiated && summaryRendered ? 'PASS' : 'FAIL',
+      `blocked risk chip + buyer visible on list=${blockedVisibleOnList}, stages differentiated=${stagesDifferentiated}, summary aggregates rendered=${summaryRendered}`,
+    );
+
+    // Filter by risk=blocked should isolate exactly the one blocked deal.
+    await p16.goto(BASE + '/app/deals?risk=blocked', { waitUntil: 'networkidle' });
+    await sleep(800);
+    const filteredBody = (await p16.locator('body').textContent()) ?? '';
+    const filterIsolatesBlocked = /Gulf Foods/.test(filteredBody) && !/Spice Trading/.test(filteredBody);
+    record(
+      '16:filter',
+      'Risk filter isolates the blocked deal',
+      filterIsolatesBlocked ? 'PASS' : 'FAIL',
+      `risk=blocked filter shows Gulf Foods=${/Gulf Foods/.test(filteredBody)}, hides Spice Trading=${!/Spice Trading/.test(filteredBody)}`,
+    );
+
+    // EXP-09 workspace: open the blocked, locked deal directly.
+    await p16.goto(BASE + '/app/deals/seed-deal-locked', { waitUntil: 'networkidle' });
+    await sleep(800);
+    const overviewBody = (await p16.locator('body').textContent()) ?? '';
+    const headerCorrect = /Gulf Foods/.test(overviewBody) && /Locked/.test(overviewBody);
+    const riskBannerOnOverview = /blocked/i.test(overviewBody) && /Buyer requested a change to payment terms/.test(overviewBody);
+    const commercialTermsRendered = /FOB/.test(overviewBody) && /Nhava Sheva/.test(overviewBody) && /42,000/.test(overviewBody);
+    const nextActionVisible = /Confirm revised payment terms with buyer/.test(overviewBody);
+    // The internal-only task must never render on the exporter-facing workspace.
+    const internalTaskLeaked = /Agent commission reconciliation for revised terms/.test(overviewBody);
+    record(
+      '16:overview',
+      'EXP-09 Overview renders header, risk banner, commercial terms, next actions — no internal leak',
+      headerCorrect && riskBannerOnOverview && commercialTermsRendered && nextActionVisible && !internalTaskLeaked ? 'PASS' : 'FAIL',
+      `header=${headerCorrect}, risk banner=${riskBannerOnOverview}, commercial terms=${commercialTermsRendered}, next action=${nextActionVisible}, internal task leaked=${internalTaskLeaked}`,
+    );
+
+    // AC04: blocked risk stays visible across EVERY tab, not just Overview. Also proves
+    // every tab route is real (200, not a 404) even though most render "not built yet."
+    // `commercial` is deliberately excluded from the "unbuilt stub" list: EXP-10 is now
+    // built, so asserting it still says "isn't built yet" would be asserting the absence
+    // of shipped work. Its real content is covered by scripts/verify-commercial.ts; the
+    // risk-banner half of AC04 is still checked for it in BUILT_TABS below.
+    const tabRoutes = ['messages', 'tasks', 'documents', 'shipment', 'payment', 'activity'];
+    const BUILT_TABS = ['commercial'];
+    const tabResults: string[] = [];
+    let riskPersistedEverywhere = true;
+    for (const tab of tabRoutes) {
+      const resp = await p16.goto(BASE + `/app/deals/seed-deal-locked/${tab}`, { waitUntil: 'domcontentloaded' });
+      await sleep(300);
+      const body = (await p16.locator('body').textContent()) ?? '';
+      const is404 = /This page could not be found/i.test(body);
+      const hasRiskBanner = /blocked/i.test(body) && /Buyer requested a change to payment terms/.test(body);
+      const hasNotBuiltState = /isn.{0,3}t built yet/i.test(body);
+      if (!hasRiskBanner) riskPersistedEverywhere = false;
+      tabResults.push(`${tab}:${resp?.status()}${is404 ? '/404' : ''}${hasRiskBanner ? '/risk-ok' : '/risk-MISSING'}${hasNotBuiltState ? '/honest-empty' : '/NO-EMPTY-STATE'}`);
+    }
+    // A built tab still has to carry the persistent risk banner (AC04) — that is the part
+    // of the criterion that does not depend on whether the tab has content yet.
+    for (const tab of BUILT_TABS) {
+      const resp = await p16.goto(BASE + `/app/deals/seed-deal-locked/${tab}`, { waitUntil: 'domcontentloaded' });
+      await sleep(300);
+      const body = (await p16.locator('body').textContent()) ?? '';
+      const is404 = /This page could not be found/i.test(body);
+      const hasRiskBanner = /blocked/i.test(body) && /Buyer requested a change to payment terms/.test(body);
+      if (!hasRiskBanner) riskPersistedEverywhere = false;
+      tabResults.push(`${tab}:${resp?.status()}${is404 ? '/404' : ''}${hasRiskBanner ? '/risk-ok' : '/risk-MISSING'}/built`);
+    }
+
+    const allTabsLive = tabResults.every((r) => !r.includes('/404'));
+    const allTabsHonest = tabResults.every((r) => r.includes('/honest-empty') || r.includes('/built'));
+    record(
+      '16:tabs',
+      'AC04: blocked risk banner persists across every workspace tab; unbuilt tabs are honest, not 404s',
+      allTabsLive && riskPersistedEverywhere && allTabsHonest ? 'PASS' : 'FAIL',
+      `tabs=[${tabResults.join(', ')}]`,
+    );
+
+    // A negotiating, normal-risk deal should NOT show a risk banner at all — the banner
+    // is for material risk only (docs/00 §6 "only material blockers"), not decoration.
+    await p16.goto(BASE + '/app/deals/seed-deal-negotiating', { waitUntil: 'networkidle' });
+    await sleep(600);
+    const negotiatingBody = (await p16.locator('body').textContent()) ?? '';
+    const noRiskBannerWhenNormal = !/This deal is blocked/.test(negotiatingBody) && !/This deal is at risk/.test(negotiatingBody);
+    // Only the buyer identity is asserted here. This deal's STAGE is not stable across a
+    // full suite run — scripts/verify-commercial.ts legitimately approves its terms and
+    // locks it — and pinning the stage would make this scenario fail purely because
+    // another suite ran first. What this scenario is actually about is that a
+    // normal-risk deal shows no risk banner, which is checked separately below.
+    const negotiatingHeaderCorrect = /Spice Trading/.test(negotiatingBody);
+    record(
+      '16:no-risk-banner',
+      'Normal-risk deal shows no risk banner (banner is for material risk only)',
+      noRiskBannerWhenNormal && negotiatingHeaderCorrect ? 'PASS' : 'FAIL',
+      `header correct=${negotiatingHeaderCorrect}, risk banner absent=${noRiskBannerWhenNormal}`,
+    );
+
+    // Cross-tenant / bogus id: must 404, never crash, never leak existence.
+    const bogusResp = await p16.goto(BASE + '/app/deals/definitely-not-a-real-deal-id', { waitUntil: 'domcontentloaded' });
+    const bogusBody = (await p16.locator('body').textContent()) ?? '';
+    const bogusIs404 = /This page could not be found/i.test(bogusBody) || bogusResp?.status() === 404;
+    const bogusCrashed = /Application error|Unhandled|stack trace/i.test(bogusBody);
+    record(
+      '16:not-found',
+      'An unknown deal id renders a safe 404, not a crash',
+      bogusIs404 && !bogusCrashed ? 'PASS' : 'FAIL',
+      `http=${bogusResp?.status()}, 404 rendered=${bogusIs404}, crash markers=${bogusCrashed}`,
+    );
+
+    await ctx16.close();
+
+    // The full paid journey and the trailing contrast sampling used to live at this
+    // point in the file (under the number 16, now reused above for the deals
+    // scenario). Both were superseded and removed rather than maintained twice:
     //
     //   - the paid journey is now scripts/verify-journey.ts, which checks each leg
     //     independently (login -> readiness -> rail -> discovery -> market -> select ->
     //     buyers -> lead -> agent CRM) instead of collapsing to one composite result;
     //   - contrast is now scripts/verify-contrast.ts, which measures every visible text
-    //     node on every surface (721 nodes) rather than a hand-picked handful.
+    //     node on every surface (721+ nodes) rather than a hand-picked handful.
     //
     // The duplicate here also carried a stale selector that assumed the readiness form
     // renders all steps at once, which crashed this suite mid-run.
