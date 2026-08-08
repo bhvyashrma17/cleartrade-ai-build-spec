@@ -17,6 +17,7 @@
 import { JobType } from '@prisma/client';
 import { registerJobHandler } from '@/lib/jobs';
 import { runDemandDiscovery } from '@/lib/job-handlers/discovery';
+import { runDocumentGeneration } from '@/lib/job-handlers/documents';
 import { runReadinessAssessment } from '@/lib/job-handlers/readiness';
 
 let registered = false;
@@ -25,7 +26,8 @@ export function registerAllJobHandlers() {
   if (registered) return;
   registerJobHandler(JobType.demand_discovery, runDemandDiscovery);
   registerJobHandler(JobType.readiness_assessment, runReadinessAssessment);
-  // Not yet implemented — buyer_discovery, document_generation,
-  // report_export. Jobs of those types fail fast with NO_HANDLER instead of hanging.
+  registerJobHandler(JobType.document_generation, runDocumentGeneration);
+  // Not yet implemented — buyer_discovery, report_export. Jobs of those types fail fast
+  // with NO_HANDLER instead of hanging.
   registered = true;
 }

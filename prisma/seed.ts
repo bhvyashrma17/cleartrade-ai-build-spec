@@ -24,7 +24,9 @@ import {
   VerificationStatus,
   Visibility,
 } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { hashPassword } from '@/lib/auth';
+import { renderDocumentText } from '@/lib/document-generation';
 import { prisma } from '@/lib/prisma';
 
 const SEED_PASSWORD = 'Password123!';
@@ -351,7 +353,7 @@ async function main() {
     },
   });
 
-  await prisma.dealSnapshot.upsert({
+  const lockedSnapshot = await prisma.dealSnapshot.upsert({
     where: { deal_id_version: { deal_id: lockedDeal.id, version: 1 } },
     update: {},
     create: {
@@ -377,6 +379,234 @@ async function main() {
       fee_policy: lockedFeePolicySnapshot,
       created_by_id: agent.id,
       created_at: new Date('2026-07-20T10:00:00Z'),
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Document checklist for the locked deal (EXP-12/EXP-13). Deliberately varied so
+  // every required UI state has a real row behind it: generated+approved, awaiting
+  // approval, not yet generated, filed (read-only), changes-requested, failed, and a
+  // superseded prior version. Checksums are computed with the SAME deterministic
+  // renderer the download route uses, so "approved_checksum matches the current
+  // checksum" is genuinely true for this fixture, not just asserted.
+  //
+  // renderDocumentText() takes the exact snapshot shape DocumentGenerationInput
+  // expects — mirrored here rather than imported as a type to keep this seed script
+  // decoupled from route-layer types (AGENTS.md folder contract: prisma/ imports only
+  // what it needs, not the whole app).
+  // ---------------------------------------------------------------------------
+  const lockedSnapshotForRender = {
+    buyer_legal_name: lockedSnapshot.buyer_legal_name,
+    product_name: lockedSnapshot.product_name,
+    sku: lockedSnapshot.sku,
+    quantity: lockedSnapshot.quantity?.toString() ?? null,
+    unit: lockedSnapshot.unit,
+    unit_price_amount: lockedSnapshot.unit_price_amount?.toString() ?? null,
+    unit_price_currency: lockedSnapshot.unit_price_currency,
+    total_amount: lockedSnapshot.total_amount?.toString() ?? null,
+    total_currency: lockedSnapshot.total_currency,
+    incoterm: lockedSnapshot.incoterm,
+    incoterm_place: lockedSnapshot.incoterm_place,
+    payment_terms: lockedSnapshot.payment_terms,
+    ship_window_start: lockedSnapshot.ship_window_start,
+    ship_window_end: lockedSnapshot.ship_window_end,
+    special_conditions: lockedSnapshot.special_conditions,
+  };
+
+  function renderedChecksum(docType: string, version: number): { content: string; checksum: string; size: number } {
+    const content = renderDocumentText({ doc_type: docType, deal_id: lockedDeal.id, version, snapshot: lockedSnapshotForRender });
+    return { content, checksum: createHash('sha256').update(content).digest('hex'), size: Buffer.byteLength(content, 'utf8') };
+  }
+
+  // PI — generated, reviewed, exporter-approved. The clean "everything went right" row.
+  const piRender = renderedChecksum('PI', 1);
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'PI', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'PI',
+      version: 1,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'generated',
+      review_status: 'agent_reviewed',
+      reviewed_by_id: agent.id,
+      reviewed_at: new Date('2026-07-20T12:00:00Z'),
+      approval_status: 'exporter_approved',
+      approved_by_id: owner.id,
+      approved_at: new Date('2026-07-20T15:00:00Z'),
+      approved_version: 1,
+      approved_checksum: piRender.checksum,
+      filing_status: 'not_applicable',
+      file_ref: `generated://seed-doc-pi/v1`,
+      file_name: 'PI_v1.txt',
+      mime_type: 'text/plain',
+      file_size_bytes: piRender.size,
+      checksum: piRender.checksum,
+    },
+  });
+
+  // CI — v1 generated+approved, then superseded by a fresh v2 the agent hasn't
+  // generated yet. Exercises version history AND "cannot approve a superseded version."
+  const ciV1Render = renderedChecksum('CI', 1);
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'CI', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'CI',
+      version: 1,
+      is_current_version: false,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'generated',
+      review_status: 'agent_reviewed',
+      reviewed_by_id: agent.id,
+      reviewed_at: new Date('2026-07-19T09:00:00Z'),
+      approval_status: 'exporter_approved',
+      approved_by_id: owner.id,
+      approved_at: new Date('2026-07-19T11:00:00Z'),
+      approved_version: 1,
+      approved_checksum: ciV1Render.checksum,
+      filing_status: 'not_applicable',
+      file_ref: `generated://seed-doc-ci/v1`,
+      file_name: 'CI_v1.txt',
+      mime_type: 'text/plain',
+      file_size_bytes: ciV1Render.size,
+      checksum: ciV1Render.checksum,
+    },
+  });
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'CI', version: 2 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'CI',
+      version: 2,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'queued',
+      review_status: 'not_reviewed',
+      approval_status: 'pending',
+      filing_status: 'not_applicable',
+    },
+  });
+
+  // packing_list — not generated yet. Exercises the "Generate" primary CTA.
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'packing_list', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'packing_list',
+      version: 1,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'queued',
+      review_status: 'not_reviewed',
+      approval_status: 'pending',
+      filing_status: 'not_applicable',
+    },
+  });
+
+  // shipping_bill_draft — filed. Read-only in the UI; the AC04 fixture (a filed row
+  // that an upload must never mutate).
+  const sbRender = renderedChecksum('shipping_bill_draft', 1);
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'shipping_bill_draft', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'shipping_bill_draft',
+      version: 1,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'generated',
+      review_status: 'agent_reviewed',
+      reviewed_by_id: agent.id,
+      reviewed_at: new Date('2026-07-21T09:00:00Z'),
+      approval_status: 'exporter_approved',
+      approved_by_id: owner.id,
+      approved_at: new Date('2026-07-21T10:00:00Z'),
+      approved_version: 1,
+      approved_checksum: sbRender.checksum,
+      filing_status: 'filed',
+      filing_reference: 'SB-2607210091',
+      filed_at: new Date('2026-07-22T08:00:00Z'),
+      file_ref: `generated://seed-doc-sb/v1`,
+      file_name: 'shipping_bill_draft_v1.txt',
+      mime_type: 'text/plain',
+      file_size_bytes: sbRender.size,
+      checksum: sbRender.checksum,
+    },
+  });
+
+  // COO_draft — exporter requested changes. Exercises the exception column + regenerate.
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'COO_draft', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'COO_draft',
+      version: 1,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'generated',
+      review_status: 'agent_reviewed',
+      reviewed_by_id: agent.id,
+      reviewed_at: new Date('2026-07-21T09:30:00Z'),
+      approval_status: 'rejected',
+      changes_requested_reason: 'The product name on the certificate doesn’t match the invoice — please correct before we can approve.',
+      filing_status: 'draft',
+      file_ref: `generated://seed-doc-coo/v1`,
+      file_name: 'COO_draft_v1.txt',
+      mime_type: 'text/plain',
+      file_size_bytes: renderedChecksum('COO_draft', 1).size,
+      checksum: renderedChecksum('COO_draft', 1).checksum,
+    },
+  });
+
+  // declaration — generation failed. Exercises the failure state + Retry CTA.
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'declaration', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'declaration',
+      version: 1,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'failed',
+      generation_error: 'Mock rendering error — fixture seeded in a failed state to exercise the retry path.',
+      review_status: 'not_reviewed',
+      approval_status: 'pending',
+      filing_status: 'draft',
+    },
+  });
+
+  // insurance_declaration — optional (approval not required by the registry), simply
+  // not generated yet.
+  await prisma.document.upsert({
+    where: { deal_id_doc_type_version: { deal_id: lockedDeal.id, doc_type: 'insurance_declaration', version: 1 } },
+    update: {},
+    create: {
+      deal_id: lockedDeal.id,
+      doc_type: 'insurance_declaration',
+      version: 1,
+      is_current_version: true,
+      source: 'generated',
+      generated_from_snapshot_id: lockedSnapshot.id,
+      generation_status: 'queued',
+      review_status: 'not_reviewed',
+      approval_status: 'not_required',
+      filing_status: 'not_applicable',
     },
   });
 

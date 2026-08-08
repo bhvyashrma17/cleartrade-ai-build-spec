@@ -126,3 +126,20 @@ export const requestChangesSchema = z.object({
   deal_version: z.coerce.number().int().positive(),
   note: z.string().trim().min(1, 'Say what needs to change.'),
 });
+
+/**
+ * Approving/requesting-changes on a document version (EXP-13). `version` +
+ * `checksum` are what "bound to version and checksum" (docs/07 §7.3) actually means at
+ * the API boundary — approving without the checksum would let a regenerated document
+ * silently inherit an approval that was given to different content.
+ */
+export const approveDocumentSchema = z.object({
+  version: z.coerce.number().int().positive(),
+  checksum: z.string().trim().min(1, 'Missing document checksum.'),
+});
+
+export const requestDocumentChangesSchema = z.object({
+  version: z.coerce.number().int().positive(),
+  checksum: z.string().trim().min(1, 'Missing document checksum.'),
+  note: z.string().trim().min(1, 'Say what needs to change.'),
+});

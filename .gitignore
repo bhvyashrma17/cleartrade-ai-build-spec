@@ -49,3 +49,7 @@ logs
 # playwright
 test-results/
 playwright-report/
+
+# local dev object storage for uploaded documents (src/lib/document-storage.ts) — a real
+# deployment points this at real object storage; nothing here should ever be committed
+.data/

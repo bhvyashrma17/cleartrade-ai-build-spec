@@ -1090,7 +1090,10 @@ model Document {
   approver User?         @relation("DocumentApprover", fields: [approved_by_id], references: [id])
   disputes Dispute[]
 
-  @@index([deal_id, doc_type, version])
+  // A deal must never have two rows claiming the same (doc_type, version) — the
+  // generate/upload routes rely on this to be the single source of truth for "which row
+  // is THE v2 of the CI", not just a convention they happen to follow.
+  @@unique([deal_id, doc_type, version])
   @@index([approval_status])
   @@index([filing_status])
 }

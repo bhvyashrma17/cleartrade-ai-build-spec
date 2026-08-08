@@ -656,12 +656,13 @@ async function main() {
 
     // AC04: blocked risk stays visible across EVERY tab, not just Overview. Also proves
     // every tab route is real (200, not a 404) even though most render "not built yet."
-    // `commercial` is deliberately excluded from the "unbuilt stub" list: EXP-10 is now
-    // built, so asserting it still says "isn't built yet" would be asserting the absence
-    // of shipped work. Its real content is covered by scripts/verify-commercial.ts; the
-    // risk-banner half of AC04 is still checked for it in BUILT_TABS below.
-    const tabRoutes = ['messages', 'tasks', 'documents', 'shipment', 'payment', 'activity'];
-    const BUILT_TABS = ['commercial'];
+    // `commercial` and `documents` are deliberately excluded from the "unbuilt stub"
+    // list: EXP-10 and EXP-12/13 are now built, so asserting they still say "isn't built
+    // yet" would be asserting the absence of shipped work. Their real content is covered
+    // by scripts/verify-commercial.ts and scenario 17 below; the risk-banner half of
+    // AC04 is still checked for both in BUILT_TABS.
+    const tabRoutes = ['messages', 'tasks', 'shipment', 'payment', 'activity'];
+    const BUILT_TABS = ['commercial', 'documents'];
     const tabResults: string[] = [];
     let riskPersistedEverywhere = true;
     for (const tab of tabRoutes) {
@@ -727,6 +728,275 @@ async function main() {
     );
 
     await ctx16.close();
+
+    // ---------------------------------------------------------------- 17
+    // EXP-12 Document Center + EXP-13 Document Detail, against the seeded checklist on
+    // seed-deal-locked (PI approved, CI has a superseded v1 + fresh v2, packing_list
+    // queued, shipping_bill_draft filed, COO_draft changes-requested, declaration
+    // failed, insurance_declaration optional-and-queued).
+    //
+    // Idempotent: resets anything a previous run of THIS scenario (or the manual API
+    // probes used while building it) could have mutated, back to the fixture's seeded
+    // shape, before asserting anything. No `scenario()`/`loggedInContext()` wrapper here
+    // — this file predates that harness helper and uses its own `record()` plus
+    // `browser.newContext()` + the imported `loginAs()` directly, matching every other
+    // scenario in this file.
+    async function resetDocumentFixtures() {
+      await prisma.document.deleteMany({ where: { deal_id: 'seed-deal-locked', doc_type: 'packing_list', version: { gt: 1 } } });
+      await prisma.document.deleteMany({ where: { deal_id: 'seed-deal-locked', doc_type: 'shipping_bill_draft', version: { gt: 1 } } });
+      await prisma.document.deleteMany({ where: { deal_id: 'seed-deal-locked', doc_type: 'CI', version: { gt: 2 } } });
+
+      await prisma.document.updateMany({
+        where: { deal_id: 'seed-deal-locked', doc_type: 'packing_list', version: 1 },
+        data: {
+          is_current_version: true,
+          generation_status: 'queued',
+          generation_error: null,
+          review_status: 'not_reviewed',
+          approval_status: 'pending',
+          filing_status: 'not_applicable',
+          file_ref: null,
+          file_name: null,
+          mime_type: null,
+          file_size_bytes: null,
+          checksum: null,
+        },
+      });
+      await prisma.document.updateMany({
+        where: { deal_id: 'seed-deal-locked', doc_type: 'shipping_bill_draft', version: 1 },
+        data: { is_current_version: true },
+      });
+      await prisma.document.updateMany({
+        where: { deal_id: 'seed-deal-locked', doc_type: 'CI', version: 1 },
+        data: { is_current_version: false },
+      });
+      await prisma.document.updateMany({
+        where: { deal_id: 'seed-deal-locked', doc_type: 'CI', version: 2 },
+        data: { is_current_version: true, generation_status: 'queued', approval_status: 'pending', checksum: null },
+      });
+      // A missing-input probe temporarily blanks a snapshot field — put it back.
+      await prisma.dealSnapshot.updateMany({ where: { deal_id: 'seed-deal-locked' }, data: { incoterm: 'FOB' } });
+      // 17:approve-and-request-changes overwrites COO_draft's changes_requested_reason
+      // via the real request_changes API — put back the seed's original text, and clear
+      // the revision tasks that call created, so re-running this scenario doesn't grow
+      // the task table without bound or leave stale exception copy on the checklist.
+      await prisma.document.updateMany({
+        where: { deal_id: 'seed-deal-locked', doc_type: 'COO_draft', version: 1 },
+        data: {
+          changes_requested_reason:
+            'The product name on the certificate doesn’t match the invoice — please correct before we can approve.',
+        },
+      });
+      await prisma.task.deleteMany({ where: { deal_id: 'seed-deal-locked', task_type: 'revise_COO_draft' } });
+    }
+    await resetDocumentFixtures();
+
+    const docOf = (type: string, version?: number) =>
+      prisma.document.findFirstOrThrow({
+        where: { deal_id: 'seed-deal-locked', doc_type: type as never, ...(version ? { version } : { is_current_version: true }) },
+      });
+
+    // ---- 17:checklist ----
+    const ctx17a = await browser.newContext();
+    const p17a = await ctx17a.newPage();
+    await loginAs(p17a, 'owner@sunriseagro.example');
+    await p17a.goto(`${BASE}/app/deals/seed-deal-locked/documents`, { waitUntil: 'networkidle' });
+    await sleep(600);
+    const checklistBody = (await p17a.locator('body').textContent()) ?? '';
+    await ctx17a.close();
+
+    // AC02: the four dimensions must be independently visible — a document that is
+    // "Generated" AND "Approved" AND "Not applicable" (filing) simultaneously, in the
+    // same row, is the proof they aren't collapsed into one combined status.
+    const fourDimensionsForPI = /Generated/.test(checklistBody) && /Agent reviewed/.test(checklistBody) && /Approved/.test(checklistBody) && /Not applicable/.test(checklistBody);
+    const exceptionVisible = /product name on the certificate doesn.{0,3}t match the invoice/.test(checklistBody);
+    const failedStateVisible = /Generation failed/.test(checklistBody) && /Mock rendering error/.test(checklistBody);
+    const versionCountVisible = /2 versions/.test(checklistBody);
+    record(
+      '17:checklist',
+      'EXP-12 checklist shows four independent status chips + inline exceptions',
+      fourDimensionsForPI && exceptionVisible && failedStateVisible && versionCountVisible ? 'PASS' : 'FAIL',
+      `PI shows all 4 dimensions=${fourDimensionsForPI}, COO exception text inline=${exceptionVisible}, declaration failed+error shown=${failedStateVisible}, CI version count shown=${versionCountVisible}`,
+    );
+
+    // ---- 17:generate ----
+    const genBefore = await docOf('packing_list');
+    const ctx17b = await browser.newContext();
+    const p17b = await ctx17b.newPage();
+    await loginAs(p17b, 'owner@sunriseagro.example');
+    await p17b.goto(`${BASE}/app/deals/seed-deal-locked/documents`, { waitUntil: 'networkidle' });
+    await sleep(600);
+    await p17b.locator('tr', { hasText: 'Packing list' }).getByRole('button', { name: /^Generate$/i }).click();
+
+    let genAfter = genBefore;
+    const genDeadline = Date.now() + 20_000;
+    while (Date.now() < genDeadline) {
+      genAfter = await docOf('packing_list');
+      if (genAfter.generation_status !== 'queued' && genAfter.generation_status !== 'processing') break;
+      await sleep(400);
+    }
+    await ctx17b.close();
+
+    const generatedOk = genAfter.generation_status === 'generated';
+    const hasChecksum = Boolean(genAfter.checksum) && genAfter.checksum!.length === 64;
+    record(
+      '17:generate',
+      'Generate runs through the real job system and produces a matching checksum',
+      generatedOk && hasChecksum && genAfter.approval_status === 'pending' ? 'PASS' : 'FAIL',
+      `generation_status ${genBefore.generation_status} -> ${genAfter.generation_status}, checksum present=${hasChecksum}, approval_status=${genAfter.approval_status}`,
+    );
+
+    // ---- 17:ac01-superseded ----
+    const ciV1 = await docOf('CI', 1);
+    const ctx17c = await browser.newContext();
+    const p17c = await ctx17c.newPage();
+    await loginAs(p17c, 'owner@sunriseagro.example');
+    const ac01Result = await p17c.evaluate(
+      async ([documentId, checksum]) => {
+        const res = await fetch(`/api/v1/deals/seed-deal-locked/documents/${documentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'approve', version: 1, checksum }),
+        });
+        return { status: res.status, body: await res.json().catch(() => null) };
+      },
+      [ciV1.id, ciV1.checksum ?? ''] as const,
+    );
+    await ctx17c.close();
+    record(
+      '17:ac01-superseded',
+      'EXP-13-AC01: a superseded version cannot be approved',
+      ac01Result.status === 403 ? 'PASS' : 'FAIL',
+      `approving CI v1 (superseded, is_current_version=${ciV1.is_current_version}) returned status=${ac01Result.status}, message="${ac01Result.body?.error?.message ?? ''}"`,
+    );
+
+    // ---- 17:ac05-missing-input ----
+    const snapshotForAc05 = await prisma.dealSnapshot.findFirstOrThrow({ where: { deal_id: 'seed-deal-locked' } });
+    await prisma.dealSnapshot.update({ where: { id: snapshotForAc05.id }, data: { incoterm: null } });
+    const declForAc05 = await docOf('declaration');
+
+    const ctx17d = await browser.newContext();
+    const p17d = await ctx17d.newPage();
+    await loginAs(p17d, 'agent@cleartrade.example');
+    const ac05Result = await p17d.evaluate(async (documentId) => {
+      const res = await fetch(`/api/v1/deals/seed-deal-locked/documents/${documentId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      return { status: res.status, body: await res.json().catch(() => null) };
+    }, declForAc05.id);
+
+    const ac05Blocker = ac05Result.body?.error?.blockers?.[0];
+    let ac05LinkResolves = false;
+    if (ac05Blocker?.deep_link) {
+      const resp = await p17d.goto(BASE + ac05Blocker.deep_link, { waitUntil: 'domcontentloaded' });
+      const body = (await p17d.locator('body').textContent()) ?? '';
+      ac05LinkResolves = resp?.status() !== 404 && !/This page could not be found/i.test(body);
+    }
+    await ctx17d.close();
+    await prisma.dealSnapshot.update({ where: { id: snapshotForAc05.id }, data: { incoterm: 'FOB' } });
+
+    const ac05CorrectCode = ac05Result.body?.error?.code === 'PREREQUISITES_NOT_MET';
+    const ac05MentionsIncoterm = /incoterm/i.test(ac05Blocker?.reason ?? '');
+    record(
+      '17:ac05-missing-input',
+      'EXP-12-AC05: missing-input error deep-links to the exact field',
+      ac05CorrectCode && ac05MentionsIncoterm && ac05LinkResolves ? 'PASS' : 'FAIL',
+      `status=${ac05Result.status}, code=${ac05Result.body?.error?.code}, blocker="${ac05Blocker?.reason}", deep_link=${ac05Blocker?.deep_link} resolves=${ac05LinkResolves}`,
+    );
+
+    // ---- 17:ac04-upload-never-overwrites ----
+    const filedBefore = await docOf('shipping_bill_draft', 1);
+    const ctx17e = await browser.newContext();
+    const p17e = await ctx17e.newPage();
+    await loginAs(p17e, 'owner@sunriseagro.example');
+    const uploadResult = await p17e.evaluate(async (documentId) => {
+      const form = new FormData();
+      form.append('file', new Blob(['replacement content for the browser-verify AC04 check'], { type: 'application/pdf' }), 'replacement.pdf');
+      const res = await fetch(`/api/v1/deals/seed-deal-locked/documents/${documentId}/upload`, { method: 'POST', body: form });
+      return { status: res.status, body: await res.json().catch(() => null) };
+    }, filedBefore.id);
+    await ctx17e.close();
+
+    const filedAfter = await docOf('shipping_bill_draft', 1);
+    const uploadedV2 = await prisma.document.findFirst({ where: { deal_id: 'seed-deal-locked', doc_type: 'shipping_bill_draft', version: 2 } });
+
+    const filedRowUnchanged =
+      filedAfter.filing_status === 'filed' &&
+      filedAfter.filing_reference === filedBefore.filing_reference &&
+      filedAfter.checksum === filedBefore.checksum &&
+      filedAfter.is_current_version === false; // the only field allowed to change: it's no longer current
+    const newVersionCreated = Boolean(uploadedV2) && uploadedV2?.source === 'uploaded' && uploadedV2?.is_current_version === true;
+
+    record(
+      '17:ac04-upload-never-overwrites',
+      'EXP-12-AC04: uploading against a filed document creates a new version, never overwrites it',
+      uploadResult.status === 201 && filedRowUnchanged && newVersionCreated ? 'PASS' : 'FAIL',
+      `upload status=${uploadResult.status}, filed v1 unchanged (filing_ref=${filedAfter.filing_reference}, checksum matches=${filedAfter.checksum === filedBefore.checksum})=${filedRowUnchanged}, new v2 created (source=${uploadedV2?.source})=${newVersionCreated}`,
+    );
+    await resetDocumentFixtures();
+
+    // ---- 17:approve-and-request-changes ----
+    const ctx17f = await browser.newContext();
+    const p17f = await ctx17f.newPage();
+    await loginAs(p17f, 'owner@sunriseagro.example');
+    await p17f.goto(`${BASE}/app/deals/seed-deal-locked/documents`, { waitUntil: 'networkidle' });
+    await sleep(500);
+    // CI v2 is queued (not generated) in the fixture — generate it first so there is
+    // something real to approve.
+    await p17f.locator('tr', { hasText: 'Commercial invoice' }).getByRole('button', { name: /^Generate$/i }).click();
+    let ciGenerated = await docOf('CI');
+    const ciGenDeadline = Date.now() + 15_000;
+    while (Date.now() < ciGenDeadline) {
+      ciGenerated = await docOf('CI');
+      if (ciGenerated.generation_status === 'generated') break;
+      await sleep(400);
+    }
+
+    await p17f.goto(`${BASE}/app/deals/seed-deal-locked/documents/${ciGenerated.id}`, { waitUntil: 'networkidle' });
+    await sleep(500);
+    await p17f.getByRole('button', { name: /^Approve version/i }).click();
+
+    let ciApproved = ciGenerated;
+    const approveDeadline = Date.now() + 10_000;
+    while (Date.now() < approveDeadline) {
+      ciApproved = await docOf('CI');
+      if (ciApproved.approval_status === 'exporter_approved') break;
+      await sleep(300);
+    }
+    await ctx17f.close();
+
+    const revisionTasksBefore = await prisma.task.count({ where: { deal_id: 'seed-deal-locked', task_type: 'revise_COO_draft' } });
+
+    // Request changes on COO_draft via the API (its approval is already 'rejected' from
+    // the seed, so the panel has nothing pending to show — this exercises the same
+    // handler the panel would call if it were open on a pending document).
+    const coo = await docOf('COO_draft');
+    const ctx17g = await browser.newContext();
+    const p17g = await ctx17g.newPage();
+    await loginAs(p17g, 'owner@sunriseagro.example');
+    const rcResult = await p17g.evaluate(
+      async ([documentId, checksum]) => {
+        const res = await fetch(`/api/v1/deals/seed-deal-locked/documents/${documentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'request_changes', version: 1, checksum, note: 'Please also fix the shipping mark reference.' }),
+        });
+        return { status: res.status };
+      },
+      [coo.id, coo.checksum ?? ''] as const,
+    );
+    await ctx17g.close();
+    const revisionTasksAfter = await prisma.task.count({ where: { deal_id: 'seed-deal-locked', task_type: 'revise_COO_draft' } });
+
+    record(
+      '17:approve-and-request-changes',
+      'Exporter approves CI v2; request-changes creates an agent task',
+      ciApproved.approval_status === 'exporter_approved' && rcResult.status === 200 && revisionTasksAfter > revisionTasksBefore ? 'PASS' : 'FAIL',
+      `CI approval_status=${ciApproved.approval_status}, request_changes status=${rcResult.status}, agent tasks ${revisionTasksBefore}->${revisionTasksAfter}`,
+    );
+    await resetDocumentFixtures();
 
     // The full paid journey and the trailing contrast sampling used to live at this
     // point in the file (under the number 16, now reused above for the deals
