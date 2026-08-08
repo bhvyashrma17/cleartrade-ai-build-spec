@@ -208,14 +208,14 @@ export function OutreachPipeline() {
           </select>
         </div>
         {hasActiveFilters ? (
-          <button type="button" onClick={() => setStage('')} className="text-sm font-medium text-action hover:underline">
+          <button type="button" onClick={() => setStage('')} className="text-sm font-medium text-primary underline underline-offset-2">
             Reset filters
           </button>
         ) : null}
       </div>
 
       {loadError ? (
-        <div className="rounded-lg border border-critical/25 bg-critical/5 p-4 text-sm text-critical">
+        <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4 text-sm text-critical">
           <p className="font-medium">{loadError}</p>
           <button type="button" onClick={fetchLeads} className="mt-2 font-medium underline underline-offset-2">
             Retry
@@ -238,7 +238,7 @@ export function OutreachPipeline() {
             title: 'No leads at this stage',
             description: 'Try a different stage filter.',
             action: (
-              <button type="button" onClick={() => setStage('')} className="text-sm font-medium text-action hover:underline">
+              <button type="button" onClick={() => setStage('')} className="text-sm font-medium text-primary underline underline-offset-2">
                 Reset filters
               </button>
             ),

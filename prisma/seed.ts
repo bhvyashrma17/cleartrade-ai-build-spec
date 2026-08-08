@@ -9,7 +9,7 @@
  * sign in through the real login flow, not just exist as rows.
  */
 
-import { IecStatus, JourneyStage, ReadinessStatus, UserRole, VerificationStatus } from '@prisma/client';
+import { IecStatus, JourneyStage, OrgTier, ReadinessStatus, UserRole, VerificationStatus } from '@prisma/client';
 import { hashPassword } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -24,7 +24,11 @@ async function main() {
   // ---------------------------------------------------------------------------
   const org = await prisma.exporterOrg.upsert({
     where: { id: 'seed-org-1' },
-    update: {},
+    // `tier` is set on BOTH branches on purpose. ExporterOrg.tier defaults to `guest`,
+    // so without it on `create` a fresh database would seed the whole fixture as a guest
+    // org and every paid-tier verification would fail; without it on `update` an existing
+    // database that drifted would never be corrected.
+    update: { tier: OrgTier.paid },
     create: {
       id: 'seed-org-1',
       legal_name: 'Sunrise Agro Exports Pvt Ltd',
@@ -37,6 +41,7 @@ async function main() {
       city: 'Nashik',
       readiness_status: ReadinessStatus.ready,
       journey_stage: JourneyStage.ready,
+      tier: OrgTier.paid,
     },
   });
 
@@ -234,14 +239,76 @@ async function main() {
     }),
   ]);
 
+  // ---------------------------------------------------------------------------
+  // Tier fixtures — one org per tier, so the paywall is testable without hand-rolling
+  // rows. `seed-org-1` above is the paid tenant; these two are its free and guest peers.
+  // ---------------------------------------------------------------------------
+
+  const freeOrg = await prisma.exporterOrg.upsert({
+    where: { id: 'seed-org-free' },
+    update: { tier: OrgTier.free },
+    create: {
+      id: 'seed-org-free',
+      display_name: 'Deccan Spice Traders',
+      legal_name: 'Deccan Spice Traders LLP',
+      country: 'IN',
+      state: 'Telangana',
+      city: 'Hyderabad',
+      tier: OrgTier.free,
+      upgraded_at: new Date('2026-07-01T00:00:00Z'),
+    },
+  });
+
+  const freeOwner = await prisma.user.upsert({
+    where: { email: 'free@deccanspice.example' },
+    update: {},
+    create: {
+      id: 'seed-user-free',
+      email: 'free@deccanspice.example',
+      name: 'Meera Rao',
+      password_hash: await hashPassword(SEED_PASSWORD),
+      role: UserRole.exporter_owner,
+      exporter_org_id: freeOrg.id,
+    },
+  });
+
+  // A guest fixture mirrors exactly what mintGuest() produces at runtime: no password
+  // (the row cannot be logged into) and a synthetic .invalid address. It exists so the
+  // guest paywall can be exercised in tests; a real guest is minted on first search.
+  const guestOrg = await prisma.exporterOrg.upsert({
+    where: { id: 'seed-org-guest' },
+    update: { tier: OrgTier.guest },
+    create: {
+      id: 'seed-org-guest',
+      display_name: 'Guest workspace',
+      tier: OrgTier.guest,
+      guest_expires_at: new Date(Date.now() + 30 * 86_400_000),
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'guest-seed-org-guest@guest.invalid' },
+    update: {},
+    create: {
+      id: 'seed-user-guest',
+      email: 'guest-seed-org-guest@guest.invalid',
+      name: 'Guest',
+      password_hash: null,
+      role: UserRole.exporter_owner,
+      exporter_org_id: guestOrg.id,
+    },
+  });
+
   console.log('Seed complete.\n');
   console.log('ExporterOrg:', org.display_name, `(${org.id})`);
   console.log('Products:', turmeric.name, `(${turmeric.id})`, '|', bedsheets.name, `(${bedsheets.id})`);
   console.log('Buyers:', buyers.map((b) => `${b.display_name} [${b.verification_status}]`).join(', '));
   console.log('\nLogin accounts (password for all:', SEED_PASSWORD, '):');
-  console.log(`  Exporter owner  ${owner.email}  -> /app`);
+  console.log(`  Exporter owner  ${owner.email}  -> /app  [tier: paid]`);
+  console.log(`  Exporter owner  ${freeOwner.email}  -> /app  [tier: free]`);
   console.log(`  Agent           ${agent.email}  -> /agent (assigned to ${org.display_name})`);
   console.log(`  Ops supervisor  ${opsSupervisor.email}  -> /ops`);
+  console.log(`\nGuest fixture: org ${guestOrg.id} (no login — guests are minted on first search).`);
 }
 
 main()

@@ -63,7 +63,7 @@ export function NextActionCard({
     <div
       className={clsx(
         'rounded-lg border bg-surface p-4 shadow-card',
-        blocker ? 'border-critical/30' : 'border-[var(--color-border)]',
+        blocker ? 'border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)]' : 'border-[var(--color-border)]',
         className,
       )}
     >
@@ -78,7 +78,7 @@ export function NextActionCard({
       </div>
 
       {blocker ? (
-        <div className="mt-3 rounded-md border border-critical/25 bg-critical/5 p-2.5 text-xs text-critical">
+        <div className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-2.5 text-xs text-critical">
           <p>{blocker.reason}</p>
           {blocker.deep_link ? (
             <Link href={blocker.deep_link} className="mt-1 inline-block font-medium underline underline-offset-2">
@@ -91,7 +91,7 @@ export function NextActionCard({
       {/* One primary action per card (docs/00 §6). */}
       <Link
         href={href}
-        className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-action hover:underline"
+        className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary underline underline-offset-2"
       >
         {ctaLabel}
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">

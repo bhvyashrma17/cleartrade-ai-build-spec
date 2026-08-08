@@ -12,7 +12,7 @@
 import { VerificationStatus } from '@prisma/client';
 import { format } from 'date-fns';
 import { useCallback, useEffect, useState } from 'react';
-import { DataTable, StatusChip, type DataTableColumn } from '@/components/ui';
+import { DataTable, StatusChip, type DataTableColumn, UpgradeNotice } from '@/components/ui';
 import { useDebouncedValue } from '@/hooks';
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import type { Blocker, ListResponse, PageMeta, SingleResponse, StatusDescriptor } from '@/types';
@@ -29,7 +29,14 @@ interface BuyerDTO {
   verification_status: VerificationStatus;
   risk_flags: { code: string; severity: string; summary: string }[];
   last_activity_at: string | null;
+  /** How many contacts exist. A count, never the contacts themselves. */
+  contacts_total?: number;
+  /** Server's answer, not a local guess — the API decides by tier. */
+  contacts_locked?: boolean;
+  contacts?: { id: string; name: string; role_title: string | null; email: string | null }[];
 }
+
+type Tier = 'guest' | 'free' | 'paid';
 
 interface BuyerLeadDTO {
   id: string;
@@ -57,9 +64,23 @@ type LeadCreationState =
 
 const EMPTY_PAGE: PageMeta = { page: 1, per_page: PER_PAGE, total: 0, total_pages: 1 };
 
-export function BuyersExplorer({ products }: { products: { id: string; name: string }[] }) {
-  const [productId, setProductId] = useState('');
-  const [country, setCountry] = useState('');
+export function BuyersExplorer({
+  products,
+  tier,
+  adHocContext,
+  initialCountry = '',
+  initialProductId = '',
+}: {
+  products: { id: string; name: string }[];
+  tier: Tier;
+  adHocContext: string | null;
+  /** Prefill from EXP-05 "Find buyers in this market" — a market's country/product context. */
+  initialCountry?: string;
+  initialProductId?: string;
+}) {
+  const isGuest = tier === 'guest';
+  const [productId, setProductId] = useState(initialProductId);
+  const [country, setCountry] = useState(initialCountry);
   const [verificationStatus, setVerificationStatus] = useState<'' | VerificationStatus>('');
   const [page, setPage] = useState(1);
 
@@ -166,6 +187,37 @@ export function BuyersExplorer({ products }: { products: { id: string; name: str
         ),
     },
     {
+      key: 'contacts',
+      header: 'Contacts',
+      // Locked is shown, not hidden. A guest should be able to see that named contacts
+      // exist and what unlocks them — an absent column would read as "this buyer has
+      // none", which is a different and misleading claim (docs/03 §5).
+      render: (b) => {
+        if (b.contacts_locked) {
+          return b.contacts_total && b.contacts_total > 0 ? (
+            <UpgradeNotice
+              variant="inline"
+              title={`${b.contacts_total} contact${b.contacts_total === 1 ? '' : 's'} hidden`}
+              requiredTier="free"
+            />
+          ) : (
+            <span className="text-xs text-[var(--color-text-secondary)]">None listed</span>
+          );
+        }
+        if (!b.contacts?.length) {
+          return <span className="text-xs text-[var(--color-text-secondary)]">None listed</span>;
+        }
+        return (
+          <div className="text-xs">
+            <div className="text-primary">{b.contacts[0]!.name}</div>
+            {b.contacts.length > 1 ? (
+              <div className="text-[var(--color-text-secondary)]">+{b.contacts.length - 1} more</div>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
       key: 'activity',
       header: 'Last activity',
       hideOnMobile: true,
@@ -182,29 +234,49 @@ export function BuyersExplorer({ products }: { products: { id: string; name: str
         </p>
       </header>
 
-      {/* Context header (docs/04 EXP-06): a lead needs a product before it can be created. */}
+      {/* Context header (docs/04 EXP-06): a lead needs a product before it can be created.
+          A guest has no Product rows by design, so they get their ad-hoc search context
+          shown read-only instead of an empty selector they could never populate. */}
       <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
-        <label className="block text-sm font-medium text-primary" htmlFor="product-select">
-          Product
-        </label>
-        <select
-          id="product-select"
-          value={productId}
-          onChange={(e) => setProductId(e.target.value)}
-          className="mt-1 w-full max-w-sm rounded-md border border-[var(--color-border)] bg-surface px-3 py-2 text-sm text-primary focus-visible-ring"
-        >
-          <option value="">Choose a product…</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        {!productId ? (
-          <div className="mt-2">
-            <StatusChip label="Choose a product to create leads" tone="warning" icon="alert" size="sm" />
-          </div>
-        ) : null}
+        {isGuest ? (
+          <>
+            <p className="text-sm font-medium text-primary">Searching for</p>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              {adHocContext ?? 'All buyers — run a market search to narrow this to your product.'}
+            </p>
+            <div className="mt-3">
+              <UpgradeNotice
+                variant="inline"
+                title="Saving a lead needs a free account"
+                requiredTier="free"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="block text-sm font-medium text-primary" htmlFor="product-select">
+              Product
+            </label>
+            <select
+              id="product-select"
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              className="mt-1 w-full max-w-sm rounded-md border border-[var(--color-border)] bg-surface px-3 py-2 text-sm text-primary focus-visible-ring"
+            >
+              <option value="">Choose a product…</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {!productId ? (
+              <div className="mt-2">
+                <StatusChip label="Choose a product to create leads" tone="warning" icon="alert" size="sm" />
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
@@ -239,14 +311,14 @@ export function BuyersExplorer({ products }: { products: { id: string; name: str
           </select>
         </div>
         {hasActiveFilters ? (
-          <button type="button" onClick={resetFilters} className="text-sm font-medium text-action hover:underline">
+          <button type="button" onClick={resetFilters} className="text-sm font-medium text-primary underline underline-offset-2">
             Reset filters
           </button>
         ) : null}
       </div>
 
       {loadError ? (
-        <div className="rounded-lg border border-critical/25 bg-critical/5 p-4 text-sm text-critical">
+        <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4 text-sm text-critical">
           <p className="font-medium">{loadError}</p>
           <button type="button" onClick={fetchBuyers} className="mt-2 font-medium underline underline-offset-2">
             Retry
@@ -269,18 +341,24 @@ export function BuyersExplorer({ products }: { products: { id: string; name: str
             title: 'No buyers match these filters',
             description: 'Try a different country or verification status.',
             action: (
-              <button type="button" onClick={resetFilters} className="text-sm font-medium text-action hover:underline">
+              <button type="button" onClick={resetFilters} className="text-sm font-medium text-primary underline underline-offset-2">
                 Reset filters
               </button>
             ),
           }}
-          rowActions={(buyer) => (
-            <LeadAction
-              state={leadStates[buyer.id] ?? { status: 'idle' }}
-              disabled={!productId}
-              onCreate={() => createLead(buyer)}
-            />
-          )}
+          rowActions={(buyer) =>
+            // A guest cannot save a lead at all, so they get the reason and the fix
+            // rather than a disabled button with no explanation.
+            isGuest ? (
+              <UpgradeNotice variant="inline" title="Save this lead" requiredTier="free" />
+            ) : (
+              <LeadAction
+                state={leadStates[buyer.id] ?? { status: 'idle' }}
+                disabled={!productId}
+                onCreate={() => createLead(buyer)}
+              />
+            )
+          }
         />
       )}
     </div>
@@ -311,7 +389,7 @@ function LeadAction({
       <div className="text-right text-xs">
         <StatusChip label="Lead already exists" tone="warning" icon="alert" size="sm" />
         {state.blocker.deep_link ? (
-          <a href={state.blocker.deep_link} className="mt-1 block text-action underline underline-offset-2">
+          <a href={state.blocker.deep_link} className="mt-1 block text-primary underline underline-offset-2">
             View existing lead
           </a>
         ) : null}
@@ -322,7 +400,7 @@ function LeadAction({
     return (
       <div className="text-right text-xs">
         <StatusChip label="Could not create lead" tone="critical" icon="x" size="sm" />
-        <button type="button" onClick={onCreate} className="mt-1 block text-action underline underline-offset-2">
+        <button type="button" onClick={onCreate} className="mt-1 block text-primary underline underline-offset-2">
           Retry
         </button>
       </div>
@@ -333,7 +411,9 @@ function LeadAction({
       type="button"
       disabled={disabled || state.status === 'loading'}
       onClick={onCreate}
-      className="rounded-md bg-action px-3 py-1.5 text-xs font-medium text-[var(--color-text-inverse)] disabled:cursor-not-allowed disabled:opacity-40"
+      // Navy text on teal: 7.05:1 contrast. White-on-teal (the previous color here)
+      // measures 2.49:1 — fails WCAG AA's 4.5:1 minimum for normal-size text.
+      className="rounded-md bg-action px-3 py-1.5 text-xs font-medium text-primary disabled:cursor-not-allowed disabled:opacity-40"
       title={disabled ? 'Choose a product first' : undefined}
     >
       {state.status === 'loading' ? 'Creating…' : 'Create lead'}

@@ -19,8 +19,26 @@
   --color-border-strong: rgba(11, 23, 57, 0.24);
   --color-text-primary: #0B1739;
   --color-text-secondary: rgba(11, 23, 57, 0.7);
-  --color-text-muted: rgba(11, 23, 57, 0.48);
+  /* 0.64, not 0.48. At 0.48 this composites to rgb(138,144,160) on white = 3.19:1,
+     which fails WCAG AA (4.5:1). It was assumed safe as "de-emphasized metadata only",
+     but a sweep found it carrying journey-rail stage labels, MetricCard explanations
+     and the Ops KPI drill-down link — all essential text. 0.64 gives 5.35:1 on white
+     and 5.20:1 on --color-surface-muted, while staying a visible step lighter than
+     --color-text-secondary (0.70). */
+  --color-text-muted: rgba(11, 23, 57, 0.64);
   --color-text-inverse: #FFFFFF;
+
+  /* Semantic hues as TEXT on a light surface.
+     The docs/00 §2 palette values are tuned as fills and accents, not as small text:
+     measured on white they are teal 2.49:1, cyan 2.42:1, amber 2.15:1, red 3.76:1 —
+     all below AA's 4.5:1. Blending 55% hue into navy keeps each colour identifiable
+     while clearing AA on both --color-surface (>=5.18:1) and --color-surface-muted
+     (>=4.82:1). Use these anywhere a semantic colour carries words; keep the raw
+     tokens for fills, borders and icons. */
+  --color-action-text: color-mix(in srgb, var(--color-action) 55%, var(--color-primary));
+  --color-info-text: color-mix(in srgb, var(--color-info) 55%, var(--color-primary));
+  --color-warning-text: color-mix(in srgb, var(--color-warning) 55%, var(--color-primary));
+  --color-critical-text: color-mix(in srgb, var(--color-critical) 55%, var(--color-primary));
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -77,7 +95,8 @@
     --color-border-strong: rgba(255, 255, 255, 0.24);
     --color-text-primary: #F4F7FB;
     --color-text-secondary: rgba(244, 247, 251, 0.7);
-    --color-text-muted: rgba(244, 247, 251, 0.48);
+    /* Mirrors the light-mode fix above; same reasoning, inverted ramp. */
+    --color-text-muted: rgba(244, 247, 251, 0.64);
     --color-text-inverse: #0B1739;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-raised: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);

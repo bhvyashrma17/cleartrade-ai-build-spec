@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import type { OrgTier } from '@prisma/client';
 import { ERROR_CODES, type Blocker, type ErrorCode, type ErrorResponse, type FieldError, type ListResponse, type PageMeta, type SingleResponse } from '@/types';
 
 /** HTTP status for each error code. */
@@ -28,6 +29,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
   UNAUTHENTICATED: 401,
+  // 402 Payment Required — rarely used, and exactly what this means.
+  UPGRADE_REQUIRED: 402,
 };
 
 export interface ApiErrorOptions {
@@ -36,6 +39,8 @@ export interface ApiErrorOptions {
   blockers?: Blocker[];
   currentVersion?: number;
   currentUpdatedAt?: Date | string;
+  /** The tier that would unlock the action. Only meaningful on UPGRADE_REQUIRED. */
+  requiredTier?: OrgTier;
   /** Non-user-facing context for logs only. Never serialized to the client. */
   cause?: unknown;
 }
@@ -59,6 +64,7 @@ const DEFAULT_MESSAGE: Record<ErrorCode, string> = {
   RATE_LIMITED: 'Too many requests. Please wait a moment and try again.',
   INTERNAL_ERROR: 'Something went wrong on our side.',
   UNAUTHENTICATED: 'Please sign in to continue.',
+  UPGRADE_REQUIRED: 'This is available on a higher plan.',
 };
 
 export class ApiError extends Error {
@@ -68,6 +74,7 @@ export class ApiError extends Error {
   readonly blockers?: Blocker[];
   readonly currentVersion?: number;
   readonly currentUpdatedAt?: string;
+  readonly requiredTier?: OrgTier;
 
   constructor(code: ErrorCode, options: ApiErrorOptions = {}) {
     super(options.message ?? DEFAULT_MESSAGE[code]);
@@ -81,6 +88,7 @@ export class ApiError extends Error {
       options.currentUpdatedAt instanceof Date
         ? options.currentUpdatedAt.toISOString()
         : options.currentUpdatedAt;
+    this.requiredTier = options.requiredTier;
     if (options.cause !== undefined) this.cause = options.cause;
   }
 
@@ -96,6 +104,7 @@ export class ApiError extends Error {
     };
     if (this.currentVersion !== undefined) envelope.current_version = this.currentVersion;
     if (this.currentUpdatedAt !== undefined) envelope.current_updated_at = this.currentUpdatedAt;
+    if (this.requiredTier !== undefined) envelope.required_tier = this.requiredTier;
     return envelope;
   }
 }
@@ -107,6 +116,14 @@ export class ApiError extends Error {
 export const unauthenticated = () => new ApiError(ERROR_CODES.UNAUTHENTICATED);
 
 export const forbidden = (message?: string) => new ApiError(ERROR_CODES.FORBIDDEN, { message });
+
+/**
+ * The role allows this but the tenant's tier does not — i.e. the answer is "upgrade",
+ * not "never". Carries the tier that would unlock it so the client can render the right
+ * upsell without re-deriving the reason.
+ */
+export const upgradeRequired = (requiredTier: OrgTier, message?: string) =>
+  new ApiError(ERROR_CODES.UPGRADE_REQUIRED, { message, requiredTier });
 
 /**
  * 404 is also what an out-of-tenant read returns. Returning FORBIDDEN there would

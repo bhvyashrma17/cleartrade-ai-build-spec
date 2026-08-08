@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git mv *)",
+      "Bash(python3 -)",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"scripts/worker\")",
+      "Bash(echo \"tsc=$?\")"
+    ]
+  }
+}

@@ -27,7 +27,7 @@ export function Skeleton({ variant = 'text', width, height, lines = 1, className
         {Array.from({ length: lines }).map((_, i) => (
           <span
             key={i}
-            className="animate-pulse rounded-sm bg-primary/10"
+            className="animate-pulse rounded-sm bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]"
             style={{ height: style.height, width: i === lines - 1 ? '60%' : '100%' }}
           />
         ))}
@@ -39,7 +39,7 @@ export function Skeleton({ variant = 'text', width, height, lines = 1, className
     <span
       aria-hidden="true"
       className={clsx(
-        'inline-block animate-pulse bg-primary/10',
+        'inline-block animate-pulse bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]',
         variant === 'circle' ? 'rounded-full' : 'rounded-sm',
         className,
       )}

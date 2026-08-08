@@ -6,7 +6,7 @@
  * one definition of every enum value in the codebase.
  */
 
-import type { UserRole } from '@prisma/client';
+import type { OrgTier, UserRole } from '@prisma/client';
 
 export type {
   ApprovalStatus,
@@ -118,6 +118,8 @@ export interface ErrorResponse {
   /** Present on VERSION_CONFLICT. */
   current_version?: number;
   current_updated_at?: string;
+  /** Present on UPGRADE_REQUIRED — the tier that would unlock the action. */
+  required_tier?: OrgTier;
   correlation_id: string;
 }
 
@@ -147,6 +149,13 @@ export const ERROR_CODES = {
   /** A state-machine transition that no guard allows. */
   INVALID_TRANSITION: 'INVALID_TRANSITION',
   UNAUTHENTICATED: 'UNAUTHENTICATED',
+  /**
+   * The role permits this, but the tenant's tier does not. Distinct from FORBIDDEN on
+   * purpose: FORBIDDEN means "your role will never allow this", UPGRADE_REQUIRED means
+   * "buy this and it works". Collapsing them would make it impossible to render an
+   * upsell without re-deriving the reason on the client.
+   */
+  UPGRADE_REQUIRED: 'UPGRADE_REQUIRED',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -162,6 +171,15 @@ export interface Principal {
   role: UserRole;
   /** Non-null only for exporter roles. This is the tenant key. */
   exporter_org_id: string | null;
+  /**
+   * Commercial tier of the principal's tenant — the second axis of every permission
+   * decision. `role` says whether this kind of user may do a thing; `tier` says whether
+   * this tenant has paid for it. Both must pass (src/lib/permissions.ts `permits()`).
+   *
+   * Staff principals (agent / ops / admin) have no tenant, so they resolve to `paid`:
+   * their access stays governed entirely by the role matrix, exactly as before.
+   */
+  tier: OrgTier;
 }
 
 export type PortalRoot = '/app' | '/agent' | '/ops';

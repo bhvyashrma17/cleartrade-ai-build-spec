@@ -7,11 +7,16 @@ import clsx from 'clsx';
 import type { StatusTone } from '@/types';
 import { Skeleton } from './Skeleton';
 
+/**
+ * Comparison text uses the AA-safe `*-text` tokens, not the raw palette values: the raw
+ * hues measure 2.15-3.76:1 as small text on white and fail WCAG AA. The tokens keep each
+ * hue recognisable while clearing 4.5:1 (see globals.css).
+ */
 const COMPARISON_TONE_CLASSES: Record<StatusTone, string> = {
-  positive: 'text-action',
-  info: 'text-info',
-  warning: 'text-warning',
-  critical: 'text-critical',
+  positive: 'text-[var(--color-action-text)]',
+  info: 'text-[var(--color-info-text)]',
+  warning: 'text-[var(--color-warning-text)]',
+  critical: 'text-[var(--color-critical-text)]',
   neutral: 'text-[var(--color-text-secondary)]',
 };
 

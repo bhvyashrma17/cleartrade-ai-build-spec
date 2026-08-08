@@ -48,6 +48,13 @@ govern every PR.
   tenant-scoped by `exporter_org_id` and can never reach another org by editing a route param.
   Agents only see exporters/deals assigned to them. Applies to search endpoints and file downloads
   too — the two most commonly missed.
+- **Access has two axes: role AND tier.** Role asks "may this kind of user do this?"; tier asks
+  "has this tenant paid for it?" Both must pass, and `permits()` in `src/lib/permissions.ts` is
+  the only place they combine. Tier is not a `UserRole` — a guest is a real `ExporterOrg` + `User`
+  with `tier='guest'`, so tenancy is unchanged and there is **no unauthenticated code path**.
+  Anything absent from `CAPABILITY_MIN_TIER` is paid-only by default. Every mutation route calls
+  `assertCan()` (role + tier, distinct errors) *before* the scope predicate — skipping it turns a
+  tier denial into a bare `FORBIDDEN` and silently disables the upsell. See `docs/14`.
 - **Nothing business-critical is hardcoded on the frontend.** Fees, agent share, SLA thresholds,
   minimum shipment value, document type registry — all backend config, versioned, rendered from
   the API.
@@ -68,6 +75,32 @@ govern every PR.
   artifact as already approved.
 - **Color is never the only status cue**, and status copy names the owner: "Waiting for exporter
   approval," not "Pending."
+- **Tailwind alpha modifiers (`bg-action/10`, `border-warning/25`) do not work on a color defined
+  as a bare `var(--x)`** — Tailwind has no channels to decompose, so the class silently compiles to
+  nothing rather than erroring. This is exactly how `StatusChip`'s tinted backgrounds shipped fully
+  transparent (with a default grey border) for the whole time they existed: `bg-warning/10` on a
+  `--color-warning: var(...)`-style token produced `rgba(0,0,0,0)`, not a 10% tint, and nobody
+  caught it because the chip still rendered — just without the tint. Use `color-mix()` in an
+  arbitrary value instead: `bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)]`. See
+  `docs/00-design-system.md` §2 for the verified pattern and contrast ratios.
+  **This was never StatusChip-only.** A later sweep found the same silent failure in five more
+  places, each measured as `rgba(0, 0, 0, 0)` in the browser: `Skeleton` (`bg-primary/10` — every
+  loading state in the product was rendering *completely invisible*), the readiness step selector's
+  active highlight (`bg-action/10`), and the error panels in `NextActionCard`, the overview modules,
+  `BuyersExplorer`, `OutreachPipeline`, and both auth forms (`bg-critical/5`, `border-critical/25`
+  and `/30` — error states showed a default grey border instead of red). All now use `color-mix()`.
+  When adding a tint, verify it in the browser via `getComputedStyle`; the class name looking right
+  proves nothing, and this bug is invisible in review precisely because the element still renders.
+- **Verification scenarios must not assume a pristine database.** The suites in `scripts/` all run
+  against the same seeded org, and several deliberately mutate it (`verify-journey` selects a target
+  market, creates a lead and submits the readiness form). Any scenario that hardcodes an expected
+  value derived from that shared state passes or fails based on *which suite ran first* — which is
+  indistinguishable from a real regression at the point you read the output. Two scenarios had this
+  bug: `EXP-01-AC01` hardcoded the rail label `"Readiness"`, and `EXP-02-AC04` reset only
+  `ExporterOrg.iec` while the form actually reads from the current assessment's `answers`. Assert
+  against **live derived state** (call the same function the server calls) or **seed and restore
+  what you depend on**, and prefer `UNVERIFIED` over `PASS` when the data can't distinguish the
+  thing under test — a green run that proves nothing is worse than an honest inconclusive one.
 
 ## Doc map — read what's relevant to the task, not everything
 
@@ -87,6 +120,7 @@ govern every PR.
 | `docs/11-build-plan-qa-release.md` | Build sequencing, tickets, test matrices, UAT/release gates, **12 open product decisions** |
 | `docs/12-appendix-reference.md` | Screen registry, route conventions, glossary (CHA, BRC, ICEGATE, Incoterm, HS code…) |
 | `docs/13-blueprint-reconciliation.md` | **Read before Phase 0.** Where the two sources conflict, what's missing from each, and 10 decisions this raises |
+| `docs/14-guest-and-tiers.md` | **Read before any permission, auth or access-control work.** Guest/freemium tiers, the capability matrix, guest lifecycle from mint through upgrade, retention, and the abuse surface. Supersedes the "all access is authenticated" assumption in `docs/01`–`docs/13` |
 
 ## Build order (don't build portal-by-portal)
 
@@ -188,6 +222,33 @@ for where things live today vs. where docs/13 originally sketched them.
 /tests                          # Playwright e2e + Vitest unit
 ```
 
+**Commercial tiers (docs/14)**
+
+`ExporterOrg.tier` is `guest | free | paid`. A guest is a real org + user with a real
+session, minted on their **first search** (not first page view), so every existing tenancy
+and permission check works on them unchanged.
+
+| | guest | free | paid |
+|---|---|---|---|
+| Demand Discovery | ✓ (capped per IP, ad-hoc product input) | ✓ | ✓ |
+| Buyer Discovery | ✓ (contacts hidden, result ceiling) | ✓ | ✓ |
+| Saved discovery history | — (persisted, but no history UI; purged after retention) | ✓ | ✓ |
+| Readiness | — | ✓ | ✓ |
+| Buyer contacts | — | ✓ | ✓ |
+| Buyer leads | — | ✓ (no agent assigned) | ✓ |
+| Deals, documents, shipment, payment, agent | — | — | ✓ |
+
+Two rules that are easy to get wrong:
+- **Guests get no `Product` rows.** Product context is typed ad hoc and snapshotted onto
+  `DiscoveryRun.input_snapshot`; it becomes a real `Product` only if the user opts in at
+  registration. Never auto-create placeholder products.
+- **Guest runs are persisted.** docs/09 §3 requires durable job state, which applies to
+  guests too. "Nothing saved" means no history UI + time-limited retention, and the runs
+  **survive the upgrade** to become visible history.
+
+Registration upgrades the guest tenant **in place** — same org id, same user id — so nothing
+is migrated between systems and nothing is lost at the moment of signup.
+
 **Server-side authorization — where it lives**
 
 All authorization is **server-side, in route handlers and server actions**, never in client components.
@@ -199,14 +260,21 @@ re-implementing a check.
    - `src/lib/auth.ts` exports `requirePrincipal()` / `requirePortalAccess(portal)` /
      `requireExporterPrincipal()`, which re-read the session server-side and throw `UNAUTHENTICATED`
      or `FORBIDDEN` (`src/lib/errors.ts`)
-   - Every portal page (`src/app/app/**/page.tsx`, `src/app/agent/**/page.tsx`, ...) and every
-     `/api/v1/**` route handler calls one of these first, before touching Prisma. There is no shared
-     `error.tsx` boundary yet either, so a page that calls a guard must catch the thrown `ApiError`
-     itself and render the 401/403 state (see `src/app/app/buyers/page.tsx` for the pattern)
+   - Every `/api/v1/**` route handler calls one of these (or `getPrincipal()` for the
+     guest-accessible ones) before touching Prisma
+   - **`/app` no longer requires a session at the layout.** Demand Discovery and Buyer Discovery
+     are open to anonymous visitors, so `src/app/app/layout.tsx` enforces only the *role*
+     boundary; the portal boundary is no longer the authorization boundary there. Each page under
+     `/app` enforces its own requirement. `/agent` and `/ops` are still fully guarded at the layout
+   - Layouts catch the thrown `ApiError` and render `AccessDenied` / redirect to `/login`, because
+     a thrown error loses `code` and `status` crossing into `src/app/error.tsx` (React strips a
+     server error to `{ digest }` in production)
 
 2. **Resource-level predicates** (`src/lib/permissions.ts`)
    - Pure functions: `canReadDeal(user, deal)`, `canTransitionTask(user, task, nextState)`, `canDownloadDocument(user, document)`, `canSearchBuyers(user, filters)`, etc.
-   - `tenantScope(principal)` is the scoping helper every list/search query spreads into its Prisma `where` — exporter → own org, agent → assigned orgs, ops → unscoped
+   - `tenantScope(principal)` is the scoping helper every list/search query spreads into its Prisma `where` — exporter → own org, agent → assigned orgs, ops → unscoped. **Unchanged by the tier work and must stay that way** — tenancy is orthogonal to tier
+   - These return a plain boolean and so cannot carry *why* they denied. Pair each with
+     `assertCan()` for the capability + tier; see the convention comment in `permissions.ts`
    - Every route handler / server action calls the relevant predicate **before** querying Prisma
    - Predicates encode the rules from `docs/01` (RBAC matrix) and `docs/07` (state-machine transition guards)
    - Search endpoints and file downloads **must** call predicates — these are the two most commonly missed (docs/09 §5, docs/10 §1)

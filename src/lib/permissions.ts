@@ -13,13 +13,24 @@
  *      exporter organization by changing route parameters." Every exporter query gets its
  *      where-clause from `tenantScope()` — not from a route param.
  *
+ *   3. Authorization has TWO independent axes, and both must pass:
+ *        role — may this kind of user do this at all?  (MATRIX, from docs/01 §5)
+ *        tier — has this tenant paid for it?           (CAPABILITY_MIN_TIER, freemium)
+ *      `permits()` is the single place they combine. Nothing below reads `grantFor()`
+ *      directly except `permits()` itself and the few predicates that need the Grant
+ *      *value* for a restricted-policy decision — and those call `tierAllows()` too.
+ *
+ *      Tier is NOT a UserRole. A guest is a real ExporterOrg + User with tier='guest',
+ *      which is why everything in rule 2 keeps working untouched for guests: a guest org
+ *      is scoped exactly like any other org. There is no unauthenticated code path.
+ *
  * Search endpoints and file downloads are called out in docs/09 §5 and docs/10 §1 as the
  * two most commonly missed checks, so they get named predicates of their own below.
  */
 
-import { UserRole } from '@prisma/client';
+import { OrgTier, UserRole } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { forbidden, notFound } from '@/lib/errors';
+import { forbidden, notFound, upgradeRequired } from '@/lib/errors';
 import type { Principal } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -76,7 +87,21 @@ export type Capability =
   | 'payout.view'
   | 'fee_policy.edit'
   | 'audit.search'
-  | 'task.transition';
+  | 'task.transition'
+  // Added with the freemium tier. These had no matrix entry because docs/01 §5 predates
+  // the tier split, but each is a distinct paywall boundary.
+  | 'readiness.run'
+  | 'buyer_contact.view'
+  | 'deal.create'
+  // Save/select on a MarketAssessment (docs/04 EXP-04). Same role gate for both —
+  // "building your own pipeline" — so one capability covers them, same as leads.
+  | 'market_assessment.save'
+  // Cross-deal index views (docs/13 A1): /app/tasks, /app/deals, /app/messages. Reading
+  // the list, not acting on a row — task.transition/deal-workspace actions stay their
+  // own capabilities.
+  | 'task.view'
+  | 'deal.view'
+  | 'message.view';
 
 const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
   // | Object / action | Exporter | Agent | Ops | Admin |
@@ -250,22 +275,146 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_finance: 'restricted',
     admin: 'none',
   },
+  'readiness.run': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'config_only',
+  },
+  'buyer_contact.view': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'deal.create': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'market_assessment.save': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'task.view': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'all',
+  },
+  'deal.view': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'all',
+    admin: 'all',
+  },
+  'message.view': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'all',
+  },
 };
+
+// ---------------------------------------------------------------------------
+// The second axis: tier (docs/01 §5 covers role only — tier is the freemium split)
+// ---------------------------------------------------------------------------
+
+const TIER_RANK: Record<OrgTier, number> = {
+  [OrgTier.guest]: 0,
+  [OrgTier.free]: 1,
+  [OrgTier.paid]: 2,
+};
+
+/**
+ * Minimum tier per capability. **Anything absent from this map requires `paid`.**
+ *
+ * Deny-by-default is deliberate and load-bearing. Modelling guests as a UserRole would
+ * have given the same safety via the matrix, but at the cost of a `guest:` entry in all
+ * 20 capability blocks — i.e. rewriting every existing permission check. This map buys
+ * the same property in one place: a capability added later is paid-only until somebody
+ * deliberately opens it, so the failure mode of forgetting is "too strict", never "free".
+ */
+const CAPABILITY_MIN_TIER: Partial<Record<Capability, OrgTier>> = {
+  // Guest — the acquisition surface. Runs are additionally IP-capped at the route.
+  'demand_discovery.run': OrgTier.guest,
+  'buyer_discovery.run': OrgTier.guest,
+  'exporter_profile.view': OrgTier.guest,
+
+  // Free — unlocked by registering. Saved history, readiness, own pipeline, no agent.
+  'readiness.run': OrgTier.free,
+  'buyer_contact.view': OrgTier.free,
+  'buyer_lead.create': OrgTier.free,
+  'exporter_master_data.edit': OrgTier.free,
+  'market_assessment.save': OrgTier.free,
+
+  // Everything else falls through to paid: the agent-assisted workflow — deals,
+  // documents, shipment, payment, outreach, disputes, payout, assignment, audit.
+};
+
+export function minTierFor(capability: Capability): OrgTier {
+  return CAPABILITY_MIN_TIER[capability] ?? OrgTier.paid;
+}
+
+export function tierAllows(principal: Principal, capability: Capability): boolean {
+  return TIER_RANK[principal.tier] >= TIER_RANK[minTierFor(capability)];
+}
+
+/**
+ * The single choke point for "may this principal do this?".
+ *
+ * Role and tier are independent axes and BOTH must pass: role answers "may this kind of
+ * user do this at all?", tier answers "has this tenant paid for it?". Every predicate
+ * below routes through here rather than reading `grantFor()` directly, so no capability
+ * can pick up a role check without also picking up its tier check.
+ */
+export function permits(principal: Principal, capability: Capability): boolean {
+  if (grantFor(principal.role, capability) === 'none') return false;
+  return tierAllows(principal, capability);
+}
 
 export function grantFor(role: UserRole, capability: Capability): Grant {
   return MATRIX[capability][role];
 }
 
-/** Capability check with no resource attached (e.g. "may this role open the screen at all?"). */
+/** Capability check with no resource attached (e.g. "may this principal open the screen at all?"). */
 export function can(principal: Principal, capability: Capability): boolean {
-  return grantFor(principal.role, capability) !== 'none';
+  return permits(principal, capability);
 }
 
-/** Throws FORBIDDEN when the capability is denied outright for the role. */
+/**
+ * Throws when the capability is denied — with the two denials kept distinct:
+ *
+ *   role denied  -> FORBIDDEN         ("your role will never allow this")
+ *   tier denied  -> UPGRADE_REQUIRED  ("buy this and it works")
+ *
+ * Role is checked first so a tier upsell is never shown for something the user could
+ * not do at any price.
+ */
 export function assertCan(principal: Principal, capability: Capability): Grant {
   const grant = grantFor(principal.role, capability);
   if (grant === 'none') {
     throw forbidden('Your role does not allow this action.');
+  }
+  if (!tierAllows(principal, capability)) {
+    throw upgradeRequired(minTierFor(capability));
   }
   return grant;
 }
@@ -360,6 +509,17 @@ export async function assertOrgAccess(principal: Principal, orgId: string): Prom
 //
 // Route handlers call these BEFORE querying Prisma for a mutation, and pass the
 // tenantScope() fragment into the query itself for reads.
+//
+// CONVENTION — a mutation route makes TWO checks, in this order:
+//
+//   assertCan(principal, 'the.capability');          // role + tier
+//   await assertPermitted(canDoThing(principal, …)); // tenant scope
+//
+// Both are required, and the order matters. These predicates return a plain boolean, so
+// they cannot say WHY they denied — a caller that relies on the predicate alone turns a
+// tier denial into a bare FORBIDDEN, and the client can never tell "upgrade and this
+// works" apart from "your role will never allow this". `assertCan()` is the only thing
+// that raises UPGRADE_REQUIRED, so skipping it silently disables every upsell.
 // ---------------------------------------------------------------------------
 
 interface OrgOwned {
@@ -391,7 +551,7 @@ export async function canSearchBuyers(
   principal: Principal,
   context: { exporter_org_id: string },
 ): Promise<boolean> {
-  if (grantFor(principal.role, 'buyer_discovery.run') === 'none') return false;
+  if (!permits(principal, 'buyer_discovery.run')) return false;
   return canAccessOrg(principal, context.exporter_org_id);
 }
 
@@ -399,7 +559,7 @@ export async function canCreateBuyerLead(
   principal: Principal,
   context: { exporter_org_id: string },
 ): Promise<boolean> {
-  if (grantFor(principal.role, 'buyer_lead.create') === 'none') return false;
+  if (!permits(principal, 'buyer_lead.create')) return false;
   return canAccessOrg(principal, context.exporter_org_id);
 }
 
@@ -411,7 +571,7 @@ export async function canDownloadDocument(
   principal: Principal,
   document: { deal?: DealLike | null },
 ): Promise<boolean> {
-  if (grantFor(principal.role, 'document.download') === 'none') return false;
+  if (!permits(principal, 'document.download')) return false;
   if (!document.deal) return isOps(principal);
   return canAccessOrg(principal, document.deal.exporter_org_id);
 }
@@ -426,7 +586,7 @@ export async function canApproveDocument(
   policy: { member_can_approve: boolean; ops_override_allowed: boolean },
 ): Promise<boolean> {
   const grant = grantFor(principal.role, 'document.approve');
-  if (grant === 'none') return false;
+  if (grant === 'none' || !tierAllows(principal, 'document.approve')) return false;
   if (principal.role === UserRole.exporter_member && !policy.member_can_approve) return false;
   if (isOps(principal) && !policy.ops_override_allowed) return false;
   if (!document.deal) return false;
@@ -439,7 +599,7 @@ export async function canApproveCommercialTerms(
   policy: { member_can_approve: boolean; ops_override_allowed: boolean },
 ): Promise<boolean> {
   const grant = grantFor(principal.role, 'commercial_terms.approve');
-  if (grant === 'none') return false;
+  if (grant === 'none' || !tierAllows(principal, 'commercial_terms.approve')) return false;
   if (principal.role === UserRole.exporter_member && !policy.member_can_approve) return false;
   if (isOps(principal) && !policy.ops_override_allowed) return false;
   return canAccessOrg(principal, deal.exporter_org_id);
@@ -453,14 +613,14 @@ export async function canViewInternalNote(
   principal: Principal,
   note: { deal?: DealLike | null; buyer_lead?: LeadLike | null },
 ): Promise<boolean> {
-  if (grantFor(principal.role, 'internal_note.view') === 'none') return false;
+  if (!permits(principal, 'internal_note.view')) return false;
   const orgId = note.deal?.exporter_org_id ?? note.buyer_lead?.exporter_org_id;
   if (!orgId) return isOps(principal);
   return canAccessOrg(principal, orgId);
 }
 
 export async function canSendOutreach(principal: Principal, lead: LeadLike): Promise<boolean> {
-  if (grantFor(principal.role, 'outreach.send') === 'none') return false;
+  if (!permits(principal, 'outreach.send')) return false;
   return canAccessOrg(principal, lead.exporter_org_id);
 }
 
@@ -472,7 +632,7 @@ export async function canTransitionTask(
   principal: Principal,
   task: { exporter_org_id?: string | null; owner_user_id?: string | null; owner_role: UserRole },
 ): Promise<boolean> {
-  if (grantFor(principal.role, 'task.transition') === 'none') return false;
+  if (!permits(principal, 'task.transition')) return false;
   if (isOps(principal)) return true;
   if (task.owner_user_id === principal.id) return true;
   if (!task.exporter_org_id) return false;
@@ -484,21 +644,21 @@ export async function canTransitionTask(
 }
 
 export function canAssignAgent(principal: Principal): boolean {
-  return grantFor(principal.role, 'agent.assign') !== 'none';
+  return permits(principal, 'agent.assign');
 }
 
 export function canSearchAudit(principal: Principal): boolean {
-  return grantFor(principal.role, 'audit.search') !== 'none';
+  return permits(principal, 'audit.search');
 }
 
 export function canEditFeePolicy(principal: Principal): boolean {
-  return grantFor(principal.role, 'fee_policy.edit') !== 'none';
+  return permits(principal, 'fee_policy.edit');
 }
 
 /** Agents see their own payout only; finance and admin see all. */
 export function canViewPayout(principal: Principal, payout: { agent_user_id: string }): boolean {
   const grant = grantFor(principal.role, 'payout.view');
-  if (grant === 'none') return false;
+  if (grant === 'none' || !tierAllows(principal, 'payout.view')) return false;
   if (grant === 'restricted') return payout.agent_user_id === principal.id;
   return true;
 }

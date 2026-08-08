@@ -14,7 +14,10 @@
     "db:generate": "prisma generate",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "purge:guests": "tsx --env-file=.env scripts/purge-guests.ts",
+    "worker": "tsx --env-file=.env scripts/worker.ts",
+    "worker:once": "tsx --env-file=.env scripts/worker.ts --once"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
@@ -40,6 +43,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.3.0",
+    "playwright": "^1.56.0",
     "postcss": "^8.5.1",
     "prisma": "^6.7.0",
     "tailwindcss": "^3.4.17",

@@ -34,6 +34,17 @@ enum UserRole {
   admin
 }
 
+/// Commercial tier of a tenant. Deliberately NOT a UserRole: role answers "may this kind
+/// of user do this?", tier answers "has this tenant paid for it?". Both must pass, and
+/// keeping them on separate axes is what lets tenantScope() and the whole role matrix in
+/// src/lib/permissions.ts stay unchanged. A guest is a real org with a real User row, so
+/// there is no unauthenticated code path anywhere in the product.
+enum OrgTier {
+  guest
+  free
+  paid
+}
+
 enum IecStatus {
   unknown
   not_started
@@ -389,8 +400,19 @@ model ExporterOrg {
   assigned_agent_id String?
   readiness_status  ReadinessStatus @default(not_started)
   journey_stage     JourneyStage    @default(onboarding)
-  created_at        DateTime        @default(now())
-  updated_at        DateTime        @updatedAt
+
+  /// Defaults to `guest` because the overwhelmingly common new row is a guest minted on
+  /// first search. Pre-existing rows are backfilled to `paid` by the migration — they
+  /// were created under the old all-access assumption.
+  tier             OrgTier   @default(guest)
+  /// Set when guest -> free (registration). Funnel analysis; null while still a guest.
+  upgraded_at      DateTime?
+  /// Only ever set while tier = guest. Drives the purge job for abandoned guest orgs;
+  /// without it this table grows monotonically with anonymous traffic.
+  guest_expires_at DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   assigned_agent        User?                 @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
   users                 User[]                @relation("OrgMembers")
@@ -405,15 +427,23 @@ model ExporterOrg {
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
+  @@index([tier])
+  @@index([tier, guest_expires_at])
 }
 
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  phone           String?
-  name            String
-  password_hash   String
-  role            UserRole
+  id    String @id @default(cuid())
+  /// Guests get a synthetic address on the RFC 2606 reserved `.invalid` TLD, which can
+  /// never resolve or collide with a real one. Keeps this column non-null and UNIQUE so
+  /// nothing downstream has to handle a null identity.
+  email String @unique
+  phone String?
+  name  String
+  /// Null means "this account cannot log in" — the state a guest is in until it upgrades.
+  /// authorize() MUST reject a null hash before reaching bcrypt.compare, which throws on
+  /// null rather than returning false.
+  password_hash String?
+  role          UserRole
   /// Null for agent / ops / admin principals. Non-null pins an exporter to one tenant.
   exporter_org_id String?
   is_active       Boolean  @default(true)
@@ -548,14 +578,23 @@ model ReadinessAssessment {
 model DiscoveryRun {
   id              String    @id @default(cuid())
   exporter_org_id String
+  /// Null for a guest run: guests supply product context ad hoc and no Product row is
+  /// created for them (that only happens if they choose to save it at registration).
   product_id      String?
   job_id          String?
   requested_by_id String?
   status          JobStatus @default(queued)
   filters         Json      @default("{}")
-  started_at      DateTime?
-  completed_at    DateTime?
-  created_at      DateTime  @default(now())
+
+  /// Immutable snapshot of the inputs this run was executed with (docs/04 EXP-04-AC01).
+  /// For a guest this is the whole product context — description + HS code — and is the
+  /// only record of what was searched, since there is no Product to point at. It is also
+  /// what the registration flow offers to turn into a real Product.
+  input_snapshot Json?
+
+  started_at   DateTime?
+  completed_at DateTime?
+  created_at   DateTime  @default(now())
 
   exporter_org       ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
   market_assessments MarketAssessment[]
@@ -564,10 +603,12 @@ model DiscoveryRun {
 }
 
 model MarketAssessment {
-  id           String @id @default(cuid())
-  run_id       String
-  product_id   String
-  country_code String @db.VarChar(2)
+  id     String @id @default(cuid())
+  run_id String
+  /// Null when the parent run was ad hoc (guest tier). The product context for those
+  /// lives in DiscoveryRun.input_snapshot instead of in a Product row.
+  product_id   String?
+  country_code String  @db.VarChar(2)
 
   overall_score     Int
   demand_score      Int?
@@ -588,10 +629,19 @@ model MarketAssessment {
   /// docs/13 B2: exporter-visible agent annotation on AI output.
   agent_note   String?
   generated_at DateTime @default(now())
-  is_selected  Boolean  @default(false)
+
+  /// "Selected as active target" (docs/04 EXP-04) — the ORG's current focus market.
+  /// Exclusive across the whole org, not just this run: selecting a new one clears any
+  /// previously selected assessment, even from a different run. Enforced in the select
+  /// route's transaction, not by a DB constraint, because "at most one selected per org"
+  /// spans rows this table alone can't express a uniqueness constraint over.
+  is_selected Boolean @default(false)
+  /// "Saved for later" (docs/04 EXP-04) — a lightweight bookmark, independent of
+  /// selection. Non-exclusive: any number of assessments may be saved at once.
+  saved_at DateTime?
 
   run     DiscoveryRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  product Product      @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  product Product?     @relation(fields: [product_id], references: [id], onDelete: Cascade)
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
@@ -1297,6 +1347,28 @@ model JobAttempt {
   job Job @relation(fields: [job_id], references: [id], onDelete: Cascade)
 
   @@unique([job_id, attempt_no])
+}
+
+/// Per-IP quota for guest-tier AI runs. Guests can spend real money on AI jobs before
+/// they have any account, so the counter is keyed on the caller's network identity, not
+/// on the guest row — a cleared cookie mints a new org, but the IP is unchanged.
+///
+/// `ip_hash` is HMAC-SHA256(ip, GUEST_IP_HASH_SECRET), never the raw address: an IP is
+/// personal data, and an unkeyed hash of a 32-bit space is trivially reversible.
+///
+/// The window is rolling-daily rather than lifetime on purpose. Indian mobile carriers
+/// use CGNAT, so one address fronts very large numbers of real users — a lifetime cap
+/// would permanently lock out legitimate prospects in the primary market.
+model GuestRunQuota {
+  id           String   @id @default(cuid())
+  ip_hash      String
+  window_start DateTime
+  runs_used    Int      @default(0)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([ip_hash, window_start])
+  @@index([window_start])
 }
 
 /// Business constants live here, versioned — never hardcoded in application code

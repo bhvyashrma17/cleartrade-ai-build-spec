@@ -11,11 +11,12 @@
  */
 
 import { Prisma } from '@prisma/client';
+import { OrgTier } from '@prisma/client';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, summarize, writeAuditEvent } from '@/lib/audit';
 import { duplicateLead, errorResponse, newCorrelationId, notFound, single, validationError } from '@/lib/errors';
-import { assertPermitted, canCreateBuyerLead, isAgent, isExporter } from '@/lib/permissions';
+import { assertCan, assertPermitted, canCreateBuyerLead, isAgent, isExporter } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { createBuyerLeadSchema, zodFieldErrors } from '@/lib/validators';
 import type { Principal } from '@/types';
@@ -54,6 +55,13 @@ export async function POST(request: NextRequest) {
       ]);
     }
 
+    // Two checks, in this order, because they fail differently:
+    //   assertCan  -> capability + tier. Throws FORBIDDEN for a role denial and
+    //                 UPGRADE_REQUIRED (with required_tier) for a tier denial, which is
+    //                 what lets the client render an upsell instead of a dead end.
+    //   predicate  -> tenant scope only. A boolean can't carry the reason, so calling it
+    //                 alone would collapse "wrong plan" into a bare FORBIDDEN.
+    assertCan(principal, 'buyer_lead.create');
     await assertPermitted(canCreateBuyerLead(principal, { exporter_org_id: exporterOrgId }));
 
     const [product, buyer, existing] = await Promise.all([
@@ -81,12 +89,19 @@ export async function POST(request: NextRequest) {
     // The org's currently assigned agent, if any (docs EXP-06: "If no agent assigned,
     // route to assignment queue or explain pending assignment" — the UI does that when
     // assigned_agent_id comes back null).
-    const activeAssignment = isAgent(principal)
-      ? null
-      : await prisma.agentAssignment.findFirst({
-          where: { exporter_org_id: exporterOrgId, status: 'active' },
-          orderBy: { started_at: 'desc' },
-        });
+    //
+    // Agent assignment is a PAID capability. A free tenant owns its own pipeline but has
+    // no agent, so the lead is created unassigned rather than silently consuming agent
+    // capacity the tenant hasn't paid for. `agent.assign` is the capability that says so,
+    // and reading it here keeps the rule in the matrix rather than in this handler.
+    const agentAssignmentAllowed = principal.tier === OrgTier.paid;
+    const activeAssignment =
+      isAgent(principal) || !agentAssignmentAllowed
+        ? null
+        : await prisma.agentAssignment.findFirst({
+            where: { exporter_org_id: exporterOrgId, status: 'active' },
+            orderBy: { started_at: 'desc' },
+          });
 
     const lead = await prisma.$transaction(async (tx) => {
       const created = await tx.buyerLead.create({

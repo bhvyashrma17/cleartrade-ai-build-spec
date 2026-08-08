@@ -60,6 +60,69 @@ label and/or icon.
 | At risk / Blocked / Overdue / Rejected / Escalated | Red `#EF4444` |
 | Neutral / Not started / Not applicable | Navy at reduced emphasis |
 
+### AA-safe text tokens for semantic colors
+
+The four hues above are tuned as **fills and accents**, not as small text. Measured as text on
+`--color-surface` (white), each falls below WCAG AA's 4.5:1: teal 2.49:1, cyan 2.42:1, amber
+2.15:1, red 3.76:1. A full-app contrast sweep (721 rendered text nodes) found 55 failures from
+exactly this — teal links, amber/red `StatusChip` labels — because the raw palette value was being
+used as a text color.
+
+Use these instead anywhere a semantic hue carries **words**; keep the raw palette tokens above for
+fills, borders and icons, where the pairing label supplies the required contrast per docs/03 §2.
+
+| Token | Formula | On white | On `--color-surface-muted` |
+|---|---|---|---|
+| `--color-action-text` | `color-mix(in srgb, var(--color-action) 55%, var(--color-primary))` | 5.87:1 | 5.46:1 |
+| `--color-info-text` | `color-mix(in srgb, var(--color-info) 55%, var(--color-primary))` | 5.18:1 | 4.82:1 |
+| `--color-warning-text` | `color-mix(in srgb, var(--color-warning) 55%, var(--color-primary))` | 5.46:1 | 5.08:1 |
+| `--color-critical-text` | `color-mix(in srgb, var(--color-critical) 55%, var(--color-primary))` | 8.25:1 | 7.68:1 |
+
+55% hue / 45% navy was chosen as the lightest (most saturated, most identifiable) blend that still
+clears 4.5:1 on both backgrounds the design system actually composites text over.
+
+`StatusChip`'s tint itself was a separate bug, not a contrast tuning issue: `bg-warning/10` and
+`border-warning/25` compiled to fully transparent / default-grey because Tailwind cannot apply an
+alpha modifier to a bare `var()` color (see `AGENTS.md` cross-cutting rules). The chip labels are
+now navy on a `color-mix()` tint.
+
+### Icons are graphical objects — WCAG 1.4.11, a flat 3:1
+
+The chip icon originally kept the full-saturation hue on the reasoning that it is always paired
+with a label. That reasoning covers **1.4.1 (color is not the only cue)** but not **1.4.11 (non-text
+contrast)**, which requires any meaningful graphic to clear **3:1 against its own backdrop**, with
+no large-size relaxation. The icon's backdrop is the chip's 12% tint *of the same hue*, which is
+close to the worst case: the tint pulls the background toward the foreground.
+
+Measured on the composited tints (`scripts/verify-contrast.ts`, which now samples SVG `stroke`/`fill`
+as well as text):
+
+| Tone | Raw hue on its tint | With `--color-*-text` |
+|---|---|---|
+| positive (teal) | 2.08:1 ✗ | 4.88:1 |
+| info (cyan) | 1.92:1 ✗ | 4.73:1 |
+| warning (amber) | 1.96:1 ✗ | 4.97:1 |
+| critical (red) | 3.23:1 (passed) | 7.09:1 |
+
+Icons now use the same `--color-*-text` tokens as the labels. **Rule: a semantic hue never paints a
+glyph directly — text and icon both go through the `*-text` token.** The raw palette values remain
+correct for fills, borders and large decorative areas.
+
+> Two measurement traps found while verifying this, both of which silently *understate* a failure:
+> a text-node crawler cannot see icons at all (their color is `stroke`/`fill`, not `color`, and they
+> have no font size), and Chrome serialises a `color-mix()` result as `color(srgb r g b / a)`, so an
+> `rgba()`-only parser reads tinted surfaces as `null` and walks past them to the opaque parent —
+> reporting icons as sitting on plain white.
+
+### `--color-text-muted`
+
+Raised from **0.48 to 0.64** navy opacity. At 0.48 it composited to `rgb(138,144,160)` on white —
+3.19:1, below AA. It had been treated as safe on the assumption it only ever labeled de-emphasized
+metadata, but the same sweep found it carrying journey-rail stage labels, `MetricCard` secondary
+text and an Ops KPI drill-down link — all essential, not decorative. 0.64 gives 5.35:1 on white and
+5.20:1 on `--color-surface-muted`, while staying visibly lighter than `--color-text-secondary`
+(0.70, 6.59:1) so the two remain distinguishable.
+
 ---
 
 ## 3. Typography, radii, iconography

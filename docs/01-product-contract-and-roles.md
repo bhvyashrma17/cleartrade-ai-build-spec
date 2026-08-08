@@ -2,6 +2,18 @@
 
 Source: PRD Parts 01 (Product contract) and 02 (Roles, tenancy & permissions).
 
+> **Superseded in part by `docs/14-guest-and-tiers.md`.** This document — like the rest of
+> `docs/01`–`docs/13` — assumes every request is authenticated and belongs to a paying
+> tenant. That is no longer true: Demand Discovery and Buyer Discovery are open to
+> anonymous visitors, and access is now gated on **two** axes, role *and* commercial tier.
+>
+> The permission matrix in §5 below still defines the **role** axis and is still accurate
+> for it. What it does not capture is the tier axis, which can withhold a capability the
+> role permits. Read `docs/14` before relying on §5 to decide whether something is allowed.
+>
+> The tenancy rules in §4 are unchanged and hold more strongly than before — a guest is a
+> real tenant, scoped exactly like any other.
+
 ---
 
 ## 1. Product objective

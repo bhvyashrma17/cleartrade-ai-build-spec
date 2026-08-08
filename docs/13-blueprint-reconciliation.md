@@ -51,6 +51,16 @@ deal-scoped screens. They are views, not new objects:
 `/app/tasks` is the highest priority of the four — mobile navigation depends on it, and "what do I
 need to do next?" is the product's core success condition. Treat it as **P0**, not P1.
 
+**Update — no longer just a recommendation, now a confirmed blocker.** The exporter mobile bottom
+nav was verified end to end against a real browser (`scripts/browser-verify.ts` scenario 15): it
+renders the Blueprint's specified `Home · Deals · Tasks · Messages · More`, but three of those five
+links — `/app/deals`, `/app/tasks`, `/app/messages` — 404, because none of the four cross-deal index
+views exist yet. Per instruction, the mobile nav is being shipped with those items live and pointing
+at unbuilt routes rather than hidden, so this is a **known, currently-live gap in production**, not
+a hypothetical one. `/app/tasks` specifically blocks AGENTS.md's own "P0 screens need loading, empty,
+error and mobile states before they're done" bar for the exporter mobile shell — the shell cannot
+be called done while its own primary nav 404s.
+
 **Backend impact:** each needs an org-scoped, server-paginated list endpoint with cross-deal
 filtering — not a client-side aggregation over N deal fetches.
 
@@ -273,7 +283,7 @@ listed in `docs/11-build-plan-qa-release.md`:
 
 | # | Item | Type | Suggested owner |
 |---|---|---|---|
-| R1 | Build top-level `/app/documents`, `/app/shipments`, `/app/payments`, `/app/tasks` as cross-deal index views? (`/app/tasks` recommended P0) | Scope | Product |
+| R1 | Build top-level `/app/documents`, `/app/shipments`, `/app/payments`, `/app/tasks` as cross-deal index views? **`/app/tasks` is no longer a P0 recommendation — the mobile bottom nav ships live today with a `Tasks` link that 404s (verified in browser); it now blocks calling the exporter mobile shell done.** | Scope | Product |
 | R2 | Component naming: Blueprint set or PRD set? | Convention | Frontend lead |
 | R3 | Deal tab label: "Quote" or "Commercial"? | Copy | Product/Design |
 | R4 | Is Inspection/QC in MVP scope? If so, define the entity | Scope | Product |

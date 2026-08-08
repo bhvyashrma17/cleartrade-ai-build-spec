@@ -11,10 +11,11 @@
 
 import NextAuth, { type DefaultSession } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
-import { UserRole } from '@prisma/client';
+import { OrgTier, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { verifyGuestMintProof } from '@/lib/guest';
 import { forbidden, unauthenticated } from '@/lib/errors';
 import type { Principal, PortalRoot } from '@/types';
 
@@ -58,8 +59,66 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Same failure for unknown email and wrong password — do not disclose which.
         if (!user || !user.is_active) return null;
 
+        // A null hash means the row cannot be logged into at all — a guest, until it
+        // registers. This must come before bcrypt.compare, which throws on a null hash
+        // rather than returning false (a 500 instead of a clean credential denial).
+        if (!user.password_hash) return null;
+
         const ok = await bcrypt.compare(parsed.data.password, user.password_hash);
         if (!ok) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          exporter_org_id: user.exporter_org_id,
+        };
+      },
+    }),
+
+    /**
+     * Guest sessions.
+     *
+     * A guest is issued the SAME kind of JWT session as a real login — that is what
+     * keeps `getPrincipal()`, `tenantScope()` and every permission predicate working
+     * unchanged, and why the product has no unauthenticated code path.
+     *
+     * This provider does not mint anything. The caller (the discovery route) checks and
+     * consumes the IP quota first, mints the row, and then presents a server-issued
+     * proof. Accepting a bare `userId` here would be an impersonation hole: anyone could
+     * request a session for an arbitrary account, including a paying one.
+     */
+    Credentials({
+      id: 'guest',
+      name: 'Guest session',
+      credentials: { userId: {}, proof: {} },
+      async authorize(raw) {
+        const userId = typeof raw?.userId === 'string' ? raw.userId : null;
+        const proof = typeof raw?.proof === 'string' ? raw.proof : null;
+        if (!userId || !proof) return null;
+        if (!verifyGuestMintProof(userId, proof)) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            exporter_org_id: true,
+            is_active: true,
+            password_hash: true,
+            exporter_org: { select: { tier: true } },
+          },
+        });
+        if (!user || !user.is_active) return null;
+
+        // Defence in depth: even with a valid proof, this provider may only ever issue a
+        // session for a genuine guest row. A guest has no password and a guest-tier org,
+        // so anything else here means the proof was minted for the wrong kind of user.
+        if (user.password_hash !== null) return null;
+        if (user.exporter_org?.tier !== OrgTier.guest) return null;
 
         return {
           id: user.id,
@@ -137,6 +196,10 @@ export async function getPrincipal(): Promise<Principal | null> {
       role: true,
       exporter_org_id: true,
       is_active: true,
+      // Tier is read from the org on every request for the same reason the role is:
+      // the JWT is a hint, not a grant. A downgrade (or an expired guest) must take
+      // effect immediately, not at the next login.
+      exporter_org: { select: { tier: true } },
     },
   });
   if (!user || !user.is_active) return null;
@@ -147,6 +210,9 @@ export async function getPrincipal(): Promise<Principal | null> {
     name: user.name,
     role: user.role,
     exporter_org_id: user.exporter_org_id,
+    // Staff have no tenant and are governed by the role matrix alone, so they read as
+    // `paid` — the tier gate must never fire on an agent or ops principal.
+    tier: user.exporter_org?.tier ?? OrgTier.paid,
   };
 }
 

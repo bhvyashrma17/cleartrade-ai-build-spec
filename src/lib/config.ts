@@ -68,6 +68,52 @@ export interface ConfigShape {
     /** Auto-created follow-up task offset after an outreach activity (docs/13 E5). */
     follow_up_due_in_hours: number;
   };
+  'guest.policy': GuestPolicy;
+  'jobs.policy': JobsPolicy;
+}
+
+/**
+ * Background job execution policy (docs/09 §3). Retry counts and timeouts are operational
+ * settings Ops must be able to retune when a provider degrades, so they live here rather
+ * than as constants in the worker.
+ */
+export interface JobsPolicy {
+  /**
+   * How long a job may sit in `processing` before it is considered abandoned and
+   * reclaimable. This is what stops a worker crash from stranding a job forever — it
+   * must be comfortably longer than the slowest legitimate run.
+   */
+  stale_after_seconds: number;
+  /** Default attempt ceiling; a job may override it at enqueue time. */
+  max_attempts: number;
+  /** Base delay for exponential backoff between attempts. */
+  retry_backoff_seconds: number;
+  /** How often the worker polls for claimable work when idle. */
+  worker_poll_interval_ms: number;
+  /** Suggested client polling interval, returned to the UI so backoff is server-driven. */
+  client_poll_interval_ms: number;
+}
+
+/**
+ * Guest-tier limits. These bound real money — an anonymous caller triggering an AI job
+ * spends on every run — so they are business settings that Ops must be able to retune
+ * under load without a deploy, exactly like fees and SLAs (docs/01 §2).
+ */
+export interface GuestPolicy {
+  /** Discovery runs allowed per IP per window. */
+  discovery_runs_per_ip: number;
+  /**
+   * Window length. Rolling rather than lifetime on purpose: Indian mobile carriers use
+   * CGNAT, so one address fronts very large numbers of real users and a lifetime cap
+   * would permanently lock out legitimate prospects in the primary market.
+   */
+  quota_window_hours: number;
+  /** How long an unconverted guest org and its runs are retained before the purge job deletes them. */
+  run_retention_days: number;
+  /** Guest session lifetime. Longer than a login — it is a low-value credential. */
+  session_days: number;
+  /** Max rows a guest may page through, to blunt scraping of the buyer dataset. */
+  max_buyer_results: number;
 }
 
 export type ConfigKey = keyof ConfigShape;
@@ -164,6 +210,20 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     min_display_score: 0,
   },
   'leads.outreach': { stale_after_days: 14, follow_up_due_in_hours: 48 },
+  'guest.policy': {
+    discovery_runs_per_ip: 2,
+    quota_window_hours: 24,
+    run_retention_days: 30,
+    session_days: 30,
+    max_buyer_results: 50,
+  },
+  'jobs.policy': {
+    stale_after_seconds: 300,
+    max_attempts: 3,
+    retry_backoff_seconds: 15,
+    worker_poll_interval_ms: 1000,
+    client_poll_interval_ms: 1500,
+  },
 };
 
 // ---------------------------------------------------------------------------
