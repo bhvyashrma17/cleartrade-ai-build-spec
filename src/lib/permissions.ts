@@ -101,7 +101,13 @@ export type Capability =
   // own capabilities.
   | 'task.view'
   | 'deal.view'
-  | 'message.view';
+  | 'message.view'
+  // EXP-14/EXP-15. "Update" is a whitelist of exporter-safe fields at the route layer
+  // (pickup confirmation, evidence, exporter-reported payment status) — it is
+  // deliberately NOT the same capability that would let anyone edit CHA filing
+  // reference fields (EXP-14-AC03), which this app has no capability for at all.
+  | 'shipment.update'
+  | 'payment.update';
 
 const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
   // | Object / action | Exporter | Agent | Ops | Admin |
@@ -330,6 +336,23 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_supervisor: 'all',
     ops_finance: 'none',
     admin: 'all',
+  },
+  'shipment.update': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'payment.update': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    // Finance is who actually reconciles buyer payment against the fee basis.
+    ops_finance: 'all',
+    admin: 'none',
   },
 };
 

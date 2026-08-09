@@ -143,3 +143,40 @@ export const requestDocumentChangesSchema = z.object({
   checksum: z.string().trim().min(1, 'Missing document checksum.'),
   note: z.string().trim().min(1, 'Say what needs to change.'),
 });
+
+/** EXP-14 "Confirm pickup details" — whitelisted fields only (never CHA filing refs). */
+export const confirmPickupSchema = z.object({
+  pickup_window_start: z.string().trim().min(1, 'Pickup window start is required.'),
+  pickup_window_end: z.string().trim().min(1, 'Pickup window end is required.'),
+  contact_name: z.string().trim().min(1, 'A pickup contact name is required.'),
+  contact_phone: z.string().trim().min(1, 'A pickup contact phone is required.'),
+  address: z.string().trim().min(1, 'A pickup address is required.'),
+});
+
+export const raiseShipmentIssueSchema = z.object({
+  reason: z.string().trim().min(1, 'Say what the issue is.'),
+  severity: z.enum(['watch', 'blocked']).default('blocked'),
+});
+
+export const updatePaymentStatusSchema = z.object({
+  action: z.literal('update_status'),
+  to: z.enum(['due', 'partially_received', 'received', 'overdue', 'disputed']),
+  source: z.enum(['exporter_update', 'AA', 'bank_partner', 'manual_ops']),
+  amount_received: z.coerce.number().positive().nullish(),
+  note: z.string().trim().nullish(),
+  dispute_reason: z.string().trim().nullish(),
+});
+
+export const updateBrcStatusSchema = z.object({
+  action: z.literal('update_brc'),
+  to: z.enum(['pending', 'available', 'verified']),
+});
+
+export const requestInsuranceQuoteSchema = z.object({
+  notes: z.string().trim().nullish(),
+});
+
+export const openPaymentDisputeSchema = z.object({
+  payment_id: z.string().trim().min(1),
+  reason: z.string().trim().min(1, 'Say what is being disputed.'),
+});

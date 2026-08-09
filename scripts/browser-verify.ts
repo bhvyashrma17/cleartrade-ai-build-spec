@@ -661,8 +661,8 @@ async function main() {
     // yet" would be asserting the absence of shipped work. Their real content is covered
     // by scripts/verify-commercial.ts and scenario 17 below; the risk-banner half of
     // AC04 is still checked for both in BUILT_TABS.
-    const tabRoutes = ['messages', 'tasks', 'shipment', 'payment', 'activity'];
-    const BUILT_TABS = ['commercial', 'documents'];
+    const tabRoutes = ['messages', 'tasks', 'activity'];
+    const BUILT_TABS = ['commercial', 'documents', 'shipment', 'payment'];
     const tabResults: string[] = [];
     let riskPersistedEverywhere = true;
     for (const tab of tabRoutes) {
@@ -997,6 +997,226 @@ async function main() {
       `CI approval_status=${ciApproved.approval_status}, request_changes status=${rcResult.status}, agent tasks ${revisionTasksBefore}->${revisionTasksAfter}`,
     );
     await resetDocumentFixtures();
+
+    // ---------------------------------------------------------------- 18
+    // EXP-14 Shipment & CHA Tracking + EXP-15 Payment, Banking Visibility & Insurance,
+    // against the seeded fixture on seed-deal-locked (shipment in_transit with a real
+    // customs ETA-vs-actual divergence; two payment milestones — advance realized,
+    // balance partially received with BRC pending).
+    async function resetShipmentPaymentFixtures() {
+      await prisma.dispute.deleteMany({ where: { deal_id: 'seed-deal-locked', scope_type: { in: ['shipment', 'payment'] } } });
+      await prisma.task.deleteMany({ where: { deal_id: 'seed-deal-locked', task_type: { in: ['shipment_exception_remediation', 'request_insurance_quote'] } } });
+      await prisma.shipment.updateMany({
+        where: { id: 'seed-shipment-locked-1' },
+        data: {
+          exception_state: 'watch',
+          exception_reason: 'Customs clearance ran two days past the original ETA; cleared without a hold.',
+          booking_ref: 'BKG-NHV-88213',
+          customs_ref: 'CUS-IN-2026-451092',
+          shipping_bill_no: 'SB-4471002',
+        },
+      });
+      await prisma.payment.updateMany({
+        where: { id: 'seed-payment-locked-2' },
+        data: { status: 'partially_received', amount_received: 18000, brc_status: 'pending' },
+      });
+      await prisma.insuranceCase.updateMany({ where: { id: 'seed-insurance-case-locked-1' }, data: { status: 'quote_requested' } });
+    }
+    await resetShipmentPaymentFixtures();
+
+    const ctx18 = await browser.newContext();
+    const p18 = await ctx18.newPage();
+    await loginAs(p18, 'owner@sunriseagro.example');
+
+    // ---- 18:shipment-status (AC01) ----
+    await p18.goto(BASE + '/app/deals/seed-deal-locked/shipment', { waitUntil: 'networkidle' });
+    await sleep(600);
+    // Scoped to the header status chip, not the whole page — the milestone timeline
+    // below renders "In transit"/"Arrived" as row labels regardless of the shipment's
+    // overall status, so a whole-body text match would be ambiguous.
+    const statusChipText1 = (await p18.locator('[data-testid="shipment-status-chip"]').textContent()) ?? '';
+    const statusFromField = /In transit/.test(statusChipText1);
+    // Change the field directly in the DB (bypassing every UI/API code path) and reload —
+    // if the label follows, it proves the render reads `Shipment.status`, not something
+    // inferred from milestones/chat (which would still say "In transit").
+    await prisma.shipment.update({ where: { id: 'seed-shipment-locked-1' }, data: { status: 'arrived' } });
+    await p18.goto(BASE + '/app/deals/seed-deal-locked/shipment', { waitUntil: 'networkidle' });
+    await sleep(400);
+    const statusChipText2 = (await p18.locator('[data-testid="shipment-status-chip"]').textContent()) ?? '';
+    const statusFollowsFieldChange = /\bArrived\b/.test(statusChipText2) && !/In transit/.test(statusChipText2);
+    await prisma.shipment.update({ where: { id: 'seed-shipment-locked-1' }, data: { status: 'in_transit' } });
+    record(
+      '18:shipment-status',
+      'AC01: shipment status renders directly from the Shipment record, not inferred',
+      statusFromField && statusFollowsFieldChange ? 'PASS' : 'FAIL',
+      `initial status shown=${statusFromField}, label followed a direct DB field change=${statusFollowsFieldChange}`,
+    );
+
+    // ---- 18:milestone-timeline (AC02) ----
+    await p18.goto(BASE + '/app/deals/seed-deal-locked/shipment', { waitUntil: 'networkidle' });
+    await sleep(400);
+    const timelineBody = (await p18.locator('body').textContent()) ?? '';
+    const etaAndActualBothPresent = /29 Jul 2026/.test(timelineBody) && /31 Jul 2026/.test(timelineBody);
+    const divergenceFlagged = /Delayed vs ETA/.test(timelineBody);
+    const pendingMilestoneHasNoActual = /In transit.{0,80}20 Aug 2026.{0,10}—/.test(timelineBody.replace(/\s+/g, ' '));
+    record(
+      '18:milestone-timeline',
+      'AC02: ETA and actual are both visible and distinguished per milestone',
+      etaAndActualBothPresent && divergenceFlagged && pendingMilestoneHasNoActual ? 'PASS' : 'FAIL',
+      `ETA+actual both shown=${etaAndActualBothPresent}, divergence flagged=${divergenceFlagged}, un-arrived milestone has no actual=${pendingMilestoneHasNoActual}`,
+    );
+
+    // ---- 18:cha-fields-readonly (AC03) ----
+    const beforeBookingRef = (await prisma.shipment.findUniqueOrThrow({ where: { id: 'seed-shipment-locked-1' } })).booking_ref;
+    const smuggleResult = await p18.evaluate(async () => {
+      const res = await fetch('/api/v1/deals/seed-deal-locked/shipment/pickup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pickup_window_start: '2026-08-01T09:00',
+          pickup_window_end: '2026-08-01T12:00',
+          contact_name: 'Test Contact',
+          contact_phone: '+91-99999-00000',
+          address: 'Test Address',
+          // Smuggled CHA filing fields — the schema must strip these silently.
+          booking_ref: 'HACKED-REF',
+          customs_ref: 'HACKED-CUSTOMS',
+          cha_partner_id: 'attacker-partner-id',
+        }),
+      });
+      const body = await res.json().catch(() => null);
+      return { status: res.status, booking_ref: body?.data?.booking_ref };
+    });
+    const afterBookingRef = (await prisma.shipment.findUniqueOrThrow({ where: { id: 'seed-shipment-locked-1' } })).booking_ref;
+    const chaFieldNeverChanged = afterBookingRef === beforeBookingRef && smuggleResult.booking_ref !== 'HACKED-REF';
+    record(
+      '18:cha-fields-readonly',
+      'AC03: exporter cannot edit CHA filing reference fields, even by smuggling them into the pickup payload',
+      smuggleResult.status === 200 && chaFieldNeverChanged ? 'PASS' : 'FAIL',
+      `pickup call status=${smuggleResult.status}, booking_ref before=${beforeBookingRef}, after=${afterBookingRef}, response echoed hacked value=${smuggleResult.booking_ref === 'HACKED-REF'}`,
+    );
+    await resetShipmentPaymentFixtures();
+
+    // ---- 18:raise-issue-dedup (AC04) ----
+    const raiseIssueTwice = await p18.evaluate(async () => {
+      const payload = JSON.stringify({ reason: 'Container held for random inspection.', severity: 'blocked' });
+      const res1 = await fetch('/api/v1/deals/seed-deal-locked/shipment/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+      const first = await res1.json().catch(() => null);
+      const res2 = await fetch('/api/v1/deals/seed-deal-locked/shipment/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+      const second = await res2.json().catch(() => null);
+      return { firstDisputeId: first?.data?.dispute_id, firstCreated: first?.data?.dispute_created, secondDisputeId: second?.data?.dispute_id, secondCreated: second?.data?.dispute_created };
+    });
+    const remediationTaskCount = await prisma.task.count({ where: { deal_id: 'seed-deal-locked', task_type: 'shipment_exception_remediation' } });
+    const disputeCount = await prisma.dispute.count({ where: { deal_id: 'seed-deal-locked', scope_type: 'shipment' } });
+    const noDuplicateDispute = raiseIssueTwice.firstDisputeId === raiseIssueTwice.secondDisputeId && raiseIssueTwice.secondCreated === false && disputeCount === 1;
+    record(
+      '18:raise-issue-dedup',
+      'AC04: raising the same shipment issue twice links the existing case/task instead of duplicating',
+      noDuplicateDispute && remediationTaskCount === 1 ? 'PASS' : 'FAIL',
+      `dispute ids equal=${raiseIssueTwice.firstDisputeId === raiseIssueTwice.secondDisputeId}, second created=${raiseIssueTwice.secondCreated}, dispute rows=${disputeCount}, remediation tasks=${remediationTaskCount}`,
+    );
+    await resetShipmentPaymentFixtures();
+
+    // ---- 18:no-holds-funds-language (AC01, payment) ----
+    await p18.goto(BASE + '/app/deals/seed-deal-locked/payment', { waitUntil: 'networkidle' });
+    await sleep(400);
+    const payBody1 = (await p18.locator('body').textContent()) ?? '';
+    const carriesDisclaimer = /not funds ClearTrade holds/i.test(payBody1);
+    // The Next.js RSC flight payload re-embeds the page's own text as a serialized JSON
+    // blob later in the same document, so the disclaimer sentence appears twice — a
+    // non-global replace would only strip the first, and the second copy would falsely
+    // trip the affirmative-claim check below.
+    const noAffirmativeHoldsClaim = !/ClearTrade (holds|settles|collects)\b/i.test(payBody1.replace(/not funds ClearTrade holds\.?/gi, ''));
+    record(
+      '18:no-holds-funds-language',
+      'AC01: page never implies ClearTrade holds or settles buyer funds',
+      carriesDisclaimer && noAffirmativeHoldsClaim ? 'PASS' : 'FAIL',
+      `disclaimer present=${carriesDisclaimer}, no affirmative holds/settles claim elsewhere=${noAffirmativeHoldsClaim}`,
+    );
+
+    // ---- 18:payment-provenance (AC02) ----
+    const provenanceVisible = /AA-verified/.test(payBody1) && /Bank partner/.test(payBody1);
+    record(
+      '18:payment-provenance',
+      'AC02: every payment milestone shows its provenance label',
+      provenanceVisible ? 'PASS' : 'FAIL',
+      `AA-verified shown=${/AA-verified/.test(payBody1)}, Bank partner shown=${/Bank partner/.test(payBody1)}`,
+    );
+
+    // ---- 18:partial-receipt-guard (AC03) ----
+    // The fixture's payment2 is already `partially_received` — transitioning to that same
+    // state would trip the "already in this state" guard before the amount check ever
+    // runs, which would test the wrong thing. Start from `due`, where `partially_received`
+    // is a legal transition, so what's actually under test is the amount validation.
+    const payment2 = await prisma.payment.findUniqueOrThrow({ where: { id: 'seed-payment-locked-2' } });
+    await prisma.payment.update({ where: { id: payment2.id }, data: { status: 'due', amount_received: null } });
+    const partialGuard = await p18.evaluate(
+      async ([paymentId]) => {
+        // Full amount (29400) submitted as a "partial" receipt must be rejected — this is
+        // not a partial receipt, it is a full one. Validation failures return 422.
+        const res = await fetch(`/api/v1/deals/seed-deal-locked/payment/${paymentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update_status', to: 'partially_received', source: 'bank_partner', amount_received: 29400 }),
+        });
+        return { status: res.status };
+      },
+      [payment2.id] as const,
+    );
+    const legitimatePartial = await p18.evaluate(
+      async ([paymentId]) => {
+        const res = await fetch(`/api/v1/deals/seed-deal-locked/payment/${paymentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update_status', to: 'partially_received', source: 'bank_partner', amount_received: 22000 }),
+        });
+        const body = await res.json().catch(() => null);
+        return { status: res.status, amount_received: body?.data?.amount_received };
+      },
+      [payment2.id] as const,
+    );
+    record(
+      '18:partial-receipt-guard',
+      'AC03: partial receipt is supported, and a full amount cannot be recorded as "partial"',
+      partialGuard.status === 422 && legitimatePartial.status === 200 ? 'PASS' : 'FAIL',
+      `full-amount-as-partial rejected (422)=${partialGuard.status}, legitimate partial accepted (200)=${legitimatePartial.status}, recorded amount=${legitimatePartial.amount_received}`,
+    );
+    await resetShipmentPaymentFixtures();
+
+    // ---- 18:brc-independent (AC04) ----
+    const beforeBrcUpdate = await prisma.payment.findUniqueOrThrow({ where: { id: 'seed-payment-locked-2' } });
+    await p18.evaluate(
+      async ([paymentId]) => {
+        await fetch(`/api/v1/deals/seed-deal-locked/payment/${paymentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update_brc', to: 'available' }),
+        });
+      },
+      [payment2.id] as const,
+    );
+    const afterBrcUpdate = await prisma.payment.findUniqueOrThrow({ where: { id: 'seed-payment-locked-2' } });
+    const brcChangedIndependently =
+      afterBrcUpdate.brc_status === 'available' &&
+      afterBrcUpdate.status === beforeBrcUpdate.status &&
+      afterBrcUpdate.received_at?.getTime() === beforeBrcUpdate.received_at?.getTime();
+    record(
+      '18:brc-independent',
+      'AC04: brc_status changes independently of payment status/received_at/realized_at',
+      brcChangedIndependently ? 'PASS' : 'FAIL',
+      `brc_status now=${afterBrcUpdate.brc_status}, payment status unchanged=${afterBrcUpdate.status === beforeBrcUpdate.status}, received_at unchanged=${afterBrcUpdate.received_at?.getTime() === beforeBrcUpdate.received_at?.getTime()}`,
+    );
+
+    await ctx18.close();
+    await resetShipmentPaymentFixtures();
 
     // The full paid journey and the trailing contrast sampling used to live at this
     // point in the file (under the number 16, now reused above for the deals

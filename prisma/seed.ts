@@ -610,6 +610,175 @@ async function main() {
     },
   });
 
+  // ---------------------------------------------------------------------------
+  // Shipment & CHA tracking (EXP-14). One CHA and one freight Partner, a shipment
+  // mid-timeline (in_transit) with one genuine ETA-vs-actual divergence on the customs
+  // milestone (delayed by two days — a real exception the timeline should surface, not
+  // an invented one), and filing references an exporter must never be able to edit.
+  // ---------------------------------------------------------------------------
+  const chaPartner = await prisma.partner.upsert({
+    where: { id: 'seed-partner-cha-1' },
+    update: {},
+    create: {
+      id: 'seed-partner-cha-1',
+      type: 'cha',
+      legal_name: 'Konkan Customs House Agents Pvt Ltd',
+      display_name: 'Konkan CHA',
+      country_code: 'IN',
+      contact_email: 'ops@konkancha.example',
+      contact_phone: '+91-22-5550-1010',
+      partner_status: 'active',
+    },
+  });
+
+  const freightPartner = await prisma.partner.upsert({
+    where: { id: 'seed-partner-freight-1' },
+    update: {},
+    create: {
+      id: 'seed-partner-freight-1',
+      type: 'freight',
+      legal_name: 'Sagar Freight Forwarders LLP',
+      display_name: 'Sagar Freight',
+      country_code: 'IN',
+      contact_email: 'bookings@sagarfreight.example',
+      contact_phone: '+91-22-5550-2020',
+      partner_status: 'active',
+    },
+  });
+
+  await prisma.partner.upsert({
+    where: { id: 'seed-partner-insurance-1' },
+    update: {},
+    create: {
+      id: 'seed-partner-insurance-1',
+      type: 'insurance',
+      legal_name: 'Bharat Trade Cover Insurance Co.',
+      display_name: 'Bharat Trade Cover',
+      country_code: 'IN',
+      contact_email: 'quotes@bharattradecover.example',
+      contact_phone: '+91-22-5550-3030',
+      partner_status: 'active',
+    },
+  });
+
+  const lockedShipment = await prisma.shipment.upsert({
+    where: { id: 'seed-shipment-locked-1' },
+    update: {},
+    create: {
+      id: 'seed-shipment-locked-1',
+      deal_id: lockedDeal.id,
+      status: 'in_transit',
+      mode: 'sea',
+      origin: { port: 'Nhava Sheva', country_code: 'IN' },
+      destination: { port: 'Jebel Ali', country_code: 'AE' },
+      incoterm: lockedDeal.incoterm,
+      cha_partner_id: chaPartner.id,
+      freight_partner_id: freightPartner.id,
+      booking_ref: 'BKG-NHV-88213',
+      customs_ref: 'CUS-IN-2026-451092',
+      shipping_bill_no: 'SB-4471002',
+      exception_state: 'watch',
+      exception_reason: 'Customs clearance ran two days past the original ETA; cleared without a hold.',
+      exception_owner_id: agent.id,
+    },
+  });
+
+  const milestoneRows: {
+    code: string;
+    label: string;
+    state: 'complete' | 'in_progress' | 'pending';
+    sequence: number;
+    eta: string;
+    actual: string | null;
+  }[] = [
+    { code: 'planning', label: 'Planning', state: 'complete', sequence: 1, eta: '2026-07-21T00:00:00Z', actual: '2026-07-21T00:00:00Z' },
+    { code: 'booking', label: 'Booking confirmed', state: 'complete', sequence: 2, eta: '2026-07-24T00:00:00Z', actual: '2026-07-24T00:00:00Z' },
+    { code: 'pickup', label: 'Pickup', state: 'complete', sequence: 3, eta: '2026-07-27T00:00:00Z', actual: '2026-07-27T00:00:00Z' },
+    // The genuine divergence: cleared two days later than planned.
+    { code: 'customs', label: 'Customs clearance', state: 'complete', sequence: 4, eta: '2026-07-29T00:00:00Z', actual: '2026-07-31T00:00:00Z' },
+    { code: 'loaded', label: 'Loaded', state: 'complete', sequence: 5, eta: '2026-08-01T00:00:00Z', actual: '2026-08-01T00:00:00Z' },
+    { code: 'in_transit', label: 'In transit', state: 'in_progress', sequence: 6, eta: '2026-08-20T00:00:00Z', actual: null },
+    { code: 'arrived', label: 'Arrived', state: 'pending', sequence: 7, eta: '2026-08-22T00:00:00Z', actual: null },
+    { code: 'delivered', label: 'Delivered', state: 'pending', sequence: 8, eta: '2026-08-25T00:00:00Z', actual: null },
+  ];
+
+  for (const m of milestoneRows) {
+    await prisma.shipmentMilestone.upsert({
+      where: { shipment_id_code: { shipment_id: lockedShipment.id, code: m.code } },
+      update: {},
+      create: {
+        shipment_id: lockedShipment.id,
+        code: m.code,
+        label: m.label,
+        state: m.state,
+        sequence: m.sequence,
+        eta_at: new Date(m.eta),
+        actual_at: m.actual ? new Date(m.actual) : null,
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Payment, banking visibility & insurance (EXP-15). Two installments per the deal's
+  // "30% advance, 70% against BL" terms: the advance fully received (AA-verified), the
+  // balance partially received with BRC still pending — brc_status is independent of
+  // received/realized (AC04), so this fixture deliberately leaves it lagging behind.
+  // ---------------------------------------------------------------------------
+  await prisma.payment.upsert({
+    where: { id: 'seed-payment-locked-1' },
+    update: {},
+    create: {
+      id: 'seed-payment-locked-1',
+      deal_id: lockedDeal.id,
+      amount: 12600,
+      currency: 'USD',
+      amount_received: 12600,
+      payment_method: 'wire',
+      status: 'realized',
+      due_at: new Date('2026-07-22T00:00:00Z'),
+      received_at: new Date('2026-07-21T00:00:00Z'),
+      realized_at: new Date('2026-07-23T00:00:00Z'),
+      brc_status: 'verified',
+      source: 'AA',
+      label: '30% advance',
+      sequence: 1,
+    },
+  });
+
+  await prisma.payment.upsert({
+    where: { id: 'seed-payment-locked-2' },
+    update: {},
+    create: {
+      id: 'seed-payment-locked-2',
+      deal_id: lockedDeal.id,
+      amount: 29400,
+      currency: 'USD',
+      amount_received: 18000,
+      payment_method: 'LC',
+      status: 'partially_received',
+      due_at: new Date('2026-09-10T00:00:00Z'),
+      received_at: new Date('2026-08-28T00:00:00Z'),
+      evidence_refs: [{ note: 'First tranche against BL received via bank partner.', recorded_by: agent.id, recorded_at: '2026-08-28T09:00:00Z' }],
+      brc_status: 'pending',
+      source: 'bank_partner',
+      label: '70% against BL',
+      sequence: 2,
+    },
+  });
+
+  await prisma.insuranceCase.upsert({
+    where: { id: 'seed-insurance-case-locked-1' },
+    update: {},
+    create: {
+      id: 'seed-insurance-case-locked-1',
+      deal_id: lockedDeal.id,
+      shipment_id: lockedShipment.id,
+      status: 'quote_requested',
+      notes: 'Requested cargo cover for the sea leg given the customs delay.',
+      quote_requested_at: new Date('2026-08-01T00:00:00Z'),
+    },
+  });
+
   const negotiatingDeal = await prisma.deal.upsert({
     where: { id: 'seed-deal-negotiating' },
     update: {},
