@@ -137,25 +137,24 @@ async function main() {
   try {
     // ================= EXP-01 =================
     await scenario('EXP-01-AC01', 'Journey stage derived server-side, not read from the stored column', async () => {
-      // Poison the stored column with a value the derivation would never produce for
-      // this org's real data. If the page still shows the derived stage, it cannot be
-      // reading the column — a stronger proof than "the HTML contains a stage".
       const before = await prisma.exporterOrg.findUnique({
         where: { id: PAID_ORG },
         select: { journey_stage: true, readiness_status: true },
       });
+
+      // Derive FIRST, then poison with a value guaranteed to differ from it. Poisoning
+      // with a fixed constant (previously `payment_realized`) went inconclusive whenever
+      // this org's real derived stage happened to already BE that value — which
+      // verify-journey's own progression legitimately produces. Deriving before choosing
+      // the poison value makes that coincidence structurally impossible: whichever stage
+      // the org is really at, the poison is picked to be something else.
+      const derived = await deriveJourneyStage(PAID_ORG);
+      const poison = derived === JourneyStage.onboarding ? JourneyStage.payment_realized : JourneyStage.onboarding;
+
       await prisma.exporterOrg.update({
         where: { id: PAID_ORG },
-        data: { journey_stage: JourneyStage.payment_realized }, // the final stage — clearly wrong
+        data: { journey_stage: poison },
       });
-
-      // What the derivation ACTUALLY yields for this org's current data. Hardcoding
-      // "Readiness" here made the test order-dependent: verify-journey selects a target
-      // market and creates a lead, which legitimately advances the derived stage, so
-      // running that suite first turned this into a spurious failure. The AC is "the
-      // stored column is ignored in favour of derivation" — so assert exactly that,
-      // against whatever the derivation currently returns.
-      const derived = await deriveJourneyStage(PAID_ORG);
 
       const { ctx, page } = await loggedInContext(browser, 'owner@sunriseagro.example');
       await page.goto(BASE + '/app/overview', { waitUntil: 'networkidle' });
@@ -180,18 +179,17 @@ async function main() {
         payment_realized: 'Paid',
       };
       const expectedLabel = STAGE_LABEL[derived] ?? derived;
-      // The poisoned value would render "Paid". Passing requires the rail to match the
-      // DERIVED stage instead — and to differ from the poison unless they coincide.
+      const poisonLabel = STAGE_LABEL[poison] ?? poison;
+      // Passing requires the rail to match the DERIVED stage — poison and derived are
+      // now guaranteed distinct by construction, so this is always a real proof, never
+      // an inconclusive coincidence.
       const matchesDerived = currentSegment.includes(expectedLabel);
-      const poisonWouldDiffer = derived !== JourneyStage.payment_realized;
 
       record(
         'EXP-01-AC01',
         'Journey stage derived server-side, not read from the stored column',
-        matchesDerived && poisonWouldDiffer ? 'PASS' : matchesDerived ? 'UNVERIFIED' : 'FAIL',
-        poisonWouldDiffer
-          ? `stored column poisoned to 'payment_realized'; rail rendered "${currentSegment}" and the live derivation says '${derived}' -> "${expectedLabel}" (a stored read would have shown "Paid")`
-          : `derivation currently yields 'payment_realized', identical to the poison value, so this run cannot distinguish derived from stored — inconclusive, not a pass`,
+        matchesDerived ? 'PASS' : 'FAIL',
+        `stored column poisoned to '${poison}' (chosen to differ from the live derivation); rail rendered "${currentSegment}" and the live derivation says '${derived}' -> "${expectedLabel}" (a stored read would have shown "${poisonLabel}")`,
       );
     });
 

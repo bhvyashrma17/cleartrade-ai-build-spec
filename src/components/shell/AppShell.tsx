@@ -38,6 +38,7 @@ const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Shipments', href: '/app/shipments', minTier: 'paid' },
     { label: 'Payments', href: '/app/payments', minTier: 'paid' },
     { label: 'Support', href: '/app/support', minTier: 'free' },
+    { label: 'Notifications', href: '/app/notifications', minTier: 'free' },
   ],
   agent: [
     { label: 'My Day', href: '/agent', minTier: 'paid' },

@@ -25,6 +25,7 @@ const EXPLORE: MenuLink[] = [
 
 const MANAGE_FREE: MenuLink[] = [
   { label: 'Readiness', href: '/app/readiness', description: 'Your export-readiness assessment and score.' },
+  { label: 'Notifications & Account', href: '/app/notifications', description: 'Alerts, preferences, organization profile and team.' },
 ];
 
 const PAID_ONLY: { label: string; description: string }[] = [

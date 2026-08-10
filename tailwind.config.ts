@@ -11,9 +11,21 @@ const config: Config = {
       colors: {
         primary: 'var(--color-primary)',
         action: 'var(--color-action)',
-        info: 'var(--color-info)',
+        // `info`/`critical` map to their AA-safe `-text` blends, not the raw brand hue.
+        // `text-info`/`text-critical`/`border-critical` are used ~11 places across the
+        // app (form errors, blocker reasons, job-status text) as a BARE class — no
+        // `[var(--color-x-text)]` arbitrary value in sight — so whatever this token
+        // resolves to is exactly what ships as body text. The raw hues fail WCAG AA at
+        // small sizes on a light background (`--color-critical` #EF4444 measured at
+        // 3.54:1 against a 5%-tint card, needs 4.5:1) — the same "class name looks
+        // right but silently fails" shape as the `bg-x/N` opacity bug elsewhere in this
+        // file's history, just on the text-color axis instead of alpha. `warning` stays
+        // on its raw hue: nothing in the app uses a bare `text-warning`/`border-warning`
+        // today, so there is no live bug to fix, and changing it preemptively would be
+        // guessing at a future default rather than fixing a measured failure.
+        info: 'var(--color-info-text)',
         warning: 'var(--color-warning)',
-        critical: 'var(--color-critical)',
+        critical: 'var(--color-critical-text)',
         accent: 'var(--color-accent)',
         'surface-raised': 'var(--color-surface-raised)',
         'surface-muted': 'var(--color-surface-muted)',

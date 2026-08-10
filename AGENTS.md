@@ -101,6 +101,14 @@ govern every PR.
   against **live derived state** (call the same function the server calls) or **seed and restore
   what you depend on**, and prefer `UNVERIFIED` over `PASS` when the data can't distinguish the
   thing under test — a green run that proves nothing is worse than an honest inconclusive one.
+- **Restart the dev server before a full suite run, not just after a migration.** A `next dev`
+  process left running for hours accumulates Prisma query logging and degrades HMR compile
+  latency, which surfaces as `page.goto`/`waitFor` timeouts in the Playwright suites — a false
+  regression signal that looks exactly like a broken page. It has also coincided with a V8 abort
+  (`Lazy deopt after a fast API call with return value is unsupported`) killing the process mid-run
+  on non-LTS Node; see `.nvmrc` / `package.json#engines` for the pinned version. Kill port 3000,
+  `rm -rf .next`, and restart clean before running `scripts/browser-verify.ts` and friends back to
+  back — a stale server is indistinguishable from a real regression until you've ruled it out.
 
 ## Doc map — read what's relevant to the task, not everything
 

@@ -77,6 +77,21 @@ async function main() {
     },
   });
 
+  // EXP-17-AC03 needs a real exporter_member principal to verify against — "Org member
+  // role is enforced server-side" is untestable without a member who isn't the owner.
+  const member = await prisma.user.upsert({
+    where: { email: 'member@sunriseagro.example' },
+    update: {},
+    create: {
+      id: 'seed-user-member',
+      email: 'member@sunriseagro.example',
+      name: 'Arjun Nair',
+      password_hash,
+      role: UserRole.exporter_member,
+      exporter_org_id: org.id,
+    },
+  });
+
   const agent = await prisma.user.upsert({
     where: { email: 'agent@cleartrade.example' },
     update: {},
@@ -1079,6 +1094,345 @@ async function main() {
   });
 
   // ---------------------------------------------------------------------------
+  // EXP-03 Enablement Center. Task rows seeded DIRECTLY rather than through a live
+  // `is_current: true` ReadinessAssessment on purpose: `scripts/verify-journey.ts` J2
+  // submits a real assessment against this SAME org and asserts against whatever the
+  // job handler produces from ITS OWN answers. Seeding a current/draft assessment row
+  // would prefill the exporter portal's readiness form and could silently change what
+  // J2 submits (e.g. a pre-filled `packaging_qc` answer would suppress that recommended
+  // finding). Task rows have no such dependency — the Enablement Center page reads them
+  // directly — so this fixture is realistic without coupling to that suite's fixture.
+  //
+  // Deliberately NOT fully "ready": one required task (`gst`) is mid-review, one
+  // (`ad_code`) was rejected and is waiting on the exporter — real varied states for
+  // every UI branch (waiting review / rejected+reason / approved) rather than one happy
+  // path. `ExporterOrg.readiness_status` stays `ready`, untouched, exactly as every
+  // other verified suite already depends on — this fixture is a UI-testing snapshot of
+  // the Task/TaskEvidence layer, not a claim about the org's cached summary status.
+  // ---------------------------------------------------------------------------
+  // Every task/evidence `update` mirrors its `create` (not `{}`) — these task_types are
+  // exactly what `runReadinessAssessment()` matches on too, and a real assessment run
+  // (verify-journey.ts J2 submits one against this same org) can update or even cancel
+  // them. Re-seeding must reconverge to this fixture's intended demo states regardless
+  // of what a prior verification run left behind, the same "seed enforces its own
+  // fixture" discipline `exporterOrg.upsert` already uses above.
+  const iecTaskFields = {
+    scope_type: 'exporter_org' as const,
+    scope_id: org.id,
+    exporter_org_id: org.id,
+    title: 'Verify your IEC',
+    description: 'Record and verify your IEC; a number entered on its own is not verification.',
+    owner_user_id: owner.id,
+    owner_role: UserRole.exporter_owner,
+    state: TaskState.done,
+    priority: TaskPriority.high,
+    completed_at: new Date('2026-07-15T09:00:00Z'),
+    blocked_reason: null,
+    waiting_on: null,
+    cancel_reason: null,
+    visibility: Visibility.exporter_visible,
+    task_type: 'readiness_iec',
+  };
+  const readinessTaskIec = await prisma.task.upsert({
+    where: { id: 'seed-task-readiness-iec' },
+    update: iecTaskFields,
+    create: { id: 'seed-task-readiness-iec', ...iecTaskFields },
+  });
+  await prisma.taskEvidence.upsert({
+    where: { id: 'seed-evidence-iec-1' },
+    update: {},
+    create: {
+      id: 'seed-evidence-iec-1',
+      task_id: readinessTaskIec.id,
+      file_ref: 'seed/iec-certificate.pdf',
+      file_name: 'iec-certificate.pdf',
+      uploaded_by_id: owner.id,
+      uploaded_at: new Date('2026-07-14T11:00:00Z'),
+      review_status: 'approved',
+      reviewed_by_id: agent.id,
+      reviewed_at: new Date('2026-07-15T09:00:00Z'),
+    },
+  });
+
+  const gstTaskFields = {
+    scope_type: 'exporter_org' as const,
+    scope_id: org.id,
+    exporter_org_id: org.id,
+    title: 'Verify your GSTIN',
+    description: 'Record and verify your GSTIN; a number entered on its own is not verification.',
+    owner_user_id: owner.id,
+    owner_role: UserRole.exporter_owner,
+    state: TaskState.in_progress,
+    priority: TaskPriority.high,
+    due_at: new Date('2026-08-15T00:00:00Z'),
+    blocked_reason: null,
+    waiting_on: null,
+    cancel_reason: null,
+    completed_at: null,
+    visibility: Visibility.exporter_visible,
+    task_type: 'readiness_gst',
+  };
+  const readinessTaskGst = await prisma.task.upsert({
+    where: { id: 'seed-task-readiness-gst' },
+    update: gstTaskFields,
+    create: { id: 'seed-task-readiness-gst', ...gstTaskFields },
+  });
+  await prisma.taskEvidence.upsert({
+    where: { id: 'seed-evidence-gst-1' },
+    update: {},
+    create: {
+      id: 'seed-evidence-gst-1',
+      task_id: readinessTaskGst.id,
+      file_ref: 'seed/gstin-certificate.pdf',
+      file_name: 'gstin-certificate.pdf',
+      uploaded_by_id: owner.id,
+      uploaded_at: new Date('2026-08-05T10:00:00Z'),
+      review_status: 'pending',
+    },
+  });
+
+  const adCodeTaskFields = {
+    scope_type: 'exporter_org' as const,
+    scope_id: org.id,
+    exporter_org_id: org.id,
+    title: 'Verify your AD code',
+    description: 'Record and verify your AD code; a number entered on its own is not verification.',
+    owner_user_id: owner.id,
+    owner_role: UserRole.exporter_owner,
+    state: TaskState.waiting,
+    priority: TaskPriority.high,
+    blocked_reason: 'The scanned certificate is illegible — please re-upload a clearer copy.',
+    waiting_on: 'Re-upload requested',
+    cancel_reason: null,
+    completed_at: null,
+    due_at: new Date('2026-08-10T00:00:00Z'),
+    visibility: Visibility.exporter_visible,
+    task_type: 'readiness_ad_code',
+  };
+  const readinessTaskAdCode = await prisma.task.upsert({
+    where: { id: 'seed-task-readiness-ad-code' },
+    update: adCodeTaskFields,
+    create: { id: 'seed-task-readiness-ad-code', ...adCodeTaskFields },
+  });
+  await prisma.taskEvidence.upsert({
+    where: { id: 'seed-evidence-ad-code-1' },
+    update: {},
+    create: {
+      id: 'seed-evidence-ad-code-1',
+      task_id: readinessTaskAdCode.id,
+      file_ref: 'seed/ad-code-scan.pdf',
+      file_name: 'ad-code-scan.pdf',
+      uploaded_by_id: owner.id,
+      uploaded_at: new Date('2026-08-03T08:00:00Z'),
+      review_status: 'rejected',
+      review_note: 'The scanned certificate is illegible — please re-upload a clearer copy.',
+      reviewed_by_id: agent.id,
+      reviewed_at: new Date('2026-08-03T15:00:00Z'),
+    },
+  });
+
+  const packagingQcTaskFields = {
+    scope_type: 'exporter_org' as const,
+    scope_id: org.id,
+    exporter_org_id: org.id,
+    title: 'Confirm packaging and QC process',
+    description: 'Document how the product will be packed and quality checked.',
+    owner_user_id: owner.id,
+    owner_role: UserRole.exporter_owner,
+    state: TaskState.not_started,
+    priority: TaskPriority.normal,
+    blocked_reason: null,
+    waiting_on: null,
+    cancel_reason: null,
+    completed_at: null,
+    visibility: Visibility.exporter_visible,
+    task_type: 'readiness_packaging_qc',
+  };
+  await prisma.task.upsert({
+    where: { id: 'seed-task-readiness-packaging-qc' },
+    update: packagingQcTaskFields,
+    create: { id: 'seed-task-readiness-packaging-qc', ...packagingQcTaskFields },
+  });
+
+  const samplesTaskFields = {
+    scope_type: 'exporter_org' as const,
+    scope_id: org.id,
+    exporter_org_id: org.id,
+    title: 'Plan an export sample',
+    description: 'Prepare a sample plan before buyer outreach.',
+    owner_user_id: owner.id,
+    owner_role: UserRole.exporter_owner,
+    state: TaskState.done,
+    priority: TaskPriority.normal,
+    completed_at: new Date('2026-07-20T00:00:00Z'),
+    blocked_reason: null,
+    waiting_on: null,
+    cancel_reason: null,
+    visibility: Visibility.exporter_visible,
+    task_type: 'readiness_samples',
+  };
+  await prisma.task.upsert({
+    where: { id: 'seed-task-readiness-samples' },
+    update: samplesTaskFields,
+    create: { id: 'seed-task-readiness-samples', ...samplesTaskFields },
+  });
+
+  // ---------------------------------------------------------------------------
+  // EXP-17 Notifications & Account.
+  // ---------------------------------------------------------------------------
+  await prisma.notification.upsert({
+    where: { user_id_dedupe_key: { user_id: owner.id, dedupe_key: 'seed-notif-1' } },
+    update: {},
+    create: {
+      user_id: owner.id,
+      type: 'commercial_terms_proposed',
+      title: 'New commercial terms to review',
+      body: 'Your agent sent version 2 of the commercial terms for approval.',
+      severity: 'action_required',
+      object_type: 'deal',
+      object_id: negotiatingDeal.id,
+      deep_link: `/app/deals/${negotiatingDeal.id}/commercial`,
+      dedupe_key: 'seed-notif-1',
+      read_at: null,
+      created_at: new Date('2026-08-08T09:00:00Z'),
+    },
+  });
+  await prisma.notification.upsert({
+    where: { user_id_dedupe_key: { user_id: owner.id, dedupe_key: 'seed-notif-2' } },
+    update: {},
+    create: {
+      user_id: owner.id,
+      type: 'dispute_resolution_proposed',
+      title: 'A resolution has been proposed',
+      body: 'Agreed a 1.5% credit note against the next shipment rather than a rework.',
+      severity: 'action_required',
+      object_type: 'dispute',
+      object_id: 'seed-dispute-locked-proposed',
+      deep_link: `/app/deals/${lockedDeal.id}/support`,
+      dedupe_key: 'seed-notif-2',
+      read_at: null,
+      created_at: new Date('2026-08-09T14:00:00Z'),
+    },
+  });
+  await prisma.notification.upsert({
+    where: { user_id_dedupe_key: { user_id: owner.id, dedupe_key: 'seed-notif-3' } },
+    update: {},
+    create: {
+      user_id: owner.id,
+      type: 'document_generation',
+      title: 'Commercial invoice generated',
+      body: 'CI v2 is ready for your review.',
+      severity: 'info',
+      object_type: 'document',
+      deep_link: `/app/deals/${lockedDeal.id}/documents`,
+      dedupe_key: 'seed-notif-3',
+      // Already read — demonstrates the read/unread visual distinction, not just the
+      // empty and all-unread cases.
+      read_at: new Date('2026-08-07T10:15:00Z'),
+      created_at: new Date('2026-08-07T09:45:00Z'),
+    },
+  });
+
+  // A commercial-category email preference switched off, so the Preferences panel has
+  // a real "not all defaults" row to render, not just the all-enabled default state.
+  await prisma.notificationPreference.upsert({
+    where: { user_id_category: { user_id: owner.id, category: 'commercial' } },
+    update: {},
+    create: { user_id: owner.id, category: 'commercial', email_enabled: false, in_app_enabled: true },
+  });
+
+  // A pending invitation — "Invite pending: visible status + resend/revoke" (docs/04).
+  await prisma.invitation.upsert({
+    where: { id: 'seed-invitation-1' },
+    update: {},
+    create: {
+      id: 'seed-invitation-1',
+      exporter_org_id: org.id,
+      email: 'new-analyst@sunriseagro.example',
+      role: UserRole.exporter_member,
+      status: 'pending',
+      token: 'seed-invitation-token-1',
+      invited_by_id: owner.id,
+      expires_at: new Date(Date.now() + 14 * 86_400_000),
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // EXP-07 Buyer Detail: contacts, sourced evidence, and varied relationship states so
+  // every branch (converted lead, shortlisted-no-lead, not shortlisted) has real data.
+  // ---------------------------------------------------------------------------
+  await prisma.buyerContact.upsert({
+    where: { id: 'seed-contact-buyer3-1' },
+    update: {},
+    create: {
+      id: 'seed-contact-buyer3-1',
+      buyer_id: 'seed-buyer-3',
+      name: 'Fatima Al Nuaimi',
+      role_title: 'Procurement Manager',
+      email: 'f.alnuaimi@gulffoods.example',
+      phone: '+971-4-555-0199',
+      verification_status: VerificationStatus.verified,
+      provenance: 'Confirmed via company website and a direct call, 2026-06-10.',
+      verified_at: new Date('2026-06-10T00:00:00Z'),
+    },
+  });
+  await prisma.buyerSourceEvidence.upsert({
+    where: { id: 'seed-evidence-buyer3-1' },
+    update: {},
+    create: {
+      id: 'seed-evidence-buyer3-1',
+      buyer_id: 'seed-buyer-3',
+      source_type: 'import_records',
+      source_ref: 'UAE customs import filings',
+      summary: 'Recurring turmeric and spice imports from India over the last 12 months.',
+      observed_at: new Date('2026-06-01T00:00:00Z'),
+    },
+  });
+  await prisma.buyerSourceEvidence.upsert({
+    where: { id: 'seed-evidence-buyer5-1' },
+    update: {},
+    create: {
+      id: 'seed-evidence-buyer5-1',
+      buyer_id: 'seed-buyer-5',
+      source_type: 'trade_reference',
+      source_ref: 'Exporter-reported dispute log',
+      summary: 'A prior exporter reported a payment dispute with this buyer.',
+      observed_at: new Date('2026-06-02T00:00:00Z'),
+    },
+  });
+
+  // Spice Trading Co. (buyer-1) already converted — its lead is linked to the
+  // negotiating deal, so the Buyer Detail page's "Converted to a deal" state has a real
+  // row behind it. Deliberately NOT buyer-3 (Gulf Foods): `verify-journey.ts` J7 creates
+  // a fresh lead against whichever buyer sorts first by `last_activity_at` with no
+  // filters, which is always Gulf Foods (the most recently active buyer) — seeding a
+  // lead there would collide with J7's own row and make its "Lead created" assertion
+  // fail with a DUPLICATE_LEAD response instead. Buyer-1 is never that buyer.
+  // `update` mirrors `create` — an upsert that only fills in on first-create would leave
+  // a PRIOR run's row (from this fixture or any other) silently un-converged.
+  const buyer1LeadFields = {
+    stage: 'converted' as const,
+    assigned_agent_id: agent.id,
+    deal_id: negotiatingDeal.id,
+    interest_level: 'high' as const,
+    fit_score: 91,
+    fit_score_basis: { basis: 'Repeat importer of Indian textiles, verified contact, strong price fit.' },
+  };
+  await prisma.buyerLead.upsert({
+    where: { exporter_org_id_product_id_buyer_id: { exporter_org_id: org.id, product_id: bedsheets.id, buyer_id: 'seed-buyer-1' } },
+    update: buyer1LeadFields,
+    create: { exporter_org_id: org.id, product_id: bedsheets.id, buyer_id: 'seed-buyer-1', created_by_id: owner.id, ...buyer1LeadFields },
+  });
+
+  // Rapid Import Partners (buyer-5, the risk-flagged one) is shortlisted but has no
+  // lead yet — the "shortlisted, no lead created yet" branch.
+  await prisma.buyerShortlist.upsert({
+    where: { exporter_org_id_buyer_id_product_id: { exporter_org_id: org.id, buyer_id: 'seed-buyer-5', product_id: turmeric.id } },
+    update: {},
+    create: { exporter_org_id: org.id, buyer_id: 'seed-buyer-5', product_id: turmeric.id, created_by_id: owner.id },
+  });
+
+  // ---------------------------------------------------------------------------
   // Tier fixtures — one org per tier, so the paywall is testable without hand-rolling
   // rows. `seed-org-1` above is the paid tenant; these two are its free and guest peers.
   // ---------------------------------------------------------------------------
@@ -1145,6 +1499,7 @@ async function main() {
   console.log(`Deals: ${lockedDeal.id} [deal_locked, blocked] | ${negotiatingDeal.id} [negotiating]`);
   console.log('\nLogin accounts (password for all:', SEED_PASSWORD, '):');
   console.log(`  Exporter owner  ${owner.email}  -> /app  [tier: paid]`);
+  console.log(`  Exporter member ${member.email}  -> /app  [tier: paid]`);
   console.log(`  Exporter owner  ${freeOwner.email}  -> /app  [tier: free]`);
   console.log(`  Agent           ${agent.email}  -> /agent (assigned to ${org.display_name})`);
   console.log(`  Ops supervisor  ${opsSupervisor.email}  -> /ops`);

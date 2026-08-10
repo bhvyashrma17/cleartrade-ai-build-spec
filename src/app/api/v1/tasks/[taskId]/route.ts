@@ -4,10 +4,19 @@
  *
  * Authorization is `canTransitionTask()`, which already encodes the ownership rule
  * (agents act on agent-owned tasks in their assigned orgs, exporters on exporter-owned
- * ones in their own org, ops on anything). This route adds one thing on top: an INTERNAL
- * task is invisible to an exporter principal, so it must also be un-actionable by one.
- * Returning `notFound()` rather than `forbidden()` keeps that consistent with how the
- * rest of the product handles out-of-scope ids — a 403 would confirm the task exists.
+ * ones in their own org, ops on anything). This route adds two things on top:
+ *
+ *   - An INTERNAL task is invisible to an exporter principal, so it must also be
+ *     un-actionable by one. Returning `notFound()` rather than `forbidden()` keeps that
+ *     consistent with how the rest of the product handles out-of-scope ids — a 403
+ *     would confirm the task exists.
+ *   - EXP-03-AC03 "server rejects protected tasks": an exporter reaching `done` on a
+ *     readiness task that requires reviewed evidence (IEC/GST/AD code — see
+ *     `src/lib/enablement.ts`) is refused here even though `canTransitionTask` would
+ *     otherwise allow it. Without this, an exporter could bypass the dedicated
+ *     evidence-review flow entirely by hitting this general-purpose route directly with
+ *     `{ to: 'done' }` — this is the one place that closes it for every caller of this
+ *     endpoint, not just the Enablement Center UI.
  */
 
 import { TaskState } from '@prisma/client';
@@ -15,7 +24,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getConfig } from '@/lib/config';
-import { errorResponse, forbidden, newCorrelationId, notFound, single, validationError } from '@/lib/errors';
+import { isEvidenceRequiredReadinessTask } from '@/lib/enablement';
+import { errorResponse, forbidden, newCorrelationId, notFound, prerequisitesNotMet, single, validationError } from '@/lib/errors';
 import { canTransitionTask } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { assertTaskTransition, deriveSlaState } from '@/lib/state-machines/task';
@@ -44,10 +54,38 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ taskI
     if (!parsed.success) throw validationError(zodFieldErrors(parsed.error));
     const input = parsed.data;
 
+    if (
+      input.to === TaskState.done &&
+      principal.role.startsWith('exporter') &&
+      isEvidenceRequiredReadinessTask(task.task_type)
+    ) {
+      const approved = await prisma.taskEvidence.findFirst({
+        where: { task_id: task.id, review_status: 'approved' },
+      });
+      if (!approved) {
+        throw prerequisitesNotMet(
+          [
+            {
+              object_type: 'task',
+              object_id: task.id,
+              reason: 'This task requires evidence, reviewed and approved, before it can be marked done.',
+              deep_link: '/app/readiness/tasks',
+            },
+          ],
+          'This task needs approved evidence before it can be completed.',
+        );
+      }
+    }
+
     const effects = assertTaskTransition(task.state, input.to as TaskState, {
       blocked_reason: input.blocked_reason,
       waiting_on: input.waiting_on,
       cancel_reason: input.cancel_reason,
+      // The check above is the real gate for evidence-required readiness tasks; once it
+      // has passed (or does not apply), this transition is exactly as legitimate as any
+      // other exporter-initiated `done` — the state machine's own guard has no further
+      // domain fact to demand.
+      domain_prerequisite_met: true,
     });
 
     const thresholds = await getConfig('sla.thresholds');

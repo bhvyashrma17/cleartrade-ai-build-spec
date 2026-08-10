@@ -11,6 +11,7 @@
 
 import { VerificationStatus } from '@prisma/client';
 import { format } from 'date-fns';
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { DataTable, StatusChip, type DataTableColumn, UpgradeNotice } from '@/components/ui';
 import { useDebouncedValue } from '@/hooks';
@@ -154,7 +155,9 @@ export function BuyersExplorer({
       header: 'Buyer',
       render: (b) => (
         <div>
-          <div className="font-medium text-primary">{b.display_name}</div>
+          <Link href={`/app/buyers/${b.id}`} className="focus-visible-ring font-medium text-primary underline-offset-2 hover:underline">
+            {b.display_name}
+          </Link>
           <div className="text-xs text-[var(--color-text-secondary)]">{b.legal_name}</div>
         </div>
       ),

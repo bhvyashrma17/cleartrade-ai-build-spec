@@ -300,3 +300,55 @@ export const reopenDisputeSchema = z.object({
   action: z.literal('reopen'),
   reopen_reason: z.string().trim().min(1, 'Say why this case is reopening.'),
 });
+
+// ---------------------------------------------------------------------------
+// EXP-17 Notifications & Account
+// ---------------------------------------------------------------------------
+
+export const updateNotificationPreferenceSchema = z.object({
+  category: z.string().trim().min(1),
+  channel: z.enum(['email', 'in_app']),
+  enabled: z.boolean(),
+});
+
+/** Org profile edit — deliberately excludes gstin/iec/iec_number, which are managed
+ * through the readiness verification flow, not freely editable here. */
+export const updateExporterOrgSchema = z.object({
+  legal_name: z.string().trim().min(1, 'Legal name is required.').max(200).optional(),
+  state: z.string().trim().max(100).nullish(),
+  city: z.string().trim().max(100).nullish(),
+});
+
+export const createInvitationSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email address.'),
+  role: z.enum(['exporter_owner', 'exporter_member']),
+});
+
+export const invitationActionSchema = z.object({
+  action: z.enum(['resend', 'revoke']),
+});
+
+// ---------------------------------------------------------------------------
+// EXP-03 Enablement Center
+// ---------------------------------------------------------------------------
+
+export const reviewTaskEvidenceSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('approve') }),
+  z.object({
+    action: z.literal('reject'),
+    review_note: z.string().trim().min(1, 'Say what needs to change before this is re-submitted.'),
+  }),
+]);
+
+export const askAgentSchema = z.object({
+  body: z.string().trim().min(1, 'Write a message before sending.').max(2000),
+});
+
+// ---------------------------------------------------------------------------
+// EXP-07 Buyer Detail
+// ---------------------------------------------------------------------------
+
+export const createBuyerShortlistSchema = z.object({
+  buyer_id: z.string().trim().min(1, 'A buyer is required.'),
+  product_id: z.string().trim().nullish(),
+});

@@ -111,7 +111,25 @@ export type Capability =
   // EXP-16. Sending is a distinct capability from viewing — a role could conceivably
   // read a thread without being able to post to it (e.g. a future read-only auditor
   // role), so collapsing the two into `message.view` would foreclose that later.
-  | 'message.send';
+  | 'message.send'
+  // EXP-17. Every exporter role manages their OWN notifications/preferences — this
+  // capability is the tier/role gate on the page and its routes; ownership itself
+  // (`Notification.user_id === principal.id`) is checked separately at every call site,
+  // the same "capability decides who may act, tenant/identity scope decides on what"
+  // split every other capability in this file follows.
+  | 'notification.manage'
+  // EXP-17 Team. Restricted further to "owner only" by `canManageTeam()` below — the
+  // matrix's `restricted` grant exists exactly for this: allowed in principle, gated by
+  // an additional policy check at the call site.
+  | 'team.manage'
+  // EXP-03. Enablement tasks already exist via `task.transition`; evidence upload is
+  // its own capability because reviewing evidence is an agent/ops action an exporter
+  // must never hold, which a single shared capability could not express.
+  | 'task_evidence.upload'
+  | 'task_evidence.review'
+  // EXP-07. Buyer detail itself reuses `buyer_discovery.run`/`buyer_contact.view`;
+  // shortlisting is its own capability because it is a distinct write, not a search.
+  | 'buyer_shortlist.create';
 
 const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
   // | Object / action | Exporter | Agent | Ops | Admin |
@@ -349,6 +367,56 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_finance: 'none',
     admin: 'none',
   },
+  'notification.manage': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    // Agent/ops have their own notification rows too, but they read/manage them as
+    // themselves — this capability only ever governs an exporter's own notifications
+    // page. Staff notifications aren't behind a capability at all, same as no exporter
+    // capability governs an agent's `/agent` inbox.
+    agent: 'none',
+    ops_supervisor: 'none',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'team.manage': {
+    exporter_owner: 'own_org',
+    // "Restricted" here means what it says everywhere else in this matrix: allowed in
+    // principle, closed by the policy check `canManageTeam()` applies at the call
+    // site — which today closes it entirely, since EXP-17 names this "Owner-only".
+    exporter_member: 'restricted',
+    agent: 'none',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'all',
+  },
+  'task_evidence.upload': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'task_evidence.review': {
+    // Reviewing evidence is never a self-attestation — an exporter cannot approve
+    // their own uploaded proof, which is the entire point of AC03's "auditable review
+    // outcome". No exporter role holds this capability at all.
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'buyer_shortlist.create': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
   'shipment.update': {
     exporter_owner: 'own_org',
     exporter_member: 'own_org',
@@ -399,6 +467,10 @@ const CAPABILITY_MIN_TIER: Partial<Record<Capability, OrgTier>> = {
   'buyer_lead.create': OrgTier.free,
   'exporter_master_data.edit': OrgTier.free,
   'market_assessment.save': OrgTier.free,
+  'notification.manage': OrgTier.free,
+  'team.manage': OrgTier.free,
+  'task_evidence.upload': OrgTier.free,
+  'buyer_shortlist.create': OrgTier.free,
 
   // Everything else falls through to paid: the agent-assisted workflow — deals,
   // documents, shipment, payment, outreach, disputes, payout, assignment, audit.
@@ -410,6 +482,18 @@ export function minTierFor(capability: Capability): OrgTier {
 
 export function tierAllows(principal: Principal, capability: Capability): boolean {
   return TIER_RANK[principal.tier] >= TIER_RANK[minTierFor(capability)];
+}
+
+/**
+ * The tier half of `tierAllows()`, usable without a `Principal` at all — for anonymous
+ * visitor pages (Market Detail, Buyer Detail) that render for a guest with no session,
+ * where `principal?.tier ?? 'guest'` is the only tier there is to check. Role is not
+ * evaluated here; a caller with no principal has no role to check in the first place,
+ * and every page that uses this already treats "no session" as guest-tier, not as a
+ * role failure.
+ */
+export function tierMeets(tier: OrgTier, capability: Capability): boolean {
+  return TIER_RANK[tier] >= TIER_RANK[minTierFor(capability)];
 }
 
 /**
@@ -660,6 +744,21 @@ export async function canAcceptDisputeResolution(
   if (isOps(principal) && !policy.ops_override_allowed) return false;
   if (isAgent(principal)) return false;
   return canAccessOrg(principal, deal.exporter_org_id);
+}
+
+/**
+ * EXP-17 Team — "Invite / remove | Owner-only critical actions" (docs/04, verbatim).
+ * Unlike `canApproveCommercialTerms`/`canAcceptDisputeResolution`, there is no
+ * `member_can_*` policy toggle here: the matrix's `restricted` grant for
+ * `exporter_member` is closed by this predicate unconditionally, not by a business
+ * policy setting, because docs/04 states the owner-only rule as a hard requirement, not
+ * a configurable default. Ops/admin retain override (matrix `all`) for support access.
+ */
+export async function canManageTeam(principal: Principal, orgId: string): Promise<boolean> {
+  const grant = grantFor(principal.role, 'team.manage');
+  if (grant === 'none' || !tierAllows(principal, 'team.manage')) return false;
+  if (grant === 'restricted') return false; // exporter_member — never, by design.
+  return canAccessOrg(principal, orgId);
 }
 
 /**
