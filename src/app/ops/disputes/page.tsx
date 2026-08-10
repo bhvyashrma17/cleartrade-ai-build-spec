@@ -100,6 +100,7 @@ export default async function OpsDisputesPage({
                   <th className="pb-2">Exporter</th>
                   <th className="pb-2">Owner</th>
                   <th className="pb-2">Status</th>
+                  <th className="pb-2">Next update</th>
                   <th className="pb-2">Age</th>
                 </tr>
               </thead>
@@ -107,7 +108,9 @@ export default async function OpsDisputesPage({
                 {disputes.map((dispute) => (
                   <tr key={dispute.id} className="border-t border-[var(--color-border)]">
                     <td className="py-3 font-medium text-primary">
-                      Case {dispute.id.slice(-6)}
+                      <Link href={`/ops/disputes/${dispute.id}`} className="focus-visible-ring underline-offset-2 hover:underline">
+                        Case {dispute.id.slice(-6)}
+                      </Link>
                       <p className="mt-0.5 text-xs font-normal text-[var(--color-text-secondary)]">{dispute.summary}</p>
                     </td>
                     <td className="py-3 text-[var(--color-text-secondary)]">{dispute.type.replace(/_/g, ' ')}</td>
@@ -124,6 +127,13 @@ export default async function OpsDisputesPage({
                         size="sm"
                         detail={dispute._count.internal_notes ? `${dispute._count.internal_notes} internal note(s) — Ops only` : undefined}
                       />
+                    </td>
+                    <td className="py-3 text-[var(--color-text-secondary)]">
+                      {dispute.status === 'waiting_external' && dispute.sla_due_at
+                        ? `${dispute.sla_due_at.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`
+                        : dispute.owner
+                          ? 'With owner'
+                          : 'Needs assignment'}
                     </td>
                     <td className="py-3 text-[var(--color-text-secondary)]">{age(dispute.created_at)}</td>
                   </tr>

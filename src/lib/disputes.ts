@@ -13,18 +13,33 @@ import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
 /** Never closed/resolved — the set an "is there already an open case?" check must exclude. */
-const OPEN_DISPUTE_STATUSES: DisputeStatus[] = [
+export const OPEN_DISPUTE_STATUSES: DisputeStatus[] = [
   DisputeStatus.open,
   DisputeStatus.investigating,
   DisputeStatus.waiting_external,
   DisputeStatus.proposed_resolution,
 ];
 
+/**
+ * Who may accept a proposed resolution on their own org's behalf — same shape as
+ * `DOCUMENT_APPROVAL_POLICY` in documents.ts, and the same reasoning: whether a member
+ * (not just the owner) can bind the org is a policy toggle, not a hardcoded role check.
+ */
+export const DISPUTE_ACCEPTANCE_POLICY = {
+  member_can_accept: false,
+  ops_override_allowed: false,
+} as const;
+
 export interface FindOrCreateDisputeArgs {
   principal: Principal;
   exporterOrgId: string;
   dealId: string;
-  scopeType: typeof ScopeType.shipment | typeof ScopeType.payment;
+  /**
+   * `deal` scope is the AGT-06 blocker escalation: the case is about the deal's execution
+   * as a whole, not one shipment or payment. Its dedup key is therefore the deal itself —
+   * one open Ops escalation per deal, however many gates are stuck.
+   */
+  scopeType: typeof ScopeType.shipment | typeof ScopeType.payment | typeof ScopeType.deal;
   shipmentId?: string | null;
   paymentId?: string | null;
   type: DisputeType;
@@ -48,11 +63,30 @@ export interface FindOrCreateDisputeResult {
 export async function findOrCreateDispute(args: FindOrCreateDisputeArgs): Promise<FindOrCreateDisputeResult> {
   const db = args.db ?? prisma;
 
+  // Each scope dedupes on its own key. A deal-scoped escalation must NOT match an open
+  // shipment or payment case on the same deal — those are different problems with
+  // different owners — so it filters on scope_type instead of a null child id, which
+  // would otherwise match any case whose shipment_id happens to be null.
+  //
+  // `type` is part of every key, not just the deal-scope one. EXP-16 lets an exporter
+  // open ANY dispute type against the same shipment or deal — a "quality" complaint and a
+  // "logistics" complaint about the same shipment are not the same case just because they
+  // share a shipment_id. Every existing caller (EXP-14's shipment issue, EXP-15's payment
+  // dispute, AGT-06's blocker escalation) passes exactly one fixed type per call site, so
+  // adding `type` to the key is a no-op for them and a correctness fix for the general
+  // case this file did not originally have to handle.
+  const scopeWhere =
+    args.scopeType === ScopeType.shipment
+      ? { shipment_id: args.shipmentId, type: args.type }
+      : args.scopeType === ScopeType.payment
+        ? { payment_id: args.paymentId, type: args.type }
+        : { scope_type: ScopeType.deal, type: args.type };
+
   const existing = await db.dispute.findFirst({
     where: {
       deal_id: args.dealId,
       status: { in: OPEN_DISPUTE_STATUSES },
-      ...(args.scopeType === ScopeType.shipment ? { shipment_id: args.shipmentId } : { payment_id: args.paymentId }),
+      ...scopeWhere,
     },
     orderBy: { created_at: 'desc' },
   });
@@ -64,7 +98,12 @@ export async function findOrCreateDispute(args: FindOrCreateDisputeArgs): Promis
   const created = await db.dispute.create({
     data: {
       scope_type: args.scopeType,
-      scope_id: args.scopeType === ScopeType.shipment ? args.shipmentId! : args.paymentId!,
+      scope_id:
+        args.scopeType === ScopeType.shipment
+          ? args.shipmentId!
+          : args.scopeType === ScopeType.payment
+            ? args.paymentId!
+            : args.dealId,
       deal_id: args.dealId,
       shipment_id: args.scopeType === ScopeType.shipment ? args.shipmentId : null,
       payment_id: args.scopeType === ScopeType.payment ? args.paymentId : null,

@@ -661,8 +661,8 @@ async function main() {
     // yet" would be asserting the absence of shipped work. Their real content is covered
     // by scripts/verify-commercial.ts and scenario 17 below; the risk-banner half of
     // AC04 is still checked for both in BUILT_TABS.
-    const tabRoutes = ['messages', 'tasks', 'activity'];
-    const BUILT_TABS = ['commercial', 'documents', 'shipment', 'payment'];
+    const tabRoutes = ['tasks', 'activity'];
+    const BUILT_TABS = ['commercial', 'documents', 'shipment', 'payment', 'support'];
     const tabResults: string[] = [];
     let riskPersistedEverywhere = true;
     for (const tab of tabRoutes) {

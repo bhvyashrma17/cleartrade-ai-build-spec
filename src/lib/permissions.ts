@@ -107,7 +107,11 @@ export type Capability =
   // deliberately NOT the same capability that would let anyone edit CHA filing
   // reference fields (EXP-14-AC03), which this app has no capability for at all.
   | 'shipment.update'
-  | 'payment.update';
+  | 'payment.update'
+  // EXP-16. Sending is a distinct capability from viewing — a role could conceivably
+  // read a thread without being able to post to it (e.g. a future read-only auditor
+  // role), so collapsing the two into `message.view` would foreclose that later.
+  | 'message.send';
 
 const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
   // | Object / action | Exporter | Agent | Ops | Admin |
@@ -336,6 +340,14 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_supervisor: 'all',
     ops_finance: 'none',
     admin: 'all',
+  },
+  'message.send': {
+    exporter_owner: 'own_org',
+    exporter_member: 'own_org',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
   },
   'shipment.update': {
     exporter_owner: 'own_org',
@@ -625,6 +637,28 @@ export async function canApproveCommercialTerms(
   if (grant === 'none' || !tierAllows(principal, 'commercial_terms.approve')) return false;
   if (principal.role === UserRole.exporter_member && !policy.member_can_approve) return false;
   if (isOps(principal) && !policy.ops_override_allowed) return false;
+  return canAccessOrg(principal, deal.exporter_org_id);
+}
+
+/**
+ * EXP-16 "Accept resolution | Authorized exporter". `dispute.resolve` grants exporters
+ * only `restricted` in the matrix precisely so this second check — mirroring
+ * `canApproveCommercialTerms` exactly — decides who within the org counts as authorized,
+ * the same "owner by default, member only if policy allows" shape as accepting
+ * commercial terms. Ops never accepts on the exporter's behalf; `ops_override_allowed`
+ * exists in the policy shape for symmetry with the document/commercial policies but
+ * defaults closed, same reasoning as `DOCUMENT_APPROVAL_POLICY`.
+ */
+export async function canAcceptDisputeResolution(
+  principal: Principal,
+  deal: DealLike,
+  policy: { member_can_accept: boolean; ops_override_allowed: boolean },
+): Promise<boolean> {
+  const grant = grantFor(principal.role, 'dispute.resolve');
+  if (grant === 'none' || !tierAllows(principal, 'dispute.resolve')) return false;
+  if (principal.role === UserRole.exporter_member && !policy.member_can_accept) return false;
+  if (isOps(principal) && !policy.ops_override_allowed) return false;
+  if (isAgent(principal)) return false;
   return canAccessOrg(principal, deal.exporter_org_id);
 }
 

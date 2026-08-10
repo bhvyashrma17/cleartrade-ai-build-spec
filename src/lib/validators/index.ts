@@ -180,3 +180,123 @@ export const openPaymentDisputeSchema = z.object({
   payment_id: z.string().trim().min(1),
   reason: z.string().trim().min(1, 'Say what is being disputed.'),
 });
+
+// ---------------------------------------------------------------------------
+// AGT-06 Agent Execution Workspace
+// ---------------------------------------------------------------------------
+
+/**
+ * Partner assignment. `partner_id` is a reference into the approved directory — there is
+ * deliberately no `partner_name` free-text escape hatch, so AGT-06's "no free-text
+ * phantom partner in structured assignment" is a property of the schema rather than a
+ * rule the handler has to remember to apply.
+ */
+export const assignPartnerSchema = z.object({
+  partner_id: z.string().trim().min(1, 'Choose a partner from the approved directory.'),
+  lane: z.enum(['cha', 'freight', 'insurance', 'inspection']),
+  notes: z.string().trim().nullish(),
+});
+
+/** Recording what a partner sent back — AC02's "reference/evidence where available". */
+export const updateHandoffSchema = z.object({
+  handoff_id: z.string().trim().min(1),
+  status: z.enum(['sent', 'acknowledged', 'completed', 'rejected']),
+  reference: z.string().trim().nullish(),
+  notes: z.string().trim().nullish(),
+});
+
+/** AGT-06 "hand to CHA" / filing status + reference on the canonical Document row. */
+export const fileDocumentSchema = z.object({
+  action: z.literal('mark_filed'),
+  filing_status: z.enum(['ready', 'filed', 'accepted', 'rejected']),
+  filing_reference: z.string().trim().nullish(),
+  note: z.string().trim().nullish(),
+});
+
+/** Agent-side task transition. Mirrors the task state machine's required reasons. */
+export const transitionTaskSchema = z.object({
+  to: z.enum(['in_progress', 'waiting', 'done', 'cancelled']),
+  blocked_reason: z.string().trim().nullish(),
+  waiting_on: z.string().trim().nullish(),
+  cancel_reason: z.string().trim().nullish(),
+});
+
+/**
+ * Creating a task from the agent workspace. `visibility` is REQUIRED and has no default —
+ * AGT-06 "Create exporter task | Visibility explicit". A default here (in either
+ * direction) is how internal work silently becomes exporter-visible or vice versa.
+ */
+export const createDealTaskSchema = z.object({
+  title: z.string().trim().min(1, 'Give the task a title.'),
+  description: z.string().trim().nullish(),
+  owner_role: z.enum(['exporter_owner', 'agent', 'ops_supervisor']),
+  visibility: z.enum(['exporter_visible', 'internal']),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+});
+
+/** AGT-06 "Escalate blocker → Exception to Ops → Dedup / open case link". */
+export const escalateBlockerSchema = z.object({
+  reason: z.string().trim().min(1, 'Say what is blocked and why Ops needs to step in.'),
+  gate: z.string().trim().min(1),
+  severity: z.enum(['medium', 'high', 'critical']).default('high'),
+});
+
+/** Internal note — agent/ops only, its own table, never a Message. */
+export const createInternalNoteSchema = z.object({
+  body: z.string().trim().min(1, 'Write the note.'),
+});
+
+// ---------------------------------------------------------------------------
+// EXP-16 Messages, Support & Disputes
+// ---------------------------------------------------------------------------
+
+export const sendMessageSchema = z.object({
+  body: z.string().trim().min(1, 'Write a message before sending.').max(4000, 'Keep messages under 4000 characters.'),
+});
+
+/**
+ * "Open dispute" — prefilled with deal/shipment context per EXP-16, but the shipment/
+ * payment ids are still validated server-side against THIS deal (loadDisputeContext),
+ * never trusted from the client as a bare foreign key.
+ */
+export const openDisputeSchema = z.object({
+  type: z.enum(['payment', 'quality', 'logistics', 'document', 'LC', 'inspection', 'other']),
+  severity: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
+  summary: z.string().trim().min(1, 'Describe the issue.').max(2000),
+  shipment_id: z.string().trim().nullish(),
+  payment_id: z.string().trim().nullish(),
+});
+
+export const assignDisputeSchema = z.object({
+  action: z.literal('assign'),
+  owner_user_id: z.string().trim().min(1, 'Choose an owner.'),
+});
+
+export const waitExternalDisputeSchema = z.object({
+  action: z.literal('wait_external'),
+  waiting_on: z.string().trim().min(1, 'Say who or what this is waiting on.'),
+  follow_up_at: z.string().trim().min(1, 'Set a follow-up date.'),
+});
+
+export const proposeResolutionDisputeSchema = z.object({
+  action: z.literal('propose_resolution'),
+  resolution: z.string().trim().min(1, 'Describe the proposed resolution.').max(4000),
+});
+
+/** Ops closing a case on a basis other than exporter acceptance. */
+export const closeDisputeSchema = z.object({
+  action: z.literal('close'),
+  closure_basis: z.string().trim().min(1, 'Record the basis for closing this case.'),
+  closure_summary: z.string().trim().min(1, 'Summarize the outcome.'),
+});
+
+/** Exporter acceptance — EXP-16 "Mark resolution accepted and close, as policy". */
+export const acceptResolutionSchema = z.object({
+  action: z.literal('accept'),
+  confirm: z.literal(true, { errorMap: () => ({ message: 'Confirmation is required to accept a resolution.' }) }),
+});
+
+export const reopenDisputeSchema = z.object({
+  action: z.literal('reopen'),
+  reopen_reason: z.string().trim().min(1, 'Say why this case is reopening.'),
+});

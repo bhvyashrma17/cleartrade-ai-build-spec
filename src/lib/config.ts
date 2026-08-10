@@ -132,6 +132,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     exporter_input_request: { due_in_hours: 24, warning_in_hours: 18, escalate_after_hours: 24 },
     shipment_exception: { due_in_hours: 4, warning_in_hours: 2, escalate_after_hours: 4 },
     payment_overdue_follow_up: { due_in_hours: 24, warning_in_hours: 12, escalate_after_hours: 24 },
+    dispute_response: { due_in_hours: 24, warning_in_hours: 12, escalate_after_hours: 24 },
   },
   'documents.registry': [
     {

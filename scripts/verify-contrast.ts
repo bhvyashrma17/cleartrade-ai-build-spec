@@ -130,6 +130,9 @@ async function main() {
       ['paid /app/tasks', '/app/tasks'],
       ['paid /app/deals', '/app/deals'],
       ['paid /app/messages', '/app/messages'],
+      // EXP-16. Conversation bubbles, dispute severity/status chips and the proposed-
+      // resolution accept panel are all new semantic-colour surfaces.
+      ['paid /app/deals/:id/support', '/app/deals/seed-deal-locked/support'],
       ['paid /app/more', '/app/more'],
     ] as const) {
       await paid.page.goto(BASE + path, { waitUntil: 'networkidle' });
@@ -149,6 +152,11 @@ async function main() {
     for (const [surface, path] of [
       ['agent /agent', '/agent'],
       ['agent /agent/outreach', '/agent/outreach'],
+      // AGT-06. The densest surface in the product — status chips, gate states, blocker
+      // text and the internal-only panel all carry semantic colour, so it is exactly the
+      // page where a contrast regression would be easiest to miss by eye.
+      ['agent /agent/deals/:id (execution)', '/agent/deals/seed-deal-locked'],
+      ['agent /agent/deals/:id/commercial', '/agent/deals/seed-deal-locked/commercial'],
     ] as const) {
       await agent.page.goto(BASE + path, { waitUntil: 'networkidle' });
       await sleep(1200);
@@ -163,6 +171,9 @@ async function main() {
       ['ops /ops/exceptions', '/ops/exceptions'],
       ['ops /ops/assignments', '/ops/assignments'],
       ['ops /ops/disputes', '/ops/disputes'],
+      // OPS-06 case detail: the visibility-segmented internal-notes block plus the
+      // resolution-workflow action forms.
+      ['ops /ops/disputes/:id', '/ops/disputes/seed-dispute-locked-proposed'],
     ] as const) {
       await ops.page.goto(BASE + path, { waitUntil: 'networkidle' });
       await sleep(1200);

@@ -11,7 +11,7 @@ import { usePathname } from 'next/navigation';
 
 const TABS = [
   { key: '', label: 'Overview' },
-  { key: 'messages', label: 'Messages' },
+  { key: 'support', label: 'Support' },
   { key: 'commercial', label: 'Commercial' },
   { key: 'tasks', label: 'Tasks' },
   { key: 'documents', label: 'Documents' },

@@ -432,44 +432,46 @@ model ExporterOrg {
 }
 
 model User {
-  id    String @id @default(cuid())
+  id              String   @id @default(cuid())
   /// Guests get a synthetic address on the RFC 2606 reserved `.invalid` TLD, which can
   /// never resolve or collide with a real one. Keeps this column non-null and UNIQUE so
   /// nothing downstream has to handle a null identity.
-  email String @unique
-  phone String?
-  name  String
+  email           String   @unique
+  phone           String?
+  name            String
   /// Null means "this account cannot log in" — the state a guest is in until it upgrades.
   /// authorize() MUST reject a null hash before reaching bcrypt.compare, which throws on
   /// null rather than returning false.
-  password_hash String?
-  role          UserRole
+  password_hash   String?
+  role            UserRole
   /// Null for agent / ops / admin principals. Non-null pins an exporter to one tenant.
   exporter_org_id String?
   is_active       Boolean  @default(true)
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  exporter_org        ExporterOrg?       @relation("OrgMembers", fields: [exporter_org_id], references: [id])
-  agent_for_orgs      ExporterOrg[]      @relation("OrgAssignedAgent")
-  agent_assignments   AgentAssignment[]  @relation("AssignmentAgent")
-  assignments_made    AgentAssignment[]  @relation("AssignmentActor")
-  owned_leads         BuyerLead[]        @relation("LeadAgent")
-  created_leads       BuyerLead[]        @relation("LeadCreatedBy")
-  owned_deals         Deal[]             @relation("DealOwnerAgent")
-  owned_tasks         Task[]             @relation("TaskOwner")
-  proposals_made      DealProposal[]     @relation("ProposalProposedBy")
-  proposals_approved  DealProposal[]     @relation("ProposalApprovedBy")
-  proposals_changes_requested DealProposal[] @relation("ProposalChangesRequestedBy")
-  outreach_activities OutreachActivity[]
-  audit_events        AuditEvent[]
-  notifications       Notification[]
-  messages_sent       Message[]
-  internal_notes      InternalNote[]
-  documents_approved  Document[]         @relation("DocumentApprover")
-  documents_reviewed  Document[]         @relation("DocumentReviewer")
-  disputes_owned      Dispute[]
-  jobs_requested      Job[]
+  exporter_org                ExporterOrg?       @relation("OrgMembers", fields: [exporter_org_id], references: [id])
+  agent_for_orgs              ExporterOrg[]      @relation("OrgAssignedAgent")
+  agent_assignments           AgentAssignment[]  @relation("AssignmentAgent")
+  assignments_made            AgentAssignment[]  @relation("AssignmentActor")
+  owned_leads                 BuyerLead[]        @relation("LeadAgent")
+  created_leads               BuyerLead[]        @relation("LeadCreatedBy")
+  owned_deals                 Deal[]             @relation("DealOwnerAgent")
+  owned_tasks                 Task[]             @relation("TaskOwner")
+  proposals_made              DealProposal[]     @relation("ProposalProposedBy")
+  proposals_approved          DealProposal[]     @relation("ProposalApprovedBy")
+  proposals_changes_requested DealProposal[]     @relation("ProposalChangesRequestedBy")
+  outreach_activities         OutreachActivity[]
+  audit_events                AuditEvent[]
+  notifications               Notification[]
+  messages_sent               Message[]
+  internal_notes              InternalNote[]
+  documents_approved          Document[]         @relation("DocumentApprover")
+  documents_reviewed          Document[]         @relation("DocumentReviewer")
+  documents_filed             Document[]         @relation("DocumentFiler")
+  partner_handoffs            PartnerHandoff[]   @relation("PartnerHandoffOwner")
+  disputes_owned              Dispute[]
+  jobs_requested              Job[]
 
   @@index([exporter_org_id])
   @@index([role])
@@ -499,13 +501,13 @@ model AgentAssignment {
 // ---------------------------------------------------------------------------
 
 model Product {
-  id              String @id @default(cuid())
+  id              String  @id @default(cuid())
   exporter_org_id String
   name            String
   description     String?
   hs_code         String?
   /// Provenance of the HS code: ai_suggested | user_confirmed | unknown.
-  hs_code_source  String @default("unknown")
+  hs_code_source  String  @default("unknown")
 
   // capacity = number + unit; never a bare number
   capacity_value Decimal? @db.Decimal(18, 4)
@@ -606,8 +608,8 @@ model DiscoveryRun {
 }
 
 model MarketAssessment {
-  id     String @id @default(cuid())
-  run_id String
+  id           String  @id @default(cuid())
+  run_id       String
   /// Null when the parent run was ad hoc (guest tier). The product context for those
   /// lives in DiscoveryRun.input_snapshot instead of in a Product row.
   product_id   String?
@@ -628,7 +630,7 @@ model MarketAssessment {
   price_band_max      Decimal? @db.Decimal(18, 4)
   price_band_currency String?  @db.VarChar(3)
 
-  rationale String?
+  rationale    String?
   /// docs/13 B2: exporter-visible agent annotation on AI output.
   agent_note   String?
   generated_at DateTime @default(now())
@@ -638,10 +640,10 @@ model MarketAssessment {
   /// previously selected assessment, even from a different run. Enforced in the select
   /// route's transaction, not by a DB constraint, because "at most one selected per org"
   /// spans rows this table alone can't express a uniqueness constraint over.
-  is_selected Boolean @default(false)
+  is_selected Boolean   @default(false)
   /// "Saved for later" (docs/04 EXP-04) — a lightweight bookmark, independent of
   /// selection. Non-exclusive: any number of assessments may be saved at once.
-  saved_at DateTime?
+  saved_at    DateTime?
 
   run     DiscoveryRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
   product Product?     @relation(fields: [product_id], references: [id], onDelete: Cascade)
@@ -844,21 +846,22 @@ model Deal {
   /// Optimistic concurrency — a stale write returns 409 VERSION_CONFLICT.
   version       Int      @default(1)
 
-  exporter_org    ExporterOrg     @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  buyer           Buyer           @relation(fields: [buyer_id], references: [id])
-  product         Product?        @relation(fields: [product_id], references: [id])
-  buyer_lead      BuyerLead?      @relation("LeadDeal")
-  owner_agent     User?           @relation("DealOwnerAgent", fields: [owner_agent_id], references: [id])
-  proposals       DealProposal[]
-  snapshots       DealSnapshot[]
-  documents       Document[]
-  shipments       Shipment[]
-  payments        Payment[]
-  tasks           Task[]
-  messages        Message[]
-  internal_notes  InternalNote[]
-  disputes        Dispute[]
-  insurance_cases InsuranceCase[]
+  exporter_org     ExporterOrg      @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  buyer            Buyer            @relation(fields: [buyer_id], references: [id])
+  product          Product?         @relation(fields: [product_id], references: [id])
+  buyer_lead       BuyerLead?       @relation("LeadDeal")
+  owner_agent      User?            @relation("DealOwnerAgent", fields: [owner_agent_id], references: [id])
+  proposals        DealProposal[]
+  snapshots        DealSnapshot[]
+  documents        Document[]
+  shipments        Shipment[]
+  payments         Payment[]
+  tasks            Task[]
+  messages         Message[]
+  internal_notes   InternalNote[]
+  disputes         Dispute[]
+  partner_handoffs PartnerHandoff[]
+  insurance_cases  InsuranceCase[]
 
   @@index([exporter_org_id, stage])
   @@index([owner_agent_id, stage])
@@ -936,9 +939,9 @@ model DealProposal {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  deal                Deal  @relation(fields: [deal_id], references: [id], onDelete: Cascade)
-  proposed_by         User? @relation("ProposalProposedBy", fields: [proposed_by_id], references: [id])
-  approved_by         User? @relation("ProposalApprovedBy", fields: [approved_by_id], references: [id])
+  deal                 Deal  @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  proposed_by          User? @relation("ProposalProposedBy", fields: [proposed_by_id], references: [id])
+  approved_by          User? @relation("ProposalApprovedBy", fields: [approved_by_id], references: [id])
   changes_requested_by User? @relation("ProposalChangesRequestedBy", fields: [changes_requested_by_id], references: [id])
 
   @@unique([deal_id, version])
@@ -1007,8 +1010,8 @@ model Task {
   state    TaskState    @default(not_started)
   priority TaskPriority @default(normal)
 
-  due_at     DateTime?
-  warning_at DateTime?
+  due_at       DateTime?
+  warning_at   DateTime?
   /// Derived from due_at/warning_at + SLA config. Never user-editable (AGT-07-AC03).
   sla_state    SlaState  @default(on_time)
   escalated_at DateTime?
@@ -1044,8 +1047,8 @@ model Document {
   shipment_id String?
 
   doc_type           DocType
-  version            Int     @default(1)
-  is_current_version Boolean @default(true)
+  version            Int            @default(1)
+  is_current_version Boolean        @default(true)
   source             DocumentSource
 
   /// Four independent dimensions. Collapsing any two of these is a spec violation
@@ -1060,6 +1063,10 @@ model Document {
   rejection_reason         String?
   filing_reference         String?
   filed_at                 DateTime?
+  /// AGT-06-AC02: a filing is an external handoff, so it records WHO filed it alongside
+  /// the status, timestamp and reference. Without this the audit trail can say a document
+  /// was filed but not by whom, which is exactly the gap AC02 closes.
+  filed_by_id              String?
 
   /// Secure object ref — resolved to a short-lived signed URL, never a public bucket URL.
   file_ref        String?
@@ -1072,9 +1079,9 @@ model Document {
   generated_from_snapshot_id String?
   generation_inputs          Json?
 
-  reviewed_by_id String?
-  reviewed_at    DateTime?
-  approved_by_id String?
+  reviewed_by_id    String?
+  reviewed_at       DateTime?
+  approved_by_id    String?
   /// Approval is bound to this version + checksum, not to the document identity.
   approved_version  Int?
   approved_checksum String?
@@ -1088,6 +1095,7 @@ model Document {
   snapshot DealSnapshot? @relation(fields: [generated_from_snapshot_id], references: [id])
   reviewer User?         @relation("DocumentReviewer", fields: [reviewed_by_id], references: [id])
   approver User?         @relation("DocumentApprover", fields: [approved_by_id], references: [id])
+  filed_by User?         @relation("DocumentFiler", fields: [filed_by_id], references: [id])
   disputes Dispute[]
 
   // A deal must never have two rows claiming the same (doc_type, version) — the
@@ -1128,12 +1136,13 @@ model Shipment {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  deal            Deal                @relation(fields: [deal_id], references: [id], onDelete: Cascade)
-  cha_partner     Partner?            @relation("ChaPartner", fields: [cha_partner_id], references: [id])
-  freight_partner Partner?            @relation("FreightPartner", fields: [freight_partner_id], references: [id])
-  milestones      ShipmentMilestone[]
-  documents       Document[]
-  disputes        Dispute[]
+  deal             Deal                @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  cha_partner      Partner?            @relation("ChaPartner", fields: [cha_partner_id], references: [id])
+  freight_partner  Partner?            @relation("FreightPartner", fields: [freight_partner_id], references: [id])
+  milestones       ShipmentMilestone[]
+  documents        Document[]
+  disputes         Dispute[]
+  partner_handoffs PartnerHandoff[]
 
   @@index([deal_id])
   @@index([status])
@@ -1172,10 +1181,65 @@ model Partner {
   created_at     DateTime      @default(now())
   updated_at     DateTime      @updatedAt
 
-  cha_shipments     Shipment[] @relation("ChaPartner")
-  freight_shipments Shipment[] @relation("FreightPartner")
+  cha_shipments     Shipment[]       @relation("ChaPartner")
+  freight_shipments Shipment[]       @relation("FreightPartner")
+  handoffs          PartnerHandoff[]
 
   @@index([type, partner_status])
+}
+
+/// AGT-06-AC02: "every external filing/partner handoff has owner, status, timestamp and
+/// reference/evidence where available."
+///
+/// `Shipment.cha_partner_id` records WHICH partner is assigned; it cannot record that the
+/// packet was sent on a date by a named agent under a reference the partner quoted back.
+/// This is that record — one row per handoff event, never overwritten, so a re-assignment
+/// leaves the original handoff visible rather than silently replacing it.
+///
+/// The partner is a foreign key into the approved directory, not a string. AGT-06 says
+/// "no free-text phantom partner in structured assignment" — that is enforced here by the
+/// column type, so it cannot be violated by a route that forgets to validate.
+model PartnerHandoff {
+  id          String  @id @default(cuid())
+  deal_id     String
+  shipment_id String?
+  partner_id  String
+
+  /// Which lane this handoff belongs to (docs/05 AGT-06 execution lanes).
+  lane   PartnerType
+  status HandoffStatus @default(pending)
+
+  /// The accountable ClearTrade-side owner. Not nullable in practice — a handoff nobody
+  /// owns is the failure mode AC02 exists to prevent.
+  owner_user_id String
+
+  /// Reference the partner issued back (job number, filing ref, booking ref). Null until
+  /// they respond — "where available" in AC02.
+  reference String?
+  notes     String?
+
+  sent_at         DateTime  @default(now())
+  acknowledged_at DateTime?
+  completed_at    DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal     Deal      @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  shipment Shipment? @relation(fields: [shipment_id], references: [id], onDelete: Cascade)
+  partner  Partner   @relation(fields: [partner_id], references: [id])
+  owner    User      @relation("PartnerHandoffOwner", fields: [owner_user_id], references: [id])
+
+  @@index([deal_id, lane])
+  @@index([partner_id, status])
+}
+
+enum HandoffStatus {
+  pending
+  sent
+  acknowledged
+  completed
+  rejected
 }
 
 // ---------------------------------------------------------------------------
@@ -1220,7 +1284,7 @@ model Payment {
 }
 
 model InsuranceCase {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   deal_id     String
   shipment_id String?
 
@@ -1268,8 +1332,17 @@ model Dispute {
   summary       String
   resolution    String?
   accepted_at   DateTime?
+  /// docs/07 §7.7 `investigating -> waiting_external` requires "waiting party + follow-up
+  /// date". `waiting_on` is the party/reason (mirrors Task.waiting_on); `sla_due_at`
+  /// doubles as the follow-up date while waiting_external.
+  waiting_on    String?
   sla_due_at    DateTime?
   closed_at     DateTime?
+  /// AC03 (OPS-06): closure records its outcome basis distinctly from the resolution
+  /// text itself — "accepted by the exporter" vs "closed on another authorized basis"
+  /// are different facts, and collapsing them into `resolution` would lose which one
+  /// actually happened.
+  closure_basis String?
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -1361,19 +1434,19 @@ model Notification {
 /// Append-only. The application layer exposes no update or delete path; corrections
 /// are new events (docs/08 §2).
 model AuditEvent {
-  id            String    @id @default(cuid())
-  actor_user_id String?
-  role          UserRole?
-  action        String
-  object_type   String
-  object_id     String
+  id              String      @id @default(cuid())
+  actor_user_id   String?
+  role            UserRole?
+  action          String
+  object_type     String
+  object_id       String
   /// Denormalized for tenant-scoped audit reads without joining through the object graph.
   exporter_org_id String?
-  timestamp      DateTime @default(now())
-  before_summary Json?
-  after_summary  Json?
-  correlation_id String
-  source         AuditSource @default(web)
+  timestamp       DateTime    @default(now())
+  before_summary  Json?
+  after_summary   Json?
+  correlation_id  String
+  source          AuditSource @default(web)
 
   actor User? @relation(fields: [actor_user_id], references: [id])
 

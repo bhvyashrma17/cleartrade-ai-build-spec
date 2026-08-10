@@ -766,6 +766,46 @@ async function main() {
     },
   });
 
+  // ---------------------------------------------------------------------------
+  // AGT-06 execution fixtures.
+  //
+  // The handoff row is what makes AC02 testable with real data: the CHA assignment on
+  // Shipment says WHO, this says who sent the packet, when, and under what reference the
+  // partner acknowledged it. The internal note gives the leak sweep something real to
+  // hunt for — a string that must appear on /agent/deals/:id and on no exporter surface
+  // or exporter-facing API response anywhere.
+  // ---------------------------------------------------------------------------
+  await prisma.partnerHandoff.upsert({
+    where: { id: 'seed-handoff-cha-1' },
+    update: {},
+    create: {
+      id: 'seed-handoff-cha-1',
+      deal_id: lockedDeal.id,
+      shipment_id: lockedShipment.id,
+      partner_id: chaPartner.id,
+      lane: 'cha',
+      status: 'acknowledged',
+      owner_user_id: agent.id,
+      reference: 'KCHA-JOB-77120',
+      notes: 'Sent invoice, packing list and SB draft for filing.',
+      sent_at: new Date('2026-07-28T06:30:00Z'),
+      acknowledged_at: new Date('2026-07-28T11:15:00Z'),
+    },
+  });
+
+  await prisma.internalNote.upsert({
+    where: { id: 'seed-internal-note-locked-1' },
+    update: {},
+    create: {
+      id: 'seed-internal-note-locked-1',
+      scope_type: 'deal',
+      scope_id: lockedDeal.id,
+      deal_id: lockedDeal.id,
+      author_user_id: agent.id,
+      body: 'INTERNAL-ONLY-CANARY: margin on this deal is thin after the customs delay — do not offer the buyer a further discount without Ops sign-off.',
+    },
+  });
+
   await prisma.insuranceCase.upsert({
     where: { id: 'seed-insurance-case-locked-1' },
     update: {},
@@ -776,6 +816,80 @@ async function main() {
       status: 'quote_requested',
       notes: 'Requested cargo cover for the sea leg given the customs delay.',
       quote_requested_at: new Date('2026-08-01T00:00:00Z'),
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // EXP-16 Messages, Support & Disputes. A real conversation (so the thread isn't
+  // empty), one case mid-flow at proposed_resolution (so "Accept resolution" has
+  // something real to accept), and one closed case (so "Resolved history" isn't
+  // empty either). AC01's separation is structural, not something the fixture has to
+  // prove — but seeding both a message thread AND a dispute on the same deal is the
+  // natural check that neither accidentally became the other.
+  // ---------------------------------------------------------------------------
+  await prisma.message.upsert({
+    where: { id: 'seed-message-locked-1' },
+    update: {},
+    create: {
+      id: 'seed-message-locked-1',
+      thread_key: `deal:${lockedDeal.id}`,
+      deal_id: lockedDeal.id,
+      exporter_org_id: org.id,
+      author_user_id: owner.id,
+      body: 'Hi Rahul — following up on the customs delay. Anything you need from us to keep things moving?',
+      created_at: new Date('2026-08-01T09:15:00Z'),
+    },
+  });
+  await prisma.message.upsert({
+    where: { id: 'seed-message-locked-2' },
+    update: {},
+    create: {
+      id: 'seed-message-locked-2',
+      thread_key: `deal:${lockedDeal.id}`,
+      deal_id: lockedDeal.id,
+      exporter_org_id: org.id,
+      author_user_id: agent.id,
+      body: 'Cleared this morning without a hold — we lost two days but nothing further needed from your side.',
+      created_at: new Date('2026-08-01T11:40:00Z'),
+    },
+  });
+
+  await prisma.dispute.upsert({
+    where: { id: 'seed-dispute-locked-proposed' },
+    update: {},
+    create: {
+      id: 'seed-dispute-locked-proposed',
+      scope_type: 'deal',
+      scope_id: lockedDeal.id,
+      deal_id: lockedDeal.id,
+      type: 'quality',
+      severity: 'medium',
+      status: 'proposed_resolution',
+      owner_user_id: agent.id,
+      summary: 'Buyer reports the sample colour ran slightly darker than the approved swatch on the first pallet.',
+      resolution:
+        'Agreed a 1.5% credit note against the next shipment rather than a rework, since the variance is within the buyer’s own tolerance letter. Awaiting your acceptance.',
+    },
+  });
+
+  await prisma.dispute.upsert({
+    where: { id: 'seed-dispute-locked-closed' },
+    update: {},
+    create: {
+      id: 'seed-dispute-locked-closed',
+      scope_type: 'shipment',
+      scope_id: lockedShipment.id,
+      deal_id: lockedDeal.id,
+      shipment_id: lockedShipment.id,
+      type: 'logistics',
+      severity: 'low',
+      status: 'closed',
+      owner_user_id: agent.id,
+      summary: 'Pickup slot needed to move by four hours to match the CHA’s customs window.',
+      resolution: 'Freight partner confirmed the later slot at no extra cost.',
+      closure_basis: 'exporter_accepted',
+      accepted_at: new Date('2026-07-27T08:00:00Z'),
+      closed_at: new Date('2026-07-27T08:00:00Z'),
     },
   });
 
