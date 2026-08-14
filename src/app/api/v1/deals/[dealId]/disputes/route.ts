@@ -21,6 +21,7 @@ import { findOrCreateDispute } from '@/lib/disputes';
 import { loadDealScoped } from '@/lib/documents';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
+import { triggerPayoutRecompute } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 import { applyDisputeOpenedRiskEffect } from '@/lib/state-machines/dispute';
 import { scheduleFromThreshold } from '@/lib/state-machines/task';
@@ -148,6 +149,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
 
       return { dispute, created };
     });
+
+    // AGT-08 / OPS-05: a freshly opened dispute is a new blocker under
+    // `require_no_open_dispute`, so a not-yet-eligible payout's reason needs to reflect
+    // it. (Opening a dispute never un-freezes an already-eligible payout — see the
+    // freeze-once guarantee in `recomputePayoutForDeal` — this only keeps the
+    // `not_eligible` reason text honest while it is still `not_eligible`.)
+    await triggerPayoutRecompute(dealId, correlationId);
 
     return NextResponse.json(
       single({ dispute_id: result.dispute.id, dispute_created: result.created, status: result.dispute.status }),

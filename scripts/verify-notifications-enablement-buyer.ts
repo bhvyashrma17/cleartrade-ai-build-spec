@@ -76,6 +76,16 @@ async function main() {
     // EXP-17 Notifications & Account
     // =====================================================================
     await scenario('EXP17-AC01', 'AC01: notification deep-link resolves and marks read', async () => {
+      // Arrange the precondition explicitly instead of relying on ambient list volume.
+      // `/app/notifications` paginates and sorts unread-first, newest-first, so as other
+      // suites accumulate notifications for this user the seeded row drifts off page 1
+      // and the link genuinely is not rendered — which failed this scenario for a reason
+      // that has nothing to do with what AC01 asserts (does a deep link mark read and
+      // navigate?). Pinning it unread and newest makes it row 1 deterministically.
+      await prisma.notification.updateMany({
+        where: { user_id: 'seed-user-owner', dedupe_key: 'seed-notif-1' },
+        data: { read_at: null, created_at: new Date() },
+      });
       const before = await prisma.notification.findUniqueOrThrow({
         where: { user_id_dedupe_key: { user_id: 'seed-user-owner', dedupe_key: 'seed-notif-1' } },
       });
@@ -133,17 +143,29 @@ async function main() {
       const startedUnauthenticated = cookiesBeforeLogin.length === 0 && preLoginProbe.status === 401;
 
       await loginAs(pageB, OWNER);
-      const readBack = await fetchJson(pageB, '/api/v1/notifications?per_page=50');
+      // Page until the row is found rather than searching a single page. The list sorts
+      // unread-first, so marking this row READ deliberately pushes it behind every
+      // unread row — the very act under test moves it out of a fixed first page. A
+      // single-page read therefore fails for a reason unrelated to the assertion once
+      // this user has more unread notifications than fit in one page.
+      type NotifRow = { id: string; read_at: string | null };
+      let sameRow: NotifRow | undefined;
+      let pagesScanned = 0;
+      let readBack: { status: number; body: unknown } = { status: 0, body: null };
+      for (let page = 1; page <= 20 && !sameRow; page++) {
+        readBack = await fetchJson(pageB, `/api/v1/notifications?per_page=50&page=${page}`);
+        const pageRows = (readBack.body as { data?: NotifRow[] } | null)?.data ?? [];
+        pagesScanned = page;
+        sameRow = pageRows.find((r) => r.id === notif.id);
+        if (pageRows.length === 0) break;
+      }
       await ctxB.close();
-
-      const rows = (readBack.body as { data?: { id: string; read_at: string | null }[] } | null)?.data ?? [];
-      const sameRow = rows.find((r) => r.id === notif.id);
 
       record(
         'EXP17-AC02',
         'AC02: read status syncs across sessions',
         markRes.status === 200 && startedUnauthenticated && Boolean(sameRow?.read_at) ? 'PASS' : 'FAIL',
-        `session A mark-read=${markRes.status}; session B started with an empty cookie jar (${cookiesBeforeLogin.length} cookies) and was unauthenticated (pre-login API probe=${preLoginProbe.status}, expect 401) before logging in independently=${startedUnauthenticated}; session B then sees read_at=${Boolean(sameRow?.read_at)} on the same row (${notif.id}) — server-side state, not a client cache`,
+        `session A mark-read=${markRes.status}; session B started with an empty cookie jar (${cookiesBeforeLogin.length} cookies) and was unauthenticated (pre-login API probe=${preLoginProbe.status}, expect 401) before logging in independently=${startedUnauthenticated}; session B paged ${pagesScanned} page(s) and sees read_at=${Boolean(sameRow?.read_at)} on the same row (${notif.id}) — server-side state, not a client cache`,
       );
     });
 
@@ -289,6 +311,8 @@ async function main() {
     // EXP-03 Enablement Center
     // =====================================================================
     await scenario('EXP03-AC01', 'AC01: required vs recommended distinction is visible', async () => {
+      await prisma.task.update({ where: { id: 'seed-task-readiness-gst' }, data: { state: 'in_progress', completed_at: null } });
+      await prisma.task.update({ where: { id: 'seed-task-readiness-packaging-qc' }, data: { state: 'not_started', completed_at: null } });
       const { ctx, page } = await loggedInContext(browser, OWNER);
       await page.goto(`${BASE}/app/readiness/tasks`, { waitUntil: 'networkidle' });
       await sleep(500);
@@ -317,6 +341,8 @@ async function main() {
 
     await scenario('EXP03-AC03', 'AC03: evidence review outcome is auditable and linked to the task', async () => {
       // Upload real evidence through the real route, then have the agent approve it.
+      await prisma.taskEvidence.deleteMany({ where: { task_id: 'seed-task-readiness-gst' } });
+      await prisma.task.update({ where: { id: 'seed-task-readiness-gst' }, data: { state: 'in_progress', completed_at: null } });
       const { ctx: expCtx, page: expPage } = await loggedInContext(browser, OWNER);
       const upload = await expPage.evaluate(async () => {
         const form = new FormData();
@@ -400,16 +426,17 @@ async function main() {
     });
 
     await scenario('EXP07-AC02', 'AC02: duplicate BuyerLead is prevented server-side', async () => {
-      const { ctx, page } = await loggedInContext(browser, OWNER);
-      const first = await fetchJson(page, '/api/v1/buyer-leads', { method: 'POST', body: { buyer_id: 'seed-buyer-4', product_id: 'seed-product-turmeric' } });
-      const second = await fetchJson(page, '/api/v1/buyer-leads', { method: 'POST', body: { buyer_id: 'seed-buyer-4', product_id: 'seed-product-turmeric' } });
+      const { ctx, page } = await loggedInContext(browser, AGENT);
+      const body = { exporter_org_id: ORG_ID, buyer_id: 'seed-buyer-4', product_id: 'seed-product-turmeric' };
+      const first = await fetchJson(page, '/api/v1/buyer-leads', { method: 'POST', body });
+      const second = await fetchJson(page, '/api/v1/buyer-leads', { method: 'POST', body });
       await ctx.close();
       const count = await prisma.buyerLead.count({ where: { exporter_org_id: ORG_ID, buyer_id: 'seed-buyer-4', product_id: 'seed-product-turmeric' } });
       record(
         'EXP07-AC02',
         'AC02: duplicate BuyerLead is prevented server-side',
         first.status === 201 && second.status === 409 && count === 1 ? 'PASS' : 'FAIL',
-        `first create=${first.status} (expect 201), second (duplicate)=${second.status} (expect 409 DUPLICATE_LEAD), rows for this (org,buyer,product)=${count} (expect 1)`,
+        `assigned-agent first create=${first.status} (expect 201), second duplicate=${second.status} (expect 409 DUPLICATE_LEAD), rows for this (org,buyer,product)=${count} (expect 1)`,
       );
       await prisma.buyerLead.deleteMany({ where: { exporter_org_id: ORG_ID, buyer_id: 'seed-buyer-4', product_id: 'seed-product-turmeric' } });
     });

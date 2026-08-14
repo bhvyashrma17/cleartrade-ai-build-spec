@@ -47,7 +47,9 @@ const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Deals', href: '/agent/deals', minTier: 'paid' },
     { label: 'Tasks', href: '/agent/tasks', minTier: 'paid' },
     { label: 'Escalations', href: '/agent/escalations', minTier: 'paid' },
-    { label: 'Payout', href: '/agent/payout', minTier: 'paid' },
+    // AGT-08's route is `/agent/performance` in both docs/05 and the docs/12 registry —
+    // this nav entry previously pointed at `/agent/payout`, which no route ever served.
+    { label: 'Performance', href: '/agent/performance', minTier: 'paid' },
   ],
   ops: [
     { label: 'Control Tower', href: '/ops', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },

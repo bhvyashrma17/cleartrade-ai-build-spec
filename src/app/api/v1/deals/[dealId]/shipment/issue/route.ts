@@ -1,11 +1,21 @@
 /**
  * POST /api/v1/deals/:dealId/shipment/issue — EXP-14 "Raise issue" (AC04).
  *
- * Two things happen together, both deduplicated: the shipment's exception severity is
- * raised (guarded by `assertExceptionStateChange`), and a case is opened via
+ * Three things happen together, all deduplicated: the shipment's exception severity is
+ * raised (guarded by `assertExceptionStateChange`), a case is opened via
  * `findOrCreateDispute` — which returns the EXISTING open dispute instead of a new one
- * if this shipment already has one. Calling this twice in a row must never produce two
- * disputes.
+ * if this shipment already has one — and the deal's risk floor is raised through the
+ * same explicit domain rule the dispute route uses.
+ *
+ * That third step is required by docs/11 §3 ("Shipment exception | Deal risk banner
+ * visible to all relevant roles"): the exception has to reach the persistent deal risk
+ * banner, which reads `Deal.risk_state`, not `Shipment.exception_state`. It was missing
+ * here — every existing test either hand-set `risk_state` in a fixture or opened the
+ * dispute through `/disputes` (which does apply the rule), so nothing exercised the
+ * shipment-exception path end to end until the cross-portal walk built a deal from
+ * scratch. `applyDisputeOpenedRiskEffect` is deliberately reused rather than
+ * reimplemented: it only ever RAISES risk and never overwrites a reason another rule
+ * wrote, so a shipment exception cannot silently downgrade a worse existing risk.
  */
 
 import { DisputeSeverity, DisputeType, ExceptionState, ScopeType, TaskPriority, TaskState, UserRole, Visibility } from '@prisma/client';
@@ -18,6 +28,7 @@ import { loadDealScoped } from '@/lib/documents';
 import { errorResponse, newCorrelationId, notFound, single, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { applyDisputeOpenedRiskEffect } from '@/lib/state-machines/dispute';
 import { assertExceptionStateChange } from '@/lib/state-machines/shipment';
 import { scheduleFromThreshold } from '@/lib/state-machines/task';
 import { raiseShipmentIssueSchema, zodFieldErrors } from '@/lib/validators';
@@ -72,6 +83,25 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
         correlationId,
         db: tx,
       });
+
+      // docs/11 §3 row 8: the exception must reach the deal risk banner, which reads
+      // `Deal.risk_state`. `loadDealScoped` does not select the risk columns, so they
+      // are read here inside the same transaction as the write that depends on them.
+      const riskRow = await tx.deal.findUniqueOrThrow({
+        where: { id: dealId },
+        select: { risk_state: true, risk_reason: true },
+      });
+      const riskEffect = applyDisputeOpenedRiskEffect(riskRow, {
+        id: dispute.id,
+        severity: SEVERITY_MAP[input.severity],
+        summary: input.reason,
+      });
+      if (riskEffect.changed) {
+        await tx.deal.update({
+          where: { id: dealId },
+          data: { risk_state: riskEffect.risk_state, risk_reason: riskEffect.risk_reason, version: { increment: 1 } },
+        });
+      }
 
       // AC04 also requires a managed TASK, not just a case — same dedup discipline:
       // one open remediation task per shipment exception, not one per click.

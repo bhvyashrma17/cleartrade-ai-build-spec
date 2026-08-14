@@ -23,9 +23,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { JobType, OrgTier, type Prisma } from '@prisma/client';
 import { getPrincipal, signIn } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
-import { errorResponse, jobAlreadyRunning, newCorrelationId, notFound, validationError } from '@/lib/errors';
+import { errorResponse, jobAlreadyRunning, newCorrelationId, notFound, upgradeRequired, validationError } from '@/lib/errors';
 import { enqueueJob, findInFlightJob } from '@/lib/jobs';
-import { assertCan, tenantScope } from '@/lib/permissions';
+import { assertCan, minTierFor, tenantScope, tierMeets } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import {
   consumeGuestRunQuota,
@@ -64,6 +64,16 @@ export async function POST(request: NextRequest) {
 
     let principal = await getPrincipal();
     let mintedGuest = false;
+
+    // Full Demand Discovery moved to `paid` tier (docs/14 §3 tier change — the pre-
+    // membership estimate at guest/free is now `POST /api/v1/market-estimates`). An
+    // anonymous caller can therefore NEVER satisfy this capability — guest is the tier
+    // ceiling for a session that doesn't exist yet. Reject before minting a tenant or
+    // spending IP quota on a request that was always going to fail: `tierMeets` is exactly
+    // the "no principal, check the anonymous floor" seam it exists for.
+    if (!principal && !tierMeets(OrgTier.guest, 'demand_discovery.run')) {
+      throw upgradeRequired(minTierFor('demand_discovery.run'));
+    }
 
     // --- Anonymous caller: quota first, then mint. Never the other way round. ---
     // A brand-new guest has no prior jobs, so there is nothing to deduplicate against and
@@ -111,7 +121,7 @@ export async function POST(request: NextRequest) {
       const scope = await tenantScope(principal);
       const product = await prisma.product.findFirst({
         where: { id: input.product_id, ...scope },
-        select: { id: true, name: true, hs_code: true, description: true },
+        select: { id: true, name: true, hs_code: true, description: true, lead_time_days: true, desired_order_size_amount: true, desired_order_size_currency: true, customization_capability: true, packaging_capability: true, moq_value: true, moq_unit: true, certifications: { select: { code: true, name: true, status: true, evidence_ref: true } } },
       });
       if (!product) throw notFound('That product is not available.');
       productId = product.id;
@@ -121,6 +131,14 @@ export async function POST(request: NextRequest) {
         name: product.name,
         hs_code: product.hs_code,
         description: product.description,
+        lead_time_days: product.lead_time_days,
+        desired_order_size_amount: product.desired_order_size_amount?.toString() ?? null,
+        desired_order_size_currency: product.desired_order_size_currency,
+        customization_capability: product.customization_capability,
+        packaging_capability: product.packaging_capability,
+        moq_value: product.moq_value?.toString() ?? null,
+        moq_unit: product.moq_unit,
+        certifications: product.certifications,
         target_countries: input.target_countries ?? [],
       };
     } else {

@@ -14,7 +14,13 @@
 import { requirePortalAccess } from '@/lib/auth';
 import { OutreachPipeline } from './OutreachPipeline';
 
-export default async function OutreachPage() {
+export default async function OutreachPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ exporter?: string }>;
+}) {
   await requirePortalAccess('/agent');
-  return <OutreachPipeline />;
+  // AGT-02 "buyer pipeline opens Outreach CRM filtered to this exporter".
+  const { exporter } = await searchParams;
+  return <OutreachPipeline initialExporterOrgId={exporter ?? null} />;
 }

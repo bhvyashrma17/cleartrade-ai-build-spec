@@ -27,6 +27,14 @@ export interface DiscoveryInput {
   target_countries?: string[];
   /** Origin country. India-first, but explicit rather than assumed. */
   origin_country?: string;
+  lead_time_days?: number | null;
+  desired_order_size_amount?: number | null;
+  desired_order_size_currency?: string | null;
+  customization_capability?: string | null;
+  packaging_capability?: string | null;
+  moq_value?: number | null;
+  moq_unit?: string | null;
+  certifications?: { code: string; name: string; status: string; evidence_ref: string | null }[];
 }
 
 /**
@@ -35,10 +43,21 @@ export interface DiscoveryInput {
  */
 export interface MarketAssessmentDraft {
   country_code: string;
-  overall_score: number;
+  overall_score: number | null;
   demand_score?: number | null;
   growth_score?: number | null;
   competition_score?: number | null;
+  market_access_score?: number | null;
+  export_economics_score?: number | null;
+  exporter_market_fit_score?: number | null;
+  logistics_feasibility_score?: number | null;
+  risk_resilience_score?: number | null;
+  confidence_score?: number;
+  eligibility_status?: 'eligible' | 'ineligible';
+  eligibility_reasons?: unknown[];
+  model_version?: string;
+  weight_profile_key?: string;
+  weight_profile_version?: number;
   india_share?: number | null;
   tariff_summary?: Record<string, unknown> | null;
   certification_requirements?: unknown[];
@@ -48,6 +67,18 @@ export interface MarketAssessmentDraft {
   price_band_currency?: string | null;
   /** Why this market ranks where it does. Required — docs/02 treats it as non-optional UX. */
   rationale: string;
+  /**
+   * Per-field source and retrieval date, keyed by field name — docs/04 EXP-04-AC03 asks for
+   * "freshness/source metadata", and EXP-04-AC02 forbids fabricating a missing value, which
+   * requires somewhere to say *that* a value is missing and why.
+   *
+   * Optional and additive: an engine that has no provenance to report omits it, every
+   * existing caller compiles unchanged, and nothing downstream is obliged to read it. This
+   * is the one extension to the interface the warehouse engine needed — the alternative was
+   * either dropping the requirement or smuggling provenance through a field meant for
+   * something else.
+   */
+  field_provenance?: Record<string, unknown> | null;
 }
 
 export interface DiscoveryResult {

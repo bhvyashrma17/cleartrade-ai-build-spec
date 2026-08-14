@@ -101,6 +101,35 @@ govern every PR.
   against **live derived state** (call the same function the server calls) or **seed and restore
   what you depend on**, and prefer `UNVERIFIED` over `PASS` when the data can't distinguish the
   thing under test — a green run that proves nothing is worse than an honest inconclusive one.
+- **Seeded fixtures hand-place END states, so the TRANSITIONS into them go
+  unexercised.** Twelve suites asserting against the seeded org caught real bugs, but three
+  slipped past all of them because the seed writes the destination row directly rather than
+  producing it by calling the routes: `shipment/issue` never actually raised `Deal.risk_state`
+  (the seed sets `risk_state: blocked` by hand), the `cha_filing` execution gate was a permanent
+  deadlock on any deal that didn't already have a partner assigned (the seed pre-assigns one),
+  and an `EXP-17` notification read-state test only worked because the seed's target row happened
+  to still be near the top of the list. All three were invisible until
+  `scripts/verify-cross-portal-walk.ts` built a deal from scratch — lead through dispute
+  resolution — and read every step through the *other* portal's API immediately after the write.
+  **A new feature needs at least one from-scratch path exercising its state machine, not only
+  assertions against rows the seed already placed at the end state.** When you add a new
+  lifecycle (a new gate, a new status enum, a new cross-object effect), extend the cross-portal
+  walk rather than only adding a seeded-fixture scenario for it.
+- **Restart the WORKER after adding a `JobType`, or it strands jobs in `processing` forever.**
+  A long-running `npm run worker` holds a Prisma client generated before the new enum value
+  existed. It still claims the new job (the candidate query selects only `id`, so nothing
+  fails yet), sets `status = processing`, and then throws while deserializing the unknown
+  enum on read-back — leaving the row `processing` with `attempts: 0` and no `JobAttempt`,
+  a state no code path can otherwise produce. `reclaimStaleJobs` does eventually rescue
+  these after `stale_after_seconds`, so the system self-heals, but in the meantime the stale
+  worker silently competes with any inline drain loop. This is exactly how the trade
+  warehouse seed first came out with ~1/3 of its rows missing, non-uniformly, which then
+  looked like a scoring bug rather than an infrastructure one. Symptom to recognise:
+  `processing` + `attempts: 0`. Kill and restart the worker whenever `JobType` changes.
+- **A drain loop must not treat one null claim as "queue empty".** `claimNextJob()` also
+  returns null when another process won the race for every candidate it looked at. Loop
+  until `count({ status: 'queued' })` is actually zero — see `seedTradeWarehouse()` in
+  `prisma/seed.ts`. Stopping at the first null is what silently truncated that same seed.
 - **Restart the dev server before a full suite run, not just after a migration.** A `next dev`
   process left running for hours accumulates Prisma query logging and degrades HMR compile
   latency, which surfaces as `page.goto`/`waitFor` timeouts in the Playwright suites — a false
@@ -238,13 +267,28 @@ and permission check works on them unchanged.
 
 | | guest | free | paid |
 |---|---|---|---|
-| Demand Discovery | ✓ (capped per IP, ad-hoc product input) | ✓ | ✓ |
+| Pre-membership market estimate | ✓ (capped per IP, observed history only — no ranking, no LLM) | ✓ | ✓ |
+| Full Demand Discovery (ranked, save/select) | — | — | ✓ (commitment fee paid) |
 | Buyer Discovery | ✓ (contacts hidden, result ceiling) | ✓ | ✓ |
 | Saved discovery history | — (persisted, but no history UI; purged after retention) | ✓ | ✓ |
 | Readiness | — | ✓ | ✓ |
 | Buyer contacts | — | ✓ | ✓ |
 | Buyer leads | — | ✓ (no agent assigned) | ✓ |
 | Deals, documents, shipment, payment, agent | — | — | ✓ |
+
+**Full Demand Discovery moved behind the commitment fee (docs/01 §2, docs/14 §3a).** This
+is not a new membership concept — it's the SAME commitment fee (`not_due`/`due`/`paid`/
+`waived`/`refunded`) docs/01 always specified, now doing the work of gating `paid` tier.
+Guest/free tier get `POST /api/v1/market-estimates` instead: a synchronous, no-LLM read of
+the `TradeFlow` warehouse returning observed historical import value + unit-price bands
+only. **Framing is a product requirement, not copy preference**: never project earnings or
+promised revenue, only "buyers in these markets imported X at Y–Z per unit" plus an
+explicit not-a-forecast disclaimer — enforced by `src/lib/market-estimate.ts` never
+multiplying `monthly_quantity` against a price band anywhere in the computation (it's
+captured and echoed, never an operand). Funnel: registration sets the fee `due`
+(`POST /api/v1/register`, snapshotted from the active `FeePolicy`, both branches); paying
+it (`PATCH /api/v1/exporter-org/commitment-fee`) flips `tier: free → paid` in the same
+transaction, via `src/lib/state-machines/commitment-fee.ts`.
 
 Two rules that are easy to get wrong:
 - **Guests get no `Product` rows.** Product context is typed ad hoc and snapshotted onto

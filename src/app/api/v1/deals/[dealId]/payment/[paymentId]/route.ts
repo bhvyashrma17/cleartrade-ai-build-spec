@@ -14,6 +14,7 @@ import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { loadDealScoped } from '@/lib/documents';
 import { errorResponse, newCorrelationId, notFound, single, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
+import { triggerPayoutRecompute } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 import { assertBrcTransition, assertPaymentTransition } from '@/lib/state-machines/payment';
 import { updateBrcStatusSchema, updatePaymentStatusSchema, zodFieldErrors } from '@/lib/validators';
@@ -103,6 +104,13 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ dealI
 
       return row;
     });
+
+    // AGT-08 / OPS-05: a status change — most importantly realization — can be exactly
+    // what a not-yet-eligible payout was waiting on. Enqueued after the transaction
+    // above has committed, so this route's own response time never depends on the
+    // recompute; see `triggerPayoutRecompute()` for why it never throws into this
+    // handler either.
+    await triggerPayoutRecompute(dealId, correlationId);
 
     return NextResponse.json(single(updated), { headers: { 'x-correlation-id': correlationId } });
   } catch (error) {

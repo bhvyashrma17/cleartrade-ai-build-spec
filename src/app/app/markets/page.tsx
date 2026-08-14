@@ -2,11 +2,16 @@
  * EXP-04 Demand Discovery. `/app/markets` · Exporter (all tiers, including guest) · P0.
  *
  * This is the one exporter surface that renders with **no session at all**. A visitor
- * has not been minted as a guest yet — that happens on their first search, in
- * POST /api/v1/discovery-runs — so this page must not call a guard that throws.
+ * has not been minted as a guest yet — that now happens on their first ESTIMATE call
+ * (`POST /api/v1/market-estimates`), not on this page load — so this page must not call
+ * a guard that throws.
  *
  * `getPrincipal()` (not `requireExporterPrincipal()`) is deliberate: null here means
  * "anonymous visitor", which is a supported state, not an error.
+ *
+ * Tier branch (docs/14 §3 tier change): full ranked Demand Discovery now requires
+ * `paid` tier (the commitment fee). Guest and free tier get the pre-membership estimate
+ * (`MarketEstimate`) instead — the acquisition surface moved, it did not disappear.
  */
 
 import { OrgTier } from '@prisma/client';
@@ -14,15 +19,20 @@ import { getPrincipal } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { DemandDiscovery } from './DemandDiscovery';
+import { MarketEstimate } from './MarketEstimate';
 
 export default async function MarketsPage() {
   const principal = await getPrincipal();
   const tier = principal?.tier ?? OrgTier.guest;
   const policy = await getConfig('guest.policy');
 
+  if (tier !== OrgTier.paid) {
+    return <MarketEstimate tier={tier} guestRunLimit={policy.discovery_runs_per_ip} />;
+  }
+
   // Saved products only exist for a tenant that has them; a guest supplies context ad hoc.
   const products =
-    principal?.exporter_org_id && tier !== OrgTier.guest
+    principal?.exporter_org_id
       ? await prisma.product.findMany({
           where: { exporter_org_id: principal.exporter_org_id },
           select: { id: true, name: true, hs_code: true },
@@ -34,7 +44,7 @@ export default async function MarketsPage() {
   // The runs are still persisted (docs/09 §3 requires durable job state) and are retained
   // until the purge window lapses; they become visible history on registration.
   const recentRuns =
-    principal?.exporter_org_id && tier !== OrgTier.guest
+    principal?.exporter_org_id
       ? await prisma.discoveryRun.findMany({
           where: { exporter_org_id: principal.exporter_org_id },
           select: { id: true, status: true, created_at: true, input_snapshot: true },

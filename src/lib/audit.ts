@@ -36,6 +36,10 @@ export const AUDIT_ACTIONS = {
   escalate: 'escalate',
   login: 'login',
   config_change: 'config_change',
+  /// OPS-04-AC03: a distinct action from `update` so an override is never mistaken for
+  /// a routine filing-status change in the audit trail — it bypasses the normal state
+  /// machine by design and must be findable as its own category.
+  override: 'override',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

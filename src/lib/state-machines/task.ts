@@ -76,6 +76,15 @@ export function assertTaskTransition(
     );
   }
 
+  // AGT-07-AC02: a reason alone doesn't say who has the ball. Both are required so the
+  // queue can always answer "waiting on whom" without a follow-up question.
+  if (to === TaskState.waiting && !input.waiting_on) {
+    throw validationError(
+      [{ field: 'waiting_on', code: 'required', message: 'Say who or what this task is waiting on.' }],
+      'A waiting task must record the party it is waiting on.',
+    );
+  }
+
   if (to === TaskState.cancelled && !input.cancel_reason) {
     throw validationError(
       [{ field: 'cancel_reason', code: 'required', message: 'A reason is required to cancel.' }],
@@ -109,11 +118,16 @@ export function assertTaskTransition(
  * "Task: Waiting" are different signals and must never be collapsed (docs/03 §2).
  */
 export function deriveSlaState(
-  task: { due_at?: Date | null; warning_at?: Date | null; state: TaskState },
+  task: { due_at?: Date | null; warning_at?: Date | null; state: TaskState; escalated_at?: Date | null },
   threshold: SlaThreshold,
   now: Date = new Date(),
 ): SlaState {
   if (task.state === TaskState.done || task.state === TaskState.cancelled) return SlaState.on_time;
+  // A manual escalation (AGT-07 "Escalate" quick action) is still a derived read, not a
+  // direct sla_state write (AC03) — it derives from the `escalated_at` timestamp exactly
+  // like `overdue`/`due_soon` derive from due_at/warning_at, just recording a human
+  // judgement call instead of a clock crossing.
+  if (task.escalated_at) return SlaState.escalated;
   if (!task.due_at) return SlaState.on_time;
 
   const dueMs = task.due_at.getTime();

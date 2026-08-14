@@ -16,9 +16,14 @@
 
 import { JobType } from '@prisma/client';
 import { registerJobHandler } from '@/lib/jobs';
+import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
+import { runCbpManifestIngest } from '@/lib/job-handlers/cbp-manifest';
+import { runBuyerIntelligenceJob } from '@/lib/job-handlers/buyer-intelligence';
 import { runDemandDiscovery } from '@/lib/job-handlers/discovery';
 import { runDocumentGeneration } from '@/lib/job-handlers/documents';
+import { runPayoutRecompute } from '@/lib/job-handlers/payouts';
 import { runReadinessAssessment } from '@/lib/job-handlers/readiness';
+import { runSanctionsIngest } from '@/lib/job-handlers/sanctions';
 
 let registered = false;
 
@@ -27,6 +32,11 @@ export function registerAllJobHandlers() {
   registerJobHandler(JobType.demand_discovery, runDemandDiscovery);
   registerJobHandler(JobType.readiness_assessment, runReadinessAssessment);
   registerJobHandler(JobType.document_generation, runDocumentGeneration);
+  registerJobHandler(JobType.payout_recompute, runPayoutRecompute);
+  registerJobHandler(JobType.comtrade_ingest, runComtradeIngest);
+  registerJobHandler(JobType.cbp_manifest_ingest, runCbpManifestIngest);
+  registerJobHandler(JobType.buyer_intelligence, runBuyerIntelligenceJob);
+  registerJobHandler(JobType.sanctions_ingest, runSanctionsIngest);
   // Not yet implemented — buyer_discovery, report_export. Jobs of those types fail fast
   // with NO_HANDLER instead of hanging.
   registered = true;

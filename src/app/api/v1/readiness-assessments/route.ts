@@ -31,6 +31,30 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) throw validationError(zodFieldErrors(parsed.error));
     const { answers, action } = parsed.data;
     const orgId = principal.exporter_org_id;
+    const productId = typeof answers.product_id === 'string' ? answers.product_id : null;
+    const optionalPositive = (key: string, integer = false) => {
+      const raw = answers[key];
+      if (raw == null || raw === '') return null;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) throw validationError([{ field: key, code: 'invalid', message: integer ? 'Enter a positive whole number.' : 'Enter a positive number.' }]);
+      return value;
+    };
+    const desiredAmount = optionalPositive('desired_order_size_amount');
+    const desiredCurrency = typeof answers.desired_order_size_currency === 'string' && answers.desired_order_size_currency.trim() ? answers.desired_order_size_currency.trim().toUpperCase() : null;
+    if ((desiredAmount == null) !== (desiredCurrency == null)) throw validationError([{ field: desiredAmount == null ? 'desired_order_size_amount' : 'desired_order_size_currency', code: 'required', message: 'Desired order size requires both amount and currency.' }]);
+    if (desiredCurrency && !/^[A-Z]{3}$/.test(desiredCurrency)) throw validationError([{ field: 'desired_order_size_currency', code: 'invalid', message: 'Use a 3-letter currency code.' }]);
+    if (productId) {
+      const product = await prisma.product.findFirst({ where: { id: productId, exporter_org_id: orgId } });
+      if (!product) throw validationError([{ field: 'product_id', code: 'invalid', message: 'That product is not available.' }]);
+      const updated = await prisma.product.update({ where: { id: productId }, data: {
+        lead_time_days: optionalPositive('lead_time_days', true),
+        desired_order_size_amount: desiredAmount,
+        desired_order_size_currency: desiredCurrency,
+        customization_capability: typeof answers.customization_capability === 'string' && answers.customization_capability.trim() ? answers.customization_capability.trim() : null,
+        packaging_capability: typeof answers.packaging_capability === 'string' && answers.packaging_capability.trim() ? answers.packaging_capability.trim() : null,
+      } });
+      await writeAuditEvent({ actor: principal, action: AUDIT_ACTIONS.update, object_type: 'product', object_id: productId, exporter_org_id: orgId, before_summary: { lead_time_days: product.lead_time_days, desired_order_size_amount: product.desired_order_size_amount?.toString() ?? null, desired_order_size_currency: product.desired_order_size_currency, customization_capability: product.customization_capability, packaging_capability: product.packaging_capability }, after_summary: { lead_time_days: updated.lead_time_days, desired_order_size_amount: updated.desired_order_size_amount?.toString() ?? null, desired_order_size_currency: updated.desired_order_size_currency, customization_capability: updated.customization_capability, packaging_capability: updated.packaging_capability }, correlation_id: correlationId });
+    }
     let assessment = await prisma.readinessAssessment.findFirst({ where: { exporter_org_id: orgId, is_current: true }, orderBy: { updated_at: 'desc' } });
     // A completed assessment is immutable history. Editing starts a new draft/current view.
     if (!assessment || assessment.completed_at) {

@@ -2,11 +2,14 @@
  * are kept as separate records/views (AC01) — never merged into one row. */
 
 import Link from 'next/link';
-import { UserRole } from '@prisma/client';
+import { PayoutState, UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
+import { PayoutActions } from '@/components/ops/PayoutActions';
 import { StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
+import { netPayable } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
+import { PAYOUT_STATE_LABELS } from '@/lib/state-machines/payout';
 
 function EmptyQueue({ children }: { children: React.ReactNode }) {
   return (
@@ -35,7 +38,7 @@ export default async function OpsFinancePage({
   const overdueOnly = filter === 'overdue';
   const now = new Date();
 
-  const [lockedDeals, payments, disputedFeePayments] = await Promise.all([
+  const [lockedDeals, payments, disputedFeePayments, payouts] = await Promise.all([
     prisma.deal.findMany({
       where: { locked_at: { not: null } },
       orderBy: { locked_at: 'desc' },
@@ -49,6 +52,14 @@ export default async function OpsFinancePage({
       include: { deal: { include: { exporter_org: true } } },
     }),
     prisma.payment.count({ where: { status: 'disputed' } }),
+    prisma.payout.findMany({
+      include: {
+        agent: { select: { name: true } },
+        deal: { include: { exporter_org: { select: { display_name: true } } } },
+        adjustments: { orderBy: { created_at: 'asc' }, include: { created_by: { select: { name: true } } } },
+      },
+      orderBy: [{ state: 'asc' }, { updated_at: 'desc' }],
+    }),
   ]);
 
   return (
@@ -166,17 +177,110 @@ export default async function OpsFinancePage({
         )}
       </section>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-          <h2 className="text-lg font-semibold text-primary">Agent payout</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Eligible basis, share snapshot, amount and status.</p>
+      <section className="mt-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
+        <h2 className="text-lg font-semibold text-primary">
+          Agent payout <span className="font-normal text-[var(--color-text-secondary)]">({payouts.length})</span>
+        </h2>
+        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+          Eligible basis, share snapshot, amount and status. Figures are frozen at eligibility — approving
+          or adjusting never recalculates them from current config (AC02).
+        </p>
+        {payouts.length === 0 ? (
           <div className="mt-4">
             <EmptyQueue>
-              Agent payout is not tracked as its own record yet — only the commission rate captured in each deal's fee
-              policy snapshot exists today. No payout figures are shown here rather than estimating them.
+              No payout records yet. One is created per agent-owned deal from lock onward, and becomes eligible
+              once the configured policy is satisfied.
             </EmptyQueue>
           </div>
-        </section>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="text-xs uppercase text-[var(--color-text-muted)]">
+                <tr>
+                  <th className="pb-2">Agent</th>
+                  <th className="pb-2">Deal / exporter</th>
+                  <th className="pb-2">Eligible basis</th>
+                  <th className="pb-2">Share</th>
+                  <th className="pb-2">Amount</th>
+                  <th className="pb-2">Status</th>
+                  <th className="pb-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payouts.map((p) => {
+                  const net = netPayable(p, p.adjustments);
+                  const adjusted = p.adjustments.length > 0;
+                  const notEligible = p.state === PayoutState.not_eligible;
+                  return (
+                    <tr key={p.id} className="border-t border-[var(--color-border)] align-top">
+                      <td className="py-3 font-medium text-primary">{p.agent.name}</td>
+                      <td className="py-3 text-[var(--color-text-secondary)]">
+                        Deal {p.deal_id.slice(-6)}
+                        <div className="text-xs">{p.deal.exporter_org.display_name}</div>
+                      </td>
+                      <td className="py-3 text-[var(--color-text-secondary)]">
+                        {notEligible ? '—' : `${p.basis_currency} ${Number(p.basis_amount).toLocaleString('en-IN')}`}
+                        {!notEligible ? <div className="text-xs text-[var(--color-text-muted)]">fee policy v{p.fee_policy_version}</div> : null}
+                      </td>
+                      <td className="py-3 text-[var(--color-text-secondary)]">
+                        {notEligible ? '—' : `${(Number(p.agent_share_rate) * 100).toFixed(1)}%`}
+                      </td>
+                      <td className="py-3 text-[var(--color-text-secondary)]">
+                        {notEligible ? (
+                          '—'
+                        ) : (
+                          <>
+                            <span className="font-medium text-primary">{p.currency} {Number(p.amount).toLocaleString('en-IN')}</span>
+                            {/* AC03: the original quote stays on screen next to the net. */}
+                            {adjusted ? (
+                              <div className="mt-0.5 text-xs">
+                                <span className="text-[var(--color-text-muted)]">
+                                  {p.adjustments.length} adjustment(s) — net {net.currency} {Number(net.amount).toLocaleString('en-IN')}
+                                </span>
+                                <ul className="mt-0.5 space-y-0.5">
+                                  {p.adjustments.map((a) => (
+                                    <li key={a.id} className="text-[var(--color-text-secondary)]">
+                                      {Number(a.amount) >= 0 ? '+' : ''}{Number(a.amount).toLocaleString('en-IN')} — {a.reason} ({a.created_by.name})
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        <StatusChip
+                          label={PAYOUT_STATE_LABELS[p.state]}
+                          tone={p.state === 'paid' ? 'positive' : p.state === 'disputed' ? 'critical' : p.state === 'approved' ? 'warning' : p.state === 'eligible' ? 'info' : 'neutral'}
+                          icon={p.state === 'paid' ? 'check' : p.state === 'disputed' ? 'alert' : 'clock'}
+                          size="sm"
+                        />
+                        {notEligible && p.ineligible_reason ? (
+                          <p className="mt-1 max-w-xs text-xs text-[var(--color-text-secondary)]">{p.ineligible_reason}</p>
+                        ) : null}
+                        {p.state === PayoutState.paid && p.payment_reference ? (
+                          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Ref {p.payment_reference}</p>
+                        ) : null}
+                        {p.state === PayoutState.disputed && p.dispute_id ? (
+                          <p className="mt-1 text-xs">
+                            <Link href="/ops/disputes" className="focus-visible-ring underline underline-offset-2">Open finance case</Link>
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="py-3">
+                        <PayoutActions payoutId={p.id} state={p.state} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
           <h2 className="text-lg font-semibold text-primary">Exceptions</h2>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Disputed fee or payment, or missing realization.</p>

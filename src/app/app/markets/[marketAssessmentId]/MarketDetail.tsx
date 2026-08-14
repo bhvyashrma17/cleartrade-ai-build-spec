@@ -20,7 +20,7 @@ type Tier = 'guest' | 'free' | 'paid';
 interface AssessmentDetail {
   id: string;
   country_code: string;
-  overall_score: number;
+  overall_score: number | null;
   demand_score: number | null;
   growth_score: number | null;
   competition_score: number | null;
@@ -79,7 +79,7 @@ export function MarketDetail({
       <section className="mt-6">
         <SectionTitle>Score breakdown</SectionTitle>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard label="Overall" value={`${assessment.overall_score}/100`} secondaryText="Weighted rank score" />
+          <MetricCard label="Overall" value={assessment.overall_score == null ? 'Ineligible' : `${assessment.overall_score}/100`} secondaryText={assessment.overall_score == null ? 'Hard eligibility filter' : 'Weighted rank score'} />
           {assessment.demand_score != null ? (
             <MetricCard label="Demand" value={`${assessment.demand_score}/100`} secondaryText="Import demand strength" />
           ) : (
@@ -168,7 +168,7 @@ function DecisionHeader({ tier, assessment }: { tier: Tier; assessment: Assessme
           {assessment.is_selected ? <StatusChip label="Selected target" tone="positive" icon="check" size="sm" /> : null}
         </div>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Rank {assessment.rank} of {assessment.total_ranked} · Score {assessment.overall_score}/100 · Generated{' '}
+          Rank {assessment.rank} of {assessment.total_ranked} · {assessment.overall_score == null ? 'Ineligible' : `Score ${assessment.overall_score}/100`} · Generated{' '}
           {format(new Date(assessment.generated_at), 'dd MMM yyyy')}
         </p>
       </div>

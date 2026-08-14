@@ -1,0 +1,1 @@
+ALTER TABLE "TradeFlow" ALTER COLUMN "value" TYPE DECIMAL(20,3);

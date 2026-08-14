@@ -1,0 +1,11 @@
+{
+  "source_provider": "US Customs and Border Protection",
+  "license_type": "19 CFR 103.31 public vessel manifest",
+  "allowed_to_display": false,
+  "allowed_to_export": false,
+  "allowed_to_cache": true,
+  "retention_limit": null,
+  "personal_data_flag": true,
+  "retrieved_at": "2026-08-14T00:00:00.000Z",
+  "scope": "us_inward_vessel_manifest"
+}

@@ -1,0 +1,10 @@
+ALTER TYPE "IngestStatus" ADD VALUE 'throttled';
+
+ALTER TABLE "IngestRun"
+ADD COLUMN "total_codes" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "completed_codes" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "request_count" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "throttle_count" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "progress" JSONB,
+ADD COLUMN "last_throttled_at" TIMESTAMP(3),
+ADD COLUMN "retry_after" TIMESTAMP(3);

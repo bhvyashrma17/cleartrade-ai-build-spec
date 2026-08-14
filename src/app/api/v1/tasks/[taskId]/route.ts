@@ -104,7 +104,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ taskI
           ...(nextState === TaskState.cancelled ? { cancel_reason: input.cancel_reason ?? null } : {}),
           // SLA is derived, never user-set (AGT-07-AC03) — recomputed here because a
           // completed task stops accruing overdue-ness.
-          sla_state: deriveSlaState({ due_at: task.due_at, warning_at: task.warning_at, state: nextState }, thresholds.default),
+          sla_state: deriveSlaState(
+          { due_at: task.due_at, warning_at: task.warning_at, state: nextState, escalated_at: task.escalated_at },
+          thresholds.default,
+        ),
         },
       });
 

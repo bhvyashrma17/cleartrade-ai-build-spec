@@ -44,7 +44,13 @@ async function main() {
     // so without it on `create` a fresh database would seed the whole fixture as a guest
     // org and every paid-tier verification would fail; without it on `update` an existing
     // database that drifted would never be corrected.
-    update: { tier: OrgTier.paid },
+    update: {
+      tier: OrgTier.paid,
+      commitment_fee_status: CommitmentFeeStatus.paid,
+      commitment_fee_amount: 15000,
+      commitment_fee_currency: 'INR',
+      commitment_fee_policy_version: 1,
+    },
     create: {
       id: 'seed-org-1',
       legal_name: 'Sunrise Agro Exports Pvt Ltd',
@@ -58,6 +64,18 @@ async function main() {
       readiness_status: ReadinessStatus.ready,
       journey_stage: JourneyStage.ready,
       tier: OrgTier.paid,
+      // Mirrors the migration backfill for pre-existing paid orgs: grandfathered, not a
+      // real self-reported/bank-confirmed payment. Amount/currency match the FeePolicy
+      // v1 fixture below ('15000.00' INR) — hardcoded here for the same reason
+      // `lockedFeePolicySnapshot` further down hardcodes it: this is seed data mirroring
+      // a specific fixture version, not application logic reading it live.
+      commitment_fee_status: CommitmentFeeStatus.paid,
+      commitment_fee_amount: 15000,
+      commitment_fee_currency: 'INR',
+      commitment_fee_policy_version: 1,
+      commitment_fee_source: 'manual_ops',
+      commitment_fee_due_at: new Date('2026-01-01T00:00:00Z'),
+      commitment_fee_paid_at: new Date('2026-01-01T00:00:00Z'),
     },
   });
 
@@ -129,6 +147,21 @@ async function main() {
       name: 'Karan Bhatt',
       password_hash,
       role: UserRole.ops_finance,
+    },
+  });
+
+  // OPS-07's config registry and partner directory writes are Admin-only. Without this
+  // fixture there is no loggable-in `admin` session in the whole seed, so those write
+  // paths — and `fee_policy.edit`'s admin grant — can never be exercised end to end.
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@cleartrade.example' },
+    update: {},
+    create: {
+      id: 'seed-user-admin',
+      email: 'admin@cleartrade.example',
+      name: 'Devika Shah',
+      password_hash,
+      role: UserRole.admin,
     },
   });
 
@@ -1278,6 +1311,74 @@ async function main() {
   });
 
   // ---------------------------------------------------------------------------
+  // AGT-08 / OPS-05 agent payout.
+  //
+  // Seeded in `paid` state with one adjustment, which is the only fixture shape that
+  // exercises the whole record at once: a frozen snapshot, an additive correction that
+  // did NOT rewrite it, and a payment reference. The figures are the real arithmetic for
+  // this deal — 42,000 USD basis x 2.5% success fee = 1,050 fee, x 40% agent share = 420
+  // — so the seeded row agrees with what `recomputePayoutForDeal()` would have produced,
+  // rather than being decorative numbers that drift from the live calculation.
+  //
+  // Deliberately NOT seeded for the negotiating deal: it has not reached a tracked stage,
+  // and inventing a payout there would contradict the eligibility rule this screen exists
+  // to make legible.
+  // ---------------------------------------------------------------------------
+  const payoutFields = {
+    deal_id: lockedDeal.id,
+    agent_user_id: agent.id,
+    state: 'paid' as const,
+    basis_amount: 42000,
+    basis_currency: 'USD',
+    fee_amount: 1050,
+    fee_currency: 'USD',
+    fee_rule: 'success_fee',
+    agent_share_rate: '0.4',
+    amount: 420,
+    currency: 'USD',
+    fee_policy_version: 1,
+    calculation_snapshot: {
+      computed_at: '2026-07-25T00:00:00.000Z',
+      basis: { amount: '42000', currency: 'USD' },
+      fee_rule: 'success_fee',
+      fee_rate: '0.025',
+      fee_result: { amount: '1050.00', currency: 'USD' },
+      agent_share_rate: '0.4',
+      agent_amount: { amount: '420.00', currency: 'USD' },
+      fee_policy_version: 1,
+      eligibility_rule: 'payment_realized+no_open_dispute',
+    },
+    eligibility_rule: 'payment_realized+no_open_dispute',
+    eligible_at: new Date('2026-07-25T00:00:00Z'),
+    approved_at: new Date('2026-07-28T00:00:00Z'),
+    approved_by_id: opsFinance.id,
+    paid_at: new Date('2026-07-31T00:00:00Z'),
+    payment_reference: 'NEFT-CT-2026-0731-0042',
+    ineligible_reason: null,
+  };
+  const seedPayout = await prisma.payout.upsert({
+    where: { deal_id_agent_user_id: { deal_id: lockedDeal.id, agent_user_id: agent.id } },
+    update: payoutFields,
+    create: payoutFields,
+  });
+
+  // The additive correction (OPS-05-AC03). Note the payout's own `amount` above stays
+  // 420 — this row is what makes the net 399, and both figures remain readable.
+  await prisma.payoutAdjustment.upsert({
+    where: { id: 'seed-payout-adjustment-1' },
+    update: {},
+    create: {
+      id: 'seed-payout-adjustment-1',
+      payout_id: seedPayout.id,
+      amount: -21,
+      currency: 'USD',
+      reason: 'Partial clawback: 5% of the success fee was waived for the exporter after the quality dispute.',
+      created_by_id: opsFinance.id,
+      created_at: new Date('2026-07-30T00:00:00Z'),
+    },
+  });
+
+  // ---------------------------------------------------------------------------
   // EXP-17 Notifications & Account.
   // ---------------------------------------------------------------------------
   await prisma.notification.upsert({
@@ -1439,7 +1540,13 @@ async function main() {
 
   const freeOrg = await prisma.exporterOrg.upsert({
     where: { id: 'seed-org-free' },
-    update: { tier: OrgTier.free },
+    update: {
+      tier: OrgTier.free,
+      commitment_fee_status: CommitmentFeeStatus.due,
+      commitment_fee_amount: 15000,
+      commitment_fee_currency: 'INR',
+      commitment_fee_policy_version: 1,
+    },
     create: {
       id: 'seed-org-free',
       display_name: 'Deccan Spice Traders',
@@ -1449,6 +1556,13 @@ async function main() {
       city: 'Hyderabad',
       tier: OrgTier.free,
       upgraded_at: new Date('2026-07-01T00:00:00Z'),
+      // Registered but hasn't paid — the exact state /app/billing's "pay CTA" branch
+      // exercises, and what the `commitment_fee.pay` capability tests against.
+      commitment_fee_status: CommitmentFeeStatus.due,
+      commitment_fee_amount: 15000,
+      commitment_fee_currency: 'INR',
+      commitment_fee_policy_version: 1,
+      commitment_fee_due_at: new Date('2026-07-01T00:00:00Z'),
     },
   });
 
@@ -1492,7 +1606,10 @@ async function main() {
     },
   });
 
+  const warehouse = await seedTradeWarehouse();
+
   console.log('Seed complete.\n');
+  console.log(`Trade warehouse: ${warehouse} TradeFlow rows (chapters ${WAREHOUSE_CHAPTERS.join(', ')}).`);
   console.log('ExporterOrg:', org.display_name, `(${org.id})`);
   console.log('Products:', turmeric.name, `(${turmeric.id})`, '|', bedsheets.name, `(${bedsheets.id})`);
   console.log('Buyers:', buyers.map((b) => `${b.display_name} [${b.verification_status}]`).join(', '));
@@ -1504,7 +1621,87 @@ async function main() {
   console.log(`  Agent           ${agent.email}  -> /agent (assigned to ${org.display_name})`);
   console.log(`  Ops supervisor  ${opsSupervisor.email}  -> /ops`);
   console.log(`  Ops finance     ${opsFinance.email}  -> /ops/finance`);
+  console.log(`  Admin           ${admin.email}  -> /ops/audit`);
   console.log(`\nGuest fixture: org ${guestOrg.id} (no login — guests are minted on first search).`);
+}
+
+/**
+ * Trade warehouse fixture — the data Demand Discovery now ranks on.
+ *
+ * `WarehouseDiscoveryEngine` is the default engine, so with an empty `TradeFlow` table
+ * every discovery run correctly returns "no data for this HS code" — accurate, and useless
+ * as a fixture. This gives the seeded org's own products (turmeric HS 0910, bedsheets
+ * HS 6302) something real to rank.
+ *
+ * Built by running the REAL `comtrade_ingest` job rather than inserting rows, so the seed
+ * exercises the same handler production uses — upsert idempotency included, which is what
+ * makes re-running `npm run db:seed` safe here. That also keeps this honest under the
+ * AGENTS.md rule about seeds hand-placing end states: the ingest path is exercised, not
+ * bypassed.
+ *
+ * Values come from the deterministic mock Comtrade client. They are plausible in shape and
+ * stable across runs; they are not real trade figures, and the run's provenance says so.
+ */
+const WAREHOUSE_CHAPTERS = ['09', '63'];
+/** Importing markets: US, Germany, UAE, UK, Japan, Australia. */
+const WAREHOUSE_REPORTERS = ['842', '276', '784', '826', '392', '36'];
+/** World (the denominator), India (the share), plus China/Brazil/Vietnam (the supplier spread). */
+const WAREHOUSE_PARTNERS = ['0', '699', '156', '76', '704'];
+
+async function seedTradeWarehouse(): Promise<number> {
+  const { registerAllJobHandlers } = await import('@/lib/job-handlers');
+  const { enqueueJob, claimNextJob, runClaimedJob } = await import('@/lib/jobs');
+  const { JobType } = await import('@prisma/client');
+
+  registerAllJobHandlers();
+
+  // Five years so the 5-year CAGR the growth subscore needs has real history to read.
+  const latestYear = new Date().getFullYear() - 1;
+  const years = [4, 3, 2, 1, 0].map((back) => latestYear - back);
+
+  for (const hs_chapter of WAREHOUSE_CHAPTERS) {
+    for (const reporter of WAREHOUSE_REPORTERS) {
+      for (const partner of WAREHOUSE_PARTNERS) {
+        for (const year of years) {
+          await enqueueJob({
+            type: JobType.comtrade_ingest,
+            payload: { hs_chapter, reporter, partner, year, flow_direction: 'import' },
+            dedupe_key: `seed-comtrade:${hs_chapter}:${reporter}:${partner}:${year}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Drain until nothing is left QUEUED, rather than stopping at the first null claim.
+  // `claimNextJob` returning null does not mean the queue is empty — it also happens when
+  // another process (a running `npm run worker`) won the race for every candidate it looked
+  // at. Treating that as "done" is what silently left this fixture with gaps: the seed
+  // exited early and the warehouse ended up missing whole years for some markets, which
+  // then showed up downstream as markets with no measurable growth.
+  for (;;) {
+    const claimed = await claimNextJob([JobType.comtrade_ingest]);
+    if (claimed) {
+      await runClaimedJob({
+        id: claimed.id,
+        type: claimed.type,
+        attempt_no: claimed.attempt_no,
+        payload: claimed.payload,
+        exporter_org_id: claimed.exporter_org_id,
+        target_id: claimed.target_id,
+        correlation_id: claimed.correlation_id,
+      });
+      continue;
+    }
+    const stillQueued = await prisma.job.count({
+      where: { type: JobType.comtrade_ingest, status: 'queued' },
+    });
+    if (stillQueued === 0) break;
+    // Someone else is working the queue; give them a moment rather than spinning.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return prisma.tradeFlow.count();
 }
 
 main()

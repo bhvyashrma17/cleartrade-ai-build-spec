@@ -353,6 +353,29 @@ enum JobType {
   buyer_discovery
   document_generation
   report_export
+  /// AGT-08 / OPS-05: recompute one deal's payout eligibility off the job queue, so the
+  /// transaction that changes an eligibility fact (payment realized, dispute closed)
+  /// never blocks on the recompute itself.
+  payout_recompute
+  /// Trade data warehouse: batch-ingest one HS chapter of Comtrade flows. Scheduled only —
+  /// never enqueued from a user's discovery run.
+  comtrade_ingest
+  /// Ingest an acquired, normalized CBP inward-vessel-manifest delivery. CBP does not
+  /// expose this public dataset as an API; see docs/15-cbp-vessel-manifest-ingest.md.
+  cbp_manifest_ingest
+  buyer_intelligence
+  sanctions_ingest
+}
+
+enum MarketEligibilityStatus {
+  eligible
+  ineligible
+}
+
+enum MarketEligibilityRuleType {
+  sanctions_restricted
+  import_prohibited
+  mandatory_certification
 }
 
 enum PartnerType {
@@ -411,6 +434,29 @@ model ExporterOrg {
   /// without it this table grows monotonically with anonymous traffic.
   guest_expires_at DateTime?
 
+  /// The commitment fee (docs/01 §2) is what a free-tier org must pay to unlock `paid`
+  /// tier — full Demand Discovery, buyer contacts' agent workflow, and everything else
+  /// gated at `paid` in CAPABILITY_MIN_TIER. This is not a new membership concept: it is
+  /// the SAME commitment fee docs/01 always specified, now doing double duty as the
+  /// tier-3 gate rather than sitting unused. `not_due` while tier=guest; set to `due` the
+  /// moment registration completes (tier flips to `free`) — never left implicit, since
+  /// `due` vs `not_due` is what the billing CTA renders on.
+  commitment_fee_status         CommitmentFeeStatus @default(not_due)
+  /// Snapshot of the active FeePolicy's commitment fee amount/currency/version AT THE
+  /// MOMENT it became due — never re-read live. Same "rule of record" docs/01 applies to
+  /// deal-quoted terms: a later FeePolicy version must never retroactively change what an
+  /// org already owes or already paid.
+  commitment_fee_amount         Decimal?            @db.Decimal(18, 4)
+  commitment_fee_currency       String?             @db.VarChar(3)
+  commitment_fee_policy_version Int?
+  /// Provenance of the "paid" transition — same PaymentSource vocabulary as Payment.source,
+  /// since this is the identical kind of fact (self-reported vs bank-confirmed) applied to
+  /// a different money event. Reusing the enum means one place ever defines what "source"
+  /// can mean, rather than two enums drifting apart.
+  commitment_fee_source         PaymentSource?
+  commitment_fee_due_at         DateTime?
+  commitment_fee_paid_at        DateTime?
+
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
@@ -420,6 +466,8 @@ model ExporterOrg {
   readiness_assessments ReadinessAssessment[]
   discovery_runs        DiscoveryRun[]
   buyer_leads           BuyerLead[]
+  buyer_fit_assessments BuyerFitAssessment[]
+  buyer_outcomes        BuyerOutcome[]
   buyer_shortlists      BuyerShortlist[]
   deals                 Deal[]
   tasks                 Task[]
@@ -477,6 +525,9 @@ model User {
   invitations_sent            Invitation[]             @relation("InvitationInviter")
   task_evidence_uploaded      TaskEvidence[]           @relation("TaskEvidenceUploader")
   task_evidence_reviewed      TaskEvidence[]           @relation("TaskEvidenceReviewer")
+  payouts                     Payout[]                 @relation("PayoutAgent")
+  payouts_approved            Payout[]                 @relation("PayoutApprovedBy")
+  payout_adjustments_made     PayoutAdjustment[]       @relation("PayoutAdjustmentAuthor")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -526,15 +577,24 @@ model Product {
   price_target_amount   Decimal? @db.Decimal(18, 4)
   price_target_currency String?  @db.VarChar(3)
 
+  /// Exporter-market-fit inputs. All nullable: absence lowers score confidence; it is
+  /// never replaced by a guessed/default commercial capability.
+  lead_time_days              Int?
+  desired_order_size_amount   Decimal? @db.Decimal(18, 4)
+  desired_order_size_currency String?  @db.VarChar(3)
+  customization_capability    String?
+  packaging_capability        String?
+
   packaging  String?
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  exporter_org       ExporterOrg            @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  certifications     ProductCertification[]
-  market_assessments MarketAssessment[]
-  buyer_leads        BuyerLead[]
-  deals              Deal[]
+  exporter_org          ExporterOrg            @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  certifications        ProductCertification[]
+  market_assessments    MarketAssessment[]
+  buyer_leads           BuyerLead[]
+  buyer_fit_assessments BuyerFitAssessment[]
+  deals                 Deal[]
 
   @@index([exporter_org_id])
   @@index([hs_code])
@@ -620,11 +680,22 @@ model MarketAssessment {
   product_id   String?
   country_code String  @db.VarChar(2)
 
-  overall_score     Int
-  demand_score      Int?
-  growth_score      Int?
-  competition_score Int?
-  india_share       Decimal? @db.Decimal(6, 3)
+  overall_score               Int?
+  demand_score                Int?
+  growth_score                Int?
+  competition_score           Int?
+  market_access_score         Int?
+  export_economics_score      Int?
+  exporter_market_fit_score   Int?
+  logistics_feasibility_score Int?
+  risk_resilience_score       Int?
+  confidence_score            Int
+  eligibility_status          MarketEligibilityStatus @default(eligible)
+  eligibility_reasons         Json                    @default("[]")
+  model_version               String
+  weight_profile_key          String
+  weight_profile_version      Int
+  india_share                 Decimal?                @db.Decimal(6, 3)
 
   tariff_summary             Json?
   certification_requirements Json  @default("[]")
@@ -635,10 +706,22 @@ model MarketAssessment {
   price_band_max      Decimal? @db.Decimal(18, 4)
   price_band_currency String?  @db.VarChar(3)
 
-  rationale    String?
+  rationale        String?
   /// docs/13 B2: exporter-visible agent annotation on AI output.
-  agent_note   String?
-  generated_at DateTime @default(now())
+  agent_note       String?
+  /// Per-field source and retrieval date, keyed by field name (docs/04 EXP-04-AC03:
+  /// "Scores include clear labels and freshness/source metadata where available").
+  ///
+  /// Two shapes per entry: `{source, retrieved_at, basis, row_count}` for a field computed
+  /// from warehouse rows, or `{status: 'unavailable', reason}` for one we hold no data for.
+  /// The second shape is the load-bearing one — EXP-04-AC02 forbids fabricating a missing
+  /// value, so a gap has to be representable as a gap rather than collapsing to null and
+  /// being indistinguishable from a genuine zero.
+  ///
+  /// Nullable because assessments written by the placeholder engine predate it; a null here
+  /// means "this row carries no provenance", not "this row has no sources".
+  field_provenance Json?
+  generated_at     DateTime @default(now())
 
   /// "Selected as active target" (docs/04 EXP-04) — the ORG's current focus market.
   /// Exclusive across the whole org, not just this run: selecting a new one clears any
@@ -657,6 +740,49 @@ model MarketAssessment {
   @@index([product_id, country_code])
 }
 
+/// Explicit destination/HS hard gates. Sanctions entity-list rows never become a country
+/// restriction unless the source explicitly states destination-wide scope.
+model MarketEligibilityRule {
+  id                       String                    @id @default(cuid())
+  country_code             String                    @db.VarChar(2)
+  hs_code_prefix           String?
+  rule_type                MarketEligibilityRuleType
+  required_certification   String?
+  certification_obtainable Boolean?
+  source                   String
+  source_ref               String?
+  effective_from           DateTime?
+  effective_to             DateTime?
+  is_active                Boolean                   @default(true)
+  raw_snapshot             Json?
+  created_at               DateTime                  @default(now())
+  updated_at               DateTime                  @updatedAt
+
+  @@index([country_code, is_active])
+  @@index([hs_code_prefix])
+}
+
+model SanctionsIngestRun {
+  id                   String       @id @default(cuid())
+  status               IngestStatus @default(running)
+  source_results       Json         @default("[]")
+  records_observed     Int          @default(0)
+  restrictions_written Int          @default(0)
+  started_at           DateTime     @default(now())
+  completed_at         DateTime?
+  error                String?
+}
+
+model SanctionsSourceSnapshot {
+  id           String   @id @default(cuid())
+  source       String   @unique
+  source_url   String
+  checksum     String
+  record_count Int
+  fetched_at   DateTime @default(now())
+  metadata     Json?
+}
+
 // ---------------------------------------------------------------------------
 // Buyers & pipeline
 // ---------------------------------------------------------------------------
@@ -665,25 +791,33 @@ model MarketAssessment {
 /// of buyer x product x market, so it lives on the search projection and on BuyerLead
 /// (docs/13 B5 / R6).
 model Buyer {
-  id                      String             @id @default(cuid())
-  legal_name              String
-  display_name            String
-  country_code            String             @db.VarChar(2)
-  website                 String?
-  buyer_type              String
-  import_activity_summary Json?
-  verification_status     VerificationStatus @default(unverified)
+  id                       String             @id @default(cuid())
+  legal_name               String
+  display_name             String
+  country_code             String             @db.VarChar(2)
+  website                  String?
+  buyer_type               String
+  import_activity_summary  Json?
+  verification_status      VerificationStatus @default(unverified)
   /// [{ code, severity, summary }] — never hidden on the detail view.
-  risk_flags              Json               @default("[]")
-  last_activity_at        DateTime?
-  created_at              DateTime           @default(now())
-  updated_at              DateTime           @updatedAt
+  risk_flags               Json               @default("[]")
+  last_activity_at         DateTime?
+  deprioritized            Boolean            @default(false)
+  deprioritization_reasons Json               @default("[]")
+  sanctions_blocked        Boolean            @default(false)
+  created_at               DateTime           @default(now())
+  updated_at               DateTime           @updatedAt
 
-  contacts        BuyerContact[]
-  source_evidence BuyerSourceEvidence[]
-  buyer_leads     BuyerLead[]
-  shortlists      BuyerShortlist[]
-  deals           Deal[]
+  contacts         BuyerContact[]
+  source_evidence  BuyerSourceEvidence[]
+  buyer_leads      BuyerLead[]
+  shortlists       BuyerShortlist[]
+  deals            Deal[]
+  import_records   ImportRecord[]
+  attribute_claims BuyerAttributeClaim[]
+  feature_snapshot BuyerFeatureSnapshot?
+  fit_assessments  BuyerFitAssessment[]
+  outcomes         BuyerOutcome[]
 
   @@index([country_code])
   @@index([buyer_type])
@@ -777,6 +911,7 @@ model BuyerLead {
   activities     OutreachActivity[]
   internal_notes InternalNote[]
   messages       Message[]
+  outcome        BuyerOutcome?
 
   /// Server-side duplicate prevention (EXP-07-AC02): one lead per org x product x buyer.
   @@unique([exporter_org_id, product_id, buyer_id])
@@ -801,6 +936,92 @@ model OutreachActivity {
   actor      User      @relation(fields: [actor_user_id], references: [id])
 
   @@index([buyer_lead_id, occurred_at])
+}
+
+model BuyerAttributeClaim {
+  id               String   @id @default(cuid())
+  buyer_id         String
+  attribute        String
+  value            Json
+  source           String
+  source_record_id String?
+  observed_at      DateTime
+  created_at       DateTime @default(now())
+  buyer            Buyer    @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+
+  @@unique([buyer_id, attribute, source, source_record_id])
+  @@index([buyer_id, attribute, observed_at])
+}
+
+model BuyerFeatureSnapshot {
+  id                        String    @id @default(cuid())
+  buyer_id                  String    @unique
+  import_frequency_per_year Decimal?  @db.Decimal(12, 4)
+  last_shipment_date        DateTime?
+  shipment_count_12m        Int
+  typical_shipment_size     Decimal?  @db.Decimal(20, 3)
+  quantity_unit             String?
+  origin_mix                Json
+  india_sourcing_history    Boolean?
+  supplier_concentration    Decimal?  @db.Decimal(8, 6)
+  purchasing_trend          Decimal?  @db.Decimal(12, 6)
+  provenance                Json
+  computed_at               DateTime  @default(now())
+  buyer                     Buyer     @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+}
+
+/// Search-result materialization. Fit deliberately does not live on Buyer.
+model BuyerFitAssessment {
+  id               String      @id @default(cuid())
+  buyer_id         String
+  product_id       String
+  exporter_org_id  String
+  score            Int?
+  confidence_score Int
+  components       Json
+  input_snapshot   Json
+  model_version    String
+  computed_at      DateTime    @default(now())
+  buyer            Buyer       @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  product          Product     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  exporter_org     ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+
+  @@unique([buyer_id, product_id, exporter_org_id])
+  @@index([exporter_org_id, product_id, score])
+}
+
+model BuyerOutcome {
+  id               String      @id @default(cuid())
+  buyer_id         String
+  exporter_org_id  String
+  buyer_lead_id    String      @unique
+  contacted_at     DateTime?
+  replied_at       DateTime?
+  converted        Boolean?
+  rejection_reason String?
+  payment_behavior String?
+  created_at       DateTime    @default(now())
+  updated_at       DateTime    @updatedAt
+  buyer            Buyer       @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  exporter_org     ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  buyer_lead       BuyerLead   @relation(fields: [buyer_lead_id], references: [id], onDelete: Cascade)
+
+  @@index([buyer_id, exporter_org_id])
+}
+
+model SanctionsEntity {
+  id               String   @id @default(cuid())
+  source           String
+  source_record_id String
+  name             String
+  normalized_name  String
+  entity_type      String?
+  observed_at      DateTime
+  is_active        Boolean  @default(true)
+  raw_snapshot     Json?
+
+  @@unique([source, source_record_id])
+  @@index([normalized_name, is_active])
 }
 
 // ---------------------------------------------------------------------------
@@ -867,6 +1088,7 @@ model Deal {
   disputes         Dispute[]
   partner_handoffs PartnerHandoff[]
   insurance_cases  InsuranceCase[]
+  payouts          Payout[]
 
   @@index([exporter_org_id, stage])
   @@index([owner_agent_id, stage])
@@ -1393,10 +1615,125 @@ model Dispute {
   payment        Payment?       @relation(fields: [payment_id], references: [id])
   document       Document?      @relation(fields: [document_id], references: [id])
   internal_notes InternalNote[]
+  payouts        Payout[]
 
   @@index([status, severity])
   @@index([deal_id])
   @@index([owner_user_id, status])
+}
+
+// ---------------------------------------------------------------------------
+// Agent payout — AGT-08 / OPS-05
+// ---------------------------------------------------------------------------
+
+/// docs/06 OPS-05: "Not eligible | Explain dependency". `not_eligible` is a real
+/// persisted state, not the absence of a row: a deal that has an agent and a locked
+/// snapshot but whose payment has not realized needs somewhere to record WHY it is not
+/// yet payable, which "no row at all" cannot express.
+enum PayoutState {
+  not_eligible
+  eligible
+  approved
+  paid
+  disputed
+}
+
+/// Agent commission record — AGT-08-AC02 / OPS-05-AC02.
+///
+/// Same immutability discipline as DealSnapshot: the money columns below are a SNAPSHOT
+/// taken at the moment the payout became eligible, never a live join back to FeePolicy.
+/// A later fee-policy version (OPS-07 can create one at any time) must never silently
+/// restate what an agent was already told they had earned — which is exactly what a
+/// recalculate-on-read design would do.
+///
+/// Note the deliberate redundancy with `Deal.quoted_fee_policy`: that snapshot is frozen
+/// at deal LOCK, this one at payout ELIGIBILITY, and the two are different moments. The
+/// agent share rate is copied here rather than read through the deal because an agent
+/// can be reassigned between those moments, and the payout must record the rate that
+/// applied to the agent who actually earned it.
+///
+/// Immutable in practice, not just by convention: no route exposes a PATCH of the
+/// snapshot columns, and corrections are additive `PayoutAdjustment` rows (OPS-05-AC03).
+model Payout {
+  id            String @id @default(cuid())
+  deal_id       String
+  agent_user_id String
+
+  state PayoutState @default(not_eligible)
+
+  // --- Immutable snapshot, written once at eligibility ---------------------
+  /// The realized shipment/deal value the fee was computed from.
+  basis_amount         Decimal @db.Decimal(18, 4)
+  basis_currency       String  @db.VarChar(3)
+  /// ClearTrade's own success fee on that basis — the pool the agent share comes out of.
+  fee_amount           Decimal @db.Decimal(18, 4)
+  fee_currency         String  @db.VarChar(3)
+  /// Which fee rule produced `fee_amount` (success_fee | small_shipment_rate | small_shipment_flat).
+  fee_rule             String?
+  /// Stored as a string, not a float: this is a rate of record, and re-parsing a
+  /// serialized float is how a 0.4 becomes a 0.39999999999999997 in a payout dispute.
+  agent_share_rate     String
+  /// agent_share_rate x fee_amount, computed once and stored — never re-derived on read.
+  amount               Decimal @db.Decimal(18, 4)
+  currency             String  @db.VarChar(3)
+  /// FeePolicy.version the snapshot came from — the audit trail back to the source rates.
+  fee_policy_version   Int
+  /// Full calculation breakdown, so the math is auditable without re-running it
+  /// ("make the math auditable so compensation disputes don't become an ops burden").
+  calculation_snapshot Json
+
+  // --- Lifecycle -----------------------------------------------------------
+  /// Why this payout is not yet eligible, in plain language (OPS-05 "explain dependency").
+  ineligible_reason String?
+  /// Which configured eligibility rule was satisfied, recorded at the moment it was.
+  eligibility_rule  String?
+  eligible_at       DateTime?
+  approved_at       DateTime?
+  approved_by_id    String?
+  paid_at           DateTime?
+  /// Bank/transfer reference recorded when finance marks it paid.
+  payment_reference String?
+  /// Set when the agent (or finance) raises a payout query — links to the Dispute case.
+  dispute_id        String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal        Deal               @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  agent       User               @relation("PayoutAgent", fields: [agent_user_id], references: [id])
+  approved_by User?              @relation("PayoutApprovedBy", fields: [approved_by_id], references: [id])
+  dispute     Dispute?           @relation(fields: [dispute_id], references: [id])
+  adjustments PayoutAdjustment[]
+
+  /// One payout per (deal, agent). A deal reassigned to a second agent gets a second
+  /// row rather than overwriting the first — the original agent's record survives.
+  @@unique([deal_id, agent_user_id])
+  @@index([agent_user_id, state])
+  @@index([state])
+}
+
+/// OPS-05-AC03: "Adjustments are additive/audited, not destructive rewrites."
+///
+/// A correction NEVER updates `Payout.amount`. It appends a signed delta here, and the
+/// net payable is `Payout.amount + sum(adjustments.amount)` — computed at render time
+/// from rows that each carry their own reason and author. That makes the original quote
+/// permanently readable next to what changed it, which is the whole point of the rule.
+model PayoutAdjustment {
+  id        String @id @default(cuid())
+  payout_id String
+
+  /// Signed: negative for a clawback/waiver, positive for a bonus/correction.
+  amount   Decimal @db.Decimal(18, 4)
+  currency String  @db.VarChar(3)
+
+  reason        String
+  created_by_id String
+  created_at    DateTime @default(now())
+
+  payout     Payout @relation(fields: [payout_id], references: [id], onDelete: Cascade)
+  created_by User   @relation("PayoutAdjustmentAuthor", fields: [created_by_id], references: [id])
+
+  @@index([payout_id])
 }
 
 // ---------------------------------------------------------------------------
@@ -1667,4 +2004,149 @@ model FeePolicy {
   is_active      Boolean  @default(true)
   effective_from DateTime @default(now())
   created_at     DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Trade data warehouse — deliberately separate from the canonical domain above.
+//
+// Precedent: GuestRunQuota / ConfigSetting / FeePolicy already live in their own section
+// at the end of this file rather than beside Deal/Task/Document — infrastructural and
+// bulk-external data does not belong in the same section as the objects a user's request
+// directly reads and writes. TradeFlow follows that precedent: it is warehouse input for
+// future scoring, not a domain object anyone transacts against.
+// ---------------------------------------------------------------------------
+
+enum TradeFlowDirection {
+  import
+  export
+}
+
+enum TradeDataSource {
+  comtrade
+  cbp_vessel_manifest
+}
+
+enum IngestStatus {
+  running
+  throttled
+  completed
+  failed
+  partial
+}
+
+/// Raw UN Comtrade trade flow rows — the warehouse layer, not the product domain.
+///
+/// SERVER-SIDE ONLY, NON-NEGOTIABLE: no API route may ever return rows of this model to a
+/// client, in whole or in projection. Comtrade's subscription terms license this data for
+/// Internal Use only — it may not be redistributed or re-served. Only computed scores and
+/// derived aggregates built ON TOP of this table (e.g. a future market-scoring job's
+/// output) are allowed to cross the API boundary. Enforced by omission: there is no
+/// `/api/v1/trade-flows` route, and there must never be one. `scripts/verify-comtrade-
+/// ingest.ts` greps the route tree for references to this model to keep that true.
+///
+/// `reporter`/`partner` are stored as Comtrade's own numeric reporter/partner codes
+/// (e.g. "699" for India, "0" for World), not ISO country codes — Comtrade's API takes
+/// and returns these codes directly, and re-mapping them to ISO here would be an
+/// unverified translation this warehouse layer has no business doing.
+///
+/// Idempotency key is `(reporter, partner, hs_code, year, source)` per spec — it does not
+/// include `period` (sub-year periods are a later concern; the free tier ingested here is
+/// annual) or `flow_direction` (a single ingest run is scoped to one flow direction; an
+/// import and an export series for the same reporter/partner/code/year are two different
+/// questions, but only one may be stored per key today — extend the key before ever
+/// ingesting both directions for the same series).
+model TradeFlow {
+  id             String             @id @default(cuid())
+  reporter       String
+  partner        String
+  hs_code        String
+  year           Int
+  period         String
+  value          Decimal            @db.Decimal(20, 3)
+  quantity       Decimal?           @db.Decimal(18, 3)
+  unit           String?
+  /// value / quantity, computed once at ingest time. Null when quantity is null or zero.
+  unit_value     Decimal?           @db.Decimal(18, 6)
+  flow_direction TradeFlowDirection
+  source         TradeDataSource
+  ingested_at    DateTime           @default(now())
+
+  @@unique([reporter, partner, hs_code, year, source])
+  @@index([hs_code, year])
+}
+
+/// One execution of a warehouse ingest job. Deliberately a separate status axis from
+/// `Job.status`: a caught, recorded ingest failure (rate limit exhausted, malformed
+/// response) still lets the JOB report `completed` — the job system did its job by
+/// running the handler to completion — while THIS row is the true record of whether the
+/// domain-level ingest actually produced data. Never collapse the two, same reasoning as
+/// Job state vs. Task/SLA state elsewhere in this schema.
+model IngestRun {
+  id                String          @id @default(cuid())
+  source            TradeDataSource
+  status            IngestStatus    @default(running)
+  /// What was actually requested (hs_chapter, reporter, partner(s), year, flow_direction)
+  /// — kept so a failed or partial run is legible without cross-referencing the Job row.
+  params            Json?
+  records_written   Int             @default(0)
+  records_total     Int?
+  records_processed Int             @default(0)
+  total_codes       Int             @default(0)
+  completed_codes   Int             @default(0)
+  request_count     Int             @default(0)
+  throttle_count    Int             @default(0)
+  /// Durable ordered HS6 list and next offset. A retry resumes this run in place.
+  progress          Json?
+  last_throttled_at DateTime?
+  retry_after       DateTime?
+  started_at        DateTime        @default(now())
+  completed_at      DateTime?
+  error             String?
+
+  @@index([source, started_at])
+}
+
+/// Server-side-only US inward vessel manifest row. This is a partial observation of ocean
+/// cargo, not a complete buyer directory; confidential parties are absent at source.
+model ImportRecord {
+  id                   String          @id @default(cuid())
+  buyer_ref            String?
+  raw_consignee_string String?
+  hs_code              String?
+  country              String          @db.VarChar(2)
+  shipment_date        DateTime
+  value                Decimal?        @db.Decimal(20, 3)
+  value_currency       String?         @db.VarChar(3)
+  quantity             Decimal?        @db.Decimal(20, 3)
+  /// Manifest package count is meaningful only with CBP's accompanying unit code.
+  quantity_unit        String?
+  origin_country       String?         @db.VarChar(2)
+  port                 String?
+  shipper_name         String?
+  source               TradeDataSource
+  source_record_id     String          @unique
+  retrieved_at         DateTime
+
+  source_provider    String
+  license_type       String
+  allowed_to_display Boolean
+  allowed_to_export  Boolean
+  allowed_to_cache   Boolean
+  retention_limit    DateTime?
+  personal_data_flag Boolean
+
+  buyer_id              String?
+  resolution_confidence Decimal?  @db.Decimal(6, 5)
+  resolution_method     String?
+  resolved_at           DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  buyer Buyer? @relation(fields: [buyer_id], references: [id], onDelete: SetNull)
+
+  @@index([hs_code, country, shipment_date])
+  @@index([buyer_ref, shipment_date])
+  @@index([buyer_id, shipment_date])
+  @@index([retention_limit])
 }

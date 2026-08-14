@@ -135,85 +135,34 @@ async function main() {
     }
 
     // ---------------------------------------------------------------- 2
+    // Full ranked Demand Discovery is now paid-tier only (docs/14 §3a) — guests get the
+    // pre-membership estimate instead: synchronous, no job. The estimate IS now the
+    // "first search" that mints a guest tenant (full Discovery no longer mints at all;
+    // without this, nothing does, and the guest lifecycle becomes unreachable).
     await page1.getByRole('link', { name: /Find your export markets/i }).first().click();
     await page1.waitForURL('**/app/markets');
     await page1.getByLabel('What do you export?').fill('Organic turmeric powder, food grade');
     await page1.getByLabel(/HS code/i).fill('091030');
-    const beforeSearchGuests = await guestOrgCount();
-    await page1.getByRole('button', { name: /Find markets/i }).click();
+    const beforeEstimateGuests = await guestOrgCount();
+    await page1.getByRole('button', { name: /See the estimate/i }).click();
 
-    // Job should reach a terminal, rendered state. Waiting for the status chip alone
-    // races ahead of the results list, which populates via its own async fetch AFTER
-    // the job goes terminal — wait for an actual result row.
-    await page1.getByText(/Markets ranked|Ranked, with gaps/i).waitFor({ timeout: 30_000 });
-    await page1.locator('ol li a[href^="/app/markets/"]').first().waitFor({ timeout: 10_000 });
-    const resultCount = await page1.locator('ol li a[href^="/app/markets/"]').count();
-    const afterSearchGuests = await guestOrgCount();
-    const runRow = await prisma.discoveryRun.findFirst({ orderBy: { created_at: 'desc' } });
+    await page1.getByText(/Buyers in .+ imported/i).first().waitFor({ timeout: 15_000 });
+    const marketLines = await page1.getByText(/Buyers in .+ imported/i).count();
+    const disclaimerVisible = await page1.getByText(/past trade data recorded by customs/i).isVisible();
+    const afterEstimateGuests = await guestOrgCount();
 
-    const s2ok = afterSearchGuests === beforeSearchGuests + 1 && resultCount > 0 && runRow?.status === 'completed';
+    const s2ok = marketLines > 0 && disclaimerVisible && afterEstimateGuests === beforeEstimateGuests + 1;
     record(
       '2',
-      'Search mints guest, job queues/processes, results render',
+      'Estimate renders synchronously with observed-history framing, mints exactly one guest tenant',
       s2ok ? 'PASS' : 'FAIL',
-      `guestOrgs ${beforeSearchGuests}->${afterSearchGuests}, ranked results rendered=${resultCount}, run status=${runRow?.status}`,
-    );
-
-    // ---------------------------------------------------------------- 3
-    // Navigate away mid-job and return. Start a second search, leave immediately.
-    await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
-    await page1.getByLabel('What do you export?').fill('Handloom cotton scarves for export');
-    await page1.getByRole('button', { name: /Find markets/i }).click();
-    await page1.getByText(/Search queued|Searching markets/i).waitFor({ timeout: 10_000 });
-    // Leave while it is still running.
-    await page1.goto(BASE + '/app/buyers', { waitUntil: 'networkidle' });
-    await sleep(3500); // job completes while we are away
-    await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
-
-    const dbRun = await prisma.discoveryRun.findFirst({ orderBy: { created_at: 'desc' } });
-    const dbSurvived = dbRun?.status === 'completed';
-    // Can the returning guest SEE that run anywhere in the UI?
-    const visibleOnReturn =
-      (await page1.getByText(/Markets ranked|Ranked, with gaps|Searching markets|Search queued/i).count()) > 0;
-
-    record(
-      '3',
-      'Job state survives navigating away and returning',
-      dbSurvived && visibleOnReturn ? 'PASS' : 'FAIL',
-      `durable server state=${dbRun?.status}; visible in UI after return=${visibleOnReturn}`,
-    );
-
-    // ---------------------------------------------------------------- 4
-    // Must be an assessment from THIS guest's own run — MarketDetail is tenant-scoped
-    // by design (an out-of-tenant id 404s rather than leaking another org's search), so
-    // picking the global highest-scored row across every org/session ever run against
-    // this DB was a test bug: it happened to work only by coincidence, and broke for
-    // good the day some other org's assessment permanently became the all-time max.
-    const anyAssessment = await prisma.marketAssessment.findFirst({
-      where: { run_id: dbRun!.id },
-      orderBy: { overall_score: 'desc' },
-    });
-    await page1.goto(`${BASE}/app/markets/${anyAssessment!.id}`, { waitUntil: 'networkidle' });
-    const sections = await Promise.all(
-      ['Score breakdown', 'Requirements', 'Commercial signal', 'Logistics'].map((t) =>
-        page1.getByText(t, { exact: false }).count(),
-      ),
-    );
-    const upgradeVisible = await page1.getByText(/Save or select this market/i).isVisible();
-    const saveButtons = await page1.getByRole('button', { name: /Save for later|Select as target/i }).count();
-
-    const s4ok = sections.every((c) => c > 0) && upgradeVisible && saveButtons === 0;
-    record(
-      '4',
-      'Market detail visible to guest; save/select gated by UpgradeNotice',
-      s4ok ? 'PASS' : 'FAIL',
-      `sections rendered=${sections.join(',')}, UpgradeNotice visible=${upgradeVisible}, raw save/select buttons=${saveButtons} (expect 0)`,
+      `markets rendered=${marketLines}, "not a forecast" disclaimer visible=${disclaimerVisible}, guestOrgs ${beforeEstimateGuests}->${afterEstimateGuests} (expect +1 — the estimate is now the first-search mint point)`,
     );
 
     for (const [label, sel] of [
-      ['market detail h1', 'h1'],
-      ['UpgradeNotice title', 'section.rounded-lg h3'],
-      ['DataGap label', '.border-dashed p'],
+      ['estimate h1', 'h1'],
+      ['estimate market headline', 'ol li p'],
+      ['estimate disclaimer', '.border-info\\/30 p, [class*="border-\\[var(--color-info)"] p'],
     ] as const) {
       const m = await measureContrast(page1, sel);
       if (m) {
@@ -230,79 +179,162 @@ async function main() {
       }
     }
 
-    // ---------------------------------------------------------------- 5
-    // Same browser context = same guest, same dev IP bucket. Two runs already used.
+    // ---------------------------------------------------------------- 3
+    // Same browser context = same guest, same dev IP bucket. One estimate already used
+    // above against `guest.policy.discovery_runs_per_ip` (default 2) — the SAME budget
+    // `market_estimate.run`'s guest floor always metered, not a separate one.
     await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
+    await page1.getByLabel('What do you export?').fill('Handloom cotton scarves for export');
+    await page1.getByLabel(/HS code/i).fill('630221');
+    await page1.getByRole('button', { name: /See the estimate/i }).click();
+    await page1.getByText(/Buyers in .+ imported/i).first().waitFor({ timeout: 15_000 });
+
     const beforeThird = await guestOrgCount();
-    await page1.getByLabel('What do you export?').fill('Third search should be capped');
-    await page1.getByRole('button', { name: /Find markets/i }).click();
-    // Assert the specific rate-limited surface, not the always-present guest banner:
-    // the UpgradeNotice heading only renders in the `blocked` phase.
-    const blockedPanel = page1.getByText(/You.{0,3}ve used your free searches/i);
+    await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
+    await page1.getByLabel('What do you export?').fill('Third estimate should be capped');
+    await page1.getByLabel(/HS code/i).fill('091030');
+    await page1.getByRole('button', { name: /See the estimate/i }).click();
+    const blockedPanel = page1.getByText(/You.{0,3}ve used your free estimates/i);
     await blockedPanel.waitFor({ timeout: 15_000 });
-    const rateLimitedText = await page1
-      .getByText(/used all \\d+ free searches|try again in about/i)
-      .first()
-      .textContent()
-      .catch(() => null);
     await sleep(500);
     const afterThird = await guestOrgCount();
-    const runsForGuest = await prisma.discoveryRun.count();
 
-    const s5ok = afterThird === beforeThird && (await blockedPanel.isVisible());
+    const s3ok = afterThird === beforeThird && (await blockedPanel.isVisible());
     record(
-      '5',
-      'Third search rate-limited, no orphan org created',
-      s5ok ? 'PASS' : 'FAIL',
-      `blocked panel shown=true, message="${rateLimitedText?.trim().slice(0, 70)}", guestOrgs ${beforeThird}->${afterThird}, total runs=${runsForGuest} (unchanged by the capped attempt)`,
+      '3',
+      'Third estimate rate-limited by the same per-IP quota, no orphan org created',
+      s3ok ? 'PASS' : 'FAIL',
+      `blocked panel shown=true, guestOrgs ${beforeThird}->${afterThird}`,
     );
 
-    // ---------------------------------------------------------------- 6
-    const guestOrgBefore = await prisma.user.findFirst({
-      where: { email: { endsWith: '@guest.invalid' } },
-      orderBy: { created_at: 'desc' },
-      select: { exporter_org_id: true },
-    });
-    const orgIdBefore = guestOrgBefore!.exporter_org_id!;
-    const runsBefore = await prisma.discoveryRun.count({ where: { exporter_org_id: orgIdBefore } });
-
+    // ---------------------------------------------------------------- 4
+    // Register. "Runs retained" no longer applies — estimates are never persisted at
+    // all, so there is nothing to carry over. What matters now: tier flips to free, and
+    // the commitment fee becomes `due` with a real amount snapshot (docs/14 §3a).
     await page1.goto(BASE + '/register', { waitUntil: 'networkidle' });
-    const carryOverCopy = await page1.getByText(/will be kept|become your saved history/i).count();
-    const saveProductOffer = await page1.getByText(/Save ".*" as a product/i).count();
-
-    // A fixed literal here means every second run of this suite hits DUPLICATE_EMAIL,
-    // never redirects, and hangs the waitForURL below until timeout — a run-idempotency
-    // bug in the test, not the product. Unique per run instead.
+    const registerEmail = `asha.browser.${Date.now()}@turmeric.example`;
     await page1.getByLabel('Your name').fill('Asha Patel');
     await page1.getByLabel('Company name').fill('Turmeric Exports Co');
-    await page1.getByLabel('Email address').fill(`asha.browser.${Date.now()}@turmeric.example`);
+    await page1.getByLabel('Email address').fill(registerEmail);
     await page1.getByLabel('Password').fill('Password123!');
     await page1.getByRole('button', { name: /Create free account/i }).click();
     await page1.waitForURL('**/app/markets**', { timeout: 20_000 });
 
-    const orgAfter = await prisma.exporterOrg.findUnique({ where: { id: orgIdBefore } });
-    const runsAfter = await prisma.discoveryRun.count({ where: { exporter_org_id: orgIdBefore } });
-    const productCreated = await prisma.product.count({ where: { exporter_org_id: orgIdBefore } });
+    // This session already minted a guest tenant back in scenario 2 (the estimate is
+    // now the first-search mint point), so registration takes the GUEST-UPGRADE branch:
+    // the existing session cookie already resolves to the new free-tier account — no
+    // separate sign-in needed (see the comment in RegisterForm.tsx).
+    const newUser = await prisma.user.findUnique({ where: { email: registerEmail }, select: { exporter_org_id: true } });
+    const orgId = newUser!.exporter_org_id!;
+    const orgAfterRegister = await prisma.exporterOrg.findUnique({ where: { id: orgId } });
 
-    const s6ok = orgAfter?.tier === 'free' && runsAfter === runsBefore && runsAfter > 0;
+    const s4ok =
+      orgAfterRegister?.tier === 'free' &&
+      orgAfterRegister?.commitment_fee_status === 'due' &&
+      orgAfterRegister?.commitment_fee_amount != null;
+    record(
+      '4',
+      'Register upgrades in place; commitment fee becomes due with an amount snapshot',
+      s4ok ? 'PASS' : 'FAIL',
+      `tier=${orgAfterRegister?.tier}, commitment_fee_status=${orgAfterRegister?.commitment_fee_status}, amount=${orgAfterRegister?.commitment_fee_amount}`,
+    );
+
+    // The free-tier /app/markets banner points at the billing CTA, not a saved-history list
+    // (there is nothing to save — estimates aren't persisted).
+    await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
+    const billingCtaVisible = await page1.getByRole('link', { name: /Pay the one-time commitment fee/i }).isVisible();
+    record(
+      '4b',
+      'Free-tier /app/markets points at the commitment-fee CTA',
+      billingCtaVisible ? 'PASS' : 'FAIL',
+      `billing CTA link visible=${billingCtaVisible}`,
+    );
+
+    // ---------------------------------------------------------------- 5
+    // Pay the commitment fee through the real UI — the CTA every paid-tier UpgradeNotice
+    // in the product has always pointed at, previously a dead link (no /app/billing page
+    // existed before this change).
+    await page1.getByRole('link', { name: /Pay the one-time commitment fee/i }).click();
+    await page1.waitForURL('**/app/billing');
+    const amountShown = await page1.getByText(/15000|15,000/).isVisible();
+    await page1.getByRole('button', { name: /unlock my account/i }).click();
+    await page1.getByText(/Commitment fee paid/i).waitFor({ timeout: 10_000 });
+
+    const orgAfterPay = await prisma.exporterOrg.findUnique({ where: { id: orgId } });
+    const s5ok = orgAfterPay?.tier === 'paid' && orgAfterPay?.commitment_fee_status === 'paid';
+    record(
+      '5',
+      'Paying the commitment fee via the UI flips the org to paid tier',
+      s5ok ? 'PASS' : 'FAIL',
+      `amount shown before paying=${amountShown}, tier after pay=${orgAfterPay?.tier}, commitment_fee_status=${orgAfterPay?.commitment_fee_status}`,
+    );
+
+    // ---------------------------------------------------------------- 6
+    // Now paid: /app/markets renders full ranked Demand Discovery (the job-based flow),
+    // not the estimate — and the resulting market detail page shows working save/select,
+    // which free/guest never see (gated at `market_assessment.save`, paid tier).
+    await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
+    await page1.getByLabel('What do you export?').fill('Organic turmeric powder, food grade');
+    // Exact HS6 is required: full ranked discovery intentionally does not fall back to
+    // chapter data. Use a code the seeded warehouse actually contains.
+    await page1.getByLabel(/HS code/i).fill('091664');
+    await page1.getByRole('button', { name: /^Find markets$/i }).click();
+    await page1.getByText(/Markets ranked|Ranked, with gaps/i).waitFor({ timeout: 30_000 });
+    await page1.locator('ol li a[href^="/app/markets/"]').first().waitFor({ timeout: 10_000 });
+    const resultCount = await page1.locator('ol li a[href^="/app/markets/"]').count();
+
+    const dbRun = await prisma.discoveryRun.findFirst({ where: { exporter_org_id: orgId }, orderBy: { created_at: 'desc' } });
+    const s6Terminal = dbRun?.status === 'completed' || dbRun?.status === 'partial';
+    const s6ok = resultCount > 0 && s6Terminal;
     record(
       '6',
-      'Register upgrades in place; runs retained; product opt-in offered',
+      'Paid tier: full ranked Demand Discovery runs and renders results',
       s6ok ? 'PASS' : 'FAIL',
-      `same org id kept=${orgAfter?.id === orgIdBefore}, tier=${orgAfter?.tier}, runs ${runsBefore}->${runsAfter}, carry-over copy shown=${carryOverCopy > 0}, save-as-product offer shown=${saveProductOffer > 0}, product created=${productCreated}`,
+      `ranked results rendered=${resultCount}, run status=${dbRun?.status}`,
     );
 
-    // No re-login: registration upgraded the User row in place, so the session already
-    // held resolves to the new free-tier account.
-    await page1.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
-    const historyRows = await page1.locator('section ul li').count();
-    const historyGateShown = await page1.getByText(/Searches aren.{0,3}t saved for guests/i).count();
+    const firstAssessment = await prisma.marketAssessment.findFirst({
+      where: { run_id: dbRun!.id },
+      orderBy: { overall_score: 'desc' },
+    });
+    await page1.goto(`${BASE}/app/markets/${firstAssessment!.id}`, { waitUntil: 'networkidle' });
+    const saveButtons = await page1.getByRole('button', { name: /Save for later|Select as target/i }).count();
+    const s6bOk = saveButtons > 0;
     record(
       '6b',
-      'After upgrade, prior runs visible as history',
-      historyRows > 0 && historyGateShown === 0 ? 'PASS' : 'FAIL',
-      `history rows rendered=${historyRows} (server has ${runsAfter} runs), guest-gate still shown=${historyGateShown > 0} (expect false)`,
+      'Paid tier sees working save/select on market detail (no longer gated)',
+      s6bOk ? 'PASS' : 'FAIL',
+      `save/select controls rendered=${saveButtons} (expect > 0 — gated below paid tier)`,
     );
+
+    for (const [label, sel] of [
+      ['market detail h1', 'h1'],
+      ['billing amount', 'section p'],
+    ] as const) {
+      const m = await measureContrast(page1, sel);
+      if (m) {
+        const fg = parseRgb(m.color);
+        const bg = parseRgb(m.background);
+        if (fg && bg) {
+          const ratio = contrast(fg, bg);
+          const large = m.fontSize >= 24 || (m.fontSize >= 18.66 && Number(m.fontWeight) >= 700);
+          const threshold = large ? 3 : 4.5;
+          contrastFindings.push(
+            `${ratio >= threshold ? 'PASS' : 'FAIL'}  ${label}: ${ratio.toFixed(2)}:1 (needs ${threshold}:1, ${m.fontSize}px) "${m.text}"`,
+          );
+        }
+      }
+    }
+
+    // Cleanup: this scenario's own org/user, created from scratch above — not a shared
+    // fixture, so it is this script's responsibility to remove it.
+    await prisma.auditEvent.deleteMany({ where: { exporter_org_id: orgId } });
+    await prisma.marketAssessment.deleteMany({ where: { run: { exporter_org_id: orgId } } });
+    await prisma.jobAttempt.deleteMany({ where: { job: { exporter_org_id: orgId } } });
+    await prisma.job.deleteMany({ where: { exporter_org_id: orgId } });
+    await prisma.discoveryRun.deleteMany({ where: { exporter_org_id: orgId } });
+    await prisma.user.deleteMany({ where: { exporter_org_id: orgId } });
+    await prisma.exporterOrg.deleteMany({ where: { id: orgId } });
     await ctx1.close();
 
     // ---------------------------------------------------------------- 7
@@ -523,8 +555,9 @@ async function main() {
     const p13 = await ctx13.newPage();
     await p13.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
     await p13.getByLabel('What do you export?').fill('Guest dashboard redirect probe');
-    await p13.getByRole('button', { name: /Find markets/i }).click();
-    await p13.getByText(/Search queued|Searching markets|Markets ranked/i).waitFor({ timeout: 15_000 });
+    await p13.getByLabel(/HS code/i).fill('091030');
+    await p13.getByRole('button', { name: /See the estimate/i }).click();
+    await p13.getByText(/Buyers in .+ imported/i).first().waitFor({ timeout: 15_000 });
     const guestResp = await p13.goto(BASE + '/app/overview', { waitUntil: 'networkidle' });
     const guestLandedPath = new URL(p13.url()).pathname;
     record(
@@ -655,28 +688,16 @@ async function main() {
     );
 
     // AC04: blocked risk stays visible across EVERY tab, not just Overview. Also proves
-    // every tab route is real (200, not a 404) even though most render "not built yet."
-    // `commercial` and `documents` are deliberately excluded from the "unbuilt stub"
-    // list: EXP-10 and EXP-12/13 are now built, so asserting they still say "isn't built
-    // yet" would be asserting the absence of shipped work. Their real content is covered
-    // by scripts/verify-commercial.ts and scenario 17 below; the risk-banner half of
-    // AC04 is still checked for both in BUILT_TABS.
-    const tabRoutes = ['tasks', 'activity'];
-    const BUILT_TABS = ['commercial', 'documents', 'shipment', 'payment', 'support'];
+    // every tab route is real (200, not a 404). Every workspace tab is now built —
+    // AGT-07/EXP-11 (tasks) and EXP-09-AC05 (activity) joined commercial/documents in
+    // this session — so there is no remaining "unbuilt stub" list; every tab is checked
+    // by the same loop, the same way. Their real content is covered by
+    // scripts/verify-commercial.ts, scenario 17 below, and
+    // scripts/verify-agent-tasks-exp11-activity.ts; this scenario only re-checks the
+    // risk-banner half of AC04, which does not depend on which suite owns the content.
+    const BUILT_TABS = ['commercial', 'documents', 'shipment', 'payment', 'support', 'tasks', 'activity'];
     const tabResults: string[] = [];
     let riskPersistedEverywhere = true;
-    for (const tab of tabRoutes) {
-      const resp = await p16.goto(BASE + `/app/deals/seed-deal-locked/${tab}`, { waitUntil: 'domcontentloaded' });
-      await sleep(300);
-      const body = (await p16.locator('body').textContent()) ?? '';
-      const is404 = /This page could not be found/i.test(body);
-      const hasRiskBanner = /blocked/i.test(body) && /Buyer requested a change to payment terms/.test(body);
-      const hasNotBuiltState = /isn.{0,3}t built yet/i.test(body);
-      if (!hasRiskBanner) riskPersistedEverywhere = false;
-      tabResults.push(`${tab}:${resp?.status()}${is404 ? '/404' : ''}${hasRiskBanner ? '/risk-ok' : '/risk-MISSING'}${hasNotBuiltState ? '/honest-empty' : '/NO-EMPTY-STATE'}`);
-    }
-    // A built tab still has to carry the persistent risk banner (AC04) — that is the part
-    // of the criterion that does not depend on whether the tab has content yet.
     for (const tab of BUILT_TABS) {
       const resp = await p16.goto(BASE + `/app/deals/seed-deal-locked/${tab}`, { waitUntil: 'domcontentloaded' });
       await sleep(300);
@@ -688,11 +709,10 @@ async function main() {
     }
 
     const allTabsLive = tabResults.every((r) => !r.includes('/404'));
-    const allTabsHonest = tabResults.every((r) => r.includes('/honest-empty') || r.includes('/built'));
     record(
       '16:tabs',
-      'AC04: blocked risk banner persists across every workspace tab; unbuilt tabs are honest, not 404s',
-      allTabsLive && riskPersistedEverywhere && allTabsHonest ? 'PASS' : 'FAIL',
+      'AC04: blocked risk banner persists across every workspace tab',
+      allTabsLive && riskPersistedEverywhere ? 'PASS' : 'FAIL',
       `tabs=[${tabResults.join(', ')}]`,
     );
 

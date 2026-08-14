@@ -7,13 +7,13 @@
  * themselves are filtered by tenant (src/lib/permissions.ts `canSearchBuyers`).
  */
 
-import { OrgTier, VerificationStatus } from '@prisma/client';
+import { VerificationStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
-import { getConfig, resolvePagination } from '@/lib/config';
-import { errorResponse, list, newCorrelationId, pageMeta, upgradeRequired, validationError } from '@/lib/errors';
-import { assertCan, assertPermitted, can, canSearchBuyers, isExporter } from '@/lib/permissions';
+import { resolvePagination } from '@/lib/config';
+import { errorResponse, list, newCorrelationId, pageMeta, validationError } from '@/lib/errors';
+import { assertCan, assertPermitted, can, canSearchBuyers } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
@@ -22,11 +22,8 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal();
     const params = request.nextUrl.searchParams;
 
-    // Never trust a client-supplied org id for an exporter principal — only the org
-    // they're actually tenanted to. Agents/ops must name the org they're searching for.
-    const exporterOrgId = isExporter(principal)
-      ? (principal.exporter_org_id as string)
-      : params.get('exporter_org_id');
+    const exporterOrgId = params.get('exporter_org_id');
+    const productId = params.get('product_id');
 
     if (!exporterOrgId) {
       throw validationError(
@@ -34,6 +31,7 @@ export async function GET(request: NextRequest) {
         'Tell us which exporter this buyer search is for.',
       );
     }
+    if (!productId) throw validationError([{ field: 'product_id', code: 'required', message: 'product_id is required because fit is contextual.' }]);
 
     // Capability + tier first (so a tier denial reads as UPGRADE_REQUIRED), then scope.
     assertCan(principal, 'buyer_discovery.run');
@@ -55,76 +53,36 @@ export async function GET(request: NextRequest) {
     }
 
     const country = params.get('country');
-    const where: Prisma.BuyerWhereInput = {
+    const buyerWhere: Prisma.BuyerWhereInput = { sanctions_blocked: false, deprioritized: false,
       ...(country ? { country_code: country.toUpperCase() } : {}),
-      ...(verificationStatus ? { verification_status: verificationStatus as VerificationStatus } : {}),
-    };
+      ...(verificationStatus ? { verification_status: verificationStatus as VerificationStatus } : {}) };
 
     const { page, per_page, skip, take } = await resolvePagination({
       page: params.get('page'),
       per_page: params.get('per_page'),
     });
 
-    // Guests get a hard ceiling on how deep they can page. The run cap limits AI spend;
-    // it does nothing to stop someone walking the whole buyer dataset a page at a time,
-    // and the buyer list IS the proprietary asset even with contacts withheld.
-    const guestPolicy = await getConfig('guest.policy');
-    const isGuest = principal.tier === OrgTier.guest;
-    if (isGuest && skip + take > guestPolicy.max_buyer_results) {
-      throw upgradeRequired(
-        OrgTier.free,
-        `Free accounts can browse beyond the first ${guestPolicy.max_buyer_results} buyers.`,
-      );
-    }
-
     const [rows, total] = await Promise.all([
-      prisma.buyer.findMany({
-        where,
-        orderBy: { last_activity_at: 'desc' },
+      prisma.buyerFitAssessment.findMany({
+        where: { exporter_org_id: exporterOrgId, product_id: productId, score: { not: null }, buyer: buyerWhere },
+        orderBy: { score: 'desc' },
         skip,
         take,
-        // Explicit projection. Previously this was a bare findMany, which happened not to
-        // return contacts only because they are a relation — one later `include` would
-        // have leaked them silently. The tier decides this now, in one visible place.
         select: {
-          id: true,
-          legal_name: true,
-          display_name: true,
-          country_code: true,
-          website: true,
-          buyer_type: true,
-          import_activity_summary: true,
-          verification_status: true,
-          risk_flags: true,
-          last_activity_at: true,
-          created_at: true,
-          updated_at: true,
-          _count: { select: { contacts: true } },
-          ...(canSeeContacts
-            ? {
-                contacts: {
-                  select: {
-                    id: true,
-                    name: true,
-                    role_title: true,
-                    email: true,
-                    phone: true,
-                    verification_status: true,
-                    provenance: true,
-                  },
-                },
-              }
-            : {}),
+          score: true, confidence_score: true, components: true, model_version: true, computed_at: true,
+          buyer: { select: { id:true,legal_name:true,display_name:true,country_code:true,website:true,buyer_type:true,import_activity_summary:true,verification_status:true,risk_flags:true,last_activity_at:true,created_at:true,updated_at:true,
+            _count:{select:{contacts:true}}, ...(canSeeContacts ? { contacts:{select:{id:true,name:true,role_title:true,email:true,phone:true,verification_status:true,provenance:true}} } : {}) } },
         },
       }),
-      prisma.buyer.count({ where }),
+      prisma.buyerFitAssessment.count({ where: { exporter_org_id: exporterOrgId, product_id: productId, score: { not: null }, buyer: buyerWhere } }),
     ]);
 
     // Tell the client WHAT is withheld and why, so the UI can render a labelled locked
     // state rather than a blank space (docs/03 §5: an empty state explains the reason
     // and the next action). `_count.contacts` is a count, never the contacts themselves.
-    const data = rows.map(({ _count, ...buyer }) => ({
+    const data = rows.map(({ buyer: { _count, ...buyer }, ...fit }) => ({
       ...buyer,
+      fit,
       contacts_total: _count.contacts,
       contacts_locked: !canSeeContacts,
     }));
@@ -133,7 +91,6 @@ export async function GET(request: NextRequest) {
       list(data, {
         ...pageMeta({ page, per_page, total }),
         contacts_locked: !canSeeContacts,
-        ...(canSeeContacts ? {} : { contacts_unlock_tier: OrgTier.free }),
       }),
       { headers: { 'x-correlation-id': correlationId } },
     );

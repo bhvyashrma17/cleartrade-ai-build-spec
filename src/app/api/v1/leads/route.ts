@@ -27,6 +27,10 @@ export async function GET(request: NextRequest) {
         { field: 'stage', code: 'invalid', message: `Must be one of: ${Object.values(BuyerLeadStage).join(', ')}.` },
       ]);
     }
+    // AGT-02 "buyer pipeline opens Outreach CRM filtered to this exporter" — intersected
+    // with tenantScope() below, never used on its own, so a client-supplied id outside
+    // the agent's assigned orgs simply matches nothing rather than widening access.
+    const exporterOrgId = params.get('exporter');
 
     const scope = await tenantScope(principal);
     const { page, per_page, skip, take } = await resolvePagination({
@@ -34,7 +38,14 @@ export async function GET(request: NextRequest) {
       per_page: params.get('per_page'),
     });
 
-    const where = { ...scope, ...(stage ? { stage: stage as BuyerLeadStage } : {}) };
+    // `scope` and the `exporter` filter both key on `exporter_org_id` — spreading them
+    // into one object would let the second silently clobber the first (whichever key
+    // is written last wins), which is exactly how a client-supplied id could widen
+    // access instead of narrowing it. `AND` keeps both constraints independently
+    // enforced: the row must satisfy the agent's tenant scope AND the requested filter.
+    const where = {
+      AND: [scope, ...(stage ? [{ stage: stage as BuyerLeadStage }] : []), ...(exporterOrgId ? [{ exporter_org_id: exporterOrgId }] : [])],
+    };
 
     const [rows, total] = await Promise.all([
       prisma.buyerLead.findMany({

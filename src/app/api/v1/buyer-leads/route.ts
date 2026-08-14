@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
           created_by_id: principal!.id,
         },
       });
+      await tx.buyerOutcome.create({ data: { buyer_lead_id: created.id, buyer_id: created.buyer_id, exporter_org_id: created.exporter_org_id } });
 
       await writeAuditEvent({
         actor: principal,

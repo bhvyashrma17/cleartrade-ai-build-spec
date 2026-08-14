@@ -159,7 +159,7 @@ production action.
 |---|---|---|
 | **Authentication channel** | Email/password, magic link, OTP/phone, or a combination. UI shell can be designed now; auth flow needs a final choice | ❓ Open |
 | **Exporter team roles** | Whether non-owner exporter members can approve commercial terms/documents | ❓ Open |
-| **Buyer Discovery exporter access** | Whether exporters directly run all searches or primarily receive agent-curated lists. Spec supports both; decide the default | ❓ Open |
+| **Buyer Discovery exporter access** | Whether exporters directly run all searches or primarily receive agent-curated lists. Spec supports both; decide the default | ✅ **Resolved and implemented** — buyer discovery is agent-curated, not exporter-run. `buyer_discovery.run` and buyer-lead creation deny exporter roles; agent/ops searches require an explicit assigned exporter and product context. |
 | **Outreach integration** | Whether the agent sends through integrated email/LinkedIn/WhatsApp or logs external outreach. UI must adapt to available integrations and legal terms | ❓ Open |
 | **Buyer acceptance evidence** | What qualifies as buyer-side terms acceptance before deal lock: email evidence, uploaded PO, agent attestation, etc. | ❓ Open |
 | **CHA directory/assignment** | Whether agents choose from an approved CHA directory or Ops assigns centrally | ❓ Open |

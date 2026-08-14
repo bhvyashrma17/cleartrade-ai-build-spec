@@ -16,9 +16,10 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { OrgTier, UserRole, type Prisma } from '@prisma/client';
+import { CommitmentFeeStatus, OrgTier, UserRole, type Prisma } from '@prisma/client';
 import { getPrincipal, hashPassword } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
+import { getFeePolicy } from '@/lib/config';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
 import { registerSchema, zodFieldErrors } from '@/lib/validators';
@@ -52,6 +53,20 @@ export async function POST(request: NextRequest) {
     const isGuestUpgrade = principal?.tier === OrgTier.guest && Boolean(principal.exporter_org_id);
     const passwordHash = await hashPassword(input.password);
 
+    // The commitment fee becomes due the moment registration completes — "CTA into
+    // registration, then the commitment fee" (docs/14 §5 guest lifecycle). Snapshotted
+    // once here, outside the transaction (a config read, not a write), and reused by
+    // both branches below so a guest-upgrade and a fresh signup owe an identically-priced
+    // fee. Same "rule of record" as a deal's quoted terms — never re-read live once due.
+    const feePolicy = await getFeePolicy();
+    const commitmentFeeDue = {
+      commitment_fee_status: CommitmentFeeStatus.due,
+      commitment_fee_amount: feePolicy.commitment_fee.amount,
+      commitment_fee_currency: feePolicy.commitment_fee.currency,
+      commitment_fee_policy_version: feePolicy.version,
+      commitment_fee_due_at: new Date(),
+    };
+
     const result = await prisma.$transaction(async (tx) => {
       if (isGuestUpgrade) {
         const orgId = principal!.exporter_org_id!;
@@ -66,6 +81,7 @@ export async function POST(request: NextRequest) {
             upgraded_at: new Date(),
             // No longer a purge candidate.
             guest_expires_at: null,
+            ...commitmentFeeDue,
           },
           select: { id: true, display_name: true, tier: true },
         });
@@ -135,7 +151,7 @@ export async function POST(request: NextRequest) {
 
       // No guest session — a plain new free tenant.
       const org = await tx.exporterOrg.create({
-        data: { display_name: input.organization_name, tier: OrgTier.free },
+        data: { display_name: input.organization_name, tier: OrgTier.free, ...commitmentFeeDue },
         select: { id: true, tier: true },
       });
       const user = await tx.user.create({

@@ -71,6 +71,12 @@ export type Capability =
   | 'exporter_profile.view'
   | 'exporter_master_data.edit'
   | 'demand_discovery.run'
+  // The pre-membership estimate that replaced full Demand Discovery at guest/free tier —
+  // observed historical value/price bands only, no ranking, no LLM. See docs/14 §3.
+  | 'market_estimate.run'
+  // Recording the commitment fee as paid. Distinct from `demand_discovery.run`/
+  // `market_assessment.save` (which this fee is the gate FOR) — paying is its own action.
+  | 'commitment_fee.pay'
   | 'buyer_discovery.run'
   | 'buyer_lead.create'
   | 'outreach.send'
@@ -129,7 +135,35 @@ export type Capability =
   | 'task_evidence.review'
   // EXP-07. Buyer detail itself reuses `buyer_discovery.run`/`buyer_contact.view`;
   // shortlisting is its own capability because it is a distinct write, not a search.
-  | 'buyer_shortlist.create';
+  | 'buyer_shortlist.create'
+  // AGT-04-AC01: verifying a contact is a distinct write from viewing one
+  // (`buyer_contact.view`, which every paid exporter also holds) — an exporter must
+  // never be able to mark a buyer contact verified themselves.
+  | 'buyer_contact.verify'
+  // OPS-04-AC03: "Restricted Ops" — separate from `document.mark_filed` (which agents
+  // also hold) because an override bypasses the normal filing state machine entirely.
+  // Only ops_supervisor/admin, never an agent, and never ops_finance (a finance role has
+  // no operational reason to waive a filing/compliance requirement).
+  | 'document.override_requirement'
+  // OPS-07-AC02: generic ConfigSetting versions (SLA thresholds, doc registry, etc.) —
+  // "Admin-only write" per docs/06. Kept separate from `fee_policy.edit` (which
+  // ops_finance also partially holds) because config registry writes are Admin-only,
+  // full stop, with no restricted/policy-gated middle ground for a finance role.
+  | 'config.edit'
+  // Partner directory (docs/06 "implement as part of the OPS-07 config registry").
+  // Assigning a partner to a deal is `shipment.update` (existing, agent+ops); this is
+  // the DIRECTORY itself — onboarding a partner or changing its status — which is
+  // Admin-only, same reasoning as `config.edit`.
+  | 'partner.manage'
+  // AGT-08-AC01 / OPS-05: approving and marking a payout paid is finance-only and is
+  // deliberately NOT `payout.view` (which an agent holds for their own rows). Splitting
+  // read from write is the whole mechanism behind "agent can read, never edit" — one
+  // capability could not express it.
+  | 'payout.approve'
+  // OPS-05 "Adjust/waive | Restricted". Separate from `payout.approve` because moving a
+  // payout along its lifecycle and changing what it is worth are different powers, and
+  // an adjustment is the one action that alters a money figure after the fact.
+  | 'payout.adjust';
 
 const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
   // | Object / action | Exporter | Agent | Ops | Admin |
@@ -158,7 +192,11 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_finance: 'none',
     admin: 'config_only',
   },
-  'buyer_discovery.run': {
+  // The pre-membership estimate (docs/14 §3). Same role shape as `demand_discovery.run` —
+  // it is the same audience asking the same question, just before they have paid for the
+  // ranked version — but its own capability, so the tier floor (guest, vs. demand_
+  // discovery.run's paid) is a genuinely separate policy decision, not a role variant.
+  'market_estimate.run': {
     exporter_owner: 'own_org',
     exporter_member: 'own_org',
     agent: 'assigned',
@@ -166,9 +204,28 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_finance: 'none',
     admin: 'config_only',
   },
-  'buyer_lead.create': {
+  // Recording that the commitment fee was paid (docs/01 §2). Financial-commitment shaped,
+  // same as `commercial_terms.approve` — a member never binds the org to a payment any
+  // more than they approve deal terms; ops_finance reconciles, mirroring `payment.update`.
+  'commitment_fee.pay': {
     exporter_owner: 'own_org',
-    exporter_member: 'own_org',
+    exporter_member: 'none',
+    agent: 'none',
+    ops_supervisor: 'none',
+    ops_finance: 'all',
+    admin: 'none',
+  },
+  'buyer_discovery.run': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'config_only',
+  },
+  'buyer_lead.create': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
     agent: 'assigned',
     ops_supervisor: 'all',
     ops_finance: 'none',
@@ -417,6 +474,56 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     ops_finance: 'none',
     admin: 'none',
   },
+  'buyer_contact.verify': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'assigned',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'none',
+  },
+  'document.override_requirement': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'none',
+    ops_supervisor: 'all',
+    ops_finance: 'none',
+    admin: 'all',
+  },
+  'config.edit': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'none',
+    ops_supervisor: 'none',
+    ops_finance: 'none',
+    admin: 'all',
+  },
+  'partner.manage': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'none',
+    ops_supervisor: 'none',
+    ops_finance: 'none',
+    admin: 'all',
+  },
+  'payout.approve': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    // AGT-08-AC01: the agent whose payout it is has no write path to it at all.
+    agent: 'none',
+    // A supervisor runs operations, not the payroll — OPS-05 is an ops_finance screen.
+    ops_supervisor: 'none',
+    ops_finance: 'all',
+    admin: 'all',
+  },
+  'payout.adjust': {
+    exporter_owner: 'none',
+    exporter_member: 'none',
+    agent: 'none',
+    ops_supervisor: 'none',
+    ops_finance: 'all',
+    admin: 'all',
+  },
   'shipment.update': {
     exporter_owner: 'own_org',
     exporter_member: 'own_org',
@@ -457,20 +564,34 @@ const TIER_RANK: Record<OrgTier, number> = {
  */
 const CAPABILITY_MIN_TIER: Partial<Record<Capability, OrgTier>> = {
   // Guest — the acquisition surface. Runs are additionally IP-capped at the route.
-  'demand_discovery.run': OrgTier.guest,
-  'buyer_discovery.run': OrgTier.guest,
+  //
+  // `demand_discovery.run` moved to `paid` below — full ranked Demand Discovery (ranked
+  // markets, market detail, save/select) is now the commitment-fee-gated product, per the
+  // docs/14 tier-matrix change. `market_estimate.run` is what guest tier gets instead: the
+  // pre-membership estimate (observed historical import value + unit-price bands, no
+  // ranking, no LLM) — the acquisition surface moved here, not away.
+  'market_estimate.run': OrgTier.guest,
   'exporter_profile.view': OrgTier.guest,
 
   // Free — unlocked by registering. Saved history, readiness, own pipeline, no agent.
+  // Free tier still gets `market_estimate.run` too (it's a floor, not a guest-only perk),
+  // plus the fee CTA (`commitment_fee.pay`) that is the free tenant's next step.
   'readiness.run': OrgTier.free,
   'buyer_contact.view': OrgTier.free,
   'buyer_lead.create': OrgTier.free,
   'exporter_master_data.edit': OrgTier.free,
-  'market_assessment.save': OrgTier.free,
   'notification.manage': OrgTier.free,
   'team.manage': OrgTier.free,
   'task_evidence.upload': OrgTier.free,
   'buyer_shortlist.create': OrgTier.free,
+  'commitment_fee.pay': OrgTier.free,
+
+  // Paid — unlocked by the commitment fee (docs/01 §2), not by "everything else falls
+  // through" alone. Named explicitly here (rather than left to the default) so a reader
+  // grepping for "why is this paid-gated" finds the answer next to the capability, not
+  // buried in a comment about the fallback.
+  'demand_discovery.run': OrgTier.paid,
+  'market_assessment.save': OrgTier.paid,
 
   // Everything else falls through to paid: the agent-assisted workflow — deals,
   // documents, shipment, payment, outreach, disputes, payout, assignment, audit.

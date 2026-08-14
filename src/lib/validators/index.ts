@@ -37,6 +37,27 @@ export type CreateBuyerLeadInput = z.infer<typeof createBuyerLeadSchema>;
  * text is snapshotted onto the DiscoveryRun instead, and only becomes a real Product if
  * they choose to save it at registration.
  */
+/** Public estimate form: docs/14 §3. HS code and description mirror the discovery form's rules. */
+export const marketEstimateSchema = z.object({
+  product_description: z.string().trim().min(3, 'Describe your product in a few words.').max(500),
+  hs_code: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/, 'An HS code is 4 to 8 digits.'),
+  // Never used in arithmetic (src/lib/market-estimate.ts) — bucketed for the cache key only.
+  monthly_quantity: z.coerce.number().positive().max(1_000_000_000).optional(),
+  location: z.string().trim().max(120).optional(),
+});
+export type MarketEstimateInputSchema = z.infer<typeof marketEstimateSchema>;
+
+/** `PATCH /api/v1/exporter-org/commitment-fee`. */
+export const payCommitmentFeeSchema = z.object({
+  action: z.literal('pay'),
+  source: z.enum(['exporter_update', 'AA', 'bank_partner', 'manual_ops']),
+  reference: z.string().trim().max(200).nullish(),
+});
+export type PayCommitmentFeeInput = z.infer<typeof payCommitmentFeeSchema>;
+
 export const createDiscoveryRunSchema = z
   .object({
     product_id: z.string().min(1).optional(),
@@ -160,7 +181,14 @@ export const raiseShipmentIssueSchema = z.object({
 
 export const updatePaymentStatusSchema = z.object({
   action: z.literal('update_status'),
-  to: z.enum(['due', 'partially_received', 'received', 'overdue', 'disputed']),
+  // `realized` was missing here even though it is a real `PaymentStatus` member with
+  // its own state-machine edge (`received -> realized`) and its own route effect
+  // (`set_realized_at`) — no request could ever reach it, so a payment could only ever
+  // be marked realized by writing the row directly (which is exactly what the seed
+  // fixtures do, and exactly why this went unnoticed: AGENTS.md "seeded fixtures
+  // hand-place END states"). Found by the payout event-driven verification, which
+  // drives a payment through the real route rather than seeding the end state.
+  to: z.enum(['due', 'partially_received', 'received', 'realized', 'overdue', 'disputed']),
   source: z.enum(['exporter_update', 'AA', 'bank_partner', 'manual_ops']),
   amount_received: z.coerce.number().positive().nullish(),
   note: z.string().trim().nullish(),
@@ -239,6 +267,17 @@ export const escalateBlockerSchema = z.object({
   reason: z.string().trim().min(1, 'Say what is blocked and why Ops needs to step in.'),
   gate: z.string().trim().min(1),
   severity: z.enum(['medium', 'high', 'critical']).default('high'),
+});
+
+/** AGT-07 "Escalate" quick action — create/link an Ops case for one task, not a deal gate. */
+export const escalateTaskSchema = z.object({
+  reason: z.string().trim().min(1, 'Say why this needs Ops attention.'),
+  severity: z.enum(['medium', 'high', 'critical']).default('high'),
+});
+
+/** AGT-07 "Reassign request" quick action. */
+export const reassignRequestTaskSchema = z.object({
+  reason: z.string().trim().min(1, 'Say why this needs to move to someone else.'),
 });
 
 /** Internal note — agent/ops only, its own table, never a Message. */
@@ -351,4 +390,159 @@ export const askAgentSchema = z.object({
 export const createBuyerShortlistSchema = z.object({
   buyer_id: z.string().trim().min(1, 'A buyer is required.'),
   product_id: z.string().trim().nullish(),
+});
+
+// ---------------------------------------------------------------------------
+// AGT-02 Exporter 360
+// ---------------------------------------------------------------------------
+
+/** Product quick-edit — a deliberate whitelist. HS code and certifications are not here. */
+export const quickEditProductSchema = z.object({
+  capacity_value: z.number().positive().nullish(),
+  capacity_unit: z.string().trim().nullish(),
+  moq_value: z.number().positive().nullish(),
+  moq_unit: z.string().trim().nullish(),
+  price_target_amount: z.number().positive().nullish(),
+  price_target_currency: z.string().trim().length(3).nullish(),
+  lead_time_days: z.number().int().positive().nullish(),
+  desired_order_size_amount: z.number().positive().nullish(),
+  desired_order_size_currency: z.string().trim().length(3).nullish(),
+  customization_capability: z.string().trim().max(1000).nullish(),
+  packaging_capability: z.string().trim().max(1000).nullish(),
+  packaging: z.string().trim().nullish(),
+}).superRefine((value, ctx) => {
+  const hasAmount = value.desired_order_size_amount != null;
+  const hasCurrency = Boolean(value.desired_order_size_currency);
+  if (hasAmount !== hasCurrency) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [hasAmount ? 'desired_order_size_currency' : 'desired_order_size_amount'], message: 'Desired order size requires both amount and currency.' });
+});
+
+// ---------------------------------------------------------------------------
+// AGT-04 Lead / Buyer Workspace
+// ---------------------------------------------------------------------------
+
+/** "Log outreach/reply" — an activity, plus an optional stage move it justifies. */
+export const logOutreachActivitySchema = z.object({
+  type: z.enum(['call', 'email', 'message', 'meeting', 'note']),
+  summary: z.string().trim().min(1, 'Say what happened.'),
+  outcome: z.string().trim().nullish(),
+  visibility: z.enum(['exporter_visible', 'internal']).default('internal'),
+  to_stage: z.string().trim().nullish(),
+  next_action: z.string().trim().nullish(),
+  next_action_at: z.string().trim().nullish(),
+  interest_level: z.enum(['unknown', 'low', 'medium', 'high']).nullish(),
+});
+
+export const disqualifyLeadSchema = z.object({
+  disqualification_reason: z.enum(['no_response', 'not_importing_category', 'volume_too_small', 'price_mismatch', 'risk_flag', 'duplicate', 'other']),
+  disqualification_reason_text: z.string().trim().nullish(),
+});
+
+/** AC01: an agent must record verification evidence, not just flip a status. */
+export const verifyBuyerContactSchema = z.object({
+  verification_status: z.enum(['unverified', 'partially_verified', 'verified']),
+  evidence: z.string().trim().min(1, 'Say what evidence supports this verification.'),
+});
+
+/** AC03: conversion creates the canonical Deal and links it back to the lead in one step. */
+export const convertLeadSchema = z.object({
+  quantity: z.number().positive().nullish(),
+  unit: z.string().trim().nullish(),
+  unit_price_amount: z.number().positive().nullish(),
+  unit_price_currency: z.string().trim().length(3).nullish(),
+  incoterm: z.string().trim().nullish(),
+  incoterm_place: z.string().trim().nullish(),
+});
+
+// ---------------------------------------------------------------------------
+// OPS-04 CHA, Compliance & Document Oversight
+// ---------------------------------------------------------------------------
+
+/**
+ * "Override requirement | Restricted Ops | Policy-controlled with reason/audit |
+ * High-risk confirm". Bypasses the normal filing state machine on purpose — a reason is
+ * the only thing standing between this and an unaccountable bypass, so it is mandatory
+ * and long enough to actually explain the call.
+ */
+export const overrideDocumentRequirementSchema = z.object({
+  reason: z.string().trim().min(10, 'Explain why this requirement is being waived — this bypasses the normal filing checks.'),
+  confirm: z.literal(true, { errorMap: () => ({ message: 'Confirm the override — this is a high-risk action.' }) }),
+});
+
+// ---------------------------------------------------------------------------
+// OPS-07 Audit Log & Admin Configuration
+// ---------------------------------------------------------------------------
+
+const CONFIG_KEYS = [
+  'sla.thresholds',
+  'payout.eligibility',
+  'documents.registry',
+  'uploads.policy',
+  'pagination.policy',
+  'buyers.fit_score_weights',
+  'leads.outreach',
+  'guest.policy',
+  'jobs.policy',
+] as const;
+
+/** New config version. `value` is validated as parseable JSON by the route, not here — the shape differs per key. */
+export const updateConfigSchema = z.object({
+  key: z.enum(CONFIG_KEYS),
+  value: z.unknown(),
+  description: z.string().trim().nullish(),
+});
+
+export const updateFeePolicySchema = z.object({
+  commitment_fee_amount: z.number().nonnegative(),
+  commitment_fee_currency: z.string().trim().length(3),
+  success_fee_rate: z.number().min(0).max(1),
+  small_shipment_threshold_amount: z.number().nonnegative(),
+  small_shipment_threshold_currency: z.string().trim().length(3),
+  small_shipment_rate: z.number().min(0).max(1),
+  small_shipment_flat_amount: z.number().nonnegative(),
+  agent_share_rate: z.number().min(0).max(1),
+  minimum_shipment_amount: z.number().nonnegative(),
+  minimum_shipment_currency: z.string().trim().length(3),
+});
+
+export const createPartnerSchema = z.object({
+  type: z.enum(['cha', 'freight', 'insurance', 'inspection', 'bank']),
+  legal_name: z.string().trim().min(1, 'A legal name is required.'),
+  display_name: z.string().trim().min(1, 'A display name is required.'),
+  country_code: z.string().trim().length(2, 'Use a 2-letter ISO country code.'),
+  contact_email: z.string().trim().email().nullish(),
+  contact_phone: z.string().trim().nullish(),
+});
+
+export const updatePartnerStatusSchema = z.object({
+  partner_status: z.enum(['active', 'suspended', 'offboarded']),
+  reason: z.string().trim().min(1, 'Say why this partner’s status is changing.'),
+});
+
+// ---------------------------------------------------------------------------
+// AGT-08 / OPS-05 payout
+// ---------------------------------------------------------------------------
+
+/**
+ * Finance-side lifecycle move. Deliberately has NO amount field — the payout figure is
+ * a frozen snapshot, and the only way to change what is payable is an additive
+ * adjustment (below). A route that accepted an amount here would be the exact
+ * destructive rewrite OPS-05-AC03 forbids.
+ */
+export const transitionPayoutSchema = z.object({
+  to: z.enum(['approved', 'paid', 'disputed', 'eligible']),
+  payment_reference: z.string().trim().nullish(),
+  dispute_reason: z.string().trim().nullish(),
+});
+
+/** OPS-05 "Adjust/waive | Reason + adjustment record, never rewrite the original quote". */
+export const createPayoutAdjustmentSchema = z.object({
+  /** Signed — negative claws back, positive tops up. Zero would be a no-op record. */
+  amount: z.number().refine((v) => v !== 0, 'An adjustment of zero has no effect.'),
+  reason: z.string().trim().min(5, 'Explain the adjustment — this is a permanent record.'),
+  confirm: z.literal(true, { errorMap: () => ({ message: 'Confirm the adjustment — it changes what is payable.' }) }),
+});
+
+/** AGT-08 "Raise payout query | Create finance query/case | Track status". */
+export const raisePayoutQuerySchema = z.object({
+  reason: z.string().trim().min(5, 'Say what looks wrong with this payout.'),
 });

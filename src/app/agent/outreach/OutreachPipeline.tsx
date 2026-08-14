@@ -11,6 +11,7 @@
 
 import type { VerificationStatus } from '@prisma/client';
 import { format } from 'date-fns';
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { DataTable, StatusChip, type DataTableColumn } from '@/components/ui';
 import { ApiClientError, apiGet } from '@/lib/api-client';
@@ -82,8 +83,9 @@ function NextActionCell({ lead }: { lead: LeadRow }) {
   return <span className="text-xs text-[var(--color-text-secondary)]">—</span>;
 }
 
-export function OutreachPipeline() {
+export function OutreachPipeline({ initialExporterOrgId = null }: { initialExporterOrgId?: string | null } = {}) {
   const [stage, setStage] = useState('');
+  const [exporterOrgId, setExporterOrgId] = useState(initialExporterOrgId);
   const [page, setPage] = useState(1);
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [pageMeta, setPageMeta] = useState<PageMeta>(EMPTY_PAGE);
@@ -92,7 +94,7 @@ export function OutreachPipeline() {
 
   useEffect(() => {
     setPage(1);
-  }, [stage]);
+  }, [stage, exporterOrgId]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -100,6 +102,7 @@ export function OutreachPipeline() {
     try {
       const params = new URLSearchParams({ page: String(page), per_page: String(PER_PAGE) });
       if (stage) params.set('stage', stage);
+      if (exporterOrgId) params.set('exporter', exporterOrgId);
       const res = await apiGet<ListResponse<LeadRow>>(`/api/v1/leads?${params.toString()}`);
       setLeads(res.data);
       setPageMeta(res.meta);
@@ -109,23 +112,23 @@ export function OutreachPipeline() {
     } finally {
       setLoading(false);
     }
-  }, [page, stage]);
+  }, [page, stage, exporterOrgId]);
 
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
 
-  const hasActiveFilters = Boolean(stage);
+  const hasActiveFilters = Boolean(stage) || Boolean(exporterOrgId);
 
   const columns: DataTableColumn<LeadRow>[] = [
     {
       key: 'buyer',
       header: 'Buyer',
       render: (lead) => (
-        <div>
-          <div className="font-medium text-primary">{lead.buyer.display_name}</div>
+        <Link href={`/agent/leads/${lead.id}`} className="focus-visible-ring block">
+          <div className="font-medium text-primary underline underline-offset-2">{lead.buyer.display_name}</div>
           <div className="text-xs text-[var(--color-text-secondary)]">{lead.buyer.country_code}</div>
-        </div>
+        </Link>
       ),
     },
     {
@@ -207,8 +210,20 @@ export function OutreachPipeline() {
             ))}
           </select>
         </div>
+        {exporterOrgId ? (
+          <span className="rounded-full border border-[var(--color-border)] bg-surface-muted px-3 py-1.5 text-sm text-primary">
+            Filtered to one exporter
+          </span>
+        ) : null}
         {hasActiveFilters ? (
-          <button type="button" onClick={() => setStage('')} className="text-sm font-medium text-primary underline underline-offset-2">
+          <button
+            type="button"
+            onClick={() => {
+              setStage('');
+              setExporterOrgId(null);
+            }}
+            className="text-sm font-medium text-primary underline underline-offset-2"
+          >
             Reset filters
           </button>
         ) : null}

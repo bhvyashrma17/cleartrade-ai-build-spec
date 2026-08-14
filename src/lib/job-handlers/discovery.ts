@@ -20,6 +20,14 @@ interface StoredSnapshot {
   description?: string | null;
   hs_code?: string | null;
   target_countries?: string[];
+  lead_time_days?: number | null;
+  desired_order_size_amount?: string | number | null;
+  desired_order_size_currency?: string | null;
+  customization_capability?: string | null;
+  packaging_capability?: string | null;
+  moq_value?: string | number | null;
+  moq_unit?: string | null;
+  certifications?: { code: string; name: string; status: string; evidence_ref: string | null }[];
 }
 
 export async function runDemandDiscovery(ctx: JobContext): Promise<JobOutcome> {
@@ -41,6 +49,14 @@ export async function runDemandDiscovery(ctx: JobContext): Promise<JobOutcome> {
     hs_code: snapshot.hs_code ?? null,
     target_countries: snapshot.target_countries ?? [],
     origin_country: 'IN',
+    lead_time_days: snapshot.lead_time_days ?? null,
+    desired_order_size_amount: snapshot.desired_order_size_amount == null ? null : Number(snapshot.desired_order_size_amount),
+    desired_order_size_currency: snapshot.desired_order_size_currency ?? null,
+    customization_capability: snapshot.customization_capability ?? null,
+    packaging_capability: snapshot.packaging_capability ?? null,
+    moq_value: snapshot.moq_value == null ? null : Number(snapshot.moq_value),
+    moq_unit: snapshot.moq_unit ?? null,
+    certifications: snapshot.certifications ?? [],
   };
 
   await prisma.discoveryRun.update({
@@ -76,6 +92,17 @@ export async function runDemandDiscovery(ctx: JobContext): Promise<JobOutcome> {
           demand_score: a.demand_score ?? null,
           growth_score: a.growth_score ?? null,
           competition_score: a.competition_score ?? null,
+          market_access_score: a.market_access_score ?? null,
+          export_economics_score: a.export_economics_score ?? null,
+          exporter_market_fit_score: a.exporter_market_fit_score ?? null,
+          logistics_feasibility_score: a.logistics_feasibility_score ?? null,
+          risk_resilience_score: a.risk_resilience_score ?? null,
+          confidence_score: a.confidence_score ?? 0,
+          eligibility_status: a.eligibility_status ?? 'eligible',
+          eligibility_reasons: (a.eligibility_reasons ?? []) as Prisma.InputJsonValue,
+          model_version: a.model_version ?? 'market-attractiveness-v2',
+          weight_profile_key: a.weight_profile_key ?? 'general',
+          weight_profile_version: a.weight_profile_version ?? 1,
           india_share: a.india_share != null ? new Prisma.Decimal(a.india_share) : null,
           tariff_summary: (a.tariff_summary ?? undefined) as Prisma.InputJsonValue | undefined,
           certification_requirements: (a.certification_requirements ?? []) as Prisma.InputJsonValue,
@@ -84,6 +111,10 @@ export async function runDemandDiscovery(ctx: JobContext): Promise<JobOutcome> {
           price_band_max: a.price_band_max != null ? new Prisma.Decimal(a.price_band_max) : null,
           price_band_currency: a.price_band_currency ?? null,
           rationale: a.rationale,
+          // Optional on the interface — an engine with no provenance to report omits it and
+          // the column stays null, which is why this survives an engine swap in either
+          // direction (docs/04 EXP-04-AC03).
+          field_provenance: (a.field_provenance ?? undefined) as Prisma.InputJsonValue | undefined,
         })),
       });
     }

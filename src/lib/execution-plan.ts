@@ -89,6 +89,16 @@ export interface ExecutionGate {
    * owns the button; the button never decides for itself.
    */
   actions: readonly ExecutionActionKey[];
+  /**
+   * The subset of `actions` that RESOLVE this gate's own blockers rather than depending
+   * on them being resolved. These stay available while the gate is `blocked`, because
+   * refusing them is a deadlock: `partner.assign` is blocked by "no partner assigned",
+   * which only `partner.assign` can fix.
+   *
+   * They are still refused while the gate is `waiting` — upstream being incomplete is a
+   * real reason not to act yet, and remediation does not change that.
+   */
+  remediation_actions?: readonly ExecutionActionKey[];
 }
 
 /**
@@ -414,6 +424,7 @@ export function buildExecutionChecklist(ctx: ExecutionContext): ExecutionGate[] 
     done: boolean;
     detail: string;
     actions: readonly ExecutionActionKey[];
+    remediation_actions?: readonly ExecutionActionKey[];
   }[] = [
     {
       id: 'terms_locked',
@@ -446,7 +457,17 @@ export function buildExecutionChecklist(ctx: ExecutionContext): ExecutionGate[] 
       detail: ctx.shipment?.cha_partner_name
         ? `CHA: ${ctx.shipment.cha_partner_name}${ctx.shipment.shipping_bill_no ? ` · SB ${ctx.shipment.shipping_bill_no}` : ''}`
         : 'No CHA assigned.',
+      // BOTH actions are this gate's own work, so both are remediation. Its blockers
+      // are "no CHA partner", "no freight partner" and "<doc> has not been filed yet" —
+      // cleared by `partner.assign` and `document.file` respectively, and by nothing
+      // else. Gating either on the gate being unblocked deadlocks it permanently.
+      //
+      // Nothing downstream is loosened by this: the paperwork is already generated and
+      // exporter-approved before `cha_filing` can even reach `blocked`, because the
+      // `documents` gate sits upstream and an incomplete upstream yields `waiting`,
+      // which still refuses everything.
       actions: ['partner.assign', 'document.file'],
+      remediation_actions: ['partner.assign', 'document.file'],
     },
     {
       id: 'pickup',
@@ -507,6 +528,7 @@ export function buildExecutionChecklist(ctx: ExecutionContext): ExecutionGate[] 
       blockers: state === 'blocked' ? g.blockers : [],
       detail: g.detail,
       actions: g.actions,
+      remediation_actions: g.remediation_actions,
     };
   });
 }
@@ -524,6 +546,10 @@ export function isActionAllowed(
   const gate = checklist.find((g) => g.actions.includes(action));
   if (!gate) return { allowed: true };
   if (gate.state === 'ready' || gate.state === 'done') return { allowed: true };
+  // A `blocked` gate is this gate's turn, with its own prerequisites unmet — and its
+  // remediation actions are precisely how those get met. Refusing them would deadlock
+  // the gate forever (see `remediation_actions`). `waiting` still refuses everything.
+  if (gate.state === 'blocked' && gate.remediation_actions?.includes(action)) return { allowed: true };
   return { allowed: false, gate };
 }
 

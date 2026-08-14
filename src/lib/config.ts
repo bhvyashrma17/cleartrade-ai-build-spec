@@ -56,8 +56,35 @@ export interface FitScoreWeights {
   min_display_score: number;
 }
 
+/**
+ * When an agent's commission becomes payable (AGT-08 / OPS-05).
+ *
+ * docs/06 OPS-05 states the dependency exists ("Pending realization | Waiting on buyer
+ * payment realization, **if policy requires**") but deliberately leaves the rule itself
+ * to the business — so it is expressed here as data, not baked into a predicate. Reading
+ * these three flags tells you the whole rule; there is no second place to check.
+ */
+export interface PayoutEligibilityPolicy {
+  /**
+   * Require the buyer payment to be `realized` (bank-confirmed), not merely `received`.
+   * The conservative default: ClearTrade should not owe commission on money that could
+   * still be reversed.
+   */
+  require_payment_realized: boolean;
+  /** Require the deal to have reached a closed-won/shipped terminal state. */
+  require_deal_closed_won: boolean;
+  /**
+   * Require no open dispute on the deal. A payout computed while the underlying deal is
+   * contested is the exact scenario that turns into a compensation argument later.
+   */
+  require_no_open_dispute: boolean;
+  /** Days after eligibility before finance is expected to approve — surfaced, not enforced. */
+  approval_target_days: number;
+}
+
 export interface ConfigShape {
   'sla.thresholds': Record<string, SlaThreshold>;
+  'payout.eligibility': PayoutEligibilityPolicy;
   'documents.registry': DocTypeRegistryEntry[];
   'uploads.policy': UploadPolicy;
   'pagination.policy': PaginationPolicy;
@@ -70,6 +97,77 @@ export interface ConfigShape {
   };
   'guest.policy': GuestPolicy;
   'jobs.policy': JobsPolicy;
+  'comtrade.policy': ComtradePolicy;
+  'discovery.scoring': DiscoveryScoringPolicy;
+  'market_estimate.policy': MarketEstimatePolicy;
+}
+
+/**
+ * Pre-membership market estimate — the public, no-LLM surface described in docs/14 §3
+ * (`market_estimate.run`, guest tier). Deliberately tiny compared to `discovery.scoring`:
+ * this reads the warehouse and reports observed history, it does not rank or score
+ * anything, so there are no weights here — only how much to show and how to bucket the
+ * cache key.
+ */
+export interface MarketEstimatePolicy {
+  /** How many top-importing markets the estimate names. */
+  top_n_markets: number;
+  /** Same floor `discovery.scoring` uses — a market too small to matter is too small here too. */
+  volume_floor_usd: number;
+  /**
+   * Breakpoints (ascending) that bucket the form's `monthly_quantity` into a coarse band
+   * for the CACHE KEY only — see the note on `quantityBand()` in `market-estimate.ts` for
+   * why quantity never enters the arithmetic itself.
+   */
+  quantity_band_breakpoints: number[];
+}
+
+/**
+ * Demand Discovery scoring weights and thresholds.
+ *
+ * These are business constants in the docs/01 §2 sense — the relative importance of demand
+ * vs. growth vs. competition is a product judgement Ops must be able to retune as the
+ * market model is calibrated, not a number compiled into the ranking code. Versioned
+ * through `ConfigSetting`, so OPS-07 can publish a new version and every prior version
+ * stays in the table (a run scored under v1 is visibly a different rule from one scored
+ * under v2, rather than an unexplained difference between two rankings).
+ */
+export interface DiscoveryScoringPolicy {
+  /**
+   * Relative weight of each subscore in the overall score. They need not sum to 1 — the
+   * engine renormalizes over whichever subscores it could actually compute, so a market
+   * with no price data is ranked on its available evidence rather than penalised to zero
+   * for a gap in the warehouse.
+   */
+  model_version: string;
+  base_weights: DiscoveryComponentWeights;
+  archetype_profiles: Record<string, { version: number; hs_chapters: string[]; weights: DiscoveryComponentWeights }>;
+  /**
+   * Minimum annual import value (USD) for a country to enter the candidate set at all.
+   * Below this a market is too small to be worth an exporter's attention, and its
+   * percentage-based subscores get noisy enough to be misleading.
+   */
+  volume_floor_usd: number;
+  /** Years of history the CAGR is computed over (docs: "5yr CAGR"). */
+  growth_window_years: number;
+  /**
+   * Per-year multiplicative decay applied to the recency subscore. 0.8 means data one year
+   * stale scores 80% of fresh, two years 64%, and so on.
+   */
+  recency_decay_per_year: number;
+  /** How many top-ranked markets get an LLM-written rationale. The rest get the deterministic one. */
+  rationale_top_n: number;
+}
+
+export interface DiscoveryComponentWeights {
+  demand_strength: number;
+  growth_momentum: number;
+  competitive_opportunity: number;
+  market_access: number;
+  export_economics: number;
+  exporter_market_fit: number;
+  logistics_feasibility: number;
+  risk_resilience: number;
 }
 
 /**
@@ -92,6 +190,25 @@ export interface JobsPolicy {
   worker_poll_interval_ms: number;
   /** Suggested client polling interval, returned to the UI so backoff is server-driven. */
   client_poll_interval_ms: number;
+}
+
+/**
+ * Comtrade ingest rate-limit behaviour — the free tier's caps are Ops' problem to retune
+ * (an upgraded key, a provider change), not a redeploy.
+ */
+export interface ComtradePolicy {
+  /** Pause between successive requests within one ingest run, staying under the free-tier rate cap. */
+  request_delay_ms: number;
+  /** How many times a single request retries a 429/5xx before the run records it as a failure. */
+  max_retries: number;
+  /** Base delay for exponential backoff between retries. */
+  retry_backoff_ms: number;
+  /** Explicit HS6 codes per API call. Kept configurable as provider limits change. */
+  hs_codes_per_request: number;
+  /** Conservative local ceiling below the advertised free-key quota. */
+  daily_request_budget: number;
+  /** Highest-value chapters first; the full ingest script consumes this exact order. */
+  chapter_priority: string[];
 }
 
 /**
@@ -129,10 +246,17 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     buyer_lead_follow_up: { due_in_hours: 48, warning_in_hours: 36, escalate_after_hours: 48 },
     exporter_document_approval: { due_in_hours: 48, warning_in_hours: 36, escalate_after_hours: 24 },
     agent_document_review: { due_in_hours: 8, warning_in_hours: 4, escalate_after_hours: 8 },
+    cha_query: { due_in_hours: 4, warning_in_hours: 2, escalate_after_hours: 4 },
     exporter_input_request: { due_in_hours: 24, warning_in_hours: 18, escalate_after_hours: 24 },
     shipment_exception: { due_in_hours: 4, warning_in_hours: 2, escalate_after_hours: 4 },
     payment_overdue_follow_up: { due_in_hours: 24, warning_in_hours: 12, escalate_after_hours: 24 },
     dispute_response: { due_in_hours: 24, warning_in_hours: 12, escalate_after_hours: 24 },
+  },
+  'payout.eligibility': {
+    require_payment_realized: true,
+    require_deal_closed_won: false,
+    require_no_open_dispute: true,
+    approval_target_days: 14,
   },
   'documents.registry': [
     {
@@ -225,6 +349,47 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     worker_poll_interval_ms: 1000,
     client_poll_interval_ms: 1500,
   },
+  'comtrade.policy': {
+    request_delay_ms: 2000,
+    max_retries: 3,
+    retry_backoff_ms: 2000,
+    hs_codes_per_request: 50,
+    daily_request_budget: 450,
+    chapter_priority: [
+      '84', '85', '27', '30', '87', '71', '39', '29', '72', '73', '61', '62', '63', '09',
+      '01', '02', '03', '04', '05', '06', '07', '08', '10', '11', '12', '13', '14', '15',
+      '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '28', '31', '32',
+      '33', '34', '35', '36', '37', '38', '40', '41', '42', '43', '44', '45', '46', '47',
+      '48', '49', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '64',
+      '65', '66', '67', '68', '69', '70', '74', '75', '76', '78', '79', '80', '81', '82',
+      '83', '86', '88', '89', '90', '91', '92', '93', '94', '95', '96', '97', '99',
+    ],
+  },
+  'discovery.scoring': {
+    model_version: 'market-attractiveness-v2',
+    base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
+    archetype_profiles: {
+      agriculture_food: { version: 1, hs_chapters: ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      chemicals_pharma: { version: 1, hs_chapters: ['28','29','30','31','32','33','34','35','36','37','38'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      plastics_rubber: { version: 1, hs_chapters: ['39','40'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      leather_wood_paper: { version: 1, hs_chapters: ['41','42','43','44','45','46','47','48','49'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      textiles_apparel: { version: 1, hs_chapters: ['50','51','52','53','54','55','56','57','58','59','60','61','62','63'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      minerals_metals: { version: 1, hs_chapters: ['25','26','27','68','69','70','71','72','73','74','75','76','78','79','80','81','82','83'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      machinery_electrical: { version: 1, hs_chapters: ['84','85'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      transport: { version: 1, hs_chapters: ['86','87','88','89'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      instruments_furniture: { version: 1, hs_chapters: ['90','91','92','94','95','96'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+      general: { version: 1, hs_chapters: [], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
+    },
+    volume_floor_usd: 250_000,
+    growth_window_years: 5,
+    recency_decay_per_year: 0.8,
+    rationale_top_n: 5,
+  },
+  'market_estimate.policy': {
+    top_n_markets: 5,
+    volume_floor_usd: 250_000,
+    quantity_band_breakpoints: [100, 1_000, 10_000],
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -242,7 +407,21 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
     orderBy: { version: 'desc' },
   });
   if (!row) return CONFIG_DEFAULTS[key];
+  // Additive provider controls must remain safe when an older versioned config row is
+  // still active during deployment. Explicit stored values continue to win.
+  if (key === 'comtrade.policy') {
+    return { ...CONFIG_DEFAULTS['comtrade.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'discovery.scoring' && !(row.value as { base_weights?: unknown }).base_weights) {
+    return CONFIG_DEFAULTS['discovery.scoring'] as ConfigShape[K];
+  }
   return row.value as ConfigShape[K];
+}
+
+export async function getConfigWithVersion<K extends ConfigKey>(key: K): Promise<{ value: ConfigShape[K]; version: number }> {
+  const row = await prisma.configSetting.findFirst({ where: { key, is_active: true }, orderBy: { version: 'desc' } });
+  const value = await getConfig(key);
+  return { value, version: row?.version ?? 1 };
 }
 
 export interface FeePolicySnapshot {

@@ -58,14 +58,54 @@ never "accidentally free".
 
 | Capability | Min tier | Notes |
 |---|---|---|
-| `demand_discovery.run` | `guest` | Additionally IP-capped — see §5 |
+| `market_estimate.run` | `guest` | The pre-membership estimate — see §3a. Additionally IP-capped, same budget as before — see §5 |
 | `buyer_discovery.run` | `guest` | Results capped at `max_buyer_results` for guests |
 | `exporter_profile.view` | `guest` | |
 | `readiness.run` | `free` | |
 | `buyer_contact.view` | `free` | The paid asset; see §4 |
 | `buyer_lead.create` | `free` | Created with `assigned_agent_id = null` below `paid` |
 | `exporter_master_data.edit` | `free` | |
+| `commitment_fee.pay` | `free` | Records the fee paid and flips the org to `paid` — see §3a |
+| `demand_discovery.run` | `paid` | **Changed.** Full ranked Demand Discovery — ranked markets, market detail, save/select — now requires the commitment fee paid. Was `guest`; guest/free get `market_estimate.run` instead |
+| `market_assessment.save` | `paid` | **Changed**, same reason — save/select is part of "full" Demand Discovery |
 | *everything else* | `paid` | Deals, documents, shipment, payment, outreach, disputes, payout, agent assignment, audit |
+
+### 3a. The commitment fee gate (pre-membership estimate → full Discovery)
+
+**This is not a new membership concept.** It is the commitment fee docs/01 §2 always
+specified (`not_due` / `due` / `paid` / `waived` / `refunded`), now doing the work of
+gating `paid` tier instead of sitting unused. `ExporterOrg` carries the fee's status,
+amount/currency/policy-version snapshot, and paid-at/source — the same "rule of record"
+a deal's quoted terms follow: the amount owed is fixed at the moment the fee becomes due
+(registration), never re-read live against a later `FeePolicy` version.
+
+```
+visitor → market_estimate.run (guest) → register → due → pay → paid tier → demand_discovery.run
+```
+
+- **`market_estimate.run`** (`POST /api/v1/market-estimates`) is the guest-facing
+  replacement for full Discovery: a synchronous, no-LLM read of the trade warehouse
+  returning **observed historical import values and unit-price bands only** — never a
+  ranking, never a projection. Framing is a product requirement, not copy preference:
+  language is "buyers in these markets imported X at Y–Z per unit," with an explicit
+  disclaimer that past trade data is not a forecast. See `src/lib/market-estimate.ts`.
+  **This is now the "first search" that mints a guest tenant** (§5) — full ranked
+  Discovery no longer does (it rejects an anonymous caller before any write; see §3a).
+  The estimate itself is never persisted (no run row, computed fresh or served from
+  cache each call) — only the guest tenant/session is a durable write, and only once per
+  visitor. Spends against the **same** per-IP quota the guest floor always used, in the
+  same quota-before-mint order `discovery-runs` established — not a separate budget.
+- **The fee becomes `due` the moment registration completes** (`POST /api/v1/register`,
+  both the guest-upgrade and fresh-signup branches) — snapshotted from the active
+  `FeePolicy` at that instant.
+- **Paying** (`PATCH /api/v1/exporter-org/commitment-fee`, `commitment_fee.pay`) is
+  self-reported or Ops-confirmed via the same `PaymentSource` vocabulary buyer payments
+  already use — this platform has no payment gateway, so "paid" here is the identical
+  kind of milestone/visibility fact `Payment.status` already models for a different
+  money event, not a promise that ClearTrade processed a transaction (docs/01's
+  never-a-bank rule applies here too).
+- Paying (or an Ops waiver) flips `tier: free → paid` in the same transaction as the
+  status write — see `src/lib/state-machines/commitment-fee.ts`.
 
 Role limits still apply independently. A **paid** exporter still cannot `outreach.send` or
 `agent.assign` — those are agent/ops capabilities and no amount of money changes that.
@@ -99,19 +139,23 @@ upsell. This was a real defect during implementation; it is why the order is wri
 
 ## 4. What each tier gets
 
-**Guest** — Demand Discovery (hard cap, §5) and Buyer Discovery. Buyer **contacts are
-withheld**: the API omits the relation entirely and returns `contacts_total` (a count) plus
-`contacts_locked: true`, so the UI can say *"3 contacts hidden — create a free account"*
-rather than implying the buyer has none. No readiness, no saved history, no leads, no agent
-workflow.
+**Guest** — the pre-membership market estimate (hard cap, §5 — same budget `market_
+estimate.run` always used) and Buyer Discovery. **Changed:** full ranked Demand Discovery
+is no longer guest-tier — see §3a. Buyer **contacts are withheld**: the API omits the
+relation entirely and returns `contacts_total` (a count) plus `contacts_locked: true`, so
+the UI can say *"3 contacts hidden — create a free account"* rather than implying the
+buyer has none. No readiness, no saved history, no leads, no agent workflow.
 
 **Free** — everything above plus saved discovery history, full readiness, buyer contacts,
 and their own lead pipeline. Leads are created **unassigned**: agent assignment is a paid
 capability, so a free tenant owns its pipeline but no agent capacity is consumed. This is
 enforced by tier, not by the absence of an assignment — a free org with an active
-`AgentAssignment` row still gets `assigned_agent_id = null`.
+`AgentAssignment` row still gets `assigned_agent_id = null`. The commitment fee is `due`
+from the moment of registration — free tier's next step is paying it, not running full
+Demand Discovery, which still requires `paid` (§3a).
 
-**Paid** — the full agent-assisted workflow.
+**Paid** — unlocked by paying the commitment fee (§3a): full ranked Demand Discovery
+(ranked markets, market detail, save/select) plus the full agent-assisted workflow.
 
 ### Ad-hoc product context
 

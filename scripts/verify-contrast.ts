@@ -83,7 +83,32 @@ const MIN_TEXT_NODES: Record<string, number> = {
   'paid /app/notifications': 60,
   'paid /app/readiness/tasks': 40,
   'paid /app/buyers/:id': 20,
+  // Buyer discovery/agent curation surfaces touched by the intelligence pipeline.
+  // Fresh measured baselines are 23 and 40 nodes respectively.
+  'paid /app/buyers': 12,
+  'agent /agent/outreach': 20,
   'guest /app/buyers/:id (locked contacts)': 15,
+  // AGT-07 / EXP-11 / deal Activity — measured baselines (fresh seed, via
+  // sampleTextContrast) were 171 / 65 / 482 nodes; minimums set at roughly half, same
+  // margin as the rest of this table.
+  'agent /agent/tasks': 90,
+  'paid /app/deals/:id/tasks': 30,
+  'paid /app/deals/:id/activity': 240,
+  // AGT-02 / AGT-04 — measured baselines (fresh seed) were 162 / 57 nodes (the AGT-04
+  // baseline is a converted lead with no contacts/evidence seeded — a genuinely sparse
+  // real state, not padding); minimums set at roughly half.
+  'agent /agent/exporters/:id': 80,
+  'agent /agent/leads/:id': 25,
+  // OPS-04 / OPS-07 — measured baselines (fresh seed) were 88 / 298 nodes; minimums
+  // set at roughly half.
+  'ops /ops/execution': 40,
+  'ops-admin /ops/audit': 140,
+  // AGT-08 — measured baseline (fresh seed) was 99 nodes; minimum at roughly half.
+  'agent /agent/performance': 50,
+  // OPS-05 — was left on the default 3 from when its agent-payout section was an empty
+  // placeholder. Now that the payout table renders real rows the surface measures 79,
+  // so it gets a real floor like every other populated screen.
+  'ops-finance /ops/finance': 40,
 };
 
 interface CoverageRow {
@@ -138,6 +163,14 @@ async function main() {
   await preflight();
   const browser: Browser = await launch();
 
+  // AGT-04 fixture: BuyerLead rows are upserted on their compound unique key
+  // (exporter_org_id, product_id, buyer_id), not a fixed id (unlike Buyer/Deal seed
+  // rows), so the real id has to be resolved at run time rather than hardcoded.
+  const seedConvertedLead = await prisma.buyerLead.findFirstOrThrow({
+    where: { buyer_id: 'seed-buyer-1' },
+    select: { id: true },
+  });
+
   try {
     // ---- Public surfaces (no session) ----
     const pub = await browser.newContext();
@@ -153,19 +186,21 @@ async function main() {
     }
     await pub.close();
 
-    // ---- Guest surfaces (runs a real search so results/market detail render) ----
+    // ---- Guest surfaces (runs a real estimate — full ranked Discovery is paid-only now) ----
     const guestCtx = await guestContext(browser, 'contrast-guest');
     const gp = await guestCtx.newPage();
     await gp.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
     await sweep(gp, 'guest /app/markets (empty)');
     await gp.getByLabel('What do you export?').fill('Organic turmeric powder, food grade');
-    await gp.getByRole('button', { name: /Find markets/i }).click();
-    await gp.getByText(/Markets ranked|Ranked, with gaps/i).waitFor({ timeout: 40_000 });
-    await gp.locator('ol li a[href^="/app/markets/"]').first().waitFor({ timeout: 15_000 });
-    await sweep(gp, 'guest /app/markets (results)');
-    await gp.locator('ol li a[href^="/app/markets/"]').first().click();
-    await gp.waitForLoadState('networkidle');
-    await sweep(gp, 'guest market detail (UpgradeNotice)');
+    await gp.getByLabel(/HS code/i).fill('091030');
+    await gp.getByRole('button', { name: /See the estimate/i }).click();
+    await gp.getByText(/Buyers in .+ imported/i).first().waitFor({ timeout: 40_000 });
+    await sweep(gp, 'guest /app/markets (estimate results)');
+    // Market detail is now paid-only (only a paid org ever gets a MarketAssessment row —
+    // full ranked Discovery is what creates them). /app/billing is the new guest/free-
+    // reachable surface this task introduced; sweep it instead.
+    await gp.goto(BASE + '/app/billing', { waitUntil: 'networkidle' });
+    await sweep(gp, 'guest /app/billing (register-first prompt)');
     await gp.goto(BASE + '/app/buyers', { waitUntil: 'networkidle' });
     await sleep(1200);
     await sweep(gp, 'guest /app/buyers (locked contacts)');
@@ -192,6 +227,9 @@ async function main() {
       // EXP-16. Conversation bubbles, dispute severity/status chips and the proposed-
       // resolution accept panel are all new semantic-colour surfaces.
       ['paid /app/deals/:id/support', '/app/deals/seed-deal-locked/support'],
+      // EXP-11 / deal Activity — task quick-action chips and the AuditEvent timeline.
+      ['paid /app/deals/:id/tasks', '/app/deals/seed-deal-locked/tasks'],
+      ['paid /app/deals/:id/activity', '/app/deals/seed-deal-locked/activity'],
       // EXP-17. Notification severity chips, the "always on" locked-preference badge,
       // and the "Invite pending" status chip are all new semantic-colour surfaces.
       ['paid /app/notifications', '/app/notifications'],
@@ -213,6 +251,10 @@ async function main() {
     const free = await loggedInContext(browser, 'free@deccanspice.example');
     await free.page.goto(BASE + '/app/overview', { waitUntil: 'networkidle' });
     await sweep(free.page, 'free /app/overview (gated)');
+    // The commitment-fee "due" state (amount + pay button) — a free-tier-only surface,
+    // distinct from the guest "register first" state swept above.
+    await free.page.goto(BASE + '/app/billing', { waitUntil: 'networkidle' });
+    await sweep(free.page, 'free /app/billing (fee due)');
     await free.ctx.close();
 
     // ---- Agent ----
@@ -220,6 +262,17 @@ async function main() {
     for (const [surface, path] of [
       ['agent /agent', '/agent'],
       ['agent /agent/outreach', '/agent/outreach'],
+      // AGT-07 — SLA-urgency-sorted task table with per-row quick-action chips.
+      ['agent /agent/tasks', '/agent/tasks'],
+      // AGT-08 — metric cards, small-sample caveat chips and the payout state chips
+      // (incl. the adjustment block) are all new semantic-colour surfaces.
+      ['agent /agent/performance', '/agent/performance'],
+      // AGT-02 — account header, products, pipeline, tasks-by-lane and the internal-
+      // note-vs-message composition modes are all new semantic-colour surfaces.
+      ['agent /agent/exporters/:id', '/agent/exporters/seed-org-1'],
+      // AGT-04 — verification/stage chips, provenance text and the internal-notes-vs-
+      // outreach-activity split.
+      ['agent /agent/leads/:id', `/agent/leads/${seedConvertedLead.id}`],
       // AGT-06. The densest surface in the product — status chips, gate states, blocker
       // text and the internal-only panel all carry semantic colour, so it is exactly the
       // page where a contrast regression would be easiest to miss by eye.
@@ -242,6 +295,9 @@ async function main() {
       // OPS-06 case detail: the visibility-segmented internal-notes block plus the
       // resolution-workflow action forms.
       ['ops /ops/disputes/:id', '/ops/disputes/seed-dispute-locked-proposed'],
+      // OPS-04. Filing/generation/approval chips, the rejected-queue remediation
+      // actions and the assign-partner forms are all new semantic-colour surfaces.
+      ['ops /ops/execution', '/ops/execution'],
     ] as const) {
       await ops.page.goto(BASE + path, { waitUntil: 'networkidle' });
       await sleep(1200);
@@ -255,6 +311,22 @@ async function main() {
     await sleep(1200);
     await sweep(finance.page, 'ops-finance /ops/finance');
     await finance.ctx.close();
+
+    // ---- Admin (config registry + partner directory write forms render only here) ----
+    const admin = await loggedInContext(browser, 'admin@cleartrade.example');
+    await admin.page.goto(BASE + '/ops/audit', { waitUntil: 'networkidle' });
+    // The audit table is fetched client-side after hydration, so a fixed sleep is a
+    // race: under load (e.g. straight after a heavy suite) the sample can land on the
+    // empty table and under-count, which reads as a coverage failure on a page that is
+    // actually fine. Wait for a real row instead of guessing a duration.
+    await admin.page
+      .locator('table tbody tr')
+      .first()
+      .waitFor({ timeout: 15_000 })
+      .catch(() => undefined);
+    await sleep(500);
+    await sweep(admin.page, 'ops-admin /ops/audit');
+    await admin.ctx.close();
   } finally {
     await browser.close();
   }

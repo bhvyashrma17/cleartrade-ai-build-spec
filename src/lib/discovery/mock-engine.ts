@@ -130,7 +130,7 @@ export class MockDiscoveryEngine implements DiscoveryEngine {
       });
     }
 
-    drafts.sort((a, b) => b.overall_score - a.overall_score);
+    drafts.sort((a, b) => b.overall_score! - a.overall_score!);
     signal?.onProgress?.(100);
 
     return {

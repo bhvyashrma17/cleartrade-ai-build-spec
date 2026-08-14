@@ -53,7 +53,11 @@ async function main() {
   // Start from a known state so "the rail advanced" is a real transition, not a
   // pre-existing condition left over from an earlier run.
   await prisma.marketAssessment.updateMany({ where: { is_selected: true }, data: { is_selected: false } });
-  await prisma.buyerLead.deleteMany({ where: { exporter_org_id: PAID_ORG } });
+  // Own only this suite's lead slot. Deleting every org lead destroys seeded converted
+  // relationships needed by EXP-07 and makes suite order affect results.
+  await prisma.buyerLead.deleteMany({ where: { exporter_org_id: PAID_ORG, product_id: 'seed-product-turmeric', buyer_id: 'seed-buyer-3' } });
+  const originalHs = (await prisma.product.findUniqueOrThrow({ where: { id: 'seed-product-turmeric' }, select: { hs_code: true } })).hs_code;
+  await prisma.product.update({ where: { id: 'seed-product-turmeric' }, data: { hs_code: '091664' } });
 
   const browser: Browser = await launch();
   let leadBuyerName = '';
@@ -145,8 +149,29 @@ async function main() {
         select: { id: true, status: true },
       });
       runId = run?.id ?? '';
-      record('J4', 'Demand Discovery runs and returns ranked markets', count > 0 && run?.status === 'completed' ? 'PASS' : 'FAIL',
-        `ranked results rendered=${count}, run status=${run?.status}`);
+
+      // `partial` is a success with stated gaps, not a failure — docs/09 §3, and EXP-04's
+      // required "Partial" state ("render available markets and explain missing criteria").
+      // The warehouse engine legitimately returns partial when it has to rank on a broader
+      // HS group than the product's own code, which is a caveat the exporter must see. This
+      // asserted `completed` only, which encoded the placeholder engine's habit of never
+      // having a gap to report; a real data source almost always has one.
+      const terminalSuccess = run?.status === 'completed' || run?.status === 'partial';
+      let explained = true;
+      if (run?.status === 'partial') {
+        const job = await prisma.job.findFirst({
+          where: { target_type: 'discovery_run', target_id: run.id },
+          orderBy: { created_at: 'desc' },
+          select: { result: true },
+        });
+        const missing = (job?.result as { missing?: string[] } | null)?.missing;
+        // A partial run that does not say what is missing is a real defect: the UI has
+        // nothing to render in its "explain missing criteria" slot.
+        explained = Array.isArray(missing) && missing.length > 0;
+      }
+
+      record('J4', 'Demand Discovery runs and returns ranked markets', count > 0 && terminalSuccess && explained ? 'PASS' : 'FAIL',
+        `ranked results rendered=${count}, run status=${run?.status}${run?.status === 'partial' ? `, gaps explained to the user=${explained}` : ''}`);
     });
 
     let marketCountry = '';
@@ -182,70 +207,22 @@ async function main() {
         `detail heading="${heading}", sections=${sections.join(',')}, selected market persisted=${marketCountry || 'none'}`);
     });
 
-    await scenario('J6', 'Find buyers carries market context into Buyer Discovery', async () => {
-      await page.getByRole('link', { name: /Find buyers in/i }).click();
-      // Wait for the destination route explicitly; `networkidle` alone can settle while
-      // the client-side navigation is still in flight, and the fixed sleep that followed
-      // it was the same load-sensitive guess that made J5 flaky.
-      await page.waitForURL(/\/app\/buyers/, { timeout: 20_000 }).catch(() => undefined);
-      await page.waitForLoadState('networkidle');
-      // The country filter is prefilled by the client after mount — wait for it to hold a
-      // value rather than assuming it is populated by a fixed deadline.
-      await page.getByLabel(/Country code/i).first().waitFor({ timeout: 10_000 }).catch(() => undefined);
-      const fieldDeadline = Date.now() + 8_000;
-      while (Date.now() < fieldDeadline) {
-        const v = await page.getByLabel(/Country code/i).inputValue().catch(() => '');
-        if (v) break;
-        await sleep(250);
-      }
-      const url = new URL(page.url());
-      const countryParam = url.searchParams.get('country');
-      const countryField = await page.getByLabel(/Country code/i).inputValue().catch(() => '');
-      record('J6', 'Find buyers carries market context into Buyer Discovery',
-        url.pathname === '/app/buyers' && countryParam === marketCountry && countryField === marketCountry ? 'PASS' : 'FAIL',
-        `url=${url.pathname}?country=${countryParam}; prefilled filter="${countryField}"; selected market=${marketCountry}`);
+    await scenario('J6', 'Exporter buyer self-service is denied after market selection', async () => {
+      const status = await page.evaluate(async () => (await fetch('/api/v1/buyers?exporter_org_id=seed-org-1&product_id=seed-product-turmeric')).status);
+      record('J6', 'Exporter buyer self-service is denied after market selection', status === 403 ? 'PASS' : 'FAIL', `exporter buyer-search API status=${status} (expect 403; buyer discovery is agent-curated)`);
     });
 
-    await scenario('J7', 'Lead is created from a buyer', async () => {
-      // The prefilled country filter may return no buyers; clear it so a lead can be made.
-      const reset = page.getByRole('button', { name: /Reset filters/i }).first();
-      if (await reset.count()) {
-        await reset.click();
-      }
-      await page.getByLabel('Product').selectOption('seed-product-turmeric');
-      // The buyer table refetches on every filter change. The fixed sleeps that used to
-      // stand in for that were load-sensitive in the same way J5/J6 were: under load the
-      // click landed on a stale row (or before the button existed) and J8 then had no
-      // buyer name to look for, failing two scenarios from one slow request. Wait for a
-      // populated table plus a settled network instead.
-      await page.waitForLoadState('networkidle');
-      await page.locator('tbody tr').first().waitFor({ timeout: 20_000 });
-      const createBtn = page.getByRole('button', { name: /^Create lead$/i }).first();
-      await createBtn.waitFor({ timeout: 20_000 });
-      leadBuyerName = (await page.locator('tbody tr').first().locator('td').first().textContent())?.trim() ?? '';
-      await createBtn.click();
-      await page.getByText(/Lead created/i).first().waitFor({ timeout: 20_000 });
-      // Poll for the durable row rather than trusting the toast — the confirmation can
-      // paint marginally before the write is visible to a separate connection.
-      let lead: { buyer: { display_name: string }; stage: string; assigned_agent_id: string | null } | null = null;
-      const leadDeadline = Date.now() + 15_000;
-      while (Date.now() < leadDeadline) {
-        lead = await prisma.buyerLead.findFirst({
-          where: { exporter_org_id: PAID_ORG },
-          select: { stage: true, assigned_agent_id: true, buyer: { select: { display_name: true } } },
-        });
-        if (lead) break;
-        await sleep(300);
-      }
-      record('J7', 'Lead is created from a buyer', lead ? 'PASS' : 'FAIL',
-        `lead persisted=${Boolean(lead)}, buyer="${lead?.buyer.display_name}", stage=${lead?.stage}, assigned_agent=${lead?.assigned_agent_id ?? 'none'}`);
-      if (lead) leadBuyerName = lead.buyer.display_name;
+    const agent = await loggedInContext(browser, 'agent@cleartrade.example');
+    await scenario('J7', 'Assigned agent creates the buyer lead', async () => {
+      const response = await agent.page.evaluate(async () => { const r=await fetch('/api/v1/buyer-leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exporter_org_id:'seed-org-1',product_id:'seed-product-turmeric',buyer_id:'seed-buyer-3'})}); return {status:r.status,body:await r.json()}; });
+      const lead = await prisma.buyerLead.findFirst({ where: { exporter_org_id: PAID_ORG, product_id:'seed-product-turmeric', buyer_id:'seed-buyer-3' }, select:{stage:true,assigned_agent_id:true,buyer:{select:{display_name:true}}} });
+      if(lead) leadBuyerName=lead.buyer.display_name;
+      record('J7', 'Assigned agent creates the buyer lead', response.status===201&&Boolean(lead) ? 'PASS':'FAIL', `agent create status=${response.status}; lead persisted=${Boolean(lead)}; buyer="${leadBuyerName}"; assigned_agent=${lead?.assigned_agent_id}`);
     });
 
     await ctx.close();
 
     await scenario('J8', 'Lead appears in the agent outreach CRM', async () => {
-      const agent = await loggedInContext(browser, 'agent@cleartrade.example');
       await agent.page.goto(BASE + '/agent/outreach', { waitUntil: 'networkidle' });
       // The pipeline table fetches client-side after mount; poll for the buyer instead of
       // sleeping a fixed 1500ms, which under load read the page before the rows arrived.
@@ -257,11 +234,12 @@ async function main() {
         await sleep(400);
       }
       const visible = leadBuyerName.length > 0 && body.includes(leadBuyerName);
-      await agent.ctx.close();
       record('J8', 'Lead appears in the agent outreach CRM', visible ? 'PASS' : 'FAIL',
         `looking for buyer "${leadBuyerName}" in the agent's pipeline; found=${visible}`);
     });
+    await agent.ctx.close();
   } finally {
+    await prisma.product.update({ where: { id: 'seed-product-turmeric' }, data: { hs_code: originalHs } }).catch(() => undefined);
     await browser.close();
   }
 

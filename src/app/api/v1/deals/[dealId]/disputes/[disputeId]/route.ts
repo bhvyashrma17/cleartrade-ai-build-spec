@@ -25,6 +25,7 @@ import { DISPUTE_ACCEPTANCE_POLICY, OPEN_DISPUTE_STATUSES } from '@/lib/disputes
 import { loadDealScoped } from '@/lib/documents';
 import { errorResponse, forbidden, newCorrelationId, notFound, single, validationError } from '@/lib/errors';
 import { assertCan, canAcceptDisputeResolution } from '@/lib/permissions';
+import { triggerPayoutRecompute } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 import { applyDisputeClosedRiskEffect, assertDisputeTransition } from '@/lib/state-machines/dispute';
 import {
@@ -125,6 +126,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ dealI
         });
         return row;
       });
+
+      // AGT-08 / OPS-05: closing the deal's last open dispute is what can finally let a
+      // blocked payout become eligible under `require_no_open_dispute`.
+      await triggerPayoutRecompute(dealId, correlationId);
 
       return NextResponse.json(single(updated), { headers: { 'x-correlation-id': correlationId } });
     }
@@ -262,6 +267,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ dealI
         });
         return row;
       });
+
+      // Same trigger as `accept` above — this is the Ops-initiated close path.
+      await triggerPayoutRecompute(dealId, correlationId);
+
       return NextResponse.json(single(updated), { headers: { 'x-correlation-id': correlationId } });
     }
 
