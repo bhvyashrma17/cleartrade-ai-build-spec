@@ -9,8 +9,9 @@ import { __test__ as scoringTest, type ScoringRow } from '../src/lib/discovery/s
 import { CONFIG_DEFAULTS, type DiscoveryScoringPolicy } from '../src/lib/config';
 import { prisma } from '../src/lib/prisma';
 import { providerDailyWindow, reserveProviderQuota } from '../src/lib/provider-quota';
+import { loadLocalEnvFile } from './env-file';
 
-process.loadEnvFile?.('.env');
+loadLocalEnvFile();
 const fingerprints:string[]=[];
 afterAll(async()=>{
   await prisma.providerQuotaWindow.deleteMany({where:{credential_fingerprint:{in:fingerprints}}});

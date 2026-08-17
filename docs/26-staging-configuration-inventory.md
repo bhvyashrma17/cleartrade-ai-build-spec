@@ -2,8 +2,15 @@
 
 **Names, purposes and ownership only. No values appear in this document, and none ever should.**
 
-Derived from the 54 environment variables actually read by `src/` and `scripts/`. "Configured?"
-reflects the state of the ClearTrade **staging** environment at the time of writing.
+Derived from the environment variables actually read by `src/` and `scripts/`. "Configured?"
+reflects the state of the ClearTrade **staging** environment on 2026-08-17, established by
+listing Railway's variable **names** for the staging environment. Presence is therefore
+verified; correctness of the values is not — a variable can be set and still be wrong.
+
+For the full three-environment picture (local development, staging, future production),
+including which credentials may be shared and how to add a new provider, see
+[28-environment-configuration.md](28-environment-configuration.md). That document is the
+strategy; this one is the staging inventory and rotation ownership record.
 
 Startup validation for every mandatory entry lives in `src/lib/runtime-config.ts` and is
 asserted by `tests/deployment-operations.test.ts`. A missing or weak mandatory secret aborts
@@ -19,15 +26,15 @@ the file.
 
 | Variable | Purpose | Configured? | Source | Rotation responsibility |
 |---|---|---|---|---|
-| `AUTH_SECRET` | NextAuth JWT signing key | **No** | generated | ClearTrade eng. Rotating invalidates all sessions. |
-| `GUEST_IP_HASH_SECRET` | HMAC key for guest IP hashing (raw IPs are never stored) | **No** | generated | ClearTrade eng. Rotating resets guest quota counters. |
-| `IMPORT_BUYER_REF_SECRET` | HMAC key deriving stable buyer references | **No** | generated | ClearTrade eng. Rotate **only** via `IMPORT_BUYER_REF_PREVIOUS_SECRETS`, or existing references become unresolvable. |
-| `IMPORT_BUYER_REF_KEY_VERSION` | Active buyer-ref key label | **No** | generated | ClearTrade eng. Bump on every rotation. |
-| `IMPORT_BUYER_REF_PREVIOUS_SECRETS` | Retired buyer-ref keys, JSON keyed by version | **No** | generated | ClearTrade eng. Prune only after re-derivation. |
-| `IMPORT_RAW_IDENTITY_ENCRYPTION_KEY` | AES-256-GCM key for raw importer identity | **No** | generated | ClearTrade eng. Must be exactly 32 bytes base64 — enforced at startup. |
-| `IMPORT_RAW_IDENTITY_KEY_VERSION` | Active raw-identity key label | **No** | generated | ClearTrade eng. Bump on every rotation. |
-| `IMPORT_RAW_IDENTITY_PREVIOUS_KEYS` | Retired raw-identity keys, JSON keyed by version | **No** | generated | ClearTrade eng. Required to decrypt historical rows. |
-| `OPERATIONS_TOKEN` | Bearer token for `/api/metrics` | **No** | generated | ClearTrade eng/ops. Rotate on any operator offboarding. |
+| `AUTH_SECRET` | NextAuth JWT signing key | **Yes** | generated | ClearTrade eng. Rotating invalidates all sessions. |
+| `GUEST_IP_HASH_SECRET` | HMAC key for guest IP hashing (raw IPs are never stored) | **Yes** | generated | ClearTrade eng. Rotating resets guest quota counters. |
+| `IMPORT_BUYER_REF_SECRET` | HMAC key deriving stable buyer references | **Yes** | generated | ClearTrade eng. Rotate **only** via `IMPORT_BUYER_REF_PREVIOUS_SECRETS`, or existing references become unresolvable. |
+| `IMPORT_BUYER_REF_KEY_VERSION` | Active buyer-ref key label | **Yes** | generated | ClearTrade eng. Bump on every rotation. |
+| `IMPORT_BUYER_REF_PREVIOUS_SECRETS` | Retired buyer-ref keys, JSON keyed by version | **Yes** | generated | ClearTrade eng. Prune only after re-derivation. |
+| `IMPORT_RAW_IDENTITY_ENCRYPTION_KEY` | AES-256-GCM key for raw importer identity | **Yes** | generated | ClearTrade eng. Must be exactly 32 bytes base64 — enforced at startup. |
+| `IMPORT_RAW_IDENTITY_KEY_VERSION` | Active raw-identity key label | **Yes** | generated | ClearTrade eng. Bump on every rotation. |
+| `IMPORT_RAW_IDENTITY_PREVIOUS_KEYS` | Retired raw-identity keys, JSON keyed by version | **Yes** | generated | ClearTrade eng. Required to decrypt historical rows. |
+| `OPERATIONS_TOKEN` | Bearer token for `/api/metrics` | **Yes** | generated | ClearTrade eng/ops. Rotate on any operator offboarding. |
 
 ## B. External provider credentials
 
@@ -36,14 +43,17 @@ credential produces a config that passes startup and fails at first real use.
 
 | Variable | Purpose | Configured? | Source | Rotation responsibility |
 |---|---|---|---|---|
-| `DATABASE_URL` | Pooled application connection | **No** | provider (managed Postgres) | Provider console; ClearTrade ops rotates credential. |
-| `DIRECT_DATABASE_URL` | Unpooled connection for migrations | **No** | provider | Provider console. Required for the `migration` role. |
-| `COMTRADE_API_KEY` | UN Comtrade API subscription key | **No** | provider (UN Comtrade) | UN Comtrade account owner. Staging budget must stay capped. |
-| `STORAGE_BUCKET` / `STORAGE_REGION` / `STORAGE_ENDPOINT` | Object storage target | **No** | provider | Ops. Not secret, but environment-specific. |
-| object-storage access key / secret | Least-privilege bucket credentials | **No** | provider | Ops. Scope to the single staging bucket. |
-| `DOCUMENT_MALWARE_SCANNER_URL` | Private scanner endpoint (https enforced) | **No** | platform/self-hosted | Ops. |
-| `DOCUMENT_MALWARE_SCANNER_TOKEN` | Scanner bearer credential | **No** | platform/self-hosted | Ops. Optional if authenticated at the mesh layer. |
-| `NOTIFICATION_PROVIDER_API_KEY` / `NOTIFICATION_PROVIDER_URL` | Transactional email provider | **No** | provider | Ops. **Blocked** — no provider account exists (see §E). |
+| `DATABASE_URL` | Pooled application connection | **Yes** | provider (managed Postgres) | Provider console; ClearTrade ops rotates credential. |
+| `DIRECT_DATABASE_URL` | Unpooled connection for migrations | **Yes** | provider | Provider console. Required for the `migration` role. |
+| `COMTRADE_API_KEY` | UN Comtrade API subscription key | **Yes** | provider (UN Comtrade) | UN Comtrade account owner. Staging budget must stay capped. |
+| `STORAGE_BUCKET` / `STORAGE_REGION` / `STORAGE_ENDPOINT` | Object storage target | **Yes** | provider | Ops. Not secret, but environment-specific. |
+| object-storage access key / secret | Least-privilege bucket credentials | **Yes** | provider | Ops. Scope to the single staging bucket. |
+| `DOCUMENT_MALWARE_SCANNER_URL` | Private scanner endpoint (https enforced) | **Yes** | platform/self-hosted | Ops. |
+| `DOCUMENT_MALWARE_SCANNER_TOKEN` | Scanner bearer credential | **Yes** | platform/self-hosted | Ops. Optional if authenticated at the mesh layer. |
+| `NOTIFICATION_PROVIDER_API_KEY` / `NOTIFICATION_PROVIDER_URL` | Transactional email provider, generic `http` mode | **No** | provider | Not used: staging runs `NOTIFICATION_PROVIDER=resend`. Required only if switching back to the generic HTTP provider. |
+| `RESEND_API_KEY` | Resend API key (used when `NOTIFICATION_PROVIDER=resend`) | **Yes** | provider (Resend) | Ops. Separate key per environment; never used from a dev machine. |
+| `NOTIFICATION_FROM_EMAIL` | Verified Resend sender address | **Yes** | provider (Resend) | Ops. Must stay a verified domain sender. |
+| `NOTIFICATION_REDIRECT_TO` | Funnels all staging mail to one inbox | **Yes** | ClearTrade | Ops. Required outside production so staging cannot email real users. |
 | `ANTHROPIC_API_KEY` | Only if `RATIONALE_WRITER=claude` | **No** | provider (Anthropic) | ClearTrade eng. Not required while `RATIONALE_WRITER=template`. |
 | error-reporting DSN | Only if a vendor is selected | **No** | provider | Ops. No vendor selected; `ERROR_REPORTING_PROVIDER=log`. |
 
@@ -96,11 +106,17 @@ secret behind a `NEXT_PUBLIC_` prefix.
 
 Honest status, not deferred work:
 
-1. **Notification provider (Phase 11)** — no transactional-email account or credential exists.
-   Staging startup will fail closed on `NOTIFICATION_PROVIDER_API_KEY`/`_URL` until one is
-   provisioned. Not mocked, per the instruction to state this explicitly.
+1. ~~**Notification provider (Phase 11)**~~ — **resolved.** Resend is provisioned: staging sets
+   `NOTIFICATION_PROVIDER=resend` with `RESEND_API_KEY`, `NOTIFICATION_FROM_EMAIL` and
+   `NOTIFICATION_REDIRECT_TO`, so staging mail is funnelled to a single inbox and cannot reach
+   real users. Deliverability itself is still unverified end to end.
 2. **Error-reporting vendor** — none selected. `ERROR_REPORTING_PROVIDER=log` remains the seam.
-3. **Everything in §A/§B marked "No"** — requires the staging platform to exist first.
+3. **`REQUIRE_WORKER_READY`** — not set in staging, so readiness does not currently require a
+   live worker heartbeat. Recommended `true` once a worker runs continuously in staging.
+4. **Malware scanner service** — the variables are configured, but the scanner container does
+   not yet reach a ready state on Railway's 1 GB Trial tier (ClamAV needs ~3 GiB; see the
+   scanner deployment notes). Uploads therefore fail closed in staging until that is resolved.
+5. **Everything in §A/§B still marked "No"** — genuinely unset.
 
 ## F. Limits of the automated checks
 

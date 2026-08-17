@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { loadLocalEnvFile } from './env-file';
 
 export default async function globalSetup() {
-  process.loadEnvFile?.('.env');
+  loadLocalEnvFile();
   if (['production','staging'].includes((process.env.APP_ENV??'').toLowerCase())) throw new Error('Vitest refuses to use a production/staging environment.');
   const configured=process.env.DATABASE_URL;
   if(!configured)throw new Error('DATABASE_URL is required for the isolated Vitest database.');
