@@ -26,6 +26,8 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.env.staging
+.env.production
 
 # vercel
 .vercel
@@ -53,3 +55,6 @@ playwright-report/
 # local dev object storage for uploaded documents (src/lib/document-storage.ts) — a real
 # deployment points this at real object storage; nothing here should ever be committed
 .data/
+
+# Phase 2 secret transport artifact — never commit.
+.env.staging.secrets

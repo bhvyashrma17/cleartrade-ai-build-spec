@@ -27,6 +27,7 @@ import { errorResponse, jobAlreadyRunning, newCorrelationId, notFound, upgradeRe
 import { enqueueJob, findInFlightJob } from '@/lib/jobs';
 import { assertCan, minTierFor, tenantScope, tierMeets } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { allowedEvidenceOrigins,isRealWorkflowEnvironment } from '@/lib/evidence-environment';
 import {
   consumeGuestRunQuota,
   guestMintProof,
@@ -120,32 +121,60 @@ export async function POST(request: NextRequest) {
       // Saved products are tenant-scoped — never trust a product id from the client.
       const scope = await tenantScope(principal);
       const product = await prisma.product.findFirst({
-        where: { id: input.product_id, ...scope },
-        select: { id: true, name: true, hs_code: true, description: true, lead_time_days: true, desired_order_size_amount: true, desired_order_size_currency: true, customization_capability: true, packaging_capability: true, moq_value: true, moq_unit: true, certifications: { select: { code: true, name: true, status: true, evidence_ref: true } } },
+        where: { id: input.product_id, ...scope,...(isRealWorkflowEnvironment()?{evidence_origin:{in:allowedEvidenceOrigins()}}:{}) },
+        select: { id: true, name: true, hs_code: true, itc_hs_code:true,hs_nomenclature:true,hs_nomenclature_version:true,hs_classification_status:true,hs_classification_method:true,hs_classification_confidence:true,hs_classification_revision:true,hs_confirmed_by_id:true,hs_confirmed_at:true,description: true,evidence_origin:true,capacity_value:true,capacity_unit:true, price_target_amount:true,price_target_currency:true,price_target_quantity_unit:true,price_target_incoterm:true,lead_time_days: true,delivery_commitment_days:true,logistics_constraint_codes:true,logistics_constraints_confirmed:true, desired_order_size_amount: true, desired_order_size_currency: true, customization_capability: true, packaging_capability: true, moq_value: true, moq_unit: true, certifications: { select: { code: true, name: true, status: true, evidence_ref: true,valid_until:true } },exporter_org:{select:{country:true,state:true,city:true,pickup_location_code:true,preferred_origin_gateway:true}} },
       });
       if (!product) throw notFound('That product is not available.');
+      if(product.hs_classification_status!=='confirmed'||!product.hs_code||!/^\d{6}$/.test(product.hs_code)||!product.hs_nomenclature||!product.hs_nomenclature_version)throw validationError([{field:'product_id',code:'classification_unconfirmed',message:'Confirm an exact HS6/ITC-HS classification before running Demand Discovery.'}]);
+      const confirmedClassification=await prisma.productClassification.findFirst({where:{product_id:product.id,status:'confirmed'},orderBy:{confirmed_at:'desc'},select:{id:true,revision:true}});if(!confirmedClassification)throw validationError([{field:'product_id',code:'classification_history_missing',message:'The confirmed code has no classification history and must be reviewed again.'}]);
       productId = product.id;
       inputSnapshot = {
         source: 'product',
         product_id: product.id,
+        evidence_origin:product.evidence_origin,
         name: product.name,
         hs_code: product.hs_code,
+        itc_hs_code:product.itc_hs_code,
+        classification_nomenclature:product.hs_nomenclature,
+        classification_version:product.hs_nomenclature_version,
+        classification_method:product.hs_classification_method,
+        classification_confidence:product.hs_classification_confidence?.toString()??null,
+        classification_id:confirmedClassification.id,
+        classification_revision:confirmedClassification.revision,
+        classification_confirmed_by_id:product.hs_confirmed_by_id,
+        classification_confirmed_at:product.hs_confirmed_at?.toISOString()??null,
         description: product.description,
+        origin_country: product.exporter_org.country,
+        origin_state: product.exporter_org.state,
+        origin_city: product.exporter_org.city,
+        origin_location_code: product.exporter_org.pickup_location_code,
+        origin_gateway: product.exporter_org.preferred_origin_gateway,
+        price_target_amount: product.price_target_amount?.toString() ?? null,
+        price_target_currency: product.price_target_currency,
+        price_target_quantity_unit: product.price_target_quantity_unit,
+        price_target_incoterm: product.price_target_incoterm,
+        capacity_value:product.capacity_value?.toString()??null,
+        capacity_unit:product.capacity_unit,
         lead_time_days: product.lead_time_days,
+        delivery_commitment_days: product.delivery_commitment_days,
+        logistics_constraint_codes: product.logistics_constraint_codes,
+        logistics_constraints_confirmed: product.logistics_constraints_confirmed,
         desired_order_size_amount: product.desired_order_size_amount?.toString() ?? null,
         desired_order_size_currency: product.desired_order_size_currency,
         customization_capability: product.customization_capability,
         packaging_capability: product.packaging_capability,
         moq_value: product.moq_value?.toString() ?? null,
         moq_unit: product.moq_unit,
-        certifications: product.certifications,
+        certifications: product.certifications.map(certification=>({...certification,valid_until:certification.valid_until?.toISOString()??null})),
         target_countries: input.target_countries ?? [],
       };
     } else {
+      throw validationError([{field:'product_id',code:'classification_required',message:'Save the product and confirm its tariff classification before running Demand Discovery.'}]);
       // Ad-hoc. No Product row is created — for a guest this snapshot is the only record
       // of what was searched, and it is what registration offers to save as a Product.
       inputSnapshot = {
         source: 'ad_hoc',
+        evidence_origin:isRealWorkflowEnvironment()?'manually_entered_real':'fixture',
         description: input.product_description ?? null,
         hs_code: input.hs_code ?? null,
         target_countries: input.target_countries ?? [],
@@ -175,6 +204,9 @@ export async function POST(request: NextRequest) {
       await consumeGuestRunQuota(requireClientIpHash(request));
     }
 
+    const asOfDate=new Date();
+    inputSnapshot={...(inputSnapshot as Record<string,Prisma.JsonValue>),as_of_date:asOfDate.toISOString()} as Prisma.InputJsonValue;
+
     const run = await prisma.$transaction(async (tx) => {
       const created = await tx.discoveryRun.create({
         data: {
@@ -182,6 +214,7 @@ export async function POST(request: NextRequest) {
           product_id: productId,
           requested_by_id: principal.id,
           input_snapshot: inputSnapshot,
+          as_of_date: asOfDate,
           filters: (input.target_countries?.length
             ? { target_countries: input.target_countries }
             : {}) as Prisma.InputJsonValue,

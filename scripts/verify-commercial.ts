@@ -81,7 +81,6 @@ async function main() {
       const { ctx, page } = await loggedInContext(browser, 'agent@cleartrade.example');
       await page.goto(`${BASE}/agent/deals/${NEG_DEAL}/commercial`, { waitUntil: 'networkidle' });
       await sleep(800);
-      const body = (await page.locator('body').textContent()) ?? '';
       // No approve affordance anywhere on the agent screen.
       const approveButtons = await page.getByRole('button', { name: /^Approve/i }).count();
 

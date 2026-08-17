@@ -40,6 +40,20 @@ export interface ComtradeFlowRow {
 export interface ComtradeFetchResult {
   rows: ComtradeFlowRow[];
   request_count: number;
+  retrieved_at?: Date;
+  source_dataset_version?: string | null;
+}
+
+export type ComtradeSourceMode = 'fixture' | 'mock' | 'preview' | 'authenticated';
+
+export interface ComtradeClientIdentity {
+  provider: 'un_comtrade';
+  mode: ComtradeSourceMode;
+  authenticated: boolean;
+  /** Stable non-secret identity used for shared quota accounting. */
+  credential_fingerprint: string;
+  source_dataset: string;
+  source_dataset_version: string | null;
 }
 
 /** Thrown by a client when the provider's rate limit is exhausted after its own retries. */
@@ -52,6 +66,7 @@ export class ComtradeRateLimitError extends Error {
 
 export interface ComtradeClient {
   readonly name: string;
+  readonly identity: ComtradeClientIdentity;
   resolveChapter(hsChapter: string): Promise<ComtradeChapterResolution>;
   fetchChapter(params: ComtradeFetchParams): Promise<ComtradeFetchResult>;
 }

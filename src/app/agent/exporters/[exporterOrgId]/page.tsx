@@ -18,6 +18,7 @@ import { CreateTaskForm } from '@/components/agent/CreateTaskForm';
 import { InternalNoteForm } from '@/components/agent/InternalNoteForm';
 import { MessageForm } from '@/components/agent/MessageForm';
 import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
+import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import { MetricCard, StatusChip } from '@/components/ui';
 import { requirePrincipal } from '@/lib/auth';
 import { loadExporterAccountScoped } from '@/lib/agent-accounts';
@@ -206,7 +207,10 @@ export default async function ExporterAccountPage({ params }: { params: Promise<
                         moq_unit: p.moq_unit ?? '',
                         price_target_amount: p.price_target_amount?.toString() ?? '',
                         price_target_currency: p.price_target_currency ?? '',
+                        price_target_quantity_unit: p.price_target_quantity_unit ?? '',
+                        price_target_incoterm: p.price_target_incoterm ?? '',
                         lead_time_days: p.lead_time_days?.toString() ?? '',
+                        delivery_commitment_days: p.delivery_commitment_days?.toString() ?? '',
                         desired_order_size_amount: p.desired_order_size_amount?.toString() ?? '',
                         desired_order_size_currency: p.desired_order_size_currency ?? '',
                         customization_capability: p.customization_capability ?? '',
@@ -215,6 +219,7 @@ export default async function ExporterAccountPage({ params }: { params: Promise<
                       }}
                     />
                   </div>
+                  <ProductClassificationForm productId={p.id} status={p.hs_classification_status}/>
                 </li>
               ))}
             </ul>

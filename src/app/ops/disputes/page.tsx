@@ -8,8 +8,6 @@ import { StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-const OPEN_STATUSES = ['open', 'investigating', 'waiting_external', 'proposed_resolution'] as const;
-
 const SEVERITY_TONE = { low: 'neutral', medium: 'info', high: 'warning', critical: 'critical' } as const;
 const STATUS_LABEL: Record<string, string> = {
   open: 'Open',

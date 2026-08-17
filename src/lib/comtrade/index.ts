@@ -14,6 +14,7 @@ import type { ComtradePolicy } from '@/lib/config';
 import type { ComtradeClient } from './client';
 import { MockComtradeClient } from './mock-client';
 import { ComtradeApiClient } from './real-client';
+import { isRealWorkflowEnvironment } from '@/lib/evidence-environment';
 
 export type {
   ComtradeClient,
@@ -30,7 +31,15 @@ let cached: ComtradeClient | null = null;
 export function getComtradeClient(policy: ComtradePolicy): ComtradeClient {
   if (cached) return cached;
 
-  switch (process.env.COMTRADE_CLIENT ?? 'mock') {
+  const configured = process.env.COMTRADE_CLIENT;
+  if (!configured && isRealWorkflowEnvironment()) {
+    throw new Error('COMTRADE_CLIENT must be explicitly set to real in staging/production; mock is never a production default.');
+  }
+  const mode = configured ?? 'mock';
+  if (isRealWorkflowEnvironment() && mode !== 'real') {
+    throw new Error(`COMTRADE_CLIENT=${mode} is forbidden in staging/production.`);
+  }
+  switch (mode) {
     case 'real': {
       const apiKey = process.env.COMTRADE_API_KEY;
       if (!apiKey) throw new Error('COMTRADE_CLIENT=real requires COMTRADE_API_KEY.');
@@ -41,9 +50,10 @@ export function getComtradeClient(policy: ComtradePolicy): ComtradeClient {
       cached = new ComtradeApiClient(null, policy, true);
       return cached;
     case 'mock':
-    default:
       cached = new MockComtradeClient();
       return cached;
+    default:
+      throw new Error(`Unsupported COMTRADE_CLIENT ${mode}.`);
   }
 }
 

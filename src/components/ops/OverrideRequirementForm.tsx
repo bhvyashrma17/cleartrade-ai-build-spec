@@ -41,7 +41,7 @@ export function OverrideRequirementForm({ dealId, documentId }: { dealId: string
 
   return (
     <div className="mt-1.5 max-w-sm rounded-md border border-[color-mix(in_srgb,var(--color-critical)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_6%,transparent)] p-2.5">
-      <p className="text-xs font-semibold text-[var(--color-critical-text)]">High-risk: waives this document's filing requirement.</p>
+      <p className="text-xs font-semibold text-[var(--color-critical-text)]">High-risk: waives this document&apos;s filing requirement.</p>
       <textarea
         value={reason}
         onChange={(e) => setReason(e.target.value)}

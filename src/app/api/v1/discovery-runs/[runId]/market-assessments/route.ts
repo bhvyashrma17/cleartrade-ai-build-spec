@@ -15,6 +15,7 @@ import { requirePrincipal } from '@/lib/auth';
 import { errorResponse, list, newCorrelationId, notFound, pageMeta } from '@/lib/errors';
 import { assertCan, tenantScope } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { allowedEvidenceOrigins, appEnvironment, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ runId: string }> }) {
   const correlationId = newCorrelationId();
@@ -34,7 +35,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
     if (!run) throw notFound('That search is not available.');
 
     const assessments = await prisma.marketAssessment.findMany({
-      where: { run_id: runId },
+      where: { run_id: runId,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
       orderBy: { overall_score: 'desc' },
     });
 
@@ -63,6 +64,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
           rationale: a.rationale,
           is_selected: a.is_selected,
           generated_at: a.generated_at.toISOString(),
+          ...(!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(a.evidence_origins).length?{evidence_warning:`Non-real evidence: ${unsafeEvidenceOrigins(a.evidence_origins).join(', ')}`}:{})
         })),
         {
           // A run yields a bounded ranking (one row per candidate market), so it is
@@ -73,6 +75,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
           run_status: run.status,
           completed_at: run.completed_at?.toISOString() ?? null,
           job_id: run.job_id,
+          evidence_environment:appEnvironment(),
         },
       ),
       { headers: { 'x-correlation-id': correlationId } },

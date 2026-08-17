@@ -16,6 +16,7 @@ import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { tenantScopeVia } from '@/lib/permissions';
 import { MarketDetail } from './MarketDetail';
+import { allowedEvidenceOrigins, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
 export default async function MarketDetailPage({
   params,
@@ -34,7 +35,7 @@ export default async function MarketDetailPage({
   const scope = await tenantScopeVia(principal, 'run');
 
   const assessment = await prisma.marketAssessment.findFirst({
-    where: { id: marketAssessmentId, ...scope },
+    where: { id: marketAssessmentId, ...scope,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
     include: {
       run: { select: { id: true, status: true, product_id: true, input_snapshot: true } },
       product: { select: { id: true, name: true } },
@@ -44,7 +45,7 @@ export default async function MarketDetailPage({
 
   // Rank among this run's other results — EXP-05's decision header names it explicitly.
   const siblings = await prisma.marketAssessment.findMany({
-    where: { run_id: assessment.run_id },
+    where: { run_id: assessment.run_id,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
     select: { id: true, overall_score: true },
     orderBy: { overall_score: 'desc' },
   });
@@ -80,6 +81,7 @@ export default async function MarketDetailPage({
         is_saved: assessment.saved_at !== null,
         rank,
         total_ranked: siblings.length,
+        evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
       }}
       buyerDiscoveryHref={{
         productId: assessment.product?.id ?? null,

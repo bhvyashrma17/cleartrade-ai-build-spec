@@ -44,7 +44,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ buyerL
           disqualification_reason_text: input.disqualification_reason_text ?? null,
         },
       });
-      await recordBuyerOutcomeTransition(tx, lead, BuyerLeadStage.disqualified, new Date(), input.disqualification_reason);
+      await recordBuyerOutcomeTransition(tx, lead, BuyerLeadStage.disqualified, new Date(), input.disqualification_reason, undefined, principal.id);
       if (effects.close_open_outreach_tasks) {
         await tx.task.updateMany({
           where: { scope_type: 'buyer_lead', scope_id: lead.id, state: { notIn: [TaskState.done, TaskState.cancelled] } },

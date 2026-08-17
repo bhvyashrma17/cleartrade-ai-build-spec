@@ -1,11 +1,19 @@
 {
   "source_provider": "US Customs and Border Protection",
+  "delivery_batch_id": "fixture-delivery-2026-08",
   "license_type": "19 CFR 103.31 public vessel manifest",
+  "contract_license_ref": null,
+  "effective_at": null,
+  "expires_at": null,
   "allowed_to_display": false,
   "allowed_to_export": false,
   "allowed_to_cache": true,
   "retention_limit": null,
   "personal_data_flag": true,
+  "raw_retention_policy": "delete_at_expiry",
+  "derived_data_policy": "retain_pseudonymous",
+  "evidence_document_ref": "tests/fixtures/cbp-manifest/license.json",
+  "verification_method": "operator_asserted",
   "retrieved_at": "2026-08-14T00:00:00.000Z",
   "scope": "us_inward_vessel_manifest"
 }

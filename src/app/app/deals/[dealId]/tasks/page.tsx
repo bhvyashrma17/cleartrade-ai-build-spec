@@ -133,10 +133,10 @@ export default async function DealTasksPage({ params }: { params: Promise<{ deal
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Waiting on ClearTrade</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          High-level status only — internal steps on ClearTrade's side aren't shown here.
+          High-level status only — internal steps on ClearTrade&apos;s side aren&apos;t shown here.
         </p>
         {waitingOnClearTrade.length === 0 ? (
-          <p className="mt-4 text-sm text-[var(--color-text-secondary)]">Nothing pending on ClearTrade's side.</p>
+          <p className="mt-4 text-sm text-[var(--color-text-secondary)]">Nothing pending on ClearTrade&apos;s side.</p>
         ) : (
           <ul className="mt-4 space-y-3">
             {waitingOnClearTrade.map((t) => (

@@ -74,7 +74,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ buyerL
         where: { id: lead.id },
         data: { stage: BuyerLeadStage.converted, deal_id: deal.id },
       });
-      await recordBuyerOutcomeTransition(tx, lead, BuyerLeadStage.converted);
+      await recordBuyerOutcomeTransition(tx, lead, BuyerLeadStage.converted, new Date(), null, undefined, principal.id, deal.id);
 
       await writeAuditEvent({
         db: tx,

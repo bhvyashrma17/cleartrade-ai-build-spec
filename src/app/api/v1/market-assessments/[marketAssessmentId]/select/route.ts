@@ -20,6 +20,7 @@ import { errorResponse, newCorrelationId, notFound, single, validationError } fr
 import { assertCan, tenantScopeVia } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { zodFieldErrors } from '@/lib/validators';
+import { allowedEvidenceOrigins,isRealWorkflowEnvironment,nonRealEvidenceOrigins } from '@/lib/evidence-environment';
 
 const bodySchema = z.object({ confirm_replace: z.boolean().optional() });
 
@@ -39,7 +40,7 @@ export async function POST(
 
     const scope = await tenantScopeVia(principal, 'run');
     const target = await prisma.marketAssessment.findFirst({
-      where: { id: marketAssessmentId, ...scope },
+      where: { id: marketAssessmentId, ...scope,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
       select: { id: true, is_selected: true, country_code: true, run: { select: { exporter_org_id: true } } },
     });
     if (!target) throw notFound('That market is not available.');

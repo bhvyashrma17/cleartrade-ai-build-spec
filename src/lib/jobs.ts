@@ -47,7 +47,7 @@ export function isTerminal(status: JobStatus): boolean {
  * failure — docs/09 §3 requires the UI to render the records that did come back and mark
  * the ones that did not.
  */
-export type SuccessStatus = Extract<JobStatus, 'completed' | 'partial'>;
+export type OutcomeStatus = Extract<JobStatus, 'completed' | 'partial' | 'failed'>;
 
 // ---------------------------------------------------------------------------
 // Enqueue
@@ -263,7 +263,7 @@ export async function completeJob(
   jobId: string,
   attemptNo: number,
   result: Prisma.InputJsonValue,
-  status: SuccessStatus = JobStatus.completed,
+  status: OutcomeStatus = JobStatus.completed,
 ) {
   await closeAttempt(jobId, attemptNo, status, { result });
   return prisma.job.update({
@@ -273,8 +273,8 @@ export async function completeJob(
       result,
       progress: 100,
       completed_at: new Date(),
-      error_code: null,
-      error_message: null,
+      error_code: status === JobStatus.failed ? 'INGEST_FAILED' : null,
+      error_message: status === JobStatus.failed ? 'The domain ingest failed. Inspect the linked IngestRun.' : null,
       dedupe_key: null,
     },
   });
@@ -393,7 +393,7 @@ export interface JobContext {
 }
 
 export interface JobOutcome {
-  status: SuccessStatus;
+  status: OutcomeStatus;
   result: Prisma.InputJsonValue;
 }
 

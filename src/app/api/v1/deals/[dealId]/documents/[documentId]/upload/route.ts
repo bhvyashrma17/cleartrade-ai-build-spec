@@ -9,13 +9,12 @@
  * existing row at all.
  */
 
-import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getConfig } from '@/lib/config';
 import { freshVersionStatuses, loadDocumentScoped } from '@/lib/documents';
-import { saveUploadedFile } from '@/lib/document-storage';
+import { secureUpload } from '@/lib/document-storage';
 import { errorResponse, forbidden, newCorrelationId, single, validationError } from '@/lib/errors';
 import { isExporter } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -54,8 +53,15 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
     }
 
     const bytes = Buffer.from(await file.arrayBuffer());
-    const checksum = createHash('sha256').update(bytes).digest('hex');
-    const stored = await saveUploadedFile(bytes, file.name);
+    let stored: Awaited<ReturnType<typeof secureUpload>>;
+    try {
+      stored = await secureUpload({bytes,fileName:file.name,contentType:file.type,maxBytes,allowedMimeTypes:policy.allowed_mime_types});
+    } catch (error) {
+      const code=error instanceof Error?error.message:'FILE_SCAN_FAILED';
+      if(code==='FILE_MALWARE_DETECTED'||code==='FILE_SCAN_FAILED')throw validationError([{field:'file',code:'unsafe',message:'The file failed security scanning and was not stored.'}]);
+      if(code.startsWith('UPLOAD_'))throw validationError([{field:'file',code:'invalid',message:'The file content, extension, and declared type do not match.'}]);
+      throw error;
+    }
 
     const registry = await getConfig('documents.registry');
     const entry = registry.find((r) => r.doc_type === document.doc_type);
@@ -72,11 +78,17 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
           ...freshVersionStatuses(entry?.approval_required ?? true, entry?.filing_applicable ?? false),
           // Uploaded content exists already — there is nothing to "generate".
           generation_status: 'generated',
-          file_ref: stored.file_ref,
+          file_ref: stored.objectKey,
           file_name: file.name,
-          file_size_bytes: stored.size_bytes,
-          mime_type: file.type,
-          checksum,
+          file_size_bytes: stored.sizeBytes,
+          mime_type: stored.contentType,
+          checksum: stored.sha256,
+          storage_provider: stored.provider,
+          storage_version_id: stored.versionId,
+          scan_status: stored.scan.status,
+          scan_engine: stored.scan.engine,
+          scanned_at: stored.scan.scannedAt,
+          uploaded_by_id: principal.id,
         },
       });
 
@@ -87,7 +99,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
         object_type: 'document',
         object_id: row.id,
         exporter_org_id: deal.exporter_org_id,
-        after_summary: { deal_id: dealId, doc_type: row.doc_type, version: row.version, source: 'uploaded', checksum },
+        after_summary: { deal_id: dealId, doc_type: row.doc_type, version: row.version, source: 'uploaded', checksum:stored.sha256,scan_status:stored.scan.status },
         correlation_id: correlationId,
       });
 

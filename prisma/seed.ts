@@ -27,11 +27,13 @@ import {
 import { createHash } from 'node:crypto';
 import { hashPassword } from '@/lib/auth';
 import { renderDocumentText } from '@/lib/document-generation';
+import { assertFixtureMutationAllowed } from '@/lib/evidence-environment';
 import { prisma } from '@/lib/prisma';
 
 const SEED_PASSWORD = 'Password123!';
 
 async function main() {
+  assertFixtureMutationAllowed('prisma/seed.ts');
   const password_hash = await hashPassword(SEED_PASSWORD);
 
   // ---------------------------------------------------------------------------
@@ -189,7 +191,7 @@ async function main() {
   // ---------------------------------------------------------------------------
   const turmeric = await prisma.product.upsert({
     where: { id: 'seed-product-turmeric' },
-    update: {},
+    update: {evidence_origin:'fixture'},
     create: {
       id: 'seed-product-turmeric',
       exporter_org_id: org.id,
@@ -197,6 +199,7 @@ async function main() {
       description: 'Single-origin turmeric powder, steam-sterilized, curcumin content 3-5%.',
       hs_code: '09103030',
       hs_code_source: 'user_confirmed',
+      evidence_origin:'fixture',
       capacity_value: 5000,
       capacity_unit: 'kg/month',
       moq_value: 500,
@@ -209,7 +212,7 @@ async function main() {
 
   const bedsheets = await prisma.product.upsert({
     where: { id: 'seed-product-bedsheets' },
-    update: {},
+    update: {evidence_origin:'fixture'},
     create: {
       id: 'seed-product-bedsheets',
       exporter_org_id: org.id,
@@ -217,6 +220,7 @@ async function main() {
       description: '100% cotton, 300 thread count, king-size fitted + flat + 2 pillow covers.',
       hs_code: '63022100',
       hs_code_source: 'user_confirmed',
+      evidence_origin:'fixture',
       capacity_value: 2000,
       capacity_unit: 'sets/month',
       moq_value: 100,
@@ -1649,11 +1653,15 @@ const WAREHOUSE_REPORTERS = ['842', '276', '784', '826', '392', '36'];
 const WAREHOUSE_PARTNERS = ['0', '699', '156', '76', '704'];
 
 async function seedTradeWarehouse(): Promise<number> {
+  const { MockComtradeClient, setComtradeClient } = await import('@/lib/comtrade');
   const { registerAllJobHandlers } = await import('@/lib/job-handlers');
   const { enqueueJob, claimNextJob, runClaimedJob } = await import('@/lib/jobs');
   const { JobType } = await import('@prisma/client');
 
   registerAllJobHandlers();
+  // Seeds are fixtures by definition. Never inherit COMTRADE_CLIENT=real from a developer's
+  // shell and turn a fixture build into an authenticated bulk ingest.
+  setComtradeClient(new MockComtradeClient());
 
   // Five years so the 5-year CAGR the growth subscore needs has real history to read.
   const latestYear = new Date().getFullYear() - 1;

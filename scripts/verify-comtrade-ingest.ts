@@ -25,6 +25,7 @@ import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, enqueueJob, runClaimedJob } from '../src/lib/jobs';
 import { prisma } from '../src/lib/prisma';
 import { ComtradeRateLimitError, setComtradeClient } from '../src/lib/comtrade';
+import { reserveProviderQuota } from '../src/lib/provider-quota';
 
 type Status = 'PASS' | 'FAIL';
 const results: { id: string; name: string; status: Status; detail: string }[] = [];
@@ -103,6 +104,8 @@ const PARTNER = '0';
 const YEAR = 2099; // out-of-range test year: cheap isolation from any other data in the table
 
 async function cleanup() {
+  await prisma.providerQuotaWindow.deleteMany({ where: { credential_fingerprint: { startsWith: 'verify-' } } });
+  await prisma.tradeFlowAcquisition.deleteMany({ where: { reporter: REPORTER, partner: PARTNER, hs_code: { startsWith: HS_CHAPTER }, year: YEAR } });
   await prisma.tradeFlow.deleteMany({ where: { reporter: REPORTER, partner: PARTNER, hs_code: { startsWith: HS_CHAPTER }, year: YEAR } });
   await prisma.ingestRun.deleteMany({
     where: { source: TradeDataSource.comtrade, params: { path: ['year'], equals: YEAR } },
@@ -173,6 +176,15 @@ async function main() {
         `total=${run?.total_codes}; completed=${run?.completed_codes}; next_index=${progress?.next_index}; requests=${run?.request_count}`);
     });
 
+    await scenario('COMTRADE-2D', 'every newly ingested row carries source mode and exact IngestRun lineage', async () => {
+      const runId=firstJobResult?.ingest_run_id;
+      const rows=runId?await prisma.tradeFlow.findMany({where:{ingest_run_id:runId}}):[];
+      const acquisitions=runId?await prisma.tradeFlowAcquisition.findMany({where:{ingest_run_id:runId}}):[];
+      const run=runId?await prisma.ingestRun.findUnique({where:{id:runId}}):null;
+      const pass=rows.length>0&&acquisitions.length===rows.length&&run?.client_mode==='mock'&&run.authenticated===false&&rows.every(row=>row.source_mode==='mock'&&row.provider==='un_comtrade'&&row.ingest_run_id===runId&&row.retrieved_at instanceof Date&&row.request_batch_id)&&acquisitions.every(item=>item.source_mode==='mock'&&item.ingest_run_id===runId);
+      record('COMTRADE-2D','every newly ingested row carries source mode and exact IngestRun lineage',pass?'PASS':'FAIL',`rows=${rows.length}; immutable_acquisitions=${acquisitions.length}; run_mode=${run?.client_mode}; authenticated=${run?.authenticated}; all_linked=${rows.every(row=>row.ingest_run_id===runId)}`);
+    });
+
     await scenario('COMTRADE-3', 'Rerunning the identical ingest is idempotent — no duplicate TradeFlow rows, second IngestRun recorded', async () => {
       const countBefore = await prisma.tradeFlow.count({ where: { reporter: REPORTER, partner: PARTNER, year: YEAR } });
       const ingestRunCountBefore = await prisma.ingestRun.count({ where: { source: TradeDataSource.comtrade, params: { path: ['year'], equals: YEAR } } });
@@ -181,19 +193,21 @@ async function main() {
       const secondResult = job2?.result as typeof firstJobResult;
 
       const countAfter = await prisma.tradeFlow.count({ where: { reporter: REPORTER, partner: PARTNER, year: YEAR } });
+      const acquisitionCount = await prisma.tradeFlowAcquisition.count({ where: { reporter: REPORTER, partner: PARTNER, year: YEAR } });
       const ingestRunCountAfter = await prisma.ingestRun.count({ where: { source: TradeDataSource.comtrade, params: { path: ['year'], equals: YEAR } } });
 
       const pass =
         job2?.status === 'completed' &&
         countAfter === countBefore && // no duplicates
         secondResult?.records_written === countBefore && // second run touched the same N rows
-        ingestRunCountAfter === ingestRunCountBefore + 1; // a NEW IngestRun row for this attempt
+        ingestRunCountAfter === ingestRunCountBefore + 1 && // a NEW IngestRun row for this attempt
+        acquisitionCount === countAfter * 2; // immutable evidence from both acquisitions survives
 
       record(
         'COMTRADE-3',
         'Rerunning the identical ingest is idempotent — no duplicate TradeFlow rows, second IngestRun recorded',
         pass ? 'PASS' : 'FAIL',
-        `TradeFlow rows before=${countBefore}, after second run=${countAfter} (must be equal); IngestRun rows before=${ingestRunCountBefore}, after=${ingestRunCountAfter} (must be +1); second run records_written=${secondResult?.records_written}`,
+        `TradeFlow rows before=${countBefore}, after second run=${countAfter} (must be equal); immutable acquisitions=${acquisitionCount}; IngestRun rows before=${ingestRunCountBefore}, after=${ingestRunCountAfter} (must be +1); second run records_written=${secondResult?.records_written}`,
       );
     });
 
@@ -211,6 +225,7 @@ async function main() {
     await scenario('COMTRADE-5', 'provider throttling is recorded as resumable state, not a failed ingest', async () => {
       setComtradeClient({
         name: 'throttle-verifier',
+        identity: { provider: 'un_comtrade', mode: 'fixture', authenticated: false, credential_fingerprint: 'verify-throttle', source_dataset: 'verification-fixture', source_dataset_version: 'v1' },
         async resolveChapter(chapter: string) { return { chapter, hs_codes: ['090111'] }; },
         async fetchChapter() { throw new ComtradeRateLimitError('verification throttle', 60_000); },
       });
@@ -222,6 +237,27 @@ async function main() {
       record('COMTRADE-5', 'provider throttling is recorded as resumable state, not a failed ingest', pass ? 'PASS' : 'FAIL',
         `job=${job?.status}; ingest=${run?.status}; throttle_count=${run?.throttle_count}; next_index=${progress?.next_index}; retry_after=${run?.retry_after?.toISOString()}`);
       setComtradeClient(null);
+    });
+
+    await scenario('COMTRADE-6', 'persistent local quota exhaustion is recorded and resumable', async()=>{
+      const fingerprint=`verify-local-${Date.now()}`;
+      await reserveProviderQuota({provider:'un_comtrade',credential_fingerprint:fingerprint,configured_limit:450,request_count:450});
+      setComtradeClient({name:'local-quota-verifier',identity:{provider:'un_comtrade',mode:'fixture',authenticated:false,credential_fingerprint:fingerprint,source_dataset:'verification-fixture',source_dataset_version:'v1'},async resolveChapter(chapter){return {chapter,hs_codes:['090111']};},async fetchChapter(){throw new Error('must not call provider after local exhaustion');}});
+      const job=await runIngestOnce({hs_chapter:HS_CHAPTER,reporter:REPORTER,partner:PARTNER,year:YEAR});
+      const result=job?.result as {ingest_run_id?:string;throttled?:boolean}|null;
+      const run=result?.ingest_run_id?await prisma.ingestRun.findUnique({where:{id:result.ingest_run_id}}):null;
+      const pass=job?.status==='partial'&&result?.throttled===true&&run?.status===IngestStatus.throttled&&run.local_quota_throttle_count===1&&run.throttle_count===1&&run.retry_after!=null;
+      record('COMTRADE-6','persistent local quota exhaustion is recorded and resumable',pass?'PASS':'FAIL',`job=${job?.status}; ingest=${run?.status}; local_throttles=${run?.local_quota_throttle_count}; total_throttles=${run?.throttle_count}`);
+      await prisma.providerQuotaWindow.deleteMany({where:{credential_fingerprint:fingerprint}});setComtradeClient(null);
+    });
+
+    await scenario('COMTRADE-7', 'failed IngestRun produces a failed Job',async()=>{
+      setComtradeClient({name:'failure-verifier',identity:{provider:'un_comtrade',mode:'fixture',authenticated:false,credential_fingerprint:`verify-failure-${Date.now()}`,source_dataset:'verification-fixture',source_dataset_version:'v1'},async resolveChapter(chapter){return {chapter,hs_codes:['090111']};},async fetchChapter(){throw new Error('verification provider failure');}});
+      const job=await runIngestOnce({hs_chapter:HS_CHAPTER,reporter:REPORTER,partner:PARTNER,year:YEAR});
+      const result=job?.result as {ingest_run_id?:string;ingest_status?:string}|null;
+      const run=result?.ingest_run_id?await prisma.ingestRun.findUnique({where:{id:result.ingest_run_id}}):null;
+      const pass=job?.status==='failed'&&run?.status===IngestStatus.failed&&result?.ingest_status==='failed';
+      record('COMTRADE-7','failed IngestRun produces a failed Job',pass?'PASS':'FAIL',`job=${job?.status}; ingest=${run?.status}; job_error=${job?.error_code}`);setComtradeClient(null);
     });
   } finally {
     await cleanup();

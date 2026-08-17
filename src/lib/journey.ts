@@ -21,6 +21,7 @@
 
 import { BuyerLeadStage, DealStage, JourneyStage, PaymentStatus, ShipmentStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { allowedEvidenceOrigins,isRealWorkflowEnvironment,nonRealEvidenceOrigins } from '@/lib/evidence-environment';
 
 /** BuyerLead stages that represent real engagement, not just a saved shortlist. */
 const ENGAGED_LEAD_STAGES: BuyerLeadStage[] = [
@@ -57,7 +58,7 @@ export async function deriveJourneyStage(exporterOrgId: string): Promise<Journey
         where: { exporter_org_id: exporterOrgId, stage: { in: ENGAGED_LEAD_STAGES } },
       }),
       prisma.marketAssessment.count({
-        where: { is_selected: true, run: { exporter_org_id: exporterOrgId } },
+        where: { is_selected: true, run: { exporter_org_id: exporterOrgId },...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
       }),
     ]);
 

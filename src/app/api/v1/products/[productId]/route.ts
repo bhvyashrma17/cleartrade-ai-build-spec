@@ -21,13 +21,16 @@ const EDITABLE_FIELDS: (
   | 'moq_unit'
   | 'price_target_amount'
   | 'price_target_currency'
+  | 'price_target_quantity_unit'
+  | 'price_target_incoterm'
   | 'lead_time_days'
+  | 'delivery_commitment_days'
   | 'desired_order_size_amount'
   | 'desired_order_size_currency'
   | 'customization_capability'
   | 'packaging_capability'
   | 'packaging'
-)[] = ['capacity_value', 'capacity_unit', 'moq_value', 'moq_unit', 'price_target_amount', 'price_target_currency', 'lead_time_days', 'desired_order_size_amount', 'desired_order_size_currency', 'customization_capability', 'packaging_capability', 'packaging'];
+)[] = ['capacity_value', 'capacity_unit', 'moq_value', 'moq_unit', 'price_target_amount', 'price_target_currency', 'price_target_quantity_unit', 'price_target_incoterm', 'lead_time_days', 'delivery_commitment_days', 'desired_order_size_amount', 'desired_order_size_currency', 'customization_capability', 'packaging_capability', 'packaging'];
 
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ productId: string }> }) {
   const correlationId = newCorrelationId();
@@ -61,7 +64,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ produ
           ...(input.moq_unit !== undefined ? { moq_unit: input.moq_unit } : {}),
           ...(input.price_target_amount !== undefined ? { price_target_amount: input.price_target_amount } : {}),
           ...(input.price_target_currency !== undefined ? { price_target_currency: input.price_target_currency } : {}),
+          ...(input.price_target_quantity_unit !== undefined ? { price_target_quantity_unit: input.price_target_quantity_unit } : {}),
+          ...(input.price_target_incoterm !== undefined ? { price_target_incoterm: input.price_target_incoterm } : {}),
           ...(input.lead_time_days !== undefined ? { lead_time_days: input.lead_time_days } : {}),
+          ...(input.delivery_commitment_days !== undefined ? { delivery_commitment_days: input.delivery_commitment_days } : {}),
           ...(input.desired_order_size_amount !== undefined ? { desired_order_size_amount: input.desired_order_size_amount } : {}),
           ...(input.desired_order_size_currency !== undefined ? { desired_order_size_currency: input.desired_order_size_currency?.toUpperCase() } : {}),
           ...(input.customization_capability !== undefined ? { customization_capability: input.customization_capability } : {}),

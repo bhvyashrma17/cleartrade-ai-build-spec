@@ -35,7 +35,7 @@ export default async function MarketsPage() {
     principal?.exporter_org_id
       ? await prisma.product.findMany({
           where: { exporter_org_id: principal.exporter_org_id },
-          select: { id: true, name: true, hs_code: true },
+          select: { id: true, name: true, hs_code: true,hs_classification_status:true },
           orderBy: { name: 'asc' },
         })
       : [];

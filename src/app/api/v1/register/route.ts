@@ -16,7 +16,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { CommitmentFeeStatus, OrgTier, UserRole, type Prisma } from '@prisma/client';
+import { CommitmentFeeStatus, EvidenceOrigin, OrgTier, UserRole, type Prisma } from '@prisma/client';
 import { getPrincipal, hashPassword } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getFeePolicy } from '@/lib/config';
@@ -108,7 +108,9 @@ export async function POST(request: NextRequest) {
                 name: snapshot.description.slice(0, 120),
                 description: snapshot.description,
                 hs_code: snapshot.hs_code ?? null,
-                hs_code_source: snapshot.hs_code ? 'user_confirmed' : 'unknown',
+                hs_code_source: snapshot.hs_code ? 'unverified_registration_input' : 'unknown',
+                hs_classification_status: snapshot.hs_code ? 'needs_review' : null,
+                evidence_origin:EvidenceOrigin.manually_entered_real,
               },
               select: { id: true },
             });

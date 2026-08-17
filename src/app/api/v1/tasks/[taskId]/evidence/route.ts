@@ -44,7 +44,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ taskId
     }
 
     const bytes = Buffer.from(await file.arrayBuffer());
-    const stored = await saveUploadedFile(bytes, file.name);
+    const stored = await saveUploadedFile(bytes, file.name,file.type);
 
     const evidence = await prisma.$transaction(async (tx) => {
       const row = await tx.taskEvidence.create({

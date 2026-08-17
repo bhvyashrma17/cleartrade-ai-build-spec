@@ -7,7 +7,7 @@
  */
 
 import Link from 'next/link';
-import { format, isPast } from 'date-fns';
+import { isPast } from 'date-fns';
 import { TaskPriority, TaskState, type UserRole } from '@prisma/client';
 import { JourneyProgress, MetricCard, NextActionCard, StatusChip, UpgradeNotice } from '@/components/ui';
 import type { JourneyStageValue } from '@/components/ui';

@@ -66,7 +66,7 @@ export function EvidenceUploadForm({ taskId, latestEvidence }: { taskId: string;
 
       {isPendingReview ? (
         <p className="text-xs text-[var(--color-text-secondary)]">
-          Your evidence is waiting on review — you'll see the outcome here.
+          Your evidence is waiting on review — you&apos;ll see the outcome here.
         </p>
       ) : (
         <>

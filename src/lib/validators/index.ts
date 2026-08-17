@@ -22,6 +22,13 @@ export const createBuyerLeadSchema = z.object({
   buyer_id: z.string().min(1, 'A buyer is required.'),
   /** Required only when the caller isn't a tenant-scoped exporter (route enforces this). */
   exporter_org_id: z.string().min(1).optional(),
+  buyer_rank: z.number().int().positive().optional(),
+  offered_price_amount: z.number().positive().nullish(),
+  offered_price_currency: z.string().trim().length(3).nullish(),
+  incoterm: z.string().trim().nullish(),
+  commercial_basis: z.string().trim().max(250).nullish(),
+  offered_order_size: z.number().positive().nullish(),
+  offered_order_size_unit: z.string().trim().nullish(),
 });
 
 export type CreateBuyerLeadInput = z.infer<typeof createBuyerLeadSchema>;
@@ -65,7 +72,7 @@ export const createDiscoveryRunSchema = z
     hs_code: z
       .string()
       .trim()
-      .regex(/^\d{4,8}$/, 'An HS code is 4 to 8 digits.')
+      .regex(/^\d{6}$/, 'Demand Discovery requires an exact six-digit HS code.')
       .optional(),
     target_countries: z.array(z.string().length(2)).max(20).optional(),
   })
@@ -404,7 +411,10 @@ export const quickEditProductSchema = z.object({
   moq_unit: z.string().trim().nullish(),
   price_target_amount: z.number().positive().nullish(),
   price_target_currency: z.string().trim().length(3).nullish(),
+  price_target_quantity_unit: z.string().trim().max(32).nullish(),
+  price_target_incoterm: z.enum(['EXW','FCA','FOB','CFR','CIF','CPT','CIP','DAP','DPU','DDP']).nullish(),
   lead_time_days: z.number().int().positive().nullish(),
+  delivery_commitment_days: z.number().int().positive().nullish(),
   desired_order_size_amount: z.number().positive().nullish(),
   desired_order_size_currency: z.string().trim().length(3).nullish(),
   customization_capability: z.string().trim().max(1000).nullish(),
@@ -414,6 +424,9 @@ export const quickEditProductSchema = z.object({
   const hasAmount = value.desired_order_size_amount != null;
   const hasCurrency = Boolean(value.desired_order_size_currency);
   if (hasAmount !== hasCurrency) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [hasAmount ? 'desired_order_size_currency' : 'desired_order_size_amount'], message: 'Desired order size requires both amount and currency.' });
+  const priceFields=[value.price_target_amount,value.price_target_currency,value.price_target_quantity_unit,value.price_target_incoterm];
+  if(priceFields.some(v=>v!=null)&&priceFields.some(v=>v==null))ctx.addIssue({code:z.ZodIssueCode.custom,path:['price_target_amount'],message:'Target price requires amount, currency, per-quantity unit, and Incoterm.'});
+  if(value.lead_time_days!=null&&value.delivery_commitment_days!=null&&value.delivery_commitment_days<=value.lead_time_days)ctx.addIssue({code:z.ZodIssueCode.custom,path:['delivery_commitment_days'],message:'Delivery commitment must exceed production lead time.'});
 });
 
 // ---------------------------------------------------------------------------
@@ -430,6 +443,12 @@ export const logOutreachActivitySchema = z.object({
   next_action: z.string().trim().nullish(),
   next_action_at: z.string().trim().nullish(),
   interest_level: z.enum(['unknown', 'low', 'medium', 'high']).nullish(),
+  template_id: z.string().trim().nullish(),
+  template_version: z.string().trim().nullish(),
+  automation: z.enum(['manual', 'automated']).default('manual'),
+  delivery_status: z.enum(['unknown', 'queued', 'sent', 'delivered', 'bounced', 'failed']).default('unknown'),
+  reply_classification: z.enum(['no_response', 'positive_interest', 'not_interested', 'wrong_contact', 'already_sourced', 'price_mismatch', 'moq_mismatch', 'certification_issue', 'lead_time_issue', 'product_mismatch', 'timing_issue', 'other']).nullish(),
+  reply_notes: z.string().trim().max(2000).nullish(),
 });
 
 export const disqualifyLeadSchema = z.object({

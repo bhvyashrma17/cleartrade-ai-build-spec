@@ -133,7 +133,7 @@ export default async function OpsFinancePage({
             </Link>
           </div>
         </div>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Separate from ClearTrade's own fee — this tracks money owed by the buyer to the exporter.</p>
+        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Separate from ClearTrade&apos;s own fee — this tracks money owed by the buyer to the exporter.</p>
         {payments.length === 0 ? (
           <div className="mt-4">
             <EmptyQueue>{overdueOnly ? 'No payments are currently overdue.' : 'No payment records exist yet.'}</EmptyQueue>

@@ -10,7 +10,7 @@
  * another.
  */
 
-import { ApprovalStatus, DealStage, Prisma, type PrismaClient } from '@prisma/client';
+import { ApprovalStatus, DealStage, Prisma } from '@prisma/client';
 import { getConfig, getFeePolicy, type FeePolicySnapshot } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { canApproveCommercialTerms } from '@/lib/permissions';

@@ -40,6 +40,9 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ dealId
         'Nothing to download yet.',
       );
     }
+    if(document.source==='uploaded'&&document.scan_status!=='clean'&&['staging','production'].includes(process.env.APP_ENV??'')){
+      throw forbidden('This upload is quarantined until security scanning succeeds.');
+    }
 
     let bytes: Buffer;
     let mimeType = document.mime_type ?? 'application/octet-stream';

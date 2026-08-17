@@ -31,7 +31,7 @@
 import { OrgTier, UserRole } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { forbidden, notFound, upgradeRequired } from '@/lib/errors';
-import type { Principal } from '@/types';
+import type { Principal, PortalRoot } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Roles
@@ -50,6 +50,26 @@ export const OPS_ROLES: readonly UserRole[] = [
 export const isExporter = (p: Principal) => EXPORTER_ROLES.includes(p.role);
 export const isAgent = (p: Principal) => p.role === UserRole.agent;
 export const isOps = (p: Principal) => OPS_ROLES.includes(p.role);
+
+// ---------------------------------------------------------------------------
+// Role -> portal routing
+//
+// Defined here rather than in auth.ts because this is pure role authorization with no
+// session dependency. auth.ts re-exports these, so every existing call site is unchanged;
+// the difference is that the mapping is now reachable without pulling in next-auth, which
+// is what makes portal-level access assertions testable.
+// ---------------------------------------------------------------------------
+
+/** The portal a role lands in after login. */
+export function portalForRole(role: UserRole): PortalRoot {
+  if (EXPORTER_ROLES.includes(role)) return '/app';
+  if (role === UserRole.agent) return '/agent';
+  return '/ops';
+}
+
+export function canAccessPortal(role: UserRole, portal: PortalRoot): boolean {
+  return portalForRole(role) === portal;
+}
 export const isAdmin = (p: Principal) => p.role === UserRole.admin;
 
 // ---------------------------------------------------------------------------

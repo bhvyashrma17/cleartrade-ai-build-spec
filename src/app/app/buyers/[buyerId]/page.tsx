@@ -25,6 +25,7 @@ import { StatusChip, UpgradeNotice } from '@/components/ui';
 import { getPrincipal } from '@/lib/auth';
 import { tierMeets } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { allowedEvidenceOrigins,isRealWorkflowEnvironment,nonRealEvidenceOrigins,unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
 function fmt(d: Date | null): string {
   if (!d) return '—';
@@ -39,10 +40,11 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
   const tier = principal?.tier ?? OrgTier.guest;
   const canSeeContacts = tierMeets(tier, 'buyer_contact.view');
 
-  const buyer = await prisma.buyer.findUnique({
-    where: { id: buyerId },
+  const buyer = await prisma.buyer.findFirst({
+    where: { id: buyerId,...(isRealWorkflowEnvironment()?{fit_assessments:{some:{score:{not:null},evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}}}:{}) },
     include: {
       source_evidence: { orderBy: { observed_at: 'desc' }, take: 10 },
+      import_records:{select:{evidence_origin:true}},
       ...(canSeeContacts ? { contacts: { orderBy: { verification_status: 'desc' } } } : {}),
     },
   });
@@ -51,7 +53,7 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
   const orgId = principal?.exporter_org_id && tier !== OrgTier.guest ? principal.exporter_org_id : null;
 
   const [products, leads, shortlists] = await Promise.all([
-    orgId ? prisma.product.findMany({ where: { exporter_org_id: orgId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }) : Promise.resolve([]),
+    orgId ? prisma.product.findMany({ where: { exporter_org_id: orgId,...(isRealWorkflowEnvironment()?{evidence_origin:{in:allowedEvidenceOrigins()}}:{}) }, select: { id: true, name: true }, orderBy: { name: 'asc' } }) : Promise.resolve([]),
     orgId
       ? prisma.buyerLead.findMany({
           where: { exporter_org_id: orgId, buyer_id: buyerId },
@@ -65,10 +67,12 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
   const riskFlags = (buyer.risk_flags ?? []) as { code: string; severity: string; summary: string }[];
   const activitySummary = buyer.import_activity_summary as Record<string, unknown> | null;
   const verificationChip = buyerChip(VERIFICATION_DISPLAY, buyer.verification_status);
+  const unsafeOrigins=unsafeEvidenceOrigins([...new Set(buyer.import_records.map(row=>row.evidence_origin))]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
       {/* Global buyer facts — never mixed with exporter-specific state below. */}
+      {!isRealWorkflowEnvironment()&&unsafeOrigins.length?<p className="rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-medium text-primary">Test evidence · Non-real evidence: {unsafeOrigins.join(', ')}</p>:null}
       <header className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

@@ -33,6 +33,7 @@
  */
 
 import { Prisma, TradeDataSource, TradeFlowDirection } from '@prisma/client';
+import { appEnvironment,tradeFlowEvidenceWhere } from '@/lib/evidence-environment';
 import { toIso2, WORLD_PARTNER } from '@/lib/comtrade/areas';
 import type { MarketEstimatePolicy } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
@@ -87,7 +88,7 @@ export function quantityBand(quantity: number | null | undefined, breakpoints: n
 }
 
 function cacheKey(hsCode: string, band: string): string {
-  return `${hsCode}:${band}`;
+  return `${appEnvironment()}:${hsCode}:${band}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,7 @@ async function computeFresh(requestedHs: string, policy: MarketEstimatePolicy): 
         source: TradeDataSource.comtrade,
         flow_direction: TradeFlowDirection.import,
         partner: WORLD_PARTNER,
+        ...tradeFlowEvidenceWhere(),
       },
       select: rowSelect,
     });

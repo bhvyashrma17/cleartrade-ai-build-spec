@@ -1,0 +1,2 @@
+import {timingSafeEqual} from 'node:crypto';
+export function operationsAuthorized(request:Request){const expected=process.env.OPERATIONS_TOKEN;if(!expected)return process.env.APP_ENV==='development'||process.env.APP_ENV==='test';const supplied=request.headers.get('authorization')?.replace(/^Bearer\s+/i,'')??'';const a=Buffer.from(expected),b=Buffer.from(supplied);return a.length===b.length&&timingSafeEqual(a,b);}

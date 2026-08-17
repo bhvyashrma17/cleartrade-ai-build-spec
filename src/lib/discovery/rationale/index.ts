@@ -16,7 +16,6 @@
  * facts.
  */
 
-import type { DiscoveryScoringPolicy } from '@/lib/config';
 import type { ScoredMarket } from '../scoring';
 import { ClaudeRationaleWriter } from './claude-writer';
 import { TemplateRationaleWriter } from './template-writer';

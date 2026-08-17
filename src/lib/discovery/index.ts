@@ -10,6 +10,7 @@
 import type { DiscoveryEngine } from './engine';
 import { MockDiscoveryEngine } from './mock-engine';
 import { WarehouseDiscoveryEngine } from './warehouse-engine';
+import { isRealWorkflowEnvironment } from '@/lib/evidence-environment';
 
 export type { DiscoveryEngine, DiscoveryInput, DiscoveryResult, MarketAssessmentDraft } from './engine';
 export { MockDiscoveryEngine } from './mock-engine';
@@ -24,7 +25,9 @@ export function getDiscoveryEngine(): DiscoveryEngine {
   // rather than simulated. The mock stays reachable via DISCOVERY_ENGINE=mock — it is still
   // the right engine for a UI demo against an empty warehouse, and for any test that wants
   // ranked results without seeding trade data first.
-  switch (process.env.DISCOVERY_ENGINE ?? 'warehouse') {
+  const mode = process.env.DISCOVERY_ENGINE ?? 'warehouse';
+  if (isRealWorkflowEnvironment() && mode !== 'warehouse') throw new Error(`DISCOVERY_ENGINE=${mode} is forbidden in staging/production.`);
+  switch (mode) {
     case 'mock':
       // Latency is overridable so tests don't wait on simulated work.
       cached = new MockDiscoveryEngine(Number(process.env.DISCOVERY_MOCK_LATENCY_MS ?? 2400));

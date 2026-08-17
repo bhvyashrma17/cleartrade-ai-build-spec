@@ -35,7 +35,7 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, CategoryDef> 
     label: 'Deal activity',
     description: 'Messages and general updates on your deals.',
     disableable: true,
-    types: ['deal_message', 'agent_created'],
+    types: ['deal_message', 'agent_created','agent_assigned','buyer_review_ready','task_due','readiness_action_required'],
   },
   commercial: {
     label: 'Commercial terms',
@@ -53,13 +53,13 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, CategoryDef> 
     label: 'Documents',
     description: 'Generation, review and filing updates on deal documents.',
     disableable: true,
-    types: ['document_generation', 'document_changes_requested'],
+    types: ['document_generation', 'document_changes_requested','document_approval_needed','compliance_blocker'],
   },
   disputes: {
     label: 'Cases & disputes',
     description: 'Case opened, resolution proposed, and case closed.',
     disableable: true,
-    types: ['dispute_opened', 'dispute_resolution_proposed', 'dispute_owner_response'],
+    types: ['dispute_opened', 'dispute_resolution_proposed', 'dispute_owner_response','dispute_update'],
   },
   shipment_payment: {
     label: 'Shipment & payment',
@@ -72,6 +72,7 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, CategoryDef> 
       'insurance_case',
       'request_insurance_quote',
       'partner_handoff',
+      'payment_evidence_required',
     ],
   },
   // Never disableable — the account's own security and legal-standing events. Nothing
@@ -106,3 +107,5 @@ export function isDisableableCategory(category: NotificationCategory): boolean {
 export const DISABLEABLE_CATEGORIES = (Object.keys(NOTIFICATION_CATEGORIES) as NotificationCategory[]).filter(
   (c) => NOTIFICATION_CATEGORIES[c].disableable,
 );
+
+export function typesForCategory(category:NotificationCategory):readonly string[]{return NOTIFICATION_CATEGORIES[category].types;}

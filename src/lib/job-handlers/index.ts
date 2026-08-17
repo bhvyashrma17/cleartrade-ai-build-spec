@@ -24,6 +24,9 @@ import { runDocumentGeneration } from '@/lib/job-handlers/documents';
 import { runPayoutRecompute } from '@/lib/job-handlers/payouts';
 import { runReadinessAssessment } from '@/lib/job-handlers/readiness';
 import { runSanctionsIngest } from '@/lib/job-handlers/sanctions';
+import { runImportRecordRetention } from '@/lib/job-handlers/import-retention';
+import { runMarketAccessIngest } from '@/lib/job-handlers/market-access';
+import { runNotificationDelivery } from '@/lib/job-handlers/notification-delivery';
 
 let registered = false;
 
@@ -37,6 +40,9 @@ export function registerAllJobHandlers() {
   registerJobHandler(JobType.cbp_manifest_ingest, runCbpManifestIngest);
   registerJobHandler(JobType.buyer_intelligence, runBuyerIntelligenceJob);
   registerJobHandler(JobType.sanctions_ingest, runSanctionsIngest);
+  registerJobHandler(JobType.import_record_retention, runImportRecordRetention);
+  registerJobHandler(JobType.market_access_ingest, runMarketAccessIngest);
+  registerJobHandler(JobType.notification_delivery, runNotificationDelivery);
   // Not yet implemented — buyer_discovery, report_export. Jobs of those types fail fast
   // with NO_HANDLER instead of hanging.
   registered = true;

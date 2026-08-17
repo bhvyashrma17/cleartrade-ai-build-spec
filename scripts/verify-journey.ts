@@ -135,7 +135,6 @@ async function main() {
         `rail before="${railBefore}" after="${railAfter}"; server readiness_status=${org?.readiness_status}, live derivation=${derived} -> "${expectedLabel}" (rail must match the derivation, not drift)`);
     });
 
-    let runId = '';
     await scenario('J4', 'Demand Discovery runs and returns ranked markets', async () => {
       await page.goto(BASE + '/app/markets', { waitUntil: 'networkidle' });
       await page.getByLabel('Product').selectOption('seed-product-turmeric');
@@ -148,7 +147,6 @@ async function main() {
         orderBy: { created_at: 'desc' },
         select: { id: true, status: true },
       });
-      runId = run?.id ?? '';
 
       // `partial` is a success with stated gaps, not a failure — docs/09 §3, and EXP-04's
       // required "Partial" state ("render available markets and explain missing criteria").

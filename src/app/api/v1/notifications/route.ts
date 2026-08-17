@@ -14,6 +14,7 @@ import { requirePrincipal } from '@/lib/auth';
 import { resolvePagination } from '@/lib/config';
 import { errorResponse, list, newCorrelationId, pageMeta, validationError } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
+import {typesForCategory,type NotificationCategory} from '@/lib/notifications';
 
 export async function GET(request: NextRequest) {
   const correlationId = newCorrelationId();
@@ -32,8 +33,11 @@ export async function GET(request: NextRequest) {
       per_page: params.get('per_page'),
     });
 
+    const disabled=await prisma.notificationPreference.findMany({where:{user_id:principal.id,in_app_enabled:false},select:{category:true}});
+    const disabledTypes=disabled.flatMap(row=>typesForCategory(row.category as NotificationCategory));
     const where = {
       user_id: principal.id,
+      ...(disabledTypes.length?{type:{notIn:disabledTypes}}:{}),
       ...(unreadOnly ? { read_at: null } : {}),
       ...(severity ? { severity: severity as NotificationSeverity } : {}),
     };
@@ -46,7 +50,7 @@ export async function GET(request: NextRequest) {
         take,
       }),
       prisma.notification.count({ where }),
-      prisma.notification.count({ where: { user_id: principal.id, read_at: null } }),
+      prisma.notification.count({ where: { user_id: principal.id,read_at:null,...(disabledTypes.length?{type:{notIn:disabledTypes}}:{}) } }),
     ]);
 
     return NextResponse.json(list(rows, { ...pageMeta({ page, per_page, total }), unread_count: unreadCount }), {

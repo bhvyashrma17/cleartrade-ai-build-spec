@@ -9,7 +9,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "migrate:deploy": "prisma migrate deploy",
+    "db:backup": "bash scripts/db-backup.sh",
+    "db:restore-drill": "bash scripts/db-restore-drill.sh",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,20 +22,33 @@
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "db:studio": "prisma studio",
     "purge:guests": "tsx --env-file=.env scripts/purge-guests.ts",
+    "purge:guests:platform": "tsx scripts/purge-guests.ts",
     "worker": "tsx --env-file=.env scripts/worker.ts",
+    "worker:platform": "tsx scripts/worker.ts",
     "worker:once": "tsx --env-file=.env scripts/worker.ts --once",
-    "ingest:comtrade": "tsx --env-file=.env scripts/ingest-comtrade.ts"
-    ,"ingest:sanctions": "tsx --env-file=.env scripts/ingest-sanctions.ts",
+    "ingest:comtrade": "tsx --env-file=.env scripts/ingest-comtrade.ts",
+    "ingest:sanctions": "tsx --env-file=.env scripts/ingest-sanctions.ts",
+    "sanctions:schedule": "tsx --env-file=.env scripts/schedule-sanctions-refresh.ts",
+    "sanctions:schedule:platform": "tsx scripts/schedule-sanctions-refresh.ts",
+    "sanctions:refresh-retained": "tsx --env-file=.env scripts/refresh-sanctions-with-retention.ts",
+    "secrets:staging": "tsx scripts/generate-staging-secrets.ts",
+    "verify:staging-storage": "tsx scripts/verify-staging-storage.ts",
+    "verify:staging-scanner": "tsx scripts/verify-staging-scanner.ts",
+    "verify:scanner-contract": "node deploy/scanner/contract-test.js",
     "ingest:cbp": "tsx --env-file=.env scripts/ingest-cbp-manifest.ts",
-    "verify:cbp": "tsx --env-file=.env scripts/verify-cbp-manifest-ingest.ts"
-    ,"verify:buyer-intelligence": "tsx --env-file=.env scripts/verify-buyer-intelligence.ts"
-    ,"buyers:build": "tsx --env-file=.env scripts/run-buyer-intelligence.ts"
+    "retention:imports": "tsx --env-file=.env scripts/enforce-import-retention.ts",
+    "storage:migrate": "tsx --env-file=.env scripts/migrate-document-storage.ts",
+    "ingest:market-access": "tsx --env-file=.env scripts/ingest-market-access.ts",
+    "verify:cbp": "tsx --env-file=.env scripts/verify-cbp-manifest-ingest.ts",
+    "verify:buyer-intelligence": "tsx --env-file=.env scripts/verify-buyer-intelligence.ts",
+    "buyers:build": "tsx --env-file=.env scripts/run-buyer-intelligence.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
+    "@aws-sdk/client-s3": "^3.1110.0",
     "@hookform/resolvers": "^3.9.1",
     "@prisma/client": "^6.7.0",
     "bcryptjs": "^2.4.3",
@@ -43,6 +59,8 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.54.2",
+    "prisma": "^6.7.0",
+    "tsx": "^4.19.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -55,10 +73,12 @@
     "eslint-config-next": "^15.3.0",
     "playwright": "^1.56.0",
     "postcss": "^8.5.1",
-    "prisma": "^6.7.0",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
+  },
+  "overrides": {
+    "postcss": "$postcss",
+    "sharp": "^0.35.3"
   }
 }

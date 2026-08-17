@@ -48,7 +48,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
     }
 
     const bytes = Buffer.from(await file.arrayBuffer());
-    const stored = await saveUploadedFile(bytes, file.name);
+    const stored = await saveUploadedFile(bytes, file.name,file.type);
     const existing = Array.isArray(payment.evidence_refs) ? (payment.evidence_refs as unknown as EvidenceEntry[]) : [];
     const entry: EvidenceEntry = { ref: stored.file_ref, name: file.name, uploaded_at: new Date().toISOString(), uploaded_by: principal.id };
 

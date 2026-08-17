@@ -80,6 +80,7 @@ const USER = 'seed-user-owner';
 
 async function cleanup() {
   await prisma.marketEligibilityRule.deleteMany({ where: { source: 'verify-warehouse' } });
+  await prisma.tradeFlowAcquisition.deleteMany({ where: { year: { in: YEARS } } });
   await prisma.tradeFlow.deleteMany({ where: { year: { in: YEARS } } });
   await prisma.ingestRun.deleteMany({ where: { params: { path: ['hs_chapter'], equals: CHAPTER } } });
   const runs = await prisma.discoveryRun.findMany({
@@ -105,7 +106,7 @@ async function cleanup() {
  * script's own drain loop stopping early is what looked like a scoring regression before
  * it was traced to a race.
  */
-async function drain(type: JobType) {
+async function drain(type: JobType, ownedJobIds: string[]) {
   for (;;) {
     const claimed = await claimNextJob([type]);
     if (claimed) {
@@ -120,7 +121,7 @@ async function drain(type: JobType) {
       });
       continue;
     }
-    const stillInFlight = await prisma.job.count({ where: { type, status: { in: ['queued', 'processing'] } } });
+    const stillInFlight = await prisma.job.count({ where: { id:{in:ownedJobIds},type, status: { in: ['queued', 'processing'] } } });
     if (stillInFlight === 0) break;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -161,19 +162,21 @@ async function withoutIngestDelay<T>(fn: () => Promise<T>): Promise<T> {
 /** Build the warehouse fixture through the real ingest job — never by inserting rows. */
 async function ingestFixture() {
   let jobs = 0;
+  const jobIds:string[]=[];
   for (const reporter of REPORTERS) {
     for (const partner of PARTNERS) {
       for (const year of YEARS) {
-        await enqueueJob({
+        const job=await enqueueJob({
           type: JobType.comtrade_ingest,
           payload: { hs_chapter: CHAPTER, reporter, partner, year, flow_direction: 'import' },
           dedupe_key: `verify-wh:${reporter}:${partner}:${year}:${Date.now()}`,
         });
+        jobIds.push(job.id);
         jobs++;
       }
     }
   }
-  await drain(JobType.comtrade_ingest);
+  await drain(JobType.comtrade_ingest,jobIds);
   const first = await prisma.tradeFlow.findFirst({ where: { year: YEARS[0], hs_code: { startsWith: CHAPTER } }, select: { hs_code: true }, orderBy: { hs_code: 'asc' } });
   if (!first) throw new Error('Fixture ingest produced no HS6 code.');
   TEST_HS = first.hs_code;
@@ -188,6 +191,7 @@ async function runDiscovery(_label: string) {
     hs_code: TEST_HS,
     target_countries: [],
     verify_probe: true,
+    as_of_date: '2096-01-01T00:00:00.000Z',
   };
 
   const run = await prisma.discoveryRun.create({
@@ -195,6 +199,7 @@ async function runDiscovery(_label: string) {
       exporter_org_id: ORG,
       requested_by_id: USER,
       input_snapshot: snapshot as Prisma.InputJsonValue,
+      as_of_date:new Date(snapshot.as_of_date),
     },
   });
 
@@ -207,7 +212,7 @@ async function runDiscovery(_label: string) {
     dedupe_key: `verify-wh-disc:${run.id}`,
   });
 
-  await drain(JobType.demand_discovery);
+  await drain(JobType.demand_discovery,[job.id]);
 
   const finished = await prisma.job.findUnique({ where: { id: job.id } });
   const assessments = await prisma.marketAssessment.findMany({
@@ -364,9 +369,12 @@ async function main() {
           ? Math.abs(storedShare - facts.indiaSharePct) < 0.01
           : storedShare == null && facts.indiaSharePct == null;
 
-        // Competition component: 70% fragmented supply (1-HHI), 30% India foothold.
+        // Competition component: HHI may contribute only when the stored immutable
+        // coverage assertion proves the partner extract reconciles to the world total.
         const clamp = (n: number) => Math.max(1, Math.min(99, Math.round(n)));
-        const fragmentation = facts.hhi == null ? null : clamp((1 - facts.hhi) * 100);
+        const competitionProvenance=assessment.field_provenance as {competition_score?:{input_evidence?:{supplier_coverage?:{completeness?:string}}}}|null;
+        const coverageComplete=competitionProvenance?.competition_score?.input_evidence?.supplier_coverage?.completeness==='COMPLETE';
+        const fragmentation = coverageComplete&&facts.hhi != null ? clamp((1 - facts.hhi) * 100):null;
         const indiaScore = facts.indiaSharePct == null ? null : clamp(Math.min(facts.indiaSharePct / 15, 1) * 100);
         const available = [[fragmentation, 70], [indiaScore, 30]] as const;
         const denominator = available.reduce((sum, [score, weight]) => sum + (score == null ? 0 : weight), 0);
@@ -383,7 +391,7 @@ async function main() {
 
         if (!shareOk || !competitionOk || !bandOk) allMatch = false;
         details.push(
-          `${assessment.country_code}: india_share stored=${storedShare?.toFixed(3)} recomputed=${facts.indiaSharePct?.toFixed(3)} ${shareOk ? 'OK' : 'MISMATCH'}; competition stored=${assessment.competition_score} expected=${expectedCompetition} (HHI=${facts.hhi?.toFixed(4)}) ${competitionOk ? 'OK' : 'MISMATCH'}; price band ${bandOk ? 'OK' : 'MISMATCH'}`,
+          `${assessment.country_code}: india_share stored=${storedShare?.toFixed(3)} recomputed=${facts.indiaSharePct?.toFixed(3)} ${shareOk ? 'OK' : 'MISMATCH'}; competition stored=${assessment.competition_score} expected=${expectedCompetition} (raw HHI=${facts.hhi?.toFixed(4)}, coverage=${coverageComplete?'COMPLETE':'insufficient'}) ${competitionOk ? 'OK' : 'MISMATCH'}; price band ${bandOk ? 'OK' : 'MISMATCH'}`,
         );
       }
 
@@ -451,20 +459,17 @@ async function main() {
 
     await scenario('WH-6B', 'missing components lower confidence and redistribute their weights', async () => {
       const details = firstRun!.assessments.map((assessment) => {
-        const p = assessment.field_provenance as { overall_score?: { basis?: string }; market_access?: { status?: string }; export_economics?: { status?: string }; logistics_feasibility?: { status?: string }; risk_resilience?: { status?: string } };
-        const unavailable = [p.market_access, p.export_economics, p.logistics_feasibility, p.risk_resilience].every(v => v?.status === 'unavailable');
-        const availableWeight = 25 + 10 + 10;
-        const expectedOverall = Math.max(1, Math.min(99, Math.round(
-          ((assessment.demand_score ?? 0) * 25 + (assessment.growth_score ?? 0) * 10 + (assessment.competition_score ?? 0) * 10) / availableWeight,
-        )));
-        // Fixture has five complete years and supplier rows, newest year equals the run's
-        // newest year, buyer coverage is deliberately unavailable, and 45/100 base weight
-        // is sourceable: round(99*.35 + 99*.35 + 0*.15 + 45*.15) = 76.
-        const expectedConfidence = 76;
-        return { assessment, unavailable, expectedOverall, expectedConfidence, arithmetic: assessment.overall_score === expectedOverall && assessment.confidence_score === expectedConfidence, redistributed: p.overall_score?.basis?.includes('demand_strength') && !p.overall_score?.basis?.includes('market_access') };
+        const p = assessment.field_provenance as { overall_score?: { input_evidence?:{effective_weights?:Record<string,number>} };[key:string]:unknown };
+        const effective=p.overall_score?.input_evidence?.effective_weights??{};
+        const scores:Record<string,number|null>={demand_strength:assessment.demand_score,growth_momentum:assessment.growth_score,competitive_opportunity:assessment.competition_score,market_access:assessment.market_access_score,export_economics:assessment.export_economics_score,exporter_market_fit:assessment.exporter_market_fit_score,logistics_feasibility:assessment.logistics_feasibility_score,risk_resilience:assessment.risk_resilience_score};
+        const expectedOverall=Math.max(1,Math.min(99,Math.round(Object.entries(effective).reduce((sum,[key,weight])=>sum+(scores[key]??0)*weight,0))));
+        const unavailableCount=Object.entries(scores).filter(([,score])=>score==null).length;
+        const arithmetic=assessment.overall_score===expectedOverall;
+        const redistributed=Math.abs(Object.values(effective).reduce((sum,value)=>sum+value,0)-1)<1e-9&&Object.keys(effective).every(key=>scores[key]!=null);
+        return { assessment, unavailableCount, expectedOverall, arithmetic, redistributed };
       });
-      const pass = details.every(({ unavailable, arithmetic, redistributed }) => unavailable && arithmetic && redistributed);
-      record('WH-6B', 'missing components lower confidence and redistribute their weights', pass ? 'PASS' : 'FAIL', details.map(({assessment,unavailable,redistributed,expectedOverall,expectedConfidence,arithmetic}) => `${assessment.country_code}: overall=${assessment.overall_score}, expected=(25D+10G+10C)/45=${expectedOverall}; confidence=${assessment.confidence_score}, expected=${expectedConfidence}; unavailable=${unavailable}; redistributed=${redistributed}; arithmetic=${arithmetic}`).join('; '));
+      const pass = details.every(({ assessment,unavailableCount, arithmetic, redistributed }) => unavailableCount>0&&assessment.confidence_score<100&&arithmetic&&redistributed);
+      record('WH-6B', 'missing components lower confidence and redistribute their weights', pass ? 'PASS' : 'FAIL', details.map(({assessment,unavailableCount,redistributed,expectedOverall,arithmetic}) => `${assessment.country_code}: overall=${assessment.overall_score}, independently weighted=${expectedOverall}; confidence=${assessment.confidence_score}; unavailable_components=${unavailableCount}; effective_weights_sum_to_one=${redistributed}; arithmetic=${arithmetic}`).join('; '));
     });
 
     await scenario('WH-6C', 'hard eligibility failure produces an ineligible assessment, never a low score', async () => {

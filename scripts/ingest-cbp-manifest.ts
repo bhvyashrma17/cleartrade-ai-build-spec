@@ -1,4 +1,4 @@
-import { JobStatus, JobType } from '@prisma/client';
+import { EvidenceOrigin, JobStatus, JobType } from '@prisma/client';
 import { registerAllJobHandlers } from '@/lib/job-handlers';
 import { claimNextJob, enqueueJob, runClaimedJob } from '@/lib/jobs';
 import { prisma } from '@/lib/prisma';
@@ -10,12 +10,13 @@ function arg(name: string) {
 async function main() {
   const file_path = arg('file');
   const license_file_path = arg('license');
-  if (!file_path || !license_file_path) throw new Error('Usage: npm run ingest:cbp -- --file=/absolute/records.ndjson --license=/absolute/license.json [--resume=run_id]');
+  const evidence_origin=arg('origin') as EvidenceOrigin|undefined;
+  if (!file_path || !license_file_path || !evidence_origin || !Object.values(EvidenceOrigin).includes(evidence_origin)) throw new Error('Usage: npm run ingest:cbp -- --file=/absolute/records.ndjson --license=/absolute/license.json --origin=imported_real [--resume=run_id]');
   registerAllJobHandlers();
   const ingest_run_id = arg('resume');
   const job = await enqueueJob({
     type: JobType.cbp_manifest_ingest,
-    payload: { file_path, license_file_path, ...(ingest_run_id ? { ingest_run_id } : {}) },
+    payload: { file_path, license_file_path,evidence_origin, ...(ingest_run_id ? { ingest_run_id } : {}) },
     dedupe_key: `cbp_manifest:${ingest_run_id ?? `${file_path}:${Date.now()}`}`,
   });
   while (await prisma.job.count({ where: { type: JobType.cbp_manifest_ingest, status: JobStatus.queued } })) {

@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
     }
 
     const bytes = Buffer.from(await file.arrayBuffer());
-    const stored = await saveUploadedFile(bytes, file.name);
+    const stored = await saveUploadedFile(bytes, file.name,file.type);
 
     const updated = await prisma.shipmentMilestone.update({
       where: { id: milestone.id },

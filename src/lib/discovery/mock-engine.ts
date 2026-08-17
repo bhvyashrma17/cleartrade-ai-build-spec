@@ -111,6 +111,7 @@ export class MockDiscoveryEngine implements DiscoveryEngine {
       const overall = clamp(Math.round(demand * 0.45 + growth * 0.3 + (100 - competition) * 0.25));
 
       drafts.push({
+        evidence_origins: ['mock'],
         country_code: market.code,
         overall_score: overall,
         demand_score: Math.round(demand),

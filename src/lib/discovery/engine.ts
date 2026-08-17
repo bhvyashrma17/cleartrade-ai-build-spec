@@ -27,14 +27,28 @@ export interface DiscoveryInput {
   target_countries?: string[];
   /** Origin country. India-first, but explicit rather than assumed. */
   origin_country?: string;
+  origin_state?: string | null;
+  origin_city?: string | null;
+  origin_location_code?: string | null;
+  origin_gateway?: string | null;
+  price_target_amount?: number | null;
+  price_target_currency?: string | null;
+  price_target_quantity_unit?: string | null;
+  price_target_incoterm?: string | null;
+  capacity_value?:number|null;
+  capacity_unit?:string|null;
   lead_time_days?: number | null;
+  delivery_commitment_days?: number | null;
+  logistics_constraint_codes?: string[];
+  logistics_constraints_confirmed?: boolean;
   desired_order_size_amount?: number | null;
   desired_order_size_currency?: string | null;
   customization_capability?: string | null;
   packaging_capability?: string | null;
   moq_value?: number | null;
   moq_unit?: string | null;
-  certifications?: { code: string; name: string; status: string; evidence_ref: string | null }[];
+  certifications?: { code: string; name: string; status: string; evidence_ref: string | null; valid_until?:string|null }[];
+  as_of_date?:string;
 }
 
 /**
@@ -58,6 +72,12 @@ export interface MarketAssessmentDraft {
   model_version?: string;
   weight_profile_key?: string;
   weight_profile_version?: number;
+  as_of_date?:string;
+  scoring_policy_version?:number;
+  scoring_policy_hash?:string;
+  scoring_policy_snapshot?:Record<string,unknown>;
+  reproducibility_status?:'reproducible'|'legacy_non_recomputable';
+  evidence_origins?: Array<'unknown_legacy'|'fixture'|'mock'|'preview'|'authenticated_real'|'public_real'|'imported_real'|'manually_entered_real'>;
   india_share?: number | null;
   tariff_summary?: Record<string, unknown> | null;
   certification_requirements?: unknown[];

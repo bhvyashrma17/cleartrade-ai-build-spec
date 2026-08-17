@@ -134,7 +134,7 @@ export default async function OpsDisputeDetailPage({ params }: { params: Promise
 
       <section className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Messages</h2>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">The deal's exporter-visible conversation — the same thread the exporter sees.</p>
+        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">The deal&apos;s exporter-visible conversation — the same thread the exporter sees.</p>
         {messages.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--color-text-secondary)]">No messages on this deal yet.</p>
         ) : (

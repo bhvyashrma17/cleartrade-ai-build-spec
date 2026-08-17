@@ -1,6 +1,9 @@
-import { Prisma, TradeDataSource } from '@prisma/client';
+import { Prisma, SanctionsScreeningResultState, TradeDataSource } from '@prisma/client';
 import { importRecordUseWhere } from '@/lib/import-record-rights';
 import { prisma } from '@/lib/prisma';
+import { allowedEvidenceOrigins,buyerOutcomeEvidenceWhere, importRecordEvidenceWhere, isRealWorkflowEnvironment } from '@/lib/evidence-environment';
+import {sanctionsCoverage,screenCounterparty} from '@/lib/sanctions/screening';
+import { buyerReferenceCandidates, readRawImportIdentityForSystem } from '@/lib/import-identity';
 
 export const BUYER_FIT_MODEL_VERSION = 'buyer-fit-v1';
 const LEGAL_SUFFIXES = new Set(['LLC','INC','LTD','LIMITED','CORP','CORPORATION','CO','COMPANY','GMBH','PLC','LP','LLP','SA','BV']);
@@ -11,12 +14,6 @@ export function normalizeEntityName(value: string) {
     .replace(/[^A-Z0-9 ]/g, ' ').replace(/\bG\s+M\s+B\s+H\b/g, 'GMBH')
     .split(/\s+/).filter(Boolean).filter((token) => !LEGAL_SUFFIXES.has(token)).join(' ');
 }
-function similarity(a: string, b: string) {
-  if (a === b) return 1;
-  const aa = new Set(a.split(' ')), bb = new Set(b.split(' '));
-  const intersection = [...aa].filter((x) => bb.has(x)).length;
-  return intersection / Math.max(aa.size, bb.size);
-}
 function median(values: number[]) { const sorted = [...values].sort((a,b)=>a-b); return sorted.length ? sorted[Math.floor(sorted.length / 2)] : null; }
 function clamp(value: number) { return Math.max(0, Math.min(100, Math.round(value))); }
 type Component = { score: number | null; reason?: string; evidence: Record<string, unknown> };
@@ -26,46 +23,59 @@ function combine(parts: Record<string, Component>) {
 }
 
 export async function runBuyerIntelligence(input: { exporter_org_id: string; product_id: string }) {
-  const product = await prisma.product.findFirstOrThrow({ where: { id: input.product_id, exporter_org_id: input.exporter_org_id }, include: { certifications: true } });
-  const records = await prisma.importRecord.findMany({ where: { source: TradeDataSource.cbp_vessel_manifest, buyer_id: null, raw_consignee_string: { not: null }, ...importRecordUseWhere('cache') }, orderBy: { shipment_date: 'asc' } });
-  const known = await prisma.buyer.findMany({ include: { attribute_claims: { where: { attribute: 'name' } } } });
+  if(isRealWorkflowEnvironment()){
+    const coverage=await sanctionsCoverage();
+    if(!coverage.complete)throw new Error(`SCREENING_INCOMPLETE: required sanctions coverage is unavailable or stale (${coverage.sources.filter(s=>s.status!=='COMPLETE').map(s=>s.source).join(', ')}).`);
+  }
+  const product = await prisma.product.findFirstOrThrow({ where: { id: input.product_id, exporter_org_id: input.exporter_org_id,...(isRealWorkflowEnvironment()?{evidence_origin:{in:allowedEvidenceOrigins()}}:{}) }, include: { certifications: true } });
+  const records = await prisma.importRecord.findMany({ where: { source: TradeDataSource.cbp_vessel_manifest, buyer_id: null, buyer_ref: { not: null }, ...importRecordUseWhere('cache'),...importRecordEvidenceWhere() }, orderBy: { shipment_date: 'asc' } });
+  const known = await prisma.buyer.findMany({ include: { attribute_claims: { where: { attribute: 'buyer_ref' } } } });
+  const knownRefs = new Map(known.flatMap((buyer) => buyer.attribute_claims.map((claim) => [String(claim.value).replace(/^"|"$/g, ''), buyer.id] as const)));
   let resolved = 0;
   for (const record of records) {
-    const normalized = normalizeEntityName(record.raw_consignee_string!);
+    const rawIdentity = await readRawImportIdentityForSystem(record.id, 'Buyer entity resolution and sanctions screening');
+    if (!rawIdentity || !record.buyer_ref) continue;
+    const normalized = normalizeEntityName(rawIdentity);
     if (!normalized) continue;
-    let best: { id: string; score: number } | null = null;
+    const referenceCandidates = process.env.IMPORT_BUYER_REF_SECRET ? buyerReferenceCandidates(rawIdentity).map((candidate) => candidate.value) : [record.buyer_ref];
+    const matchingReference = referenceCandidates.find((candidate) => knownRefs.has(candidate)) ?? (knownRefs.has(record.buyer_ref) ? record.buyer_ref : null);
+    let best: { id: string; score: number } | null = matchingReference ? { id: knownRefs.get(matchingReference)!, score: 1 } : null;
     for (const buyer of known) {
       if (buyer.country_code !== record.country) continue;
-      const names = [buyer.legal_name, ...buyer.attribute_claims.map((claim) => String(claim.value))];
-      const score = Math.max(...names.map((name) => similarity(normalized, normalizeEntityName(name.replace(/^"|"$/g, '')))));
+      const refs = buyer.attribute_claims.map((claim) => String(claim.value).replace(/^"|"$/g, ''));
+      const score = refs.includes(record.buyer_ref) ? 1 : 0;
       if (!best || score > best.score) best = { id: buyer.id, score };
     }
     let buyerId: string, confidence: number, method: string;
     if (best && best.score >= 0.8) { buyerId = best.id; confidence = best.score; method = best.score === 1 ? 'normalized_exact' : 'token_similarity'; }
     else {
-      const buyer = await prisma.buyer.create({ data: { legal_name: record.raw_consignee_string!, display_name: record.raw_consignee_string!, country_code: record.country, buyer_type: INTERMEDIARY.test(normalized) ? 'intermediary' : 'importer' } });
+      const pseudonym = `Manifest buyer ${record.buyer_ref.slice(-10)}`;
+      const buyer = await prisma.buyer.create({ data: { legal_name: pseudonym, display_name: pseudonym, country_code: record.country, buyer_type: INTERMEDIARY.test(normalized) ? 'intermediary' : 'importer' } });
       known.push({ ...buyer, attribute_claims: [] }); buyerId = buyer.id; confidence = 1; method = 'new_canonical';
     }
     await prisma.$transaction([
       prisma.importRecord.update({ where: { id: record.id }, data: { buyer_id: buyerId, resolution_confidence: confidence, resolution_method: method, resolved_at: new Date() } }),
-      prisma.buyerAttributeClaim.upsert({ where: { buyer_id_attribute_source_source_record_id: { buyer_id: buyerId, attribute: 'name', source: record.source, source_record_id: record.source_record_id } }, create: { buyer_id: buyerId, attribute: 'name', value: record.raw_consignee_string!, source: record.source, source_record_id: record.source_record_id, observed_at: record.shipment_date }, update: { value: record.raw_consignee_string!, observed_at: record.shipment_date } }),
+      prisma.buyerAttributeClaim.upsert({ where: { buyer_id_attribute_source_source_record_id: { buyer_id: buyerId, attribute: 'buyer_ref', source: record.source, source_record_id: record.source_record_id } }, create: { buyer_id: buyerId, attribute: 'buyer_ref', value: record.buyer_ref, source: record.source, source_record_id: record.source_record_id, observed_at: record.shipment_date }, update: { value: record.buyer_ref, observed_at: record.shipment_date } }),
       prisma.buyerAttributeClaim.upsert({ where: { buyer_id_attribute_source_source_record_id: { buyer_id: buyerId, attribute: 'country_code', source: record.source, source_record_id: record.source_record_id } }, create: { buyer_id: buyerId, attribute: 'country_code', value: record.country, source: record.source, source_record_id: record.source_record_id, observed_at: record.shipment_date }, update: { value: record.country, observed_at: record.shipment_date } }),
     ]);
+    knownRefs.set(record.buyer_ref, buyerId);
     resolved++;
   }
 
-  const buyers = await prisma.buyer.findMany({ include: { import_records: { where: importRecordUseWhere('cache'), orderBy: { shipment_date: 'asc' } }, outcomes: true } });
-  const sanctions = await prisma.sanctionsEntity.findMany({ where: { is_active: true } });
+  const buyers = await prisma.buyer.findMany({ include: { import_records: { where: {...importRecordUseWhere('cache'),...importRecordEvidenceWhere()}, orderBy: { shipment_date: 'asc' } }, outcomes:{where:buyerOutcomeEvidenceWhere()} } });
   let surfaced = 0;
   for (const buyer of buyers) {
     const rows = buyer.import_records;
     if (!rows.length) continue;
     const last = rows.at(-1)!.shipment_date;
     const reasons: string[] = [];
-    if (INTERMEDIARY.test(buyer.legal_name)) reasons.push('intermediary');
+    if (buyer.buyer_type === 'intermediary') reasons.push('intermediary');
     if (last < new Date(Date.now() - 548 * 86400000)) reasons.push('inactive_importer');
-    const sanction = sanctions.find((entry) => similarity(normalizeEntityName(buyer.legal_name), entry.normalized_name) >= 0.92);
-    const riskFlags = sanction ? [{ code: 'sanctions_hit', severity: 'critical', summary: `Potential match from ${sanction.source}`, source_record_id: sanction.source_record_id }] : [];
+    const screeningName = await readRawImportIdentityForSystem(rows[0].id, 'Counterparty sanctions screening before buyer surfacing');
+    if (!screeningName) continue;
+    const screening=await screenCounterparty({buyer_id:buyer.id,name:screeningName,country:buyer.country_code,entity_type:buyer.buyer_type},{requireCompleteCoverage:isRealWorkflowEnvironment()});
+    const sanction=screening.state!==SanctionsScreeningResultState.clear;
+    const riskFlags=sanction?[{code:screening.state===SanctionsScreeningResultState.confirmed_match?'sanctions_confirmed_match':screening.state===SanctionsScreeningResultState.possible_match?'sanctions_possible_match':'SCREENING_INCOMPLETE',severity:'critical',summary:screening.state===SanctionsScreeningResultState.possible_match?'Possible sanctions match — Ops review required':screening.state===SanctionsScreeningResultState.confirmed_match?'Confirmed sanctions match':'Required sanctions coverage is incomplete',screening_case_id:screening.case_id}]:[];
     const now = new Date(); const cutoff = new Date(now); cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1);
     const recent = rows.filter((row) => row.shipment_date >= cutoff);
     const units = new Map<string, number>(); for (const row of rows) if (row.quantity && row.quantity_unit) units.set(row.quantity_unit, (units.get(row.quantity_unit) ?? 0) + 1);
@@ -79,7 +89,7 @@ export async function runBuyerIntelligence(input: { exporter_org_id: string; pro
     const trend = priorCount ? (currentCount-priorCount)/priorCount : null;
     const provenance = { source: 'ImportRecord', source_record_ids: rows.map(r=>r.source_record_id), computed_at: now.toISOString() };
     await prisma.$transaction([
-      prisma.buyer.update({ where: { id: buyer.id }, data: { last_activity_at: last, deprioritized: reasons.length > 0, deprioritization_reasons: reasons, sanctions_blocked: Boolean(sanction), risk_flags: riskFlags, import_activity_summary: { shipment_count: rows.length, last_shipment_date: last.toISOString(), scope: 'observed_us_vessel_manifests_only' } } }),
+      prisma.buyer.update({ where: { id: buyer.id }, data: { last_activity_at: last, deprioritized: reasons.length > 0, deprioritization_reasons: reasons, sanctions_blocked: sanction, risk_flags: riskFlags, import_activity_summary: { shipment_count: rows.length, last_shipment_date: last.toISOString(), scope: 'observed_us_vessel_manifests_only' } } }),
       prisma.buyerFeatureSnapshot.upsert({ where: { buyer_id: buyer.id }, create: { buyer_id: buyer.id, import_frequency_per_year: rows.length / Math.max(1,(last.getTime()-rows[0].shipment_date.getTime())/(365*86400000)), last_shipment_date: last, shipment_count_12m: recent.length, typical_shipment_size: median(quantities), quantity_unit: unit, origin_mix: Object.fromEntries(origins), india_sourcing_history: origins.size ? origins.has('IN') : null, supplier_concentration: hhi, purchasing_trend: trend, provenance }, update: { import_frequency_per_year: rows.length / Math.max(1,(last.getTime()-rows[0].shipment_date.getTime())/(365*86400000)), last_shipment_date: last, shipment_count_12m: recent.length, typical_shipment_size: median(quantities), quantity_unit: unit, origin_mix: Object.fromEntries(origins), india_sourcing_history: origins.size ? origins.has('IN') : null, supplier_concentration: hhi, purchasing_trend: trend, provenance, computed_at: now } }),
     ]);
     if (sanction || reasons.length) continue;
@@ -100,9 +110,10 @@ export async function runBuyerIntelligence(input: { exporter_org_id: string; pro
     const procurementCompatible = typical == null || !product.capacity_value || !unit || product.capacity_unit !== unit || typical <= Number(product.capacity_value);
     const components = { volume_fit: volume, price_fit: price, cert_fit: cert, outcome_prior: outcome, relevance: relevant, procurement_compatible: procurementCompatible };
     const componentsJson = components as unknown as Prisma.InputJsonValue;
+    const evidenceOrigins=[...new Set([...rows.map(row=>row.evidence_origin),...completed.map(item=>item.evidence_origin)])];
     const score = relevant && procurementCompatible ? combine({volume,price,cert,outcome}) : null;
     const confidence = clamp(100 * Object.values({volume,price,cert,outcome}).filter(c=>c.score!=null).length / 4);
-    await prisma.buyerFitAssessment.upsert({ where: { buyer_id_product_id_exporter_org_id: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id } }, create: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id,score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION }, update:{score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,computed_at:now} });
+    await prisma.buyerFitAssessment.upsert({ where: { buyer_id_product_id_exporter_org_id: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id } }, create: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id,score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,evidence_origins:evidenceOrigins }, update:{score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,evidence_origins:evidenceOrigins,computed_at:now} });
     if (score != null) surfaced++;
   }
   return { resolved, buyers_evaluated: buyers.length, surfaced };

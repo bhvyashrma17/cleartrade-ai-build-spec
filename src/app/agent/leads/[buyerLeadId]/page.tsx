@@ -215,7 +215,7 @@ export default async function LeadWorkspacePage({ params }: { params: Promise<{ 
         ) : full.stage === 'disqualified' ? (
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">This lead is disqualified.</p>
         ) : (
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Conversion opens once the lead reaches "In negotiation".</p>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Conversion opens once the lead reaches &quot;In negotiation&quot;.</p>
         )}
         {full.stage !== 'converted' && full.stage !== 'disqualified' ? (
           <div className="mt-3">

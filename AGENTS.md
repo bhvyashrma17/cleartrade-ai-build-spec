@@ -352,3 +352,18 @@ re-implementing a check.
 - Never imply ClearTrade files directly with ICEGATE/CHA where it isn't the filing party.
 - Use progressive disclosure — plain language first, customs jargon in helper text.
 - P0 screens need loading, empty, error, permission (403/404) and mobile states before they're done.
+
+## Automated regression and CI
+
+- `npm test` is the canonical fast regression command. Vitest creates a unique disposable PostgreSQL
+  schema, applies the complete migration history, runs files serially, and drops the schema afterward.
+- Tests refuse production/staging environments and refuse database names that do not clearly identify
+  a test, development, or local database. Never weaken that guard or point tests at customer data.
+- External network access is denied by the shared Vitest setup. Tests must inject clients or mock
+  `fetch`; a test that needs live provider behavior belongs in an explicit/manual contract-validation
+  script, never the default suite.
+- Pull requests and changes to `main`/`master` must pass Prisma generation and validation, typecheck,
+  noninteractive ESLint, `npm test`, and a production build against the CI PostgreSQL service.
+- The 20 `scripts/verify-*.ts` scenarios remain the extended acceptance suite. They supplement the
+  deterministic tests and are run deliberately against a seeded non-production environment; do not
+  fold their stateful browser/network behavior into `npm test`.

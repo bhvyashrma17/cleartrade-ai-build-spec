@@ -1,0 +1,2 @@
+const LEGAL_SUFFIXES=new Set(['LLC','INC','LTD','LIMITED','CORP','CORPORATION','CO','COMPANY','GMBH','PLC','LP','LLP','SA','BV']);
+export function normalizeSanctionsName(value:string){return value.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/&/g,' AND ').replace(/[^A-Z0-9 ]/g,' ').replace(/\bG\s+M\s+B\s+H\b/g,'GMBH').split(/\s+/).filter(Boolean).filter(token=>!LEGAL_SUFFIXES.has(token)).join(' ');}

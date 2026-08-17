@@ -18,6 +18,7 @@ import { triggerPayoutRecompute } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 import { assertBrcTransition, assertPaymentTransition } from '@/lib/state-machines/payment';
 import { updateBrcStatusSchema, updatePaymentStatusSchema, zodFieldErrors } from '@/lib/validators';
+import { recordBuyerPaymentEvidence } from '@/lib/buyer-outcomes';
 
 async function loadPaymentScoped(dealId: string, paymentId: string) {
   const payment = await prisma.payment.findFirst({ where: { id: paymentId, deal_id: dealId } });
@@ -88,6 +89,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ dealI
             : {}),
         },
       });
+      await recordBuyerPaymentEvidence(tx, deal.id, row);
 
       await writeAuditEvent({
         db: tx,

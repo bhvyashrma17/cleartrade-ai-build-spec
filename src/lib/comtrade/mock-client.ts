@@ -88,6 +88,14 @@ const BASE_YEAR = 2020;
 
 export class MockComtradeClient implements ComtradeClient {
   readonly name = 'mock';
+  readonly identity = {
+    provider: 'un_comtrade' as const,
+    mode: 'mock' as const,
+    authenticated: false,
+    credential_fingerprint: 'mock',
+    source_dataset: 'comtrade-synthetic-fixture',
+    source_dataset_version: 'mock-v1',
+  };
 
   async resolveChapter(hsChapter: string) {
     return { chapter: hsChapter, hs_codes: subheadingsForChapter(hsChapter) };
@@ -123,6 +131,6 @@ export class MockComtradeClient implements ComtradeClient {
       };
     });
 
-    return { rows, request_count: 1 };
+    return { rows, request_count: 1, retrieved_at: new Date(), source_dataset_version: this.identity.source_dataset_version };
   }
 }

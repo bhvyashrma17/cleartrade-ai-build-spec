@@ -16,6 +16,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifyGuestMintProof } from '@/lib/guest';
+import { canAccessPortal, portalForRole } from '@/lib/permissions';
 import { forbidden, unauthenticated } from '@/lib/errors';
 import type { Principal, PortalRoot } from '@/types';
 
@@ -42,6 +43,16 @@ const credentialsSchema = z.object({
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: 'jwt' },
   pages: { signIn: '/login', error: '/login' },
+  /**
+   * Secure cookies in real environments (Phase 14).
+   *
+   * Auth.js infers this from the request URL, which is correct behind a well-configured
+   * proxy but silently degrades to a non-Secure cookie if the app ever sees a plaintext
+   * origin (a misconfigured load balancer, an internal health probe). Stating it explicitly
+   * means a session cookie can never be issued without the Secure flag in staging or
+   * production, regardless of how the request arrived.
+   */
+  useSecureCookies: ['production', 'staging'].includes(process.env.APP_ENV ?? ''),
   providers: [
     Credentials({
       name: 'Email and password',
@@ -155,12 +166,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 export const EXPORTER_ROLES: UserRole[] = [UserRole.exporter_owner, UserRole.exporter_member];
 export const OPS_ROLES: UserRole[] = [UserRole.ops_supervisor, UserRole.ops_finance, UserRole.admin];
 
-/** The portal a role lands in after login. */
-export function portalForRole(role: UserRole): PortalRoot {
-  if (EXPORTER_ROLES.includes(role)) return '/app';
-  if (role === UserRole.agent) return '/agent';
-  return '/ops';
-}
+/**
+ * The portal a role lands in after login.
+ *
+ * Defined in permissions.ts (pure role authorization, no session dependency) and re-exported
+ * here so existing `@/lib/auth` call sites are unchanged.
+ */
+export { portalForRole, canAccessPortal };
 
 /** Post-login landing route (docs/12 screen registry). */
 export function homeRouteForRole(role: UserRole): string {
@@ -172,10 +184,6 @@ export function homeRouteForRole(role: UserRole): string {
     case '/ops':
       return '/ops';
   }
-}
-
-export function canAccessPortal(role: UserRole, portal: PortalRoot): boolean {
-  return portalForRole(role) === portal;
 }
 
 // ---------------------------------------------------------------------------

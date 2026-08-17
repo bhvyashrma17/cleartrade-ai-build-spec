@@ -1,0 +1,5 @@
+type Context={request_id?:string;job_id?:string;org_id?:string;user_id?:string;ingest_run_id?:string;duration_ms?:number;[key:string]:unknown};
+const redact=(value:unknown)=>typeof value==='string'&&value.length>500?`${value.slice(0,500)}…`:value;
+export function log(level:'info'|'warn'|'error',event:string,context:Context={}){const record=Object.fromEntries(Object.entries({timestamp:new Date().toISOString(),level,event,...context}).filter(([,value])=>value!==undefined).map(([key,value])=>[key,redact(value)]));(level==='error'?console.error:level==='warn'?console.warn:console.log)(JSON.stringify(record));}
+export function requestId(headers:Headers){return headers.get('x-request-id')?.slice(0,128)||crypto.randomUUID();}
+export function reportError(error:unknown,context:Context={}){const safe=error instanceof Error?{error_name:error.name,error_message:error.message,stack:process.env.NODE_ENV==='development'?error.stack:undefined}:{error_message:String(error)};log('error','application_error',{...context,...safe,error_reporting_provider:process.env.ERROR_REPORTING_PROVIDER??'log'});}

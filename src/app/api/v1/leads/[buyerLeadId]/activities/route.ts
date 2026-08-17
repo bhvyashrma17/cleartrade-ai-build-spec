@@ -12,7 +12,7 @@
  * field is omitted.
  */
 
-import { BuyerLeadStage, OutreachActivityType, Visibility } from '@prisma/client';
+import { BuyerLeadStage, OutreachActivityType, OutreachChannel, Visibility } from '@prisma/client';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { loadLeadScoped } from '@/lib/agent-leads';
@@ -66,6 +66,21 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ buyerL
           summary: input.summary,
         },
       });
+      const isAttempt = input.type !== 'note';
+      const attemptCount = isAttempt ? await tx.outreachAttempt.count({ where: { buyer_lead_id: lead.id } }) : 0;
+      const attempt = isAttempt ? await tx.outreachAttempt.create({ data: {
+        buyer_lead_id: lead.id,
+        actor_user_id: principal.id,
+        channel: input.type as OutreachChannel,
+        template_id: input.template_id ?? null,
+        template_version: input.template_version ?? null,
+        automation: input.automation,
+        sequence_number: attemptCount + 1,
+        delivery_status: input.delivery_status,
+        reply_classification: input.reply_classification ?? null,
+        reply_notes: input.reply_notes ?? null,
+        replied_at: input.reply_classification && input.reply_classification !== 'no_response' ? new Date() : null,
+      } }) : null;
 
       let updatedLead = null;
       if (input.to_stage && effects) {
@@ -90,7 +105,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ buyerL
           after_summary: { stage: updatedLead.stage },
           correlation_id: correlationId,
         });
-        await recordBuyerOutcomeTransition(tx, lead, input.to_stage as BuyerLeadStage, new Date());
+        await recordBuyerOutcomeTransition(tx, lead, input.to_stage as BuyerLeadStage, new Date(), input.reply_classification ?? null, undefined, principal.id);
       }
 
       await writeAuditEvent({
@@ -104,7 +119,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ buyerL
         correlation_id: correlationId,
       });
 
-      return { activity, lead: updatedLead };
+      return { activity, attempt, lead: updatedLead };
     });
 
     return NextResponse.json(single(result), { status: 201, headers: { 'x-correlation-id': correlationId } });

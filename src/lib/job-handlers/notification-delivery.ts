@@ -1,0 +1,18 @@
+import {NotificationDeliveryStatus} from '@prisma/client';
+import {categoryForType} from '@/lib/notifications';
+import {emailEnabled,getEmailProvider,PermanentEmailError,renderOperationalEmail} from '@/lib/notification-delivery';
+import {prisma} from '@/lib/prisma';
+import type {JobContext,JobOutcome} from '@/lib/jobs';
+
+export async function runNotificationDelivery(ctx:JobContext):Promise<JobOutcome>{
+  const notificationId=(ctx.payload as {notification_id?:unknown})?.notification_id;if(typeof notificationId!=='string')throw new Error('notification_id is required.');
+  const notification=await prisma.notification.findUnique({where:{id:notificationId},include:{user:true}});if(!notification)return {status:'completed',result:{notification_id:notificationId,status:'missing'}};
+  const rendered=renderOperationalEmail({title:notification.title,body:notification.body,deepLink:notification.deep_link});
+  const delivery=await prisma.notificationDelivery.upsert({where:{notification_id_channel:{notification_id:notification.id,channel:'email'}},create:{notification_id:notification.id,channel:'email',destination_reference:`user:${notification.user_id}`,template_key:`${categoryForType(notification.type)}:${notification.type}`,template_version:rendered.version},update:{}});
+  if(['sent','delivered','suppressed','rejected','bounced'].includes(delivery.status))return {status:'completed',result:{delivery_id:delivery.id,status:delivery.status,deduplicated:true}};
+  if(!(await emailEnabled(notification.user_id,notification.type))||notification.user.email.endsWith('.invalid')){await prisma.notificationDelivery.update({where:{id:delivery.id},data:{status:'suppressed',failed_at:null,last_error_code:null,last_error_message:null}});return {status:'completed',result:{delivery_id:delivery.id,status:'suppressed'}};}
+  const provider=getEmailProvider();const attemptNo=delivery.attempt_count+1;
+  await prisma.notificationDelivery.update({where:{id:delivery.id},data:{attempt_count:attemptNo,status:attemptNo===1?'queued':'retrying',provider:provider.name,next_retry_at:null}});
+  try {const result=await provider.send({to:notification.user.email,subject:rendered.subject,text:rendered.text});const status:NotificationDeliveryStatus=result.delivered?'delivered':'sent';await prisma.$transaction([prisma.notificationDeliveryAttempt.create({data:{delivery_id:delivery.id,attempt_no:attemptNo,provider:provider.name,status,provider_message_id:result.providerMessageId,finished_at:new Date()}}),prisma.notificationDelivery.update({where:{id:delivery.id},data:{status,provider_message_id:result.providerMessageId,sent_at:new Date(),delivered_at:result.delivered?new Date():null,failed_at:null,last_error_code:null,last_error_message:null}})]);return {status:'completed',result:{delivery_id:delivery.id,status,provider:provider.name}};
+  } catch(error){const permanent=error instanceof PermanentEmailError,exhausted=ctx.attempt_no>=3,terminal=permanent||exhausted,message=error instanceof Error?error.message:'Provider failure',code=permanent?error.code:'PROVIDER_UNAVAILABLE';await prisma.$transaction([prisma.notificationDeliveryAttempt.create({data:{delivery_id:delivery.id,attempt_no:attemptNo,provider:provider.name,status:terminal?'rejected':'retrying',error_code:code,error_message:message.slice(0,300),finished_at:new Date()}}),prisma.notificationDelivery.update({where:{id:delivery.id},data:{status:terminal?'rejected':'retrying',failed_at:terminal?new Date():null,next_retry_at:terminal?null:new Date(Date.now()+60_000*2**(attemptNo-1)),last_error_code:code,last_error_message:message.slice(0,300)}})]);if(terminal)return {status:'completed',result:{delivery_id:delivery.id,status:'rejected'}};throw error;}
+}

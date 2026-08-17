@@ -157,6 +157,14 @@ export interface DiscoveryScoringPolicy {
   recency_decay_per_year: number;
   /** How many top-ranked markets get an LLM-written rationale. The rest get the deterministic one. */
   rationale_top_n: number;
+  demand: { formula_version:string; share_metric:'candidate_market_share'; value_weight:number; share_weight:number; buyer_depth_weight:number };
+  competition: { formula_version:string; hhi_weight:number; india_share_weight:number; minimum_supplier_coverage_ratio:number; maximum_supplier_coverage_ratio:number; minimum_partner_count:number; coverage_policy_version:string };
+  confidence: { formula_version:string; freshness_policy_version:string; accepted_reporting_lag_years:number; stale_after_lag_years:number; recency_weight:number; reporting_completeness_weight:number; buyer_coverage_weight:number; missingness_weight:number };
+  market_access: { formula_version:string; tariff_weight:number; regulatory_weight:number; tariff_ceiling_percent:number; certification_penalty:number; restriction_penalty:number; non_tariff_penalty:number; max_snapshot_age_days:number };
+  export_economics: { formula_version:string; india_price_weight:number; market_price_weight:number; tariff_weight:number; tariff_ceiling_percent:number; minimum_price_observations:number };
+  logistics: { formula_version:string; route_weight:number; transit_weight:number; burden_weight:number; compatibility_weight:number; max_age_days:number; freight_burden_ceiling_percent:number };
+  risk_resilience: { formula_version:string; demand_stability_weight:number; macro_resilience_weight:number; payment_resilience_weight:number; minimum_trade_years:number; max_trade_lag_years:number; max_signal_age_days:number; growth_volatility_ceiling:number };
+  exporter_market_fit: { formula_version:string; order_size_weight:number; capacity_moq_weight:number; certification_weight:number; lead_time_weight:number; customization_weight:number; packaging_weight:number; max_benchmark_age_days:number };
 }
 
 export interface DiscoveryComponentWeights {
@@ -366,7 +374,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     ],
   },
   'discovery.scoring': {
-    model_version: 'market-attractiveness-v2',
+    model_version: 'market-attractiveness-v3',
     base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
     archetype_profiles: {
       agriculture_food: { version: 1, hs_chapters: ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24'], weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 } },
@@ -384,6 +392,14 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     growth_window_years: 5,
     recency_decay_per_year: 0.8,
     rationale_top_n: 5,
+    demand: { formula_version:'demand-strength-v3',share_metric:'candidate_market_share',value_weight:60,share_weight:20,buyer_depth_weight:20 },
+    competition: { formula_version:'competitive-opportunity-v3',hhi_weight:70,india_share_weight:30,minimum_supplier_coverage_ratio:0.95,maximum_supplier_coverage_ratio:1.05,minimum_partner_count:2,coverage_policy_version:'supplier-coverage-v1' },
+    confidence: { formula_version:'assessment-confidence-v3',freshness_policy_version:'comtrade-reporting-lag-v1',accepted_reporting_lag_years:2,stale_after_lag_years:5,recency_weight:35,reporting_completeness_weight:35,buyer_coverage_weight:15,missingness_weight:15 },
+    market_access: { formula_version:'market-access-v1',tariff_weight:70,regulatory_weight:30,tariff_ceiling_percent:25,certification_penalty:20,restriction_penalty:15,non_tariff_penalty:10,max_snapshot_age_days:7 },
+    export_economics: { formula_version:'export-economics-v1',india_price_weight:45,market_price_weight:35,tariff_weight:20,tariff_ceiling_percent:25,minimum_price_observations:1 },
+    logistics: { formula_version:'logistics-feasibility-v1',route_weight:35,transit_weight:25,burden_weight:25,compatibility_weight:15,max_age_days:30,freight_burden_ceiling_percent:20 },
+    risk_resilience: { formula_version:'risk-resilience-v1',demand_stability_weight:60,macro_resilience_weight:20,payment_resilience_weight:20,minimum_trade_years:4,max_trade_lag_years:3,max_signal_age_days:180,growth_volatility_ceiling:0.5 },
+    exporter_market_fit: { formula_version:'exporter-market-fit-v1',order_size_weight:20,capacity_moq_weight:20,certification_weight:25,lead_time_weight:15,customization_weight:10,packaging_weight:10,max_benchmark_age_days:365 },
   },
   'market_estimate.policy': {
     top_n_markets: 5,
@@ -412,8 +428,22 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   if (key === 'comtrade.policy') {
     return { ...CONFIG_DEFAULTS['comtrade.policy'], ...(row.value as object) } as ConfigShape[K];
   }
-  if (key === 'discovery.scoring' && !(row.value as { base_weights?: unknown }).base_weights) {
-    return CONFIG_DEFAULTS['discovery.scoring'] as ConfigShape[K];
+  if (key === 'discovery.scoring') {
+    const stored=row.value as Partial<DiscoveryScoringPolicy>;
+    if(!stored.base_weights)return CONFIG_DEFAULTS['discovery.scoring'] as ConfigShape[K];
+    const defaults=CONFIG_DEFAULTS['discovery.scoring'];
+    return {
+      ...defaults,
+      ...stored,
+      demand:{...defaults.demand,...(stored.demand??{})},
+      competition:{...defaults.competition,...(stored.competition??{})},
+      confidence:{...defaults.confidence,...(stored.confidence??{})},
+      market_access:{...defaults.market_access,...(stored.market_access??{})},
+      export_economics:{...defaults.export_economics,...(stored.export_economics??{})},
+      logistics:{...defaults.logistics,...(stored.logistics??{})},
+      risk_resilience:{...defaults.risk_resilience,...(stored.risk_resilience??{})},
+      exporter_market_fit:{...defaults.exporter_market_fit,...(stored.exporter_market_fit??{})},
+    } as ConfigShape[K];
   }
   return row.value as ConfigShape[K];
 }

@@ -15,7 +15,6 @@ import {
   PreflightError,
   record,
   scenario,
-  sleep,
   summarize,
   type Browser,
   type Page,

@@ -1,0 +1,3 @@
+import type { JobContext, JobOutcome } from '@/lib/jobs';
+import { ingestUkMarketAccessHs6 } from '@/lib/market-access/uk-tariff';
+export async function runMarketAccessIngest(ctx:JobContext):Promise<JobOutcome>{const payload=ctx.payload as {country_code?:string;hs_code?:string};if(payload.country_code!=='GB')return {status:'failed',result:{error:'Only GB is supported by an authoritative connected source.'}};const snapshot=await ingestUkMarketAccessHs6(payload.hs_code??'',new Date(),ctx.job_id);return {status:'completed',result:{snapshot_id:snapshot.id,evidence_count:snapshot.evidence.length,country_code:'GB',hs_code:payload.hs_code}};}

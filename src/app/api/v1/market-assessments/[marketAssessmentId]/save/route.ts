@@ -16,6 +16,7 @@ import { errorResponse, newCorrelationId, notFound, single, validationError } fr
 import { assertCan, tenantScopeVia } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { zodFieldErrors } from '@/lib/validators';
+import { allowedEvidenceOrigins,isRealWorkflowEnvironment,nonRealEvidenceOrigins } from '@/lib/evidence-environment';
 
 const bodySchema = z.object({ saved: z.boolean() });
 
@@ -37,7 +38,7 @@ export async function POST(
     // exporter_org_id of its own, so tenancy is enforced via the relation.
     const scope = await tenantScopeVia(principal, 'run');
     const assessment = await prisma.marketAssessment.findFirst({
-      where: { id: marketAssessmentId, ...scope },
+      where: { id: marketAssessmentId, ...scope,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
       select: { id: true, saved_at: true },
     });
     if (!assessment) throw notFound('That market is not available.');

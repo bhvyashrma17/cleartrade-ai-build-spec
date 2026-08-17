@@ -1,0 +1,10 @@
+.next
+node_modules
+coverage
+playwright-report
+test-results
+next-env.d.ts
+
+# Standalone deployment artifact: plain CommonJS running on system Node inside its own
+# container, with no bundler and no TypeScript. The TS-oriented rules here do not apply.
+deploy/scanner/

@@ -1,4 +1,4 @@
-import { BuyerLeadStage, OrgTier, TradeDataSource, UserRole } from '@prisma/client';
+import { BuyerLeadStage, EvidenceOrigin, OrgTier, TradeDataSource, UserRole } from '@prisma/client';
 import { runBuyerIntelligence, normalizeEntityName } from '@/lib/buyer-intelligence';
 import { recordBuyerOutcomeTransition } from '@/lib/buyer-outcomes';
 import { permits } from '@/lib/permissions';
@@ -15,15 +15,15 @@ async function main() {
   await prisma.buyer.deleteMany({ where: { source_evidence: { some: { source_ref: marker } } } });
   await prisma.sanctionsEntity.deleteMany({ where: { source: marker } });
   const org = await prisma.exporterOrg.create({ data: { display_name: marker, tier: OrgTier.paid } });
-  const product = await prisma.product.create({ data: { exporter_org_id: org.id, name: 'Towels', hs_code: '630260', hs_code_source: 'user_confirmed', capacity_value: 100, capacity_unit: 'CTN', moq_value: 10, moq_unit: 'CTN', price_target_amount: 5, price_target_currency: 'USD' } });
-  const common = { country:'US', source:TradeDataSource.cbp_vessel_manifest, retrieved_at:new Date(), source_provider:'CBP', license_type:'verification', allowed_to_display:false, allowed_to_export:false, allowed_to_cache:true, retention_limit:null, personal_data_flag:true };
+  const product = await prisma.product.create({ data: { exporter_org_id: org.id, name: 'Towels', hs_code: '630260', hs_code_source: 'user_confirmed',evidence_origin:EvidenceOrigin.fixture, capacity_value: 100, capacity_unit: 'CTN', moq_value: 10, moq_unit: 'CTN', price_target_amount: 5, price_target_currency: 'USD' } });
+  const common = { country:'US', source:TradeDataSource.cbp_vessel_manifest,evidence_origin:EvidenceOrigin.fixture, retrieved_at:new Date(), source_provider:'CBP', license_type:'verification', allowed_to_display:false, allowed_to_export:false, allowed_to_cache:true, retention_limit:null, personal_data_flag:true };
   await prisma.importRecord.createMany({ data: [
     { ...common,source_record_id:`${marker}-1`,raw_consignee_string:'HANSEN HOME IMPORTS GMBH',hs_code:'630260',shipment_date:new Date('2026-06-01'),quantity:20,quantity_unit:'CTN',value:100,value_currency:'USD',origin_country:'IN',shipper_name:'Supplier A' },
     { ...common,source_record_id:`${marker}-2`,raw_consignee_string:'Hansen Home Imports G.m.b.H',hs_code:'630260',shipment_date:new Date('2026-07-01'),quantity:30,quantity_unit:'CTN',value:150,value_currency:'USD',origin_country:'CN',shipper_name:'Supplier B' },
     { ...common,source_record_id:`${marker}-3`,raw_consignee_string:'FAST FREIGHT FORWARDING LLC',hs_code:'630260',shipment_date:new Date('2026-07-02'),quantity:20,quantity_unit:'CTN' },
     { ...common,source_record_id:`${marker}-4`,raw_consignee_string:'BLOCKED TRADING LTD',hs_code:'630260',shipment_date:new Date('2026-07-03'),quantity:20,quantity_unit:'CTN' },
   ] });
-  await prisma.sanctionsEntity.create({ data: { source:marker,source_record_id:`${marker}-sanction`,name:'Blocked Trading Limited',normalized_name:normalizeEntityName('Blocked Trading Limited'),observed_at:new Date() } });
+  await prisma.sanctionsEntity.create({ data: { source:marker,source_record_id:`${marker}-sanction`,name:'Blocked Trading Limited',normalized_name:normalizeEntityName('Blocked Trading Limited'),observed_at:new Date(),evidence_origin:EvidenceOrigin.fixture } });
   const result = await runBuyerIntelligence({ exporter_org_id:org.id,product_id:product.id });
   check(result.resolved >= 4 && await prisma.importRecord.count({where:{source_record_id:{startsWith:marker},buyer_id:null}})===0, 'stage 1 resolves every in-scope source row');
   const variants = await prisma.importRecord.findMany({ where:{source_record_id:{in:[`${marker}-1`,`${marker}-2`]}},include:{buyer:{include:{attribute_claims:true}}} });
@@ -43,7 +43,7 @@ async function main() {
   check(blocked.sanctions_blocked && JSON.stringify(blocked.risk_flags).includes('sanctions_hit'), 'stage 6 hard-blocks a sanctions match into risk_flags');
   check(await prisma.buyerFitAssessment.findFirst({where:{buyer_id:blocked.id}})===null, 'sanctions-blocked buyer is never scored or surfaced');
   const lead = await prisma.buyerLead.create({data:{exporter_org_id:org.id,product_id:product.id,buyer_id:hansen.id}});
-  await prisma.$transaction(async tx=>{await recordBuyerOutcomeTransition(tx,lead,BuyerLeadStage.contacted,new Date('2026-08-01'));await recordBuyerOutcomeTransition(tx,lead,BuyerLeadStage.replied,new Date('2026-08-02'));await recordBuyerOutcomeTransition(tx,lead,BuyerLeadStage.converted,new Date('2026-08-03'));});
+  await prisma.$transaction(async tx=>{await recordBuyerOutcomeTransition(tx,lead,BuyerLeadStage.contacted,new Date('2026-08-01'),null,EvidenceOrigin.fixture);await recordBuyerOutcomeTransition(tx,lead,BuyerLeadStage.replied,new Date('2026-08-02'),null,EvidenceOrigin.fixture);await recordBuyerOutcomeTransition(tx,lead,BuyerLeadStage.converted,new Date('2026-08-03'),null,EvidenceOrigin.fixture);});
   const outcome=await prisma.buyerOutcome.findUniqueOrThrow({where:{buyer_lead_id:lead.id}});
   check(outcome.contacted_at!=null&&outcome.replied_at!=null&&outcome.converted===true,'stage 5 automatically accumulates lead outcomes');
   const exporter={id:'x',role:UserRole.exporter_owner,tier:OrgTier.paid,exporter_org_id:org.id} as Principal;

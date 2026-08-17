@@ -36,6 +36,7 @@ interface AssessmentDetail {
   is_saved: boolean;
   rank: number;
   total_ranked: number;
+  evidence_warning: string | null;
 }
 
 const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -69,6 +70,8 @@ export function MarketDetail({
       </Link>
 
       <DecisionHeader tier={tier} assessment={assessment} />
+
+      {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-medium text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
 
       {assessment.rationale ? (
         <p className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm text-[var(--color-text-secondary)]">

@@ -1,0 +1,3 @@
+import {NextRequest,NextResponse} from 'next/server';import {requestId,log} from '@/lib/observability';
+export function middleware(request:NextRequest){const started=Date.now(),id=requestId(request.headers),headers=new Headers(request.headers);headers.set('x-request-id',id);const response=NextResponse.next({request:{headers}});response.headers.set('x-request-id',id);log('info','http_request_received',{request_id:id,method:request.method,path:request.nextUrl.pathname,duration_ms:Date.now()-started});return response;}
+export const config={matcher:['/((?!_next/static|_next/image|favicon.ico).*)']};

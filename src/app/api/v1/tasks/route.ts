@@ -9,7 +9,7 @@
  * internal content never reaches an exporter-facing response).
  */
 
-import { SlaState, TaskState } from '@prisma/client';
+import { TaskState } from '@prisma/client';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireExporterPrincipal } from '@/lib/auth';
 import { resolvePagination } from '@/lib/config';

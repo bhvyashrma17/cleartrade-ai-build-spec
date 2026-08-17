@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import type { OrgTier } from '@prisma/client';
+import {reportError} from '@/lib/observability';
 import { ERROR_CODES, type Blocker, type ErrorCode, type ErrorResponse, type FieldError, type ListResponse, type PageMeta, type SingleResponse } from '@/types';
 
 /** HTTP status for each error code. */
@@ -240,7 +241,7 @@ export function errorResponse(error: unknown, correlationId: string): NextRespon
   if (apiError.status >= 500) {
     // Log the cause, never the payload — no secrets, document contents or
     // payment evidence in application logs (docs/10 §1).
-    console.error(`[${correlationId}] ${apiError.code}`, apiError.cause ?? apiError.message);
+    reportError(apiError.cause??apiError,{request_id:correlationId,error_code:apiError.code});
   }
   return NextResponse.json(apiError.toEnvelope(correlationId), {
     status: apiError.status,

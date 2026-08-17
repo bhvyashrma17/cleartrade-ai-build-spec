@@ -14,7 +14,10 @@ interface ProductFields {
   moq_unit: string;
   price_target_amount: string;
   price_target_currency: string;
+  price_target_quantity_unit: string;
+  price_target_incoterm: string;
   lead_time_days: string;
+  delivery_commitment_days: string;
   desired_order_size_amount: string;
   desired_order_size_currency: string;
   customization_capability: string;
@@ -32,7 +35,10 @@ export function ProductQuickEditForm({ productId, initial }: { productId: string
     moq_unit: initial.moq_unit ?? '',
     price_target_amount: initial.price_target_amount ?? '',
     price_target_currency: initial.price_target_currency ?? '',
+    price_target_quantity_unit: initial.price_target_quantity_unit ?? '',
+    price_target_incoterm: initial.price_target_incoterm ?? '',
     lead_time_days: initial.lead_time_days ?? '',
+    delivery_commitment_days: initial.delivery_commitment_days ?? '',
     desired_order_size_amount: initial.desired_order_size_amount ?? '',
     desired_order_size_currency: initial.desired_order_size_currency ?? '',
     customization_capability: initial.customization_capability ?? '',
@@ -56,7 +62,10 @@ export function ProductQuickEditForm({ productId, initial }: { productId: string
         moq_unit: fields.moq_unit || null,
         price_target_amount: fields.price_target_amount ? Number(fields.price_target_amount) : null,
         price_target_currency: fields.price_target_currency || null,
+        price_target_quantity_unit: fields.price_target_quantity_unit || null,
+        price_target_incoterm: fields.price_target_incoterm || null,
         lead_time_days: fields.lead_time_days ? Number(fields.lead_time_days) : null,
+        delivery_commitment_days: fields.delivery_commitment_days ? Number(fields.delivery_commitment_days) : null,
         desired_order_size_amount: fields.desired_order_size_amount ? Number(fields.desired_order_size_amount) : null,
         desired_order_size_currency: fields.desired_order_size_currency || null,
         customization_capability: fields.customization_capability || null,
@@ -102,11 +111,17 @@ export function ProductQuickEditForm({ productId, initial }: { productId: string
           <div className="mt-0.5 flex gap-1">
             <input value={fields.price_target_amount} onChange={set('price_target_amount')} placeholder="Amount" inputMode="decimal" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
             <input value={fields.price_target_currency} onChange={set('price_target_currency')} placeholder="Currency (e.g. USD)" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
+            <input value={fields.price_target_quantity_unit} onChange={set('price_target_quantity_unit')} placeholder="Per unit (e.g. kg)" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
+            <input value={fields.price_target_incoterm} onChange={set('price_target_incoterm')} placeholder="Incoterm (e.g. CIF)" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
           </div>
         </label>
         <label className="col-span-2">
           Lead time (days)
           <input value={fields.lead_time_days} onChange={set('lead_time_days')} inputMode="numeric" className="mt-0.5 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
+        </label>
+        <label className="col-span-2">
+          End-to-end delivery commitment (days)
+          <input value={fields.delivery_commitment_days} onChange={set('delivery_commitment_days')} inputMode="numeric" className="mt-0.5 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
         </label>
         <label className="col-span-2">
           Desired order size

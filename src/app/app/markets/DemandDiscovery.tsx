@@ -14,6 +14,7 @@ import { Button, Input, Skeleton, StatusChip, UpgradeNotice } from '@/components
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import { useJobPoll } from '@/hooks';
 import type { ListResponse } from '@/types';
+import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 
 type Tier = 'guest' | 'free' | 'paid';
 
@@ -21,6 +22,7 @@ interface ProductOption {
   id: string;
   name: string;
   hs_code: string | null;
+  hs_classification_status:string|null;
 }
 
 interface RecentRun {
@@ -203,6 +205,7 @@ export function DemandDiscovery({
                 </option>
               ))}
             </select>
+            {productId?<ProductClassificationForm productId={productId} status={products.find(product=>product.id===productId)?.hs_classification_status??null} method="exporter_supplied"/>:null}
           </div>
         )}
 
@@ -290,6 +293,7 @@ interface AssessmentRow {
   competition_score: number | null;
   rationale: string | null;
   price_band: { min: string; max: string | null; currency: string | null } | null;
+  evidence_warning?: string;
 }
 
 const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -443,6 +447,7 @@ function RunProgress({
                       {row.rationale ? (
                         <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">{row.rationale}</p>
                       ) : null}
+                      {row.evidence_warning ? <p className="mt-2 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-2 py-1 text-xs font-medium text-primary">Test evidence · {row.evidence_warning}</p> : null}
                       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--color-text-secondary)]">
                         {row.demand_score != null ? (
                           <div>
