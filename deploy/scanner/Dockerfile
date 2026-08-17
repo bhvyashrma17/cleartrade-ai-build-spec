@@ -16,19 +16,34 @@ RUN apt-get update \
 # answer "clean" to everything, so this is not an optimisation — it is correctness.
 RUN freshclam
 
-# clamd must accept TCP connections from the Node process in this container.
-RUN sed -i 's/^#\?TCPSocket.*/TCPSocket 3310/'          /etc/clamav/clamd.conf \
- && sed -i 's/^#\?TCPAddr.*/TCPAddr 127.0.0.1/'         /etc/clamav/clamd.conf \
- && sed -i 's/^#\?StreamMaxLength.*/StreamMaxLength 64M/' /etc/clamav/clamd.conf \
- && sed -i 's/^#\?MaxThreads.*/MaxThreads 4/'           /etc/clamav/clamd.conf \
- && sed -i 's/^#\?LogTime.*/LogTime true/'               /etc/clamav/clamd.conf \
- && sed -i 's/^#\?Foreground.*/Foreground true/'         /etc/clamav/clamd.conf
+# Write our own clamd.conf rather than sed-patching Debian's.
+#
+# The previous approach replaced lines matching `^#\?TCPSocket` etc., but bookworm's shipped
+# clamd.conf contains no such lines, so those edits silently applied nothing and clamd never
+# opened the listener the service expected. Patching a file whose contents we do not control
+# fails open and silently; generating the whole config makes the listener deterministic and
+# reviewable. `Foreground true` keeps clamd in the container's process tree.
+RUN printf '%s\n' \
+      'LogFile /var/log/clamav/clamav.log' \
+      'LogTime true' \
+      'PidFile /run/clamav/clamd.pid' \
+      'LocalSocket /run/clamav/clamd.ctl' \
+      'LocalSocketMode 660' \
+      'FixStaleSocket true' \
+      'TCPSocket 3310' \
+      'TCPAddr 127.0.0.1' \
+      'User clamav' \
+      'Foreground true' \
+      'DatabaseDirectory /var/lib/clamav' \
+      'StreamMaxLength 64M' \
+      'MaxThreads 4' \
+    > /etc/clamav/clamd.conf
 
 WORKDIR /app
 COPY deploy/scanner/server.js deploy/scanner/entrypoint.sh ./
 RUN chmod +x entrypoint.sh && chown -R clamav:clamav /app
 
-ENV PORT=3000 CLAMD_SOCKET=/var/run/clamav/clamd.ctl
+ENV PORT=3000 CLAMD_SOCKET=/run/clamav/clamd.ctl
 EXPOSE 3000
 
 # Readiness requires clamd to answer PING — the service reports unready rather than

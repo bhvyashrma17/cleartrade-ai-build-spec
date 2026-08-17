@@ -7,8 +7,8 @@
 set -eu
 
 grep -E '^(LocalSocket|TCPSocket|TCPAddr|User|Foreground|DatabaseDirectory) ' /etc/clamav/clamd.conf || true
-mkdir -p /var/run/clamav
-chown clamav:clamav /var/run/clamav
+mkdir -p /run/clamav
+chown clamav:clamav /run/clamav
 touch /var/log/clamav/clamav.log
 chown clamav:clamav /var/log/clamav/clamav.log
 tail -n 0 -F /var/log/clamav/clamav.log &
@@ -23,7 +23,7 @@ CLAMD_PID=$!
 # accurate readiness signal, and this removes the wait's dependency on `node` resolving on
 # PATH inside the Debian image. The previous probe sent stderr to /dev/null, so a missing
 # interpreter was indistinguishable from "clamd not up yet" and burned the full timeout.
-SOCK="${CLAMD_SOCKET:-/var/run/clamav/clamd.ctl}"
+SOCK="${CLAMD_SOCKET:-/run/clamav/clamd.ctl}"
 echo "{\"event\":\"clamd_wait\",\"socket\":\"$SOCK\",\"node\":\"$(command -v node || echo missing)\"}"
 i=0
 while [ $i -lt 240 ]; do
@@ -37,6 +37,9 @@ done
 
 if [ "$i" -ge 240 ]; then
   echo '{"event":"clamd_readiness_timeout"}' >&2
+  # Make the next failure conclusive rather than another round of guessing.
+  ls -la /run/clamav 2>&1 >&2 || true
+  ls -la /var/run/clamav 2>&1 >&2 || true
   if [ -f /var/log/clamav/clamav.log ]; then
     tail -n 100 /var/log/clamav/clamav.log >&2
   fi
