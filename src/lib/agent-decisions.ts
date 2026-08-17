@@ -232,6 +232,7 @@ export async function recordAgentDecision(
         original_confidence_score: subject.confidenceScore,
         original_model_version: subject.modelVersion,
         original_policy_hash: subject.policyHash,
+        original_policy_version: subject.policyVersion ?? null,
         ...(subject.components !== undefined ? { original_components: subject.components } : {}),
         ...(subject.inputSnapshot !== undefined ? { original_input_snapshot: subject.inputSnapshot } : {}),
         original_input_snapshot_hash: subject.inputSnapshotHash ?? null,
@@ -286,6 +287,7 @@ interface SubjectSnapshot {
   confidenceScore: number | null;
   modelVersion: string | null;
   policyHash: string | null;
+  policyVersion?: number | null;
   /**
    * Explainable state, copied only where the subject is updated in place.
    *
@@ -340,6 +342,7 @@ async function buyerSubject(db: Db, id: string): Promise<SubjectSnapshot> {
       id: true, exporter_org_id: true, product_id: true, score: true,
       confidence_score: true, model_version: true,
       components: true, input_snapshot: true, computed_at: true, evidence_origins: true,
+      scoring_policy_hash: true, scoring_policy_version: true,
     },
   });
   if (!assessment) throw notFound('Buyer fit assessment not found.');
@@ -360,11 +363,10 @@ async function buyerSubject(db: Db, id: string): Promise<SubjectSnapshot> {
     rank,
     confidenceScore: assessment.confidence_score,
     modelVersion: assessment.model_version,
-    // BuyerFitAssessment records no scoring-policy hash or version — only `model_version`.
-    // Stamping the CURRENT config version here would claim the assessment was scored under a
-    // policy we cannot actually prove it used, so this stays null. The missing provenance is a
-    // gap in the buyer scoring writer, not something this layer can fill in.
-    policyHash: null,
+    // Copied when present. Null on assessments written before BuyerFit captured its policy —
+    // those are explicitly legacy rather than being attributed to today's policy.
+    policyHash: assessment.scoring_policy_hash,
+    policyVersion: assessment.scoring_policy_version,
     // Copied, not referenced: the upsert in buyer-intelligence.ts overwrites all of these on
     // the next recompute, so this decision row is the only place they survive.
     components: assessment.components as Prisma.InputJsonValue,

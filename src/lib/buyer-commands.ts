@@ -123,6 +123,104 @@ export async function runBuyerCommand(
 
 type Tx = Prisma.TransactionClient;
 
+/**
+ * Shortlist: two canonical concepts, moved together but not conflated.
+ *
+ *   `BuyerShortlist`   — selected for pursuit. Membership, always asserted.
+ *   `BuyerLead.stage`  — current pipeline position. Advanced only from `new`.
+ *
+ * The lead stage is NOT blindly set. A lead already past `shortlisted` represents real
+ * progress — a contacted or negotiating buyer must not be dragged backwards because someone
+ * re-asserted the shortlist, so downstream stages are left exactly where they are. A
+ * `disqualified` lead is refused outright: silently un-disqualifying by way of a shortlist
+ * would bypass `restore`, which exists precisely so reopening a lead is explicit and reasoned.
+ */
+async function applyShortlist(
+  tx: Tx,
+  subject: { buyer_id: string; product_id: string; exporter_org_id: string },
+  input: BuyerCommandInput,
+  decisionId: string,
+): Promise<BuyerCommandResult['canonicalChange']> {
+  const lead = await tx.buyerLead.findFirst({
+    where: {
+      exporter_org_id: subject.exporter_org_id,
+      buyer_id: subject.buyer_id,
+      product_id: subject.product_id,
+    },
+    select: { id: true, stage: true },
+  });
+  // Fail closed, consistent with the other canonical actions: without a lead there is no
+  // pipeline position for the shortlist to be coherent with.
+  if (!lead) {
+    throw validationError([{
+      field: 'action',
+      code: 'no_canonical_state',
+      message: 'This buyer has no lead for that product, so there is no pipeline state to shortlist. Create the lead first.',
+    }]);
+  }
+  if (lead.stage === BuyerLeadStage.disqualified) {
+    throw validationError([{
+      field: 'action',
+      code: 'lead_disqualified',
+      message: 'This lead is disqualified. Restore it explicitly before shortlisting.',
+    }]);
+  }
+
+  // Membership is idempotent — the unique key is (org, buyer, product), so a repeat is the
+  // same row and re-asserting a shortlist is not an error.
+  const existing = await tx.buyerShortlist.findUnique({
+    where: {
+      exporter_org_id_buyer_id_product_id: {
+        exporter_org_id: subject.exporter_org_id,
+        buyer_id: subject.buyer_id,
+        product_id: subject.product_id,
+      },
+    },
+    select: { id: true },
+  });
+  if (!existing) {
+    await tx.buyerShortlist.create({
+      data: {
+        exporter_org_id: subject.exporter_org_id,
+        buyer_id: subject.buyer_id,
+        product_id: subject.product_id,
+        created_by_id: input.actor.id,
+      },
+    });
+  }
+
+  // Only `new` advances, and it advances through the shared state machine rather than by
+  // assignment, so this path cannot diverge from the transition table everything else uses.
+  let stageChange: { from: string; to: string } | null = null;
+  if (lead.stage === BuyerLeadStage.new) {
+    assertLeadTransition(lead.stage, BuyerLeadStage.shortlisted, {
+      disqualification_reason: null,
+      disqualification_reason_text: null,
+    });
+    await tx.buyerLead.update({ where: { id: lead.id }, data: { stage: BuyerLeadStage.shortlisted } });
+    stageChange = { from: lead.stage, to: BuyerLeadStage.shortlisted };
+  }
+
+  const membershipFrom = existing ? 'shortlisted' : 'not_shortlisted';
+  await auditCanonical(tx, input, decisionId, subject.exporter_org_id, {
+    model: 'BuyerShortlist', from: membershipFrom, to: 'shortlisted',
+  });
+  // A stage advance is its own canonical change and gets its own audit row — a pipeline
+  // transition must be visible to a pipeline audit, not buried inside a shortlist event.
+  if (stageChange) {
+    await auditCanonical(tx, input, decisionId, subject.exporter_org_id, {
+      model: 'BuyerLead.stage', from: stageChange.from, to: stageChange.to,
+    });
+  }
+
+  return {
+    model: stageChange ? 'BuyerShortlist + BuyerLead.stage' : 'BuyerShortlist',
+    from: membershipFrom,
+    to: stageChange ? `shortlisted (lead ${stageChange.from} -> ${stageChange.to})` : 'shortlisted',
+  };
+}
+
+
 async function applyCanonical(
   tx: Tx,
   action: AgentDecisionAction,
@@ -131,32 +229,7 @@ async function applyCanonical(
   decisionId: string,
 ): Promise<BuyerCommandResult['canonicalChange']> {
   if (action === AgentDecisionAction.shortlist) {
-    // Idempotent: shortlisting twice is not an error, and the unique key is
-    // (org, buyer, product) so a repeat is the same row.
-    const existing = await tx.buyerShortlist.findUnique({
-      where: {
-        exporter_org_id_buyer_id_product_id: {
-          exporter_org_id: subject.exporter_org_id,
-          buyer_id: subject.buyer_id,
-          product_id: subject.product_id,
-        },
-      },
-      select: { id: true },
-    });
-    if (!existing) {
-      await tx.buyerShortlist.create({
-        data: {
-          exporter_org_id: subject.exporter_org_id,
-          buyer_id: subject.buyer_id,
-          product_id: subject.product_id,
-          created_by_id: input.actor.id,
-        },
-      });
-    }
-    await auditCanonical(tx, input, decisionId, subject.exporter_org_id, {
-      model: 'BuyerShortlist', from: existing ? 'shortlisted' : 'not_shortlisted', to: 'shortlisted',
-    });
-    return { model: 'BuyerShortlist', from: existing ? 'shortlisted' : 'not_shortlisted', to: 'shortlisted' };
+    return applyShortlist(tx, subject, input, decisionId);
   }
 
   // disqualify / restore both move the canonical pipeline stage, which lives on BuyerLead.

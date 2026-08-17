@@ -1685,10 +1685,25 @@ model BuyerFitAssessment {
   model_version    String
   evidence_origins EvidenceOrigin[] @default([unknown_legacy])
   computed_at      DateTime         @default(now())
-  buyer            Buyer            @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
-  product          Product          @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  exporter_org     ExporterOrg      @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  agent_decisions  AgentDecision[]
+
+  /// Immutable scoring-policy provenance, analogous in intent to MarketAssessment's.
+  ///
+  /// Null on rows written before this existed: those assessments cannot be attributed to a
+  /// policy after the fact, and guessing would be worse than admitting the gap — hence the
+  /// `legacy_non_recomputable` default rather than a back-fill.
+  ///
+  /// Deliberately NOT sourced from the `buyers.fit_score_weights` config key: that key
+  /// describes a different, unused model (country/category/verification/recency) while this
+  /// scorer combines volume/price/certification/outcome. The persisted policy is the one the
+  /// code actually applies — see BUYER_FIT_POLICY in src/lib/buyer-intelligence.ts.
+  scoring_policy_version  Int?
+  scoring_policy_hash     String?
+  scoring_policy_snapshot Json?
+  reproducibility_status  String          @default("legacy_non_recomputable")
+  buyer                   Buyer           @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  product                 Product         @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  exporter_org            ExporterOrg     @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  agent_decisions         AgentDecision[]
 
   @@unique([buyer_id, product_id, exporter_org_id])
   @@index([exporter_org_id, product_id, score])
@@ -3286,6 +3301,7 @@ model AgentDecision {
   original_confidence_score Int?
   original_model_version    String?
   original_policy_hash      String?
+  original_policy_version   Int?
 
   /// Explainable decision-time state, needed because some subjects are updated IN PLACE.
   ///

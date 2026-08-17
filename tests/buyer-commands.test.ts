@@ -177,11 +177,11 @@ describe('the explainable buyer snapshot is captured, not referenced', () => {
 
 describe('canonical state and AgentDecision cannot diverge', () => {
   test('shortlist writes BOTH the decision and the canonical BuyerShortlist', async () => {
-    const f = await fixture();
+    const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.shortlisted });
     const result = await shortlistBuyerCommand({ ...base(f), agentPriority: 1 });
 
     expect(result.category).toBe('canonical');
-    expect(result.canonicalChange).toEqual({ model: 'BuyerShortlist', from: 'not_shortlisted', to: 'shortlisted' });
+    expect(result.canonicalChange).toMatchObject({ model: 'BuyerShortlist', from: 'not_shortlisted', to: 'shortlisted' });
 
     const shortlist = await prisma.buyerShortlist.findUnique({
       where: {
@@ -197,7 +197,7 @@ describe('canonical state and AgentDecision cannot diverge', () => {
   });
 
   test('shortlisting twice is idempotent and does not duplicate canonical state', async () => {
-    const f = await fixture();
+    const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.shortlisted });
     await shortlistBuyerCommand({ ...base(f), agentPriority: 1 });
     const second = await shortlistBuyerCommand({ ...base(f), agentPriority: 2 });
     expect(second.canonicalChange?.from).toBe('shortlisted');
@@ -312,5 +312,139 @@ describe('audit covers both halves', () => {
     const before = await prisma.auditEvent.count({ where: { exporter_org_id: f.orgId } });
     await expect(disqualifyBuyerCommand({ ...base(f) })).rejects.toThrow();
     expect(await prisma.auditEvent.count({ where: { exporter_org_id: f.orgId } })).toBe(before);
+  });
+});
+
+describe('shortlist moves membership and pipeline position without conflating them', () => {
+  test('a `new` lead advances to shortlisted, and membership is created', async () => {
+    const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.new });
+    const result = await shortlistBuyerCommand({ ...base(f), agentPriority: 1 });
+
+    // Both canonical concepts moved, and the result reports both rather than one standing in
+    // for the other.
+    expect(result.canonicalChange?.model).toBe('BuyerShortlist + BuyerLead.stage');
+    const lead = await prisma.buyerLead.findUniqueOrThrow({ where: { id: f.leadId! } });
+    expect(lead.stage).toBe(BuyerLeadStage.shortlisted);
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(1);
+  });
+
+  test('an already-shortlisted lead is left alone; membership stays idempotent', async () => {
+    const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.shortlisted });
+    const result = await shortlistBuyerCommand({ ...base(f) });
+
+    // No stage change to report, because none was needed.
+    expect(result.canonicalChange?.model).toBe('BuyerShortlist');
+    expect((await prisma.buyerLead.findUniqueOrThrow({ where: { id: f.leadId! } })).stage)
+      .toBe(BuyerLeadStage.shortlisted);
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(1);
+  });
+
+  test.each([
+    BuyerLeadStage.contacted,
+    BuyerLeadStage.replied,
+    BuyerLeadStage.interested,
+    BuyerLeadStage.negotiation,
+    BuyerLeadStage.converted,
+  ])('a downstream lead at %s does not regress', async (stage) => {
+    const f = await fixture({ withLead: true, leadStage: stage });
+    const result = await shortlistBuyerCommand({ ...base(f) });
+
+    // Re-asserting a shortlist must never drag real pipeline progress backwards.
+    expect((await prisma.buyerLead.findUniqueOrThrow({ where: { id: f.leadId! } })).stage).toBe(stage);
+    // Membership is still asserted — that is a separate concept from pipeline position.
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(1);
+    expect(result.canonicalChange?.model).toBe('BuyerShortlist');
+  });
+
+  test('a disqualified lead refuses shortlist and requires explicit restore', async () => {
+    const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.disqualified });
+    await expect(shortlistBuyerCommand({ ...base(f) })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+
+    // Full rollback: no decision, no membership, no silent un-disqualification. Shortlisting
+    // must not become a back door around `restore`.
+    expect(await prisma.agentDecision.count({ where: { buyer_fit_assessment_id: f.fitId } })).toBe(0);
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(0);
+    expect((await prisma.buyerLead.findUniqueOrThrow({ where: { id: f.leadId! } })).stage)
+      .toBe(BuyerLeadStage.disqualified);
+  });
+
+  test('shortlist with no lead is refused and rolls back entirely', async () => {
+    const f = await fixture({ withLead: false });
+    await expect(shortlistBuyerCommand({ ...base(f) })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(await prisma.agentDecision.count({ where: { buyer_fit_assessment_id: f.fitId } })).toBe(0);
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(0);
+  });
+
+  test('a stage advance emits its own audit event alongside the membership one', async () => {
+    const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.new });
+    const result = await shortlistBuyerCommand({ ...base(f) });
+
+    const membership = await prisma.auditEvent.findMany({
+      where: { object_type: 'BuyerShortlist', object_id: f.fitId },
+    });
+    const stage = await prisma.auditEvent.findMany({
+      where: { object_type: 'BuyerLead.stage', object_id: f.fitId },
+    });
+    // A pipeline transition must be visible to a pipeline audit, not buried in a shortlist event.
+    expect(membership).toHaveLength(1);
+    expect(stage).toHaveLength(1);
+    expect(stage[0]!.before_summary).toMatchObject({ state: 'new' });
+    expect(stage[0]!.after_summary).toMatchObject({ state: 'shortlisted', agent_decision_id: result.decisionId });
+  });
+});
+
+describe('BuyerFit scoring-policy provenance', () => {
+  test('the persisted policy is the one the code applies, not the unused config key', async () => {
+    const { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } = await import('../src/lib/buyer-intelligence');
+
+    // The live scorer combines these four. `buyers.fit_score_weights` lists
+    // country_match/category_match/verification/import_recency and is read by nothing, so it
+    // must never appear in a provenance record.
+    expect(BUYER_FIT_POLICY.components).toEqual(['volume_fit', 'price_fit', 'cert_fit', 'outcome_prior']);
+    expect(BUYER_FIT_POLICY.combine.method).toBe('unweighted_mean_of_available');
+    expect(JSON.stringify(BUYER_FIT_POLICY)).not.toMatch(/country_match|category_match|import_recency/);
+    expect(BUYER_FIT_POLICY_HASH).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test('the hash is stable and changes only when the policy changes', async () => {
+    const { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } = await import('../src/lib/buyer-intelligence');
+    const { scoringPolicyHash } = await import('../src/lib/discovery/policy');
+    // Same canonicalization as Demand Discovery, so identical content always hashes identically.
+    expect(scoringPolicyHash(BUYER_FIT_POLICY)).toBe(BUYER_FIT_POLICY_HASH);
+    expect(scoringPolicyHash({ ...BUYER_FIT_POLICY, version: 999 })).not.toBe(BUYER_FIT_POLICY_HASH);
+  });
+
+  test('assessments written before provenance existed stay explicitly legacy', async () => {
+    const f = await fixture();
+    // The fixture writes directly, as a pre-provenance run would have.
+    const assessment = await prisma.buyerFitAssessment.findUniqueOrThrow({ where: { id: f.fitId } });
+    expect(assessment.scoring_policy_hash).toBeNull();
+    expect(assessment.scoring_policy_version).toBeNull();
+    // Named as unverifiable rather than silently attributed to today's policy.
+    expect(assessment.reproducibility_status).toBe('legacy_non_recomputable');
+  });
+
+  test('a decision copies policy provenance when present, and null when not', async () => {
+    const f = await fixture();
+    // Legacy assessment: no policy to copy, so the decision says so rather than guessing.
+    const legacy = await promoteBuyerCommand({ ...base(f), agentPriority: 1 });
+    const legacyDecision = await prisma.agentDecision.findUniqueOrThrow({ where: { id: legacy.decisionId } });
+    expect(legacyDecision.original_policy_hash).toBeNull();
+    expect(legacyDecision.original_policy_version).toBeNull();
+
+    // Now give the assessment real provenance, as the writer now does.
+    const { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } = await import('../src/lib/buyer-intelligence');
+    await prisma.buyerFitAssessment.update({
+      where: { id: f.fitId },
+      data: {
+        scoring_policy_hash: BUYER_FIT_POLICY_HASH,
+        scoring_policy_version: BUYER_FIT_POLICY.version,
+        reproducibility_status: 'reproducible',
+      },
+    });
+    const current = await qualifyBuyerCommand({ ...base(f) });
+    const currentDecision = await prisma.agentDecision.findUniqueOrThrow({ where: { id: current.decisionId } });
+    expect(currentDecision.original_policy_hash).toBe(BUYER_FIT_POLICY_HASH);
+    expect(currentDecision.original_policy_version).toBe(BUYER_FIT_POLICY.version);
   });
 });

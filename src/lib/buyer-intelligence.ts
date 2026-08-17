@@ -4,8 +4,46 @@ import { prisma } from '@/lib/prisma';
 import { allowedEvidenceOrigins,buyerOutcomeEvidenceWhere, importRecordEvidenceWhere, isRealWorkflowEnvironment } from '@/lib/evidence-environment';
 import {sanctionsCoverage,screenCounterparty} from '@/lib/sanctions/screening';
 import { buyerReferenceCandidates, readRawImportIdentityForSystem } from '@/lib/import-identity';
+import { scoringPolicyHash } from '@/lib/discovery/policy';
 
 export const BUYER_FIT_MODEL_VERSION = 'buyer-fit-v1';
+
+/**
+ * The BuyerFit scoring policy, as the code actually implements it.
+ *
+ * Declared here rather than read from `ConfigSetting` because the existing
+ * `buyers.fit_score_weights` config key does NOT describe this model: it lists
+ * country_match/category_match/verification/import_recency, while this scorer combines
+ * volume/price/certification/outcome. Nothing reads that key. Stamping it onto an assessment
+ * would record a policy the computation never used, which is worse than recording none —
+ * a wrong provenance claim is indistinguishable from a right one after the fact.
+ *
+ * Every field below is consumed by the scoring code beneath it, so the hash cannot drift from
+ * behaviour: change the algorithm and this object must change with it, which changes the hash
+ * and makes the difference visible on every assessment written afterwards.
+ *
+ * Bump `version` by hand when the algorithm changes. There is no ConfigSetting row to version
+ * it for us, and inventing one would imply an operator can retune this from the Ops console,
+ * which they currently cannot.
+ */
+export const BUYER_FIT_POLICY = {
+  version: 1,
+  model_version: BUYER_FIT_MODEL_VERSION,
+  /** The components combined into the headline score, in the order they are computed. */
+  components: ['volume_fit', 'price_fit', 'cert_fit', 'outcome_prior'] as const,
+  /** Unweighted mean of whichever components are available — see `combine`. */
+  combine: { method: 'unweighted_mean_of_available' as const, component_count: 4 },
+  /** Score and component clamp bounds — see `clamp`. */
+  bounds: { min: 0, max: 100, rounding: 'nearest_integer' as const },
+  /** Confidence is the share of the four components that produced a score. */
+  confidence: { method: 'available_component_share' as const, denominator: 4 },
+  /** Hard gates applied before a score is produced at all. */
+  gates: ['hs_relevance', 'procurement_compatible', 'sanctions_clear'] as const,
+} as const;
+
+/** Stable hash of the policy above, using the same canonicalization as Demand Discovery. */
+export const BUYER_FIT_POLICY_HASH = scoringPolicyHash(BUYER_FIT_POLICY);
+
 const LEGAL_SUFFIXES = new Set(['LLC','INC','LTD','LIMITED','CORP','CORPORATION','CO','COMPANY','GMBH','PLC','LP','LLP','SA','BV']);
 const INTERMEDIARY = /\b(FREIGHT|FORWARDER|FORWARDING|CUSTOMS BROKER|BROKERAGE|LOGISTICS|NVOCC)\b/i;
 
@@ -15,7 +53,7 @@ export function normalizeEntityName(value: string) {
     .split(/\s+/).filter(Boolean).filter((token) => !LEGAL_SUFFIXES.has(token)).join(' ');
 }
 function median(values: number[]) { const sorted = [...values].sort((a,b)=>a-b); return sorted.length ? sorted[Math.floor(sorted.length / 2)] : null; }
-function clamp(value: number) { return Math.max(0, Math.min(100, Math.round(value))); }
+function clamp(value: number) { return Math.max(BUYER_FIT_POLICY.bounds.min, Math.min(BUYER_FIT_POLICY.bounds.max, Math.round(value))); }
 type Component = { score: number | null; reason?: string; evidence: Record<string, unknown> };
 function combine(parts: Record<string, Component>) {
   const available = Object.values(parts).filter((part) => part.score != null);
@@ -112,8 +150,8 @@ export async function runBuyerIntelligence(input: { exporter_org_id: string; pro
     const componentsJson = components as unknown as Prisma.InputJsonValue;
     const evidenceOrigins=[...new Set([...rows.map(row=>row.evidence_origin),...completed.map(item=>item.evidence_origin)])];
     const score = relevant && procurementCompatible ? combine({volume,price,cert,outcome}) : null;
-    const confidence = clamp(100 * Object.values({volume,price,cert,outcome}).filter(c=>c.score!=null).length / 4);
-    await prisma.buyerFitAssessment.upsert({ where: { buyer_id_product_id_exporter_org_id: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id } }, create: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id,score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,evidence_origins:evidenceOrigins }, update:{score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,evidence_origins:evidenceOrigins,computed_at:now} });
+    const confidence = clamp(100 * Object.values({volume,price,cert,outcome}).filter(c=>c.score!=null).length / BUYER_FIT_POLICY.confidence.denominator);
+    await prisma.buyerFitAssessment.upsert({ where: { buyer_id_product_id_exporter_org_id: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id } }, create: { buyer_id:buyer.id,product_id:product.id,exporter_org_id:input.exporter_org_id,score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,evidence_origins:evidenceOrigins,scoring_policy_version:BUYER_FIT_POLICY.version,scoring_policy_hash:BUYER_FIT_POLICY_HASH,scoring_policy_snapshot:BUYER_FIT_POLICY as unknown as Prisma.InputJsonValue,reproducibility_status:'reproducible' }, update:{score,confidence_score:confidence,components:componentsJson,input_snapshot:{ product_id:product.id, hs_code:product.hs_code, rows:rows.map(r=>r.source_record_id) },model_version:BUYER_FIT_MODEL_VERSION,evidence_origins:evidenceOrigins,computed_at:now,scoring_policy_version:BUYER_FIT_POLICY.version,scoring_policy_hash:BUYER_FIT_POLICY_HASH,scoring_policy_snapshot:BUYER_FIT_POLICY as unknown as Prisma.InputJsonValue,reproducibility_status:'reproducible'} });
     if (score != null) surfaced++;
   }
   return { resolved, buyers_evaluated: buyers.length, surfaced };

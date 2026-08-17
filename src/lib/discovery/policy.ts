@@ -7,8 +7,12 @@ function canonical(value:unknown):unknown {
   return value;
 }
 
-export function canonicalPolicyJson(policy:DiscoveryScoringPolicy){return JSON.stringify(canonical(policy));}
-export function scoringPolicyHash(policy:DiscoveryScoringPolicy){return createHash('sha256').update(canonicalPolicyJson(policy)).digest('hex');}
+// Widened from DiscoveryScoringPolicy to any policy object so BuyerFit can hash its own policy
+// with the SAME canonicalization. A second implementation would key-order differently and
+// produce a different hash for identical content, which would silently break the one property
+// a policy hash has to have.
+export function canonicalPolicyJson(policy:object){return JSON.stringify(canonical(policy));}
+export function scoringPolicyHash(policy:object){return createHash('sha256').update(canonicalPolicyJson(policy)).digest('hex');}
 
 export function assertSupportedScoringModel(policy:DiscoveryScoringPolicy){
   if(policy.model_version!=='market-attractiveness-v2'&&policy.model_version!=='market-attractiveness-v3'&&!policy.model_version.startsWith('test'))throw new Error(`Unsupported Demand Discovery model version ${policy.model_version}.`);
