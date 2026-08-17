@@ -14,6 +14,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  /// `native` keeps local development working on any developer machine.
+  ///
+  /// `debian-openssl-3.0.x` is pinned for the container base image (node:22-bookworm-slim,
+  /// Debian 12 / OpenSSL 3.x). Without it the engine is chosen by runtime detection, which is
+  /// exactly what emits the "failed to detect the libssl/openssl version" warning — and a
+  /// wrong guess surfaces as a query-engine load failure at boot rather than at build time.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
