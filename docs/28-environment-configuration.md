@@ -116,6 +116,13 @@ Requirement key: **R** required · **r** recommended · **o** optional · **–*
 |---|---|---|---|---|---|---|---|---|
 | `AUTH_SECRET` | R | R | R | **secret** | generated | local random | independent random, ≥32 chars | `auth.ts` |
 | `AUTH_TRUST_HOST` | o | o | o | public | ClearTrade | `on` | platform-dependent | Auth.js |
+| `AUTH_GOOGLE_ID` | o | o | o | **secret** | Google OAuth | unset | set only when Google sign-in is enabled | `auth.ts` |
+| `AUTH_GOOGLE_SECRET` | o | o | o | **secret** | Google OAuth | unset | set only when Google sign-in is enabled | `auth.ts` |
+| `AUTH_APPLE_ID` | o | o | o | **secret** | Apple OAuth | unset | set only when Apple sign-in is enabled | `auth.ts` |
+| `AUTH_APPLE_SECRET` | o | o | o | **secret** | Apple OAuth | unset | ES256 JWT, expires ≤6 months (docs/29) | `auth.ts` |
+| `APPLE_TEAM_ID` | o | – | – | public | Apple Developer | generation-time only | not set at runtime | `scripts/generate-apple-client-secret.ts` |
+| `APPLE_KEY_ID` | o | – | – | public | Apple Developer | generation-time only | not set at runtime | `scripts/generate-apple-client-secret.ts` |
+| `APPLE_AUTH_KEY_FILE` | o | – | – | public | Apple Developer | path to an untracked `.p8` | not set at runtime | `scripts/generate-apple-client-secret.ts` |
 | `GUEST_IP_HASH_SECRET` | R | R | R | **secret** | generated | local random | independent random | `guest.ts` |
 | `GUEST_TRUST_XFF` | o | o | o | public | ClearTrade | `false` | `true` only behind a trusted proxy | `guest.ts` |
 | `OPERATIONS_TOKEN` | o | R | R | **secret** | generated | may be empty | independent random | `operations-auth.ts` |
@@ -223,7 +230,8 @@ convenience one. **Do not rotate or reissue anything as part of a routine config
 | **Resend** | **Separate key; never locally** | An email key can send real mail to real people. Locally use `sandbox`. In staging, pair the key with `NOTIFICATION_REDIRECT_TO` so nothing escapes. Production gets its own key and its own verified domain. |
 | **Malware scanner** | **Separate token per environment** | The token authenticates one caller to one scanner; it is minted with the service, not bought. |
 | **Anthropic** | Separate if adopted | Only needed when `RATIONALE_WRITER=claude`. Bill and rate-limit per environment. |
-| **Google OAuth** (future) | **Separate client per environment** | Redirect URIs are per-origin: `http://localhost:3000` and the staging https origin cannot share one OAuth client without whitelisting localhost in a real credential, which is exactly what you don't want. Create one client per environment. |
+| **Google OAuth** | **Separate client per environment** | Redirect URIs are per-origin: `http://localhost:3000` and staging's https origin must not share one OAuth client. Use `AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET` for each environment pair. |
+| **Apple OAuth** | **Separate Services ID + secret per environment** | Keep Apple credentials environment-specific and rotate `AUTH_APPLE_SECRET` periodically. Local enablement is optional; if absent, Apple sign-in stays disabled in UI. |
 
 ---
 
@@ -270,4 +278,9 @@ Rules of thumb:
   lives in your shell history, not in a file that every future command reads.
 - `npm run dev` should never need a staging service to boot. If it does, something has
   regressed.
-- `.env.staging.secrets` is a transport artifact. Move its contents to Railway, then delete it.
+- `.env.staging.secrets` and `.env.apple.secret` are transport artifacts. Move their contents to
+  Railway, then delete them. Apple's `.p8` signing key is never committed (`.gitignore: *.p8`)
+  and outranks the JWT it produces — if it leaks, revoke the key, don't just rotate the secret.
+
+Social sign-in setup, account-linking behaviour and the Apple rotation procedure are documented
+separately in [29-social-authentication.md](29-social-authentication.md).

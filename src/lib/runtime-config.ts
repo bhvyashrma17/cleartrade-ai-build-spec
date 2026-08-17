@@ -57,6 +57,19 @@ function previousKeyMapProblem(raw:string|undefined,minLength:number):string|nul
   return null;
 }
 
+function oauthProviderPairProblem(
+  env: NodeJS.ProcessEnv,
+  idKey: string,
+  secretKey: string,
+  providerLabel: string,
+): string | null {
+  const hasId = !missing(env, idKey);
+  const hasSecret = !missing(env, secretKey);
+  if (!hasId && !hasSecret) return null;
+  if (hasId && hasSecret) return null;
+  return `${providerLabel} OAuth requires both ${idKey} and ${secretKey} when enabled.`;
+}
+
 export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEnv=process.env){
   const environment=appEnvironment(env),errors:string[]=[];
   if(missing(env,'DATABASE_URL'))errors.push('DATABASE_URL is required.');
@@ -116,6 +129,15 @@ export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEn
     if(role==='web'&&missing(env,'NEXT_PUBLIC_APP_URL'))errors.push('NEXT_PUBLIC_APP_URL is required.');
     // The public app URL is baked into the client bundle and is where cookies are scoped.
     else if(role==='web'&&!/^https:\/\//i.test(env.NEXT_PUBLIC_APP_URL??''))errors.push('NEXT_PUBLIC_APP_URL must be https so session cookies are Secure.');
+
+    const googlePair = oauthProviderPairProblem(env, 'AUTH_GOOGLE_ID', 'AUTH_GOOGLE_SECRET', 'Google');
+    if (googlePair) errors.push(googlePair);
+    const applePair = oauthProviderPairProblem(env, 'AUTH_APPLE_ID', 'AUTH_APPLE_SECRET', 'Apple');
+    if (applePair) errors.push(applePair);
+    for(const key of ['AUTH_GOOGLE_ID','AUTH_GOOGLE_SECRET','AUTH_APPLE_ID','AUTH_APPLE_SECRET'] as const){
+      const value = env[key]?.trim();
+      if(value && FORBIDDEN_SECRET_VALUES.has(value))errors.push(`${key} is a known placeholder value.`);
+    }
   }
   if(errors.length)throw new Error(`Invalid ${environment} ${role} configuration: ${errors.join(' ')}`);
   return {environment,role,storage_backend:env.STORAGE_BACKEND??'local'};

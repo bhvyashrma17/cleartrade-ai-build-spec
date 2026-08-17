@@ -1,9 +1,11 @@
 'use server';
 
 import { AuthError } from 'next-auth';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { signIn } from '@/lib/auth';
 import { ApiError, toApiError, validationError } from '@/lib/errors';
+import { isSocialProviderEnabled, isSocialProviderId, normalizeCallbackUrl } from '@/lib/social-auth';
 
 export interface LoginState {
   fields?: Record<string, string>;
@@ -35,6 +37,9 @@ function stateFromError(error: ApiError): LoginState {
 export async function authenticate(_previousState: LoginState, formData: FormData): Promise<LoginState> {
   const submitted = formData.get('email');
   const values = { email: typeof submitted === 'string' ? submitted : '' };
+  const callbackUrl = normalizeCallbackUrl(
+    typeof formData.get('callbackUrl') === 'string' ? String(formData.get('callbackUrl')) : null,
+  );
 
   const parsed = loginSchema.safeParse({
     email: formData.get('email'),
@@ -57,11 +62,11 @@ export async function authenticate(_previousState: LoginState, formData: FormDat
     await signIn('credentials', {
       email: parsed.data.email,
       password: parsed.data.password,
-      redirectTo: '/',
+      redirectTo: callbackUrl,
     });
   } catch (error) {
     // Next's redirect is the successful result of a credentials sign-in.
-    if (typeof error === 'object' && error && 'digest' in error && typeof error.digest === 'string' && error.digest.startsWith('NEXT_REDIRECT')) {
+    if (isNextRedirectError(error)) {
       throw error;
     }
     // authorize() returns null identically for an unknown email, an inactive user and
@@ -79,4 +84,30 @@ export async function authenticate(_previousState: LoginState, formData: FormDat
   }
 
   return { values };
+}
+
+function isNextRedirectError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'digest' in error && typeof error.digest === 'string' && error.digest.startsWith('NEXT_REDIRECT');
+}
+
+export async function startSocialSignIn(formData: FormData): Promise<void> {
+  const providerRaw = formData.get('provider');
+  const provider = typeof providerRaw === 'string' ? providerRaw : null;
+  const callbackUrl = normalizeCallbackUrl(
+    typeof formData.get('callbackUrl') === 'string' ? String(formData.get('callbackUrl')) : null,
+  );
+
+  if (!isSocialProviderId(provider) || !isSocialProviderEnabled(provider)) {
+    redirect(`/login?error=OAuthProviderDisabled&provider=${provider ?? 'unknown'}&callbackUrl=${encodeURIComponent(callbackUrl)}`);
+  }
+
+  try {
+    await signIn(provider, { redirectTo: callbackUrl });
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    if (error instanceof AuthError) {
+      redirect(`/login?error=${encodeURIComponent(error.type)}&provider=${provider}&callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    }
+    throw error;
+  }
 }

@@ -129,3 +129,19 @@ describe('key rotation state must be well-formed at startup, not at first use', 
       .toMatchObject({ environment: 'development', storage_backend: 'local' });
   });
 });
+
+describe('social auth environment validation', () => {
+  test('Google enablement requires both id and secret', () => {
+    expect(() => validateRuntimeEnvironment('web', withValue('AUTH_GOOGLE_ID', 'google-id'))).toThrow(/AUTH_GOOGLE_SECRET/);
+    expect(() => validateRuntimeEnvironment('web', withValue('AUTH_GOOGLE_SECRET', 'google-secret'))).toThrow(/AUTH_GOOGLE_ID/);
+  });
+
+  test('Apple enablement requires both id and secret', () => {
+    expect(() => validateRuntimeEnvironment('web', withValue('AUTH_APPLE_ID', 'apple-id'))).toThrow(/AUTH_APPLE_SECRET/);
+    expect(() => validateRuntimeEnvironment('web', withValue('AUTH_APPLE_SECRET', 'apple-secret'))).toThrow(/AUTH_APPLE_ID/);
+  });
+
+  test('staging still validates when Apple is not enabled', () => {
+    expect(() => validateRuntimeEnvironment('web', { ...staging, AUTH_GOOGLE_ID: 'google-id', AUTH_GOOGLE_SECRET: 'google-secret' } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+});

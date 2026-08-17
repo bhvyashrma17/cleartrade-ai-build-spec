@@ -65,6 +65,14 @@ const INVENTORY: Entry[] = [
   // --- Auth / crypto (ClearTrade-generated) ---------------------------------------------
   { name: 'AUTH_SECRET', cls: 'secret', provider: 'generated', local: 'required', staging: 'required', production: 'required', note: 'min 32 chars in real environments' },
   { name: 'AUTH_TRUST_HOST', cls: 'public', provider: 'ClearTrade' },
+  { name: 'AUTH_GOOGLE_ID', cls: 'secret', provider: 'Google OAuth', note: 'Optional. If set, AUTH_GOOGLE_SECRET must also be set.' },
+  { name: 'AUTH_GOOGLE_SECRET', cls: 'secret', provider: 'Google OAuth', note: 'Optional. If set, AUTH_GOOGLE_ID must also be set.' },
+  { name: 'AUTH_APPLE_ID', cls: 'secret', provider: 'Apple OAuth', note: 'Optional. If set, AUTH_APPLE_SECRET must also be set.' },
+  { name: 'AUTH_APPLE_SECRET', cls: 'secret', provider: 'Apple OAuth', note: 'Optional. ES256 JWT, expires <=6 months — see docs/29 for rotation.' },
+  // Generation-time only: consumed by `npm run secrets:apple`, never read at runtime.
+  { name: 'APPLE_TEAM_ID', cls: 'public', provider: 'Apple Developer', note: 'Only needed to GENERATE AUTH_APPLE_SECRET' },
+  { name: 'APPLE_KEY_ID', cls: 'public', provider: 'Apple Developer', note: 'Only needed to GENERATE AUTH_APPLE_SECRET' },
+  { name: 'APPLE_AUTH_KEY_FILE', cls: 'public', provider: 'Apple Developer', note: 'Path to the .p8 signing key; never commit the key itself' },
   { name: 'GUEST_IP_HASH_SECRET', cls: 'secret', provider: 'generated', local: 'required', staging: 'required', production: 'required' },
   { name: 'GUEST_TRUST_XFF', cls: 'public', provider: 'ClearTrade', note: 'Only true behind a proxy that overwrites XFF' },
   { name: 'OPERATIONS_TOKEN', cls: 'secret', provider: 'generated', staging: 'required', production: 'required', note: 'Local: unset is fine; APP_ENV=development opens /api/metrics' },

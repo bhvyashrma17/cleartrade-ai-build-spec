@@ -33,6 +33,7 @@
     "sanctions:schedule:platform": "tsx scripts/schedule-sanctions-refresh.ts",
     "sanctions:refresh-retained": "tsx --env-file=.env.local scripts/refresh-sanctions-with-retention.ts",
     "secrets:staging": "tsx scripts/generate-staging-secrets.ts",
+    "secrets:apple": "tsx scripts/generate-apple-client-secret.ts",
     "verify:staging-storage": "tsx scripts/verify-staging-storage.ts",
     "verify:staging-scanner": "tsx scripts/verify-staging-scanner.ts",
     "verify:scanner-contract": "node deploy/scanner/contract-test.js",

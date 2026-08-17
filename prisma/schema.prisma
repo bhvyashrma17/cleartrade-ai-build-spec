@@ -732,9 +732,30 @@ model User {
   classifications_proposed    ProductClassification[]   @relation("ClassificationProposer")
   classifications_confirmed   ProductClassification[]   @relation("ClassificationConfirmer")
   products_hs_confirmed       Product[]
+  auth_provider_accounts      AuthProviderAccount[]
 
   @@index([exporter_org_id])
   @@index([role])
+}
+
+/// External identity linkage for social authentication.
+///
+/// ClearTrade never links by email alone. A social sign-in only maps to a local user through
+/// this durable provider-account binding (`provider` + `provider_account_id`).
+model AuthProviderAccount {
+  id                  String   @id @default(cuid())
+  user_id             String
+  provider            String   @db.VarChar(40)
+  provider_account_id String   @db.VarChar(191)
+  provider_email      String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_account_id])
+  @@unique([user_id, provider])
+  @@index([user_id])
 }
 
 /// Assignment history is retained — reassignment ends the current row, never edits it.

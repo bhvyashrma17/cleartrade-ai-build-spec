@@ -11,6 +11,8 @@
 
 import NextAuth, { type DefaultSession } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import Google from 'next-auth/providers/google';
+import Apple from 'next-auth/providers/apple';
 import { OrgTier, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -19,6 +21,13 @@ import { verifyGuestMintProof } from '@/lib/guest';
 import { canAccessPortal, portalForRole } from '@/lib/permissions';
 import { forbidden, unauthenticated } from '@/lib/errors';
 import type { Principal, PortalRoot } from '@/types';
+import {
+  claimsForSocialAccount,
+  isSocialProviderEnabled,
+  isSocialProviderId,
+  resolveSocialIdentity,
+  type SocialProviderId,
+} from '@/lib/social-auth';
 
 declare module 'next-auth' {
   interface Session {
@@ -54,6 +63,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
    */
   useSecureCookies: ['production', 'staging'].includes(process.env.APP_ENV ?? ''),
   providers: [
+    ...(isSocialProviderEnabled('google')
+      ? [Google({
+          clientId: process.env.AUTH_GOOGLE_ID!,
+          clientSecret: process.env.AUTH_GOOGLE_SECRET!,
+          authorization: { params: { scope: 'openid email profile', prompt: 'select_account' } },
+        })]
+      : []),
+    ...(isSocialProviderEnabled('apple')
+      ? [Apple({
+          clientId: process.env.AUTH_APPLE_ID!,
+          clientSecret: process.env.AUTH_APPLE_SECRET!,
+        })]
+      : []),
     Credentials({
       name: 'Email and password',
       credentials: {
@@ -142,11 +164,48 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ account, profile }) {
+      if (!isSocialProviderId(account?.provider)) return true;
+      if (!isSocialProviderEnabled(account.provider)) {
+        return `/login?error=OAuthProviderDisabled&provider=${account.provider}`;
+      }
+      const provider = account.provider as SocialProviderId;
+      const resolved = await resolveSocialIdentity({
+        provider,
+        providerAccountId: account.providerAccountId,
+        email: typeof profile?.email === 'string' ? profile.email : null,
+        emailVerified:
+          typeof profile?.email_verified === 'boolean'
+            ? profile.email_verified
+            : provider === 'apple'
+              ? true
+              : null,
+        name: typeof profile?.name === 'string' ? profile.name : null,
+        correlationId: crypto.randomUUID(),
+      });
+      if (resolved.ok) return true;
+
+      if (resolved.reason === 'missing_email' || resolved.reason === 'email_not_verified') {
+        return `/login?error=OAuthEmailUnavailable&provider=${provider}`;
+      }
+      if (resolved.reason === 'inactive_account') {
+        return `/login?error=AccessDenied&provider=${provider}`;
+      }
+      return `/login?error=OAuthEmailConflict&provider=${provider}`;
+    },
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.exporter_org_id = user.exporter_org_id;
+      }
+      if (isSocialProviderId(account?.provider) && typeof account.providerAccountId === 'string') {
+        const claims = await claimsForSocialAccount(account.provider, account.providerAccountId);
+        if (claims) {
+          token.id = claims.id;
+          token.role = claims.role;
+          token.exporter_org_id = claims.exporter_org_id;
+        }
       }
       return token;
     },

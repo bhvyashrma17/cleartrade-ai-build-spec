@@ -58,3 +58,8 @@ playwright-report/
 
 # Phase 2 secret transport artifact — never commit.
 .env.staging.secrets
+
+# Apple Sign-in: generated client-secret transport artifact and signing keys.
+# The .p8 is a long-lived key that can mint credentials until revoked — never commit it.
+.env.apple.secret
+*.p8
