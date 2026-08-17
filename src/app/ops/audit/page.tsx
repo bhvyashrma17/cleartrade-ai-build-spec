@@ -18,6 +18,7 @@ import { CreatePartnerForm, PartnerStatusForm } from '@/components/ops/PartnerDi
 import { StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { CONFIG_DEFAULTS, type ConfigKey } from '@/lib/config';
+import { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } from '@/lib/buyer-intelligence';
 import { isAdmin } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { AuditSearch } from './AuditSearch';
@@ -28,7 +29,8 @@ const CONFIG_KEYS: ConfigKey[] = [
   'documents.registry',
   'uploads.policy',
   'pagination.policy',
-  'buyers.fit_score_weights',
+  // Not listed: 'buyers.fit_score_weights'. See DEPRECATED_CONFIG_KEYS in src/lib/config.ts —
+  // it is dead configuration, and showing it beside real settings implied it was live.
   'leads.outreach',
   'guest.policy',
   'jobs.policy',
@@ -129,6 +131,32 @@ export default async function OpsAuditPage() {
         </div>
 
         {/* Generic config keys */}
+        {/* Read-only, because BuyerFit is code-owned. Ops asked for visibility, and the honest
+            answer is to show the policy that actually scored — not a tuning control that
+            changes nothing. See DEPRECATED_CONFIG_KEYS in src/lib/config.ts. */}
+        <div className="mt-3 rounded-md border border-[var(--color-border-strong)] bg-surface-muted p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-primary">BuyerFit scoring policy</h3>
+            <span className="rounded bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-secondary)]">
+              Read-only · code-owned
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+            Version {BUYER_FIT_POLICY.version} · model {BUYER_FIT_POLICY.model_version} · hash{' '}
+            <code className="break-all">{BUYER_FIT_POLICY_HASH.slice(0, 16)}…</code>
+          </p>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            Not operator-tunable. Changing it requires a code change, which bumps the version and
+            hash recorded on every assessment scored afterwards.
+          </p>
+          <details className="mt-1.5">
+            <summary className="cursor-pointer text-xs text-[var(--color-text-secondary)]">Policy snapshot</summary>
+            <pre className="mt-1 overflow-x-auto rounded bg-surface p-2 text-xs text-primary">
+              {JSON.stringify(BUYER_FIT_POLICY, null, 2)}
+            </pre>
+          </details>
+        </div>
+
         {CONFIG_KEYS.map((key) => {
           const versions = byKey.get(key) ?? [];
           const active = versions.find((v) => v.is_active);

@@ -368,12 +368,53 @@ describe('shortlist moves membership and pipeline position without conflating th
       .toBe(BuyerLeadStage.disqualified);
   });
 
-  test('shortlist with no lead is refused and rolls back entirely', async () => {
+  test('a discovered buyer with no lead gets one created, plus membership and decision', async () => {
     const f = await fixture({ withLead: false });
-    await expect(shortlistBuyerCommand({ ...base(f) })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-    expect(await prisma.agentDecision.count({ where: { buyer_fit_assessment_id: f.fitId } })).toBe(0);
-    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(0);
+    const result = await shortlistBuyerCommand({ ...base(f), agentPriority: 1 });
+
+    // Shortlisting from Buyer Discovery is how a buyer ENTERS the pipeline.
+    expect(result.canonicalChange?.model).toBe('BuyerShortlist + BuyerLead (created)');
+    const lead = await prisma.buyerLead.findFirstOrThrow({
+      where: { exporter_org_id: f.orgId, buyer_id: f.buyerId, product_id: f.productId },
+    });
+    // Created at `new` by the canonical service, then advanced in the same transaction.
+    expect(lead.stage).toBe(BuyerLeadStage.shortlisted);
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(1);
+    expect(await prisma.agentDecision.count({ where: { buyer_fit_assessment_id: f.fitId } })).toBe(1);
   });
+
+  test('the created lead carries the full canonical apparatus, not just a row', async () => {
+    const f = await fixture({ withLead: false });
+    await shortlistBuyerCommand({ ...base(f) });
+    const lead = await prisma.buyerLead.findFirstOrThrow({
+      where: { exporter_org_id: f.orgId, buyer_id: f.buyerId, product_id: f.productId },
+    });
+
+    // The same service the create-lead route uses, so a shortlist-created lead is not thinner:
+    // snapshot with frozen fit provenance, opening transition, and outcome row for the loop.
+    const snapshot = await prisma.buyerLeadSnapshot.findFirstOrThrow({ where: { buyer_lead_id: lead.id } });
+    expect(snapshot.buyer_fit_assessment_id).toBe(f.fitId);
+    expect(snapshot.fit_score).toBe(74);
+    expect(snapshot.fit_model_version).toBe('buyerfit-v2');
+    const transitions = await prisma.buyerLeadTransition.findMany({ where: { buyer_lead_id: lead.id } });
+    expect(transitions).toHaveLength(1);
+    expect(transitions[0]!.from_stage).toBeNull();
+    expect(await prisma.buyerOutcome.count({ where: { buyer_lead_id: lead.id } })).toBe(1);
+  });
+
+  test('a duplicate shortlist command does not create a second lead', async () => {
+    const f = await fixture({ withLead: false });
+    await shortlistBuyerCommand({ ...base(f) });
+    await shortlistBuyerCommand({ ...base(f), reason: 'Re-confirmed on a later call.' });
+
+    expect(await prisma.buyerLead.count({
+      where: { exporter_org_id: f.orgId, buyer_id: f.buyerId, product_id: f.productId },
+    })).toBe(1);
+    expect(await prisma.buyerShortlist.count({ where: { buyer_id: f.buyerId } })).toBe(1);
+    // Two decisions, one of each canonical row — the decision layer is history, not state.
+    expect(await prisma.agentDecision.count({ where: { buyer_fit_assessment_id: f.fitId } })).toBe(2);
+  });
+
 
   test('a stage advance emits its own audit event alongside the membership one', async () => {
     const f = await fixture({ withLead: true, leadStage: BuyerLeadStage.new });
@@ -446,5 +487,56 @@ describe('BuyerFit scoring-policy provenance', () => {
     const currentDecision = await prisma.agentDecision.findUniqueOrThrow({ where: { id: current.decisionId } });
     expect(currentDecision.original_policy_hash).toBe(BUYER_FIT_POLICY_HASH);
     expect(currentDecision.original_policy_version).toBe(BUYER_FIT_POLICY.version);
+  });
+});
+
+describe('the dead buyers.fit_score_weights control cannot be presented as live', () => {
+  test('it is not an editable config key, so the update route cannot accept it', async () => {
+    const { updateConfigSchema } = await import('../src/lib/validators');
+    // The enum on this schema IS the editable surface — the Ops config route validates against
+    // it. A key absent here cannot be written, whatever a client sends.
+    expect(updateConfigSchema.safeParse({ key: 'buyers.fit_score_weights', value: {} }).success).toBe(false);
+    // A genuinely live key still passes, so this proves exclusion rather than a broken schema.
+    expect(updateConfigSchema.safeParse({ key: 'sla.thresholds', value: {} }).success).toBe(true);
+  });
+
+  test('it is marked deprecated in one shared place', async () => {
+    const { DEPRECATED_CONFIG_KEYS, isDeprecatedConfigKey } = await import('../src/lib/config');
+    expect(DEPRECATED_CONFIG_KEYS).toContain('buyers.fit_score_weights');
+    expect(isDeprecatedConfigKey('buyers.fit_score_weights')).toBe(true);
+    expect(isDeprecatedConfigKey('sla.thresholds')).toBe(false);
+  });
+
+  test('the Ops console does not list it among tunable settings', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const page = await readFile('src/app/ops/audit/page.tsx', 'utf8');
+    // It appeared beside real settings long enough that an operator could have edited it and
+    // believed they had retuned BuyerFit. It must not be in the rendered key list.
+    const keyList = page
+      .slice(page.indexOf('const CONFIG_KEYS'), page.indexOf('];', page.indexOf('const CONFIG_KEYS')))
+      // Strip comments: the block explains WHY the key is absent, and that explanation names it.
+      .split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+    expect(keyList).not.toMatch(/'buyers\.fit_score_weights'/);
+    // Ops gets the real thing instead: the actual policy, explicitly read-only.
+    expect(page).toContain('BuyerFit scoring policy');
+    expect(page).toContain('Read-only · code-owned');
+    expect(page).toContain('BUYER_FIT_POLICY_HASH');
+  });
+
+  test('the config shape is retained so stored rows still parse', async () => {
+    const { CONFIG_DEFAULTS } = await import('../src/lib/config');
+    // Deprecated is not deleted: removing the shape would orphan any persisted ConfigSetting
+    // row and make existing history unreadable.
+    expect(CONFIG_DEFAULTS['buyers.fit_score_weights']).toBeDefined();
+  });
+
+  test('BuyerFit scoring remains code-owned and is not driven by the dead key', async () => {
+    const { BUYER_FIT_POLICY } = await import('../src/lib/buyer-intelligence');
+    const { CONFIG_DEFAULTS } = await import('../src/lib/config');
+    const dead = CONFIG_DEFAULTS['buyers.fit_score_weights'] as unknown as Record<string, unknown>;
+    // The two describe different models; no key of the dead config appears in the real policy.
+    for (const key of Object.keys(dead)) {
+      expect(JSON.stringify(BUYER_FIT_POLICY)).not.toContain(key);
+    }
   });
 });

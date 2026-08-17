@@ -497,7 +497,9 @@ const CONFIG_KEYS = [
   'documents.registry',
   'uploads.policy',
   'pagination.policy',
-  'buyers.fit_score_weights',
+  // 'buyers.fit_score_weights' is DEPRECATED and deliberately absent: nothing reads it, so
+  // offering it here let an operator "retune BuyerFit" and change nothing. BuyerFit scoring is
+  // code-owned (BUYER_FIT_POLICY in src/lib/buyer-intelligence.ts) and surfaced read-only.
   'leads.outreach',
   'guest.policy',
   'jobs.policy',

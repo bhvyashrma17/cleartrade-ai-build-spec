@@ -88,6 +88,15 @@ export interface ConfigShape {
   'documents.registry': DocTypeRegistryEntry[];
   'uploads.policy': UploadPolicy;
   'pagination.policy': PaginationPolicy;
+  /**
+   * @deprecated Dead configuration. Nothing reads this key.
+   *
+   * It describes an older model (country/category/verification/recency) while the live scorer
+   * combines volume/price/certification/outcome as an unweighted mean. Retained so that any
+   * persisted ConfigSetting row still parses and remains readable as history — removing the
+   * shape would orphan stored rows — but it is excluded from every editable surface. BuyerFit
+   * scoring is code-owned: see BUYER_FIT_POLICY in src/lib/buyer-intelligence.ts.
+   */
   'buyers.fit_score_weights': FitScoreWeights;
   'leads.outreach': {
     /** Days without activity before a lead is flagged stale (AGT-03 "stale lead"). */
@@ -335,6 +344,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     ],
   },
   'pagination.policy': { default_per_page: 25, max_per_page: 100 },
+  // @deprecated — see the ConfigShape declaration above. Kept only so stored rows parse.
   'buyers.fit_score_weights': {
     country_match: 40,
     category_match: 30,
@@ -563,4 +573,22 @@ export async function resolvePagination(params: {
   const requested = Number(params.per_page ?? policy.default_per_page) || policy.default_per_page;
   const per_page = Math.min(Math.max(1, requested), policy.max_per_page);
   return { page, per_page, skip: (page - 1) * per_page, take: per_page };
+}
+
+/**
+ * Config keys that exist in the shape but must never be presented as live settings.
+ *
+ * `buyers.fit_score_weights` is read by nothing: the BuyerFit scorer combines
+ * volume/price/certification/outcome as an unweighted mean, while this key lists
+ * country/category/verification/recency from an earlier model. It stayed in the Ops console
+ * long enough that an operator could have edited it and reasonably believed they had retuned
+ * BuyerFit scoring — a control that silently does nothing is worse than no control.
+ *
+ * Exported so both the editable-key allowlist and its guarding test read the same source, and
+ * so adding a key here is all that is needed to retire another one safely.
+ */
+export const DEPRECATED_CONFIG_KEYS = ['buyers.fit_score_weights'] as const satisfies readonly ConfigKey[];
+
+export function isDeprecatedConfigKey(key: string): boolean {
+  return (DEPRECATED_CONFIG_KEYS as readonly string[]).includes(key);
 }

@@ -34,6 +34,7 @@ import { recordAgentDecision, type RecordAgentDecisionInput } from '@/lib/agent-
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { notFound, validationError } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
+import { createBuyerLeadCanonical } from '@/lib/buyer-leads';
 import { assertLeadTransition } from '@/lib/state-machines/buyer-lead';
 
 export type BuyerActionCategory = 'decision' | 'canonical' | 'automation';
@@ -123,6 +124,63 @@ export async function runBuyerCommand(
 
 type Tx = Prisma.TransactionClient;
 
+
+/**
+ * Assemble the inputs canonical lead creation needs, for a lead born out of a shortlist.
+ *
+ * The BuyerFit assessment is the decision's own subject, so it is already verified — but the
+ * remaining context (product with certifications, buyer with evidence, latest market
+ * assessment, latest sanctions case) has to be gathered the same way the create-lead route
+ * gathers it, or the snapshot would be thinner for a shortlist-created lead than for one
+ * created directly. No commercial overrides: shortlisting states no terms, so the snapshot
+ * falls back to the product's own targets exactly as the route does when the caller omits them.
+ */
+async function createLeadForShortlist(
+  tx: Tx,
+  subject: { buyer_id: string; product_id: string; exporter_org_id: string },
+  input: BuyerCommandInput,
+) {
+  const [fit, product, buyer] = await Promise.all([
+    tx.buyerFitAssessment.findUniqueOrThrow({ where: { id: input.subjectId } }),
+    tx.product.findUnique({ where: { id: subject.product_id }, include: { certifications: true } }),
+    tx.buyer.findUnique({ where: { id: subject.buyer_id }, include: { source_evidence: true, feature_snapshot: true } }),
+  ]);
+  if (!product || product.exporter_org_id !== subject.exporter_org_id) {
+    throw notFound('That product is not available.');
+  }
+  if (!buyer) throw notFound('That buyer is not available.');
+
+  const [marketAssessment, sanctionsCase] = await Promise.all([
+    tx.marketAssessment.findFirst({
+      where: { product_id: subject.product_id, country_code: buyer.country_code },
+      orderBy: { generated_at: 'desc' },
+    }),
+    tx.sanctionsScreeningCase.findFirst({ where: { buyer_id: subject.buyer_id }, orderBy: { created_at: 'desc' } }),
+  ]);
+
+  // An agent acting directly owns the lead; otherwise it follows the org's active assignment,
+  // matching the route's rule rather than restating a different one.
+  const assignment = await tx.agentAssignment.findFirst({
+    where: { exporter_org_id: subject.exporter_org_id, status: 'active' },
+    orderBy: { started_at: 'desc' },
+  });
+
+  return createBuyerLeadCanonical(tx, {
+    actor: input.actor,
+    exporterOrgId: subject.exporter_org_id,
+    productId: subject.product_id,
+    buyerId: subject.buyer_id,
+    fit,
+    product,
+    buyer,
+    marketAssessment,
+    sanctionsCase,
+    commercial: {},
+    assignedAgentId: input.actor.role === 'agent' ? input.actor.id : (assignment?.agent_user_id ?? null),
+    correlationId: input.correlationId,
+  });
+}
+
 /**
  * Shortlist: two canonical concepts, moved together but not conflated.
  *
@@ -149,22 +207,25 @@ async function applyShortlist(
     },
     select: { id: true, stage: true },
   });
-  // Fail closed, consistent with the other canonical actions: without a lead there is no
-  // pipeline position for the shortlist to be coherent with.
+  // A buyer discovered in Buyer Discovery has never entered the pipeline, and shortlisting is
+  // exactly how it enters. So a missing lead is created rather than refused — through the
+  // SAME canonical creation service the POST /api/v1/buyer-leads route uses, because a lead
+  // without its snapshot, opening transition and outcome row is a lead the rest of the product
+  // cannot reason about.
+  let created: Awaited<ReturnType<typeof createBuyerLeadCanonical>> | null = null;
   if (!lead) {
-    throw validationError([{
-      field: 'action',
-      code: 'no_canonical_state',
-      message: 'This buyer has no lead for that product, so there is no pipeline state to shortlist. Create the lead first.',
-    }]);
-  }
-  if (lead.stage === BuyerLeadStage.disqualified) {
+    created = await createLeadForShortlist(tx, subject, input);
+  } else if (lead.stage === BuyerLeadStage.disqualified) {
     throw validationError([{
       field: 'action',
       code: 'lead_disqualified',
       message: 'This lead is disqualified. Restore it explicitly before shortlisting.',
     }]);
   }
+
+  // Canonical creation starts a lead at `new`; the advance below moves it to `shortlisted` in
+  // this same transaction, so a shortlisted buyer is never left sitting at `new`.
+  const effectiveLead = lead ?? { id: created!.id, stage: created!.stage };
 
   // Membership is idempotent — the unique key is (org, buyer, product), so a repeat is the
   // same row and re-asserting a shortlist is not an error.
@@ -192,13 +253,13 @@ async function applyShortlist(
   // Only `new` advances, and it advances through the shared state machine rather than by
   // assignment, so this path cannot diverge from the transition table everything else uses.
   let stageChange: { from: string; to: string } | null = null;
-  if (lead.stage === BuyerLeadStage.new) {
-    assertLeadTransition(lead.stage, BuyerLeadStage.shortlisted, {
+  if (effectiveLead.stage === BuyerLeadStage.new) {
+    assertLeadTransition(effectiveLead.stage, BuyerLeadStage.shortlisted, {
       disqualification_reason: null,
       disqualification_reason_text: null,
     });
-    await tx.buyerLead.update({ where: { id: lead.id }, data: { stage: BuyerLeadStage.shortlisted } });
-    stageChange = { from: lead.stage, to: BuyerLeadStage.shortlisted };
+    await tx.buyerLead.update({ where: { id: effectiveLead.id }, data: { stage: BuyerLeadStage.shortlisted } });
+    stageChange = { from: effectiveLead.stage, to: BuyerLeadStage.shortlisted };
   }
 
   const membershipFrom = existing ? 'shortlisted' : 'not_shortlisted';
@@ -214,7 +275,9 @@ async function applyShortlist(
   }
 
   return {
-    model: stageChange ? 'BuyerShortlist + BuyerLead.stage' : 'BuyerShortlist',
+    model: created
+      ? 'BuyerShortlist + BuyerLead (created)'
+      : stageChange ? 'BuyerShortlist + BuyerLead.stage' : 'BuyerShortlist',
     from: membershipFrom,
     to: stageChange ? `shortlisted (lead ${stageChange.from} -> ${stageChange.to})` : 'shortlisted',
   };
