@@ -189,7 +189,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return `/login?error=OAuthEmailUnavailable&provider=${provider}`;
       }
       if (resolved.reason === 'inactive_account') {
-        return `/login?error=AccessDenied&provider=${provider}`;
+        // A deliberate ClearTrade error code, not Auth.js's AccessDenied: an admin
+        // deactivating an account is a different situation from a user cancelling the
+        // consent screen, and "sign-in was cancelled or denied" would be misleading here.
+        return `/login?error=SocialAccountDisabled&provider=${provider}`;
       }
       return `/login?error=OAuthEmailConflict&provider=${provider}`;
     },

@@ -66,26 +66,43 @@ export function normalizeCallbackUrl(
   }
 }
 
-function providerLabel(provider: string | null | undefined): string {
-  return socialProviderStates().find((entry) => entry.id === provider)?.label ?? 'social sign-in';
+/** The provider's display name, or null when it cannot be identified. */
+function providerLabel(provider: string | null | undefined): string | null {
+  return socialProviderStates().find((entry) => entry.id === provider)?.label ?? null;
 }
 
 export function loginErrorMessage(error: string | null | undefined, provider: string | null | undefined): string | null {
-  const socialLabel = providerLabel(provider);
+  const label = providerLabel(provider);
+  /**
+   * "Google sign-in" when the provider is known, plain "Sign-in" when it is not.
+   *
+   * Auth.js's own generic error redirect (thrown before our `signIn` callback runs — e.g.
+   * Google itself returning `access_denied`) sets only `?error=...`, never a `provider` param;
+   * that path is only reachable in `@auth/core`'s internal error handler, not our route
+   * handlers, so it cannot be threaded through. Every template below is built from this one
+   * phrase so an unknown provider degrades to grammatical generic copy ("Sign-in was
+   * cancelled...") instead of the literal 'social sign-in sign-in' concatenation this used to
+   * produce when the label carried the word "sign-in" itself.
+   */
+  const phrase = label ? `${label} sign-in` : 'Sign-in';
   switch (error) {
     case 'OAuthAccountNotLinked':
     case 'OAuthEmailConflict':
-      return `This email is already registered with a different sign-in method. Use your existing login, then ask support to link ${socialLabel}.`;
+      return `This email is already registered with a different sign-in method. Use your existing login, then ask support to link ${label ?? 'your social account'}.`;
     case 'OAuthEmailUnavailable':
-      return `${socialLabel} did not return a usable verified email address. Use another sign-in method or update your provider account email settings.`;
+      return `${phrase} did not return a usable verified email address. Use another sign-in method or update your provider account email settings.`;
     case 'OAuthProviderDisabled':
-      return `${socialLabel} sign-in is not configured in this environment yet.`;
+      return `${phrase} is not configured in this environment yet.`;
     case 'AccessDenied':
-      return `${socialLabel} sign-in was cancelled or denied.`;
+      return `${phrase} was cancelled or denied.`;
+    // Distinct from AccessDenied: this is an admin-deactivated account, not a cancelled
+    // consent screen, and needs its own copy rather than being told to "just try again".
+    case 'SocialAccountDisabled':
+      return `This account has been deactivated. Contact support to restore ${label ? `${label} sign-in` : 'access'}.`;
     case 'OAuthSignin':
     case 'OAuthCallback':
     case 'OAuthCreateAccount':
-      return `${socialLabel} sign-in could not be completed. Please try again.`;
+      return `${phrase} could not be completed. Please try again.`;
     case 'Configuration':
       return 'Authentication is temporarily unavailable. Please contact support.';
     default:

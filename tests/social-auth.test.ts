@@ -83,6 +83,31 @@ describe('provider availability and login helpers', () => {
     expect(loginErrorMessage('OAuthProviderDisabled', 'apple')).toMatch(/not configured/i);
   });
 
+  test('AccessDenied never doubles the word "sign-in", with or without a known provider', () => {
+    // Auth.js's own generic error redirect (fired before our signIn callback runs, e.g. Google
+    // itself returning access_denied) never carries a provider param — this is the exact
+    // shape that produced "social sign-in sign-in was cancelled or denied." in production.
+    expect(loginErrorMessage('AccessDenied', null)).toBe('Sign-in was cancelled or denied.');
+    expect(loginErrorMessage('AccessDenied', undefined)).toBe('Sign-in was cancelled or denied.');
+    expect(loginErrorMessage('AccessDenied', 'unknown-provider')).toBe('Sign-in was cancelled or denied.');
+    expect(loginErrorMessage('AccessDenied', 'google')).toBe('Google sign-in was cancelled or denied.');
+    // No message produced anywhere in this suite may contain the doubled phrase.
+    for (const [error, provider] of [
+      ['AccessDenied', null], ['AccessDenied', 'google'], ['AccessDenied', 'apple'],
+      ['OAuthProviderDisabled', null], ['OAuthSignin', null], ['OAuthCallback', null],
+    ] as const) {
+      expect(loginErrorMessage(error, provider)).not.toMatch(/sign-in sign-in/i);
+    }
+  });
+
+  test('a deactivated account gets its own message, distinct from a cancelled consent screen', () => {
+    const message = loginErrorMessage('SocialAccountDisabled', 'google');
+    expect(message).toMatch(/deactivated/i);
+    expect(message).not.toMatch(/cancelled or denied/i);
+    // Unknown-provider fallback still reads grammatically.
+    expect(loginErrorMessage('SocialAccountDisabled', null)).toMatch(/deactivated/i);
+  });
+
   test('credentials provider remains in auth configuration', async () => {
     const authFile = await readFile(path.resolve('src/lib/auth.ts'), 'utf8');
     expect(authFile).toContain("Credentials({");
