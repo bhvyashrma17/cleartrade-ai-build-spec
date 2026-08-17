@@ -20,6 +20,8 @@ import { MessageForm } from '@/components/agent/MessageForm';
 import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import { MetricCard, StatusChip } from '@/components/ui';
+import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
+import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/demand-control';
 import { requirePrincipal } from '@/lib/auth';
 import { loadExporterAccountScoped } from '@/lib/agent-accounts';
 import { permits } from '@/lib/permissions';
@@ -50,8 +52,17 @@ const OWNER_LANE_LABELS: Record<string, string> = {
   ops_supervisor: 'Ops',
 };
 
-export default async function ExporterAccountPage({ params }: { params: Promise<{ exporterOrgId: string }> }) {
+export default async function ExporterAccountPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ exporterOrgId: string }>;
+  searchParams: Promise<{ tab?: string; view?: string }>;
+}) {
   const { exporterOrgId } = await params;
+  const { tab, view } = await searchParams;
+  const activeTab = tab === 'demand' ? 'demand' : 'overview';
+  const showAll = view === 'all';
   const principal = await requirePrincipal();
   const { org } = await loadExporterAccountScoped(principal, exporterOrgId);
   const canSeeInternal = permits(principal, 'internal_note.view');
@@ -142,6 +153,13 @@ export default async function ExporterAccountPage({ params }: { params: Promise<
   const readiness = org.readiness_assessments[0] ?? null;
   const blockers = (readiness?.blockers ?? []) as { code: string; severity: string; summary: string }[];
 
+  // Only queried for the tab that renders it — the overview must not pay for the control
+  // surface's reads on every visit.
+  const demandRows = activeTab === 'demand' && latestDiscoveryRun
+    ? sortByOperationalOrder(await marketControlRows(latestDiscoveryRun.id))
+    : [];
+  const visibleDemandRows = showAll ? demandRows : activeOnly(demandRows);
+
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
       {/* Account header */}
@@ -168,6 +186,43 @@ export default async function ExporterAccountPage({ params }: { params: Promise<
           <CreateTaskForm exporterOrgId={org.id} />
         </div>
       </header>
+
+      {/* Exporter-scoped sections are tabs, not routes: they always concern ONE exporter, so
+          nesting them keeps a single assignment check and a single data load. */}
+      <nav aria-label="Exporter sections" className="flex gap-1 border-b border-[var(--color-border)]">
+        {([['overview', 'Overview'], ['demand', 'Demand Discovery']] as const).map(([key, label]) => (
+          <a
+            key={key}
+            href={`?tab=${key}`}
+            aria-current={activeTab === key ? 'page' : undefined}
+            className={`focus-visible-ring rounded-t px-3 py-2 text-sm font-medium ${
+              activeTab === key
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-[var(--color-text-secondary)] hover:text-primary'
+            }`}
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      {activeTab === 'demand' ? (
+        <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
+          <h2 className="text-lg font-semibold text-primary">Demand Discovery control</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            The model&rsquo;s recommendation and your decision, shown separately. Agent decisions
+            never change the AI score.
+          </p>
+          <div className="mt-4">
+            <DemandDiscoveryControl
+              rows={visibleDemandRows}
+              showAll={showAll}
+              runId={latestDiscoveryRun?.id ?? null}
+            />
+          </div>
+        </section>
+      ) : (
+        <>
 
       <div className="grid gap-4 xl:grid-cols-3">
         {/* Products / commercial profile */}
@@ -384,6 +439,8 @@ export default async function ExporterAccountPage({ params }: { params: Promise<
           </ol>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }
