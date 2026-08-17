@@ -3287,6 +3287,26 @@ model AgentDecision {
   original_model_version    String?
   original_policy_hash      String?
 
+  /// Explainable decision-time state, needed because some subjects are updated IN PLACE.
+  ///
+  /// A MarketAssessment is per-run, so an old one survives a recompute and the FK alone can
+  /// reconstruct what was overruled. A BuyerFitAssessment is unique on
+  /// (buyer, product, org) and upserted, so a recompute DESTROYS the state the agent saw —
+  /// the FK then points at numbers that did not exist at decision time. These columns are the
+  /// only surviving record for that case, so they are copied, never referenced.
+  ///
+  /// `BuyerFeatureSnapshot` is not usable as a stable reference here: it is also unique per
+  /// buyer and updated in place, so it offers no immutable per-computation row to point at.
+  original_components          Json?
+  /// The assessment's own `input_snapshot` — small and bounded (product, hs_code, source
+  /// record ids), so it is copied whole rather than hashed into something unreadable.
+  original_input_snapshot      Json?
+  /// SHA-256 of the copied input snapshot, for integrity and cheap equality checks.
+  original_input_snapshot_hash String?
+  /// When the overruled assessment was computed — distinct from when the decision was made.
+  original_computed_at         DateTime?
+  original_evidence_origins    EvidenceOrigin[]
+
   /// Optional review metadata. `expires_at` makes a decision self-limiting ("prioritise
   /// this market for one quarter"); effective state is derived from it plus supersession.
   expires_at DateTime?

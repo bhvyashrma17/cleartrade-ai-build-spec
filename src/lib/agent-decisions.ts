@@ -18,7 +18,8 @@
  * moved past it, and correcting it would require the UPDATE this table forbids.
  */
 
-import { AgentDecisionAction, AgentDecisionTarget, Prisma, type AgentDecision } from '@prisma/client';
+import { createHash } from 'node:crypto';
+import { AgentDecisionAction, AgentDecisionTarget, Prisma, type AgentDecision, type EvidenceOrigin } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { isAgent, isOps, assignedOrgIds } from '@/lib/permissions';
@@ -231,6 +232,11 @@ export async function recordAgentDecision(
         original_confidence_score: subject.confidenceScore,
         original_model_version: subject.modelVersion,
         original_policy_hash: subject.policyHash,
+        ...(subject.components !== undefined ? { original_components: subject.components } : {}),
+        ...(subject.inputSnapshot !== undefined ? { original_input_snapshot: subject.inputSnapshot } : {}),
+        original_input_snapshot_hash: subject.inputSnapshotHash ?? null,
+        original_computed_at: subject.computedAt ?? null,
+        original_evidence_origins: subject.evidenceOrigins ?? [],
         expires_at: input.expiresAt ?? null,
         supersedes_id: supersedesId,
       },
@@ -280,6 +286,18 @@ interface SubjectSnapshot {
   confidenceScore: number | null;
   modelVersion: string | null;
   policyHash: string | null;
+  /**
+   * Explainable state, copied only where the subject is updated in place.
+   *
+   * Populated for buyers, whose assessment is upserted and therefore destroys what the agent
+   * saw. Left undefined for markets, whose per-run assessment survives a recompute and can be
+   * read back through the foreign key.
+   */
+  components?: Prisma.InputJsonValue;
+  inputSnapshot?: Prisma.InputJsonValue;
+  inputSnapshotHash?: string | null;
+  computedAt?: Date | null;
+  evidenceOrigins?: EvidenceOrigin[];
 }
 
 /** Read the market assessment and its rank within its run. */
@@ -321,6 +339,7 @@ async function buyerSubject(db: Db, id: string): Promise<SubjectSnapshot> {
     select: {
       id: true, exporter_org_id: true, product_id: true, score: true,
       confidence_score: true, model_version: true,
+      components: true, input_snapshot: true, computed_at: true, evidence_origins: true,
     },
   });
   if (!assessment) throw notFound('Buyer fit assessment not found.');
@@ -341,9 +360,20 @@ async function buyerSubject(db: Db, id: string): Promise<SubjectSnapshot> {
     rank,
     confidenceScore: assessment.confidence_score,
     modelVersion: assessment.model_version,
-    // BuyerFitAssessment carries no scoring-policy hash; recording a market policy hash here
-    // would be a lie, so it stays null rather than being back-filled from somewhere plausible.
+    // BuyerFitAssessment records no scoring-policy hash or version — only `model_version`.
+    // Stamping the CURRENT config version here would claim the assessment was scored under a
+    // policy we cannot actually prove it used, so this stays null. The missing provenance is a
+    // gap in the buyer scoring writer, not something this layer can fill in.
     policyHash: null,
+    // Copied, not referenced: the upsert in buyer-intelligence.ts overwrites all of these on
+    // the next recompute, so this decision row is the only place they survive.
+    components: assessment.components as Prisma.InputJsonValue,
+    inputSnapshot: assessment.input_snapshot as Prisma.InputJsonValue,
+    inputSnapshotHash: createHash('sha256')
+      .update(JSON.stringify(assessment.input_snapshot ?? null))
+      .digest('hex'),
+    computedAt: assessment.computed_at,
+    evidenceOrigins: assessment.evidence_origins,
   };
 }
 
