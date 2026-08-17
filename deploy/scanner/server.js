@@ -24,16 +24,18 @@ const net = require('node:net');
 const { timingSafeEqual } = require('node:crypto');
 
 const PORT = Number(process.env.PORT || 3000);
+const CLAMD_SOCKET = process.env.CLAMD_SOCKET || '';
 const CLAMD_HOST = process.env.CLAMD_HOST || '127.0.0.1';
 const CLAMD_PORT = Number(process.env.CLAMD_PORT || 3310);
 const AUTH_TOKEN = process.env.SCANNER_AUTH_TOKEN || '';
 const MAX_BYTES = Number(process.env.SCANNER_MAX_BYTES || 32 * 1024 * 1024);
 const CLAMD_TIMEOUT_MS = Number(process.env.CLAMD_TIMEOUT_MS || 60_000);
+const clamdConnection = () => CLAMD_SOCKET ? { path: CLAMD_SOCKET } : { host: CLAMD_HOST, port: CLAMD_PORT };
 
 /** Ask clamd for its engine + signature database version. Cached; refreshed on reconnect. */
 function clamdCommand(command, timeoutMs = 5_000) {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host: CLAMD_HOST, port: CLAMD_PORT });
+    const socket = net.createConnection(clamdConnection());
     let out = '';
     const fail = (e) => { socket.destroy(); reject(e); };
     socket.setTimeout(timeoutMs, () => fail(new Error('clamd command timeout')));
@@ -52,7 +54,7 @@ function clamdCommand(command, timeoutMs = 5_000) {
  */
 function clamdScan(buffer) {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host: CLAMD_HOST, port: CLAMD_PORT });
+    const socket = net.createConnection(clamdConnection());
     let reply = '';
     let settled = false;
     const fail = (e) => { if (!settled) { settled = true; socket.destroy(); reject(e); } };
@@ -175,5 +177,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(JSON.stringify({ event: 'scanner_listening', port: PORT, clamd: `${CLAMD_HOST}:${CLAMD_PORT}`, max_bytes: MAX_BYTES }));
+  console.log(JSON.stringify({ event: 'scanner_listening', port: PORT, clamd: CLAMD_SOCKET || `${CLAMD_HOST}:${CLAMD_PORT}`, max_bytes: MAX_BYTES }));
 });

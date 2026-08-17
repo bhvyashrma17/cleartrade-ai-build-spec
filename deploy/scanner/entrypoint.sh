@@ -6,21 +6,38 @@
 # operational signal is "this instance is unhealthy, restart it".
 set -eu
 
-freshclam --daemon --checks=4 --quiet &
+grep -E '^(LocalSocket|TCPSocket|TCPAddr|User|Foreground|DatabaseDirectory) ' /etc/clamav/clamd.conf || true
+mkdir -p /var/run/clamav
+chown clamav:clamav /var/run/clamav
+touch /var/log/clamav/clamav.log
+chown clamav:clamav /var/log/clamav/clamav.log
+tail -n 0 -F /var/log/clamav/clamav.log &
 
 clamd --config-file=/etc/clamav/clamd.conf &
 CLAMD_PID=$!
 
 # Wait for clamd to open its socket before accepting traffic.
 i=0
-while [ $i -lt 120 ]; do
-  if node -e "require('node:net').createConnection({host:'127.0.0.1',port:3310}).on('connect',function(){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null; then
+while [ $i -lt 240 ]; do
+  if node -e "require('node:net').createConnection({path:process.env.CLAMD_SOCKET||'/var/run/clamav/clamd.ctl'}).on('connect',function(){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null; then
     echo '{"event":"clamd_ready"}'
     break
   fi
   i=$((i+1))
   sleep 1
 done
+
+if [ "$i" -ge 240 ]; then
+  echo '{"event":"clamd_readiness_timeout"}' >&2
+  if [ -f /var/log/clamav/clamav.log ]; then
+    tail -n 100 /var/log/clamav/clamav.log >&2
+  fi
+  exit 1
+fi
+
+# Avoid racing a signature update against clamd's initial database load. The image contains
+# an initial database; refresh it only after the engine is accepting connections.
+freshclam --daemon --checks=4 --quiet &
 
 # Supervise: if clamd exits, take the container down.
 ( wait $CLAMD_PID; echo '{"event":"clamd_exited"}'; kill -TERM 1 ) &

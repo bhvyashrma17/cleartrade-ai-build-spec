@@ -14,20 +14,21 @@ RUN apt-get update \
 # Fetch an initial signature database at build time so the service is useful the moment it
 # starts. freshclam then keeps it current at runtime. A scanner with no signatures would
 # answer "clean" to everything, so this is not an optimisation — it is correctness.
-RUN freshclam --quiet || true
+RUN freshclam
 
 # clamd must accept TCP connections from the Node process in this container.
 RUN sed -i 's/^#\?TCPSocket.*/TCPSocket 3310/'          /etc/clamav/clamd.conf \
  && sed -i 's/^#\?TCPAddr.*/TCPAddr 127.0.0.1/'         /etc/clamav/clamd.conf \
  && sed -i 's/^#\?StreamMaxLength.*/StreamMaxLength 64M/' /etc/clamav/clamd.conf \
  && sed -i 's/^#\?MaxThreads.*/MaxThreads 4/'           /etc/clamav/clamd.conf \
- && sed -i 's/^#\?Foreground.*/Foreground true/'        /etc/clamav/clamd.conf
+ && sed -i 's/^#\?LogTime.*/LogTime true/'               /etc/clamav/clamd.conf \
+ && sed -i 's/^#\?Foreground.*/Foreground true/'         /etc/clamav/clamd.conf
 
 WORKDIR /app
-COPY server.js entrypoint.sh ./
+COPY deploy/scanner/server.js deploy/scanner/entrypoint.sh ./
 RUN chmod +x entrypoint.sh && chown -R clamav:clamav /app
 
-ENV PORT=3000 CLAMD_HOST=127.0.0.1 CLAMD_PORT=3310
+ENV PORT=3000 CLAMD_SOCKET=/var/run/clamav/clamd.ctl
 EXPOSE 3000
 
 # Readiness requires clamd to answer PING — the service reports unready rather than
