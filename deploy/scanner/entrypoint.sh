@@ -17,9 +17,17 @@ clamd --config-file=/etc/clamav/clamd.conf &
 CLAMD_PID=$!
 
 # Wait for clamd to open its socket before accepting traffic.
+#
+# Tested with the shell's own `-S` (socket exists) rather than a `node -e` connect probe:
+# clamd binds the socket only after its signature database is loaded, so existence is an
+# accurate readiness signal, and this removes the wait's dependency on `node` resolving on
+# PATH inside the Debian image. The previous probe sent stderr to /dev/null, so a missing
+# interpreter was indistinguishable from "clamd not up yet" and burned the full timeout.
+SOCK="${CLAMD_SOCKET:-/var/run/clamav/clamd.ctl}"
+echo "{\"event\":\"clamd_wait\",\"socket\":\"$SOCK\",\"node\":\"$(command -v node || echo missing)\"}"
 i=0
 while [ $i -lt 240 ]; do
-  if node -e "require('node:net').createConnection({path:process.env.CLAMD_SOCKET||'/var/run/clamav/clamd.ctl'}).on('connect',function(){process.exit(0)}).on('error',function(){process.exit(1)})" 2>/dev/null; then
+  if [ -S "$SOCK" ]; then
     echo '{"event":"clamd_ready"}'
     break
   fi
