@@ -16,7 +16,9 @@
  * forbidden value is present, so this can gate CI. A warning alone does not fail the run.
  */
 
+import { existsSync } from 'node:fs';
 import { appEnvironment, isRealWorkflowEnvironment, type ClearTradeEnvironment } from '../src/lib/evidence-environment';
+import { envFilePolicyProblem } from './env-file-policy';
 import { validateRuntimeEnvironment, type RuntimeRole } from '../src/lib/runtime-config';
 
 type Need = 'required' | 'recommended' | 'optional' | 'forbidden';
@@ -186,6 +188,11 @@ function main() {
 
   console.log(`  ${'STATUS'.padEnd(11)} ${'VARIABLE'.padEnd(38)} ${'CLASS'.padEnd(7)} ${'PROVIDER'.padEnd(18)} VALUE`);
   console.log(rows.join('\n'));
+
+  // File-level policy before value-level checks: a stray `.env` changes what every later
+  // line in this report means, so it is reported as an error, not a warning.
+  const filePolicy = envFilePolicyProblem((file) => existsSync(file), real);
+  if (filePolicy) errors.push(filePolicy.message);
 
   // Cross-environment leak detection: the most damaging misconfiguration is a local
   // checkout pointed at a real database or bucket, which no per-variable check would catch.

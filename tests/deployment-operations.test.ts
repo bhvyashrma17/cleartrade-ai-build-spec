@@ -1,4 +1,5 @@
 import {afterAll,describe,expect,test} from 'vitest';import {prisma} from '../src/lib/prisma';import {validateRuntimeEnvironment} from '../src/lib/runtime-config';import {operationsAuthorized} from '../src/lib/operations-auth';import {storageHealthcheck} from '../src/lib/document-storage';
+import { envFilePolicyProblem } from '../scripts/env-file-policy';
 afterAll(async()=>{await prisma.workerHeartbeat.deleteMany({where:{instance_id:{startsWith:'vitest-ops'}}});await prisma.$disconnect();});
 const staging={NODE_ENV:'production',APP_ENV:'staging',DATABASE_ENVIRONMENT:'staging',DATABASE_URL:'postgresql://app@db.internal/cleartrade_staging?sslmode=require',DIRECT_DATABASE_URL:'postgresql://app@db-direct.internal/cleartrade_staging?sslmode=require',AUTH_SECRET:'Kq7Zx2Vb9Nm4Tp1Rw6Yc3Fh8Ls5Jd0Ga',GUEST_IP_HASH_SECRET:'Bn3Xq8Wz1Cv6Rt4Ym9Pk2Hs7Ld5Fj0Ae',IMPORT_BUYER_REF_SECRET:'Mv5Tz9Qw2Nb7Xc4Rp1Yk8Hd3Gs6Lf0Ja',IMPORT_BUYER_REF_KEY_VERSION:'v1',IMPORT_RAW_IDENTITY_ENCRYPTION_KEY:Buffer.from('9f2c7b41a8e05d63'.repeat(4),'hex').toString('base64'),IMPORT_RAW_IDENTITY_KEY_VERSION:'v1',OPERATIONS_TOKEN:'Zr6Hn2Kd9Tq4Wm7Bx1Vc5Yp8Ls3Gf0Ju',COMTRADE_CLIENT:'real',COMTRADE_API_KEY:'provider-key',DISCOVERY_ENGINE:'warehouse',STORAGE_BACKEND:'s3',STORAGE_BUCKET:'bucket',STORAGE_REGION:'region',DOCUMENT_MALWARE_SCANNER:'http',DOCUMENT_MALWARE_SCANNER_URL:'https://scanner.internal/scan',NOTIFICATION_PROVIDER:'http',NOTIFICATION_PROVIDER_API_KEY:'provider-key',NOTIFICATION_PROVIDER_URL:'https://notifications.internal/send',NEXT_PUBLIC_APP_URL:'https://staging.example.test'} as NodeJS.ProcessEnv;
 describe('deployment safety',()=>{
@@ -143,5 +144,39 @@ describe('social auth environment validation', () => {
 
   test('staging still validates when Apple is not enabled', () => {
     expect(() => validateRuntimeEnvironment('web', { ...staging, AUTH_GOOGLE_ID: 'google-id', AUTH_GOOGLE_SECRET: 'google-secret' } as NodeJS.ProcessEnv)).not.toThrow();
+  });
+});
+
+describe('local env-file policy', () => {
+  const present = (...files: string[]) => (file: string) => files.includes(file);
+
+  test('a stray .env is an error in local development', () => {
+    const problem = envFilePolicyProblem(present('.env', '.env.local'), false);
+    expect(problem?.code).toBe('prohibited_env_file');
+    expect(problem?.message).toContain('.env is prohibited; use .env.local for local development.');
+    // Both files present: the remedy is to consolidate, not to rename.
+    expect(problem?.message).toMatch(/move anything you still need into \.env\.local/);
+  });
+
+  test('a lone .env is reported with a rename remedy rather than a consolidate remedy', () => {
+    const problem = envFilePolicyProblem(present('.env'), false);
+    expect(problem?.code).toBe('prohibited_env_file');
+    expect(problem?.message).toMatch(/Rename it: mv \.env \.env\.local/);
+  });
+
+  test('.env.local alone is clean', () => {
+    expect(envFilePolicyProblem(present('.env.local'), false)).toBeNull();
+  });
+
+  test('the rule does not apply to staging or production', () => {
+    // Real environments take configuration from the platform, never from a file in the image.
+    // Failing a deploy on a file that should not exist there would be a regression, not a
+    // safeguard, so this must stay inert regardless of what is on disk.
+    expect(envFilePolicyProblem(present('.env', '.env.local'), true)).toBeNull();
+  });
+
+  test('the policy message never contains a variable value', () => {
+    const problem = envFilePolicyProblem(present('.env', '.env.local'), false);
+    expect(problem?.message).not.toMatch(/=/);
   });
 });
