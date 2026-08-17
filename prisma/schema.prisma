@@ -13,7 +13,7 @@
 //   - Internal notes are a separate table from exporter-visible messages, not a flag.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   /// `native` keeps local development working on any developer machine.
   ///
   /// `debian-openssl-3.0.x` is pinned for the container base image (node:22-bookworm-slim,
@@ -24,7 +24,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   /// Pooled connection for the application (Neon PgBouncer endpoint, `-pooler` host).
   url       = env("DATABASE_URL")
   /// Direct, unpooled connection used by Migrate and introspection.
@@ -604,21 +604,21 @@ enum AssignmentStatus {
 // ---------------------------------------------------------------------------
 
 model ExporterOrg {
-  id                String          @id @default(cuid())
-  legal_name        String?
-  display_name      String
-  gstin             String?
+  id                       String          @id @default(cuid())
+  legal_name               String?
+  display_name             String
+  gstin                    String?
   /// Status-aware field, not a bare string (docs/02 + glossary).
-  iec               IecStatus       @default(unknown)
-  iec_number        String?
-  country           String          @default("IN")
-  state             String?
-  city              String?
-  pickup_location_code String?
+  iec                      IecStatus       @default(unknown)
+  iec_number               String?
+  country                  String          @default("IN")
+  state                    String?
+  city                     String?
+  pickup_location_code     String?
   preferred_origin_gateway String?
-  assigned_agent_id String?
-  readiness_status  ReadinessStatus @default(not_started)
-  journey_stage     JourneyStage    @default(onboarding)
+  assigned_agent_id        String?
+  readiness_status         ReadinessStatus @default(not_started)
+  journey_stage            JourneyStage    @default(onboarding)
 
   /// Defaults to `guest` because the overwhelmingly common new row is a guest minted on
   /// first search. Pre-existing rows are backfilled to `paid` by the migration — they
@@ -669,6 +669,7 @@ model ExporterOrg {
   tasks                 Task[]
   assignments           AgentAssignment[]
   invitations           Invitation[]
+  agent_decisions       AgentDecision[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -733,6 +734,7 @@ model User {
   classifications_confirmed   ProductClassification[]   @relation("ClassificationConfirmer")
   products_hs_confirmed       Product[]
   auth_provider_accounts      AuthProviderAccount[]
+  agent_decisions             AgentDecision[]           @relation("AgentDecisionActor")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -812,23 +814,23 @@ model Product {
   // price_target is a per-quantity price. A currency without its quantity and
   // delivery basis is not comparable to customs unit values, so all four fields
   // are nullable but must be present before Export Economics can use the price.
-  price_target_amount       Decimal? @db.Decimal(18, 4)
-  price_target_currency     String?  @db.VarChar(3)
+  price_target_amount        Decimal? @db.Decimal(18, 4)
+  price_target_currency      String?  @db.VarChar(3)
   price_target_quantity_unit String?
   price_target_incoterm      String?  @db.VarChar(3)
 
   /// Exporter-market-fit inputs. All nullable: absence lowers score confidence; it is
   /// never replaced by a guessed/default commercial capability.
-  lead_time_days              Int?
+  lead_time_days                  Int?
   /// Exporter's end-to-end customer delivery commitment. Kept separate from
   /// production lead_time_days so the scorer can derive a transit allowance.
-  delivery_commitment_days    Int?
-  logistics_constraint_codes  String[] @default([])
-  logistics_constraints_confirmed Boolean @default(false)
-  desired_order_size_amount   Decimal? @db.Decimal(18, 4)
-  desired_order_size_currency String?  @db.VarChar(3)
-  customization_capability    String?
-  packaging_capability        String?
+  delivery_commitment_days        Int?
+  logistics_constraint_codes      String[] @default([])
+  logistics_constraints_confirmed Boolean  @default(false)
+  desired_order_size_amount       Decimal? @db.Decimal(18, 4)
+  desired_order_size_currency     String?  @db.VarChar(3)
+  customization_capability        String?
+  packaging_capability            String?
 
   packaging  String?
   created_at DateTime @default(now())
@@ -936,11 +938,11 @@ model DiscoveryRun {
 
   /// Frozen scoring clock and policy. Rows predating this repair remain explicitly
   /// legacy/non-recomputable rather than being assigned today's policy retroactively.
-  as_of_date                    DateTime?
-  scoring_policy_version       Int?
-  scoring_policy_hash          String?
-  scoring_policy_snapshot      Json?
-  reproducibility_status       String @default("legacy_non_recomputable")
+  as_of_date              DateTime?
+  scoring_policy_version  Int?
+  scoring_policy_hash     String?
+  scoring_policy_snapshot Json?
+  reproducibility_status  String    @default("legacy_non_recomputable")
 
   started_at   DateTime?
   completed_at DateTime?
@@ -975,11 +977,11 @@ model MarketAssessment {
   model_version                      String
   weight_profile_key                 String
   weight_profile_version             Int
-  as_of_date                          DateTime?
+  as_of_date                         DateTime?
   scoring_policy_version             Int?
   scoring_policy_hash                String?
   scoring_policy_snapshot            Json?
-  reproducibility_status             String @default("legacy_non_recomputable")
+  reproducibility_status             String                  @default("legacy_non_recomputable")
   evidence_origins                   EvidenceOrigin[]        @default([unknown_legacy])
   india_share                        Decimal?                @db.Decimal(6, 3)
   classification_id                  String?
@@ -1027,8 +1029,9 @@ model MarketAssessment {
   /// selection. Non-exclusive: any number of assessments may be saved at once.
   saved_at    DateTime?
 
-  run     DiscoveryRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  product Product?     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  run             DiscoveryRun    @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  product         Product?        @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  agent_decisions AgentDecision[]
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
@@ -1059,27 +1062,27 @@ model MarketEligibilityRule {
 /// One authoritative retrieval for a jurisdiction + HS scope. A COMPLETE snapshot is
 /// required before absence of a restriction can be interpreted as evidence.
 model MarketAccessEvidenceSnapshot {
-  id                  String                     @id @default(cuid())
-  jurisdiction        String
-  country_code        String                     @db.VarChar(2)
-  hs_code_scope       String
-  source_authority    String
-  source_reference    String
-  source_version      String?
-  retrieved_at        DateTime
-  effective_at        DateTime?
-  expires_at          DateTime?
-  completeness_status EvidenceCompletenessStatus
-  tariff_coverage     Boolean                    @default(false)
-  regulatory_coverage Boolean                    @default(false)
-  parser_version      String
-  evidence_origin     EvidenceOrigin @default(unknown_legacy)
-  provider            String         @default("unknown_legacy")
-  source_dataset      String?
-  source_run_id       String?
+  id                    String                     @id @default(cuid())
+  jurisdiction          String
+  country_code          String                     @db.VarChar(2)
+  hs_code_scope         String
+  source_authority      String
+  source_reference      String
+  source_version        String?
+  retrieved_at          DateTime
+  effective_at          DateTime?
+  expires_at            DateTime?
+  completeness_status   EvidenceCompletenessStatus
+  tariff_coverage       Boolean                    @default(false)
+  regulatory_coverage   Boolean                    @default(false)
+  parser_version        String
+  evidence_origin       EvidenceOrigin             @default(unknown_legacy)
+  provider              String                     @default("unknown_legacy")
+  source_dataset        String?
+  source_run_id         String?
   raw_response_checksum String?
-  raw_evidence        Json
-  evidence            MarketAccessEvidence[]
+  raw_evidence          Json
+  evidence              MarketAccessEvidence[]
 
   @@index([country_code, hs_code_scope, retrieved_at])
 }
@@ -1114,20 +1117,20 @@ model MarketAccessEvidence {
 /// Immutable proof of whether partner rows are sufficient to calculate supplier HHI.
 /// Request success alone is never completeness evidence.
 model SupplierCoverageAssertion {
-  id                      String                     @id @default(cuid())
-  country_code            String                     @db.VarChar(2)
-  reporter                String
-  hs_code                 String
-  year                    Int
-  world_total_value       Decimal                    @db.Decimal(20, 3)
-  supplier_value_sum      Decimal                    @db.Decimal(20, 3)
-  partner_count           Int
-  coverage_ratio          Decimal?                   @db.Decimal(12, 8)
-  query_scope             Json
-  acquisition_ids         String[]
-  completeness_status     EvidenceCompletenessStatus
-  threshold_version       String
-  created_at              DateTime                   @default(now())
+  id                  String                     @id @default(cuid())
+  country_code        String                     @db.VarChar(2)
+  reporter            String
+  hs_code             String
+  year                Int
+  world_total_value   Decimal                    @db.Decimal(20, 3)
+  supplier_value_sum  Decimal                    @db.Decimal(20, 3)
+  partner_count       Int
+  coverage_ratio      Decimal?                   @db.Decimal(12, 8)
+  query_scope         Json
+  acquisition_ids     String[]
+  completeness_status EvidenceCompletenessStatus
+  threshold_version   String
+  created_at          DateTime                   @default(now())
 
   @@index([country_code, hs_code, year, created_at])
 }
@@ -1135,42 +1138,42 @@ model SupplierCoverageAssertion {
 /// Provider-backed route observation used by Demand Discovery. This is evidence,
 /// not a generated recommendation: unknown rates/times remain null and validity is explicit.
 model LogisticsRouteEvidence {
-  id                                String                  @id @default(cuid())
-  origin_country                    String                  @db.VarChar(2)
-  origin_state                      String?
-  origin_city                       String?
-  origin_location_code              String?
-  origin_gateway                    String?
-  destination_country               String                  @db.VarChar(2)
-  destination_port                  String?
-  transport_mode                    LogisticsTransportMode
-  route_available                   Boolean
-  transit_time_min_days             Int?
-  transit_time_max_days             Int?
-  freight_amount                    Decimal?                @db.Decimal(18, 4)
-  freight_currency                  String?                 @db.VarChar(3)
-  freight_rate_basis                String?
-  freight_retrieved_at              DateTime?
-  freight_valid_until               DateTime?
-  assumed_shipment_value_amount     Decimal?                @db.Decimal(18, 4)
-  assumed_shipment_value_currency   String?                 @db.VarChar(3)
-  provider                          String
-  source_reference                  String
-  source_dataset_version            String?
-  retrieved_at                      DateTime
-  valid_until                       DateTime?
-  equipment_assumption              String?
-  supported_product_constraint_codes String[]               @default([])
-  hs_code_scope                     String?
-  confidence                        Decimal                 @db.Decimal(5, 4)
-  status                            LogisticsEvidenceStatus @default(verified)
-  evidence_origin                   EvidenceOrigin
-  raw_evidence                      Json?
-  created_at                        DateTime                @default(now())
+  id                                 String                  @id @default(cuid())
+  origin_country                     String                  @db.VarChar(2)
+  origin_state                       String?
+  origin_city                        String?
+  origin_location_code               String?
+  origin_gateway                     String?
+  destination_country                String                  @db.VarChar(2)
+  destination_port                   String?
+  transport_mode                     LogisticsTransportMode
+  route_available                    Boolean
+  transit_time_min_days              Int?
+  transit_time_max_days              Int?
+  freight_amount                     Decimal?                @db.Decimal(18, 4)
+  freight_currency                   String?                 @db.VarChar(3)
+  freight_rate_basis                 String?
+  freight_retrieved_at               DateTime?
+  freight_valid_until                DateTime?
+  assumed_shipment_value_amount      Decimal?                @db.Decimal(18, 4)
+  assumed_shipment_value_currency    String?                 @db.VarChar(3)
+  provider                           String
+  source_reference                   String
+  source_dataset_version             String?
+  retrieved_at                       DateTime
+  valid_until                        DateTime?
+  equipment_assumption               String?
+  supported_product_constraint_codes String[]                @default([])
+  hs_code_scope                      String?
+  confidence                         Decimal                 @db.Decimal(5, 4)
+  status                             LogisticsEvidenceStatus @default(verified)
+  evidence_origin                    EvidenceOrigin
+  raw_evidence                       Json?
+  created_at                         DateTime                @default(now())
 
+  @@unique([provider, source_reference])
   @@index([origin_country, destination_country, transport_mode, valid_until])
   @@index([destination_country, hs_code_scope, status])
-  @@unique([provider, source_reference])
 }
 
 /// Auditable soft-commercial risk observation. Legal restrictions never belong here;
@@ -1207,28 +1210,28 @@ model MarketRiskSignal {
 /// Destination/HS-scoped customer or market benchmark. Product fields have no fit
 /// meaning until paired with one of these current, sourced observations.
 model ExporterMarketFitBenchmark {
-  id                   String                     @id @default(cuid())
-  jurisdiction         String
-  country_code         String                     @db.VarChar(2)
-  hs_code_scope        String
-  benchmark_type       ExporterFitBenchmarkType
-  minimum_value        Decimal?                   @db.Decimal(20, 8)
-  maximum_value        Decimal?                   @db.Decimal(20, 8)
-  unit                 String?
-  currency             String?                    @db.VarChar(3)
-  required             Boolean?
-  requirement_code     String?
-  provider             String
-  source_reference     String
-  source_version       String
-  observed_at          DateTime
-  retrieved_at         DateTime
-  valid_until          DateTime?
-  confidence           Decimal                    @db.Decimal(5, 4)
-  status               ExporterFitBenchmarkStatus @default(verified)
-  evidence_origin      EvidenceOrigin
-  raw_evidence         Json?
-  created_at           DateTime                   @default(now())
+  id               String                     @id @default(cuid())
+  jurisdiction     String
+  country_code     String                     @db.VarChar(2)
+  hs_code_scope    String
+  benchmark_type   ExporterFitBenchmarkType
+  minimum_value    Decimal?                   @db.Decimal(20, 8)
+  maximum_value    Decimal?                   @db.Decimal(20, 8)
+  unit             String?
+  currency         String?                    @db.VarChar(3)
+  required         Boolean?
+  requirement_code String?
+  provider         String
+  source_reference String
+  source_version   String
+  observed_at      DateTime
+  retrieved_at     DateTime
+  valid_until      DateTime?
+  confidence       Decimal                    @db.Decimal(5, 4)
+  status           ExporterFitBenchmarkStatus @default(verified)
+  evidence_origin  EvidenceOrigin
+  raw_evidence     Json?
+  created_at       DateTime                   @default(now())
 
   @@unique([provider, source_reference, benchmark_type, hs_code_scope])
   @@index([country_code, hs_code_scope, benchmark_type, status])
@@ -1283,14 +1286,14 @@ enum SanctionsFailureStage {
 ///
 /// The raw XML is NEVER stored in a relational column — artifacts are 1–28 MB.
 model SanctionsArtifact {
-  id                      String   @id @default(cuid())
+  id                      String         @id @default(cuid())
   dataset                 String
   source_contract_version String
   evidence_origin         EvidenceOrigin @default(public_real)
 
   /// Retrieval URL with credential-shaped params redacted before persistence.
-  source_reference String
-  retrieved_at     DateTime
+  source_reference      String
+  retrieved_at          DateTime
   provider_published_at DateTime?
   provider_version      String?
   http_status           Int?
@@ -1302,18 +1305,18 @@ model SanctionsArtifact {
   last_modified String?
 
   /// --- Private object storage ---
-  storage_provider String
-  object_key       String
+  storage_provider  String
+  object_key        String
   object_version_id String?
-  persisted_at     DateTime @default(now())
+  persisted_at      DateTime @default(now())
 
   /// Explicit, never assumed. `verified` only after a real post-write integrity check.
   verification_status SanctionsArtifactVerification @default(unverified)
   verification_detail String?
   verified_at         DateTime?
 
-  snapshot_id String?  @unique
-  snapshot    SanctionsSourceSnapshot? @relation(fields: [snapshot_id], references: [id], onDelete: SetNull)
+  snapshot_id   String?                  @unique
+  snapshot      SanctionsSourceSnapshot? @relation(fields: [snapshot_id], references: [id], onDelete: SetNull)
   ingest_run_id String?
 
   @@index([dataset, retrieved_at])
@@ -1366,9 +1369,9 @@ model SanctionsSourceSnapshot {
   completeness_status          SanctionsCompletenessStatus @default(FAILED)
 
   /// --- Atomic activation (Phase 7) ---
-  state          SanctionsSnapshotState @default(candidate)
-  activated_at   DateTime?
-  superseded_at  DateTime?
+  state         SanctionsSnapshotState @default(candidate)
+  activated_at  DateTime?
+  superseded_at DateTime?
 
   /// --- Source contract identity (Phase 2) ---
   /// Which versioned contract produced this snapshot. A contract change is visible as a
@@ -1388,10 +1391,10 @@ model SanctionsSourceSnapshot {
   artifact_ref  String?
 
   /// --- Failure separation + anomaly detection (Phase 3/6) ---
-  failure_stage   SanctionsFailureStage @default(none)
-  failure_reason  String?
+  failure_stage  SanctionsFailureStage @default(none)
+  failure_reason String?
   /// Structured anomaly findings (count collapse, alias/identifier coverage collapse).
-  anomalies       Json                  @default("[]")
+  anomalies      Json                  @default("[]")
 
   ingest_run_id String?
   ingest_run    SanctionsIngestRun? @relation(fields: [ingest_run_id], references: [id], onDelete: SetNull)
@@ -1685,6 +1688,7 @@ model BuyerFitAssessment {
   buyer            Buyer            @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
   product          Product          @relation(fields: [product_id], references: [id], onDelete: Cascade)
   exporter_org     ExporterOrg      @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  agent_decisions  AgentDecision[]
 
   @@unique([buyer_id, product_id, exporter_org_id])
   @@index([exporter_org_id, product_id, score])
@@ -2107,17 +2111,17 @@ model Document {
   filed_by_id              String?
 
   /// Secure object ref — resolved to a short-lived signed URL, never a public bucket URL.
-  file_ref        String?
-  file_name       String?
-  file_size_bytes Int?
-  mime_type       String?
-  checksum        String?
-  storage_provider String?
+  file_ref           String?
+  file_name          String?
+  file_size_bytes    Int?
+  mime_type          String?
+  checksum           String?
+  storage_provider   String?
   storage_version_id String?
-  scan_status      FileScanStatus @default(unknown_legacy)
-  scan_engine      String?
-  scanned_at       DateTime?
-  uploaded_by_id   String?
+  scan_status        FileScanStatus @default(unknown_legacy)
+  scan_engine        String?
+  scanned_at         DateTime?
+  uploaded_by_id     String?
 
   /// The DealSnapshot the document generated from — enables reproducible regeneration.
   generated_from_snapshot_id String?
@@ -2584,7 +2588,7 @@ model Notification {
   dedupe_key  String?
   created_at  DateTime             @default(now())
 
-  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
   deliveries NotificationDelivery[]
 
   @@unique([user_id, dedupe_key])
@@ -2592,47 +2596,48 @@ model Notification {
 }
 
 model NotificationDelivery {
-  id                    String @id @default(cuid())
+  id                    String                     @id @default(cuid())
   notification_id       String
   channel               NotificationChannel
   destination_reference String
   template_key          String
   template_version      String
   status                NotificationDeliveryStatus @default(queued)
-  attempt_count         Int @default(0)
+  attempt_count         Int                        @default(0)
   provider              String?
   provider_message_id   String?
-  queued_at             DateTime @default(now())
+  queued_at             DateTime                   @default(now())
   sent_at               DateTime?
   delivered_at          DateTime?
   failed_at             DateTime?
   next_retry_at         DateTime?
   last_error_code       String?
   last_error_message    String?
-  created_at            DateTime @default(now())
-  updated_at            DateTime @updatedAt
+  created_at            DateTime                   @default(now())
+  updated_at            DateTime                   @updatedAt
 
-  notification Notification @relation(fields:[notification_id],references:[id],onDelete:Cascade)
-  attempts NotificationDeliveryAttempt[]
+  notification Notification                  @relation(fields: [notification_id], references: [id], onDelete: Cascade)
+  attempts     NotificationDeliveryAttempt[]
 
-  @@unique([notification_id,channel])
-  @@index([status,next_retry_at])
+  @@unique([notification_id, channel])
+  @@index([status, next_retry_at])
 }
 
 model NotificationDeliveryAttempt {
-  id String @id @default(cuid())
-  delivery_id String
-  attempt_no Int
-  provider String
-  status NotificationDeliveryStatus
+  id                  String                     @id @default(cuid())
+  delivery_id         String
+  attempt_no          Int
+  provider            String
+  status              NotificationDeliveryStatus
   provider_message_id String?
-  error_code String?
-  error_message String?
-  started_at DateTime @default(now())
-  finished_at DateTime?
+  error_code          String?
+  error_message       String?
+  started_at          DateTime                   @default(now())
+  finished_at         DateTime?
 
-  delivery NotificationDelivery @relation(fields:[delivery_id],references:[id],onDelete:Cascade)
-  @@unique([delivery_id,attempt_no])
+  delivery NotificationDelivery @relation(fields: [delivery_id], references: [id], onDelete: Cascade)
+
+  @@unique([delivery_id, attempt_no])
 }
 
 /// EXP-17: per-user, per-category channel toggle. Only categories that
@@ -3192,4 +3197,116 @@ model DataDeletionRequest {
   reviewer          User?                     @relation(fields: [reviewed_by_id], references: [id], onDelete: SetNull)
 
   @@index([status, requested_at])
+}
+
+// ---------------------------------------------------------------------------
+// Agent decision layer (Phase 1)
+//
+// The human-control layer over Demand Discovery and Buyer Discovery. Its entire reason for
+// existing is that an agent's judgement must be recorded WITHOUT touching what the model
+// computed: MarketAssessment.overall_score, BuyerFitAssessment.score, their component
+// breakdowns, confidence, provenance and policy hashes are never written by this path.
+// "The model said 71 and the agent ranked it first anyway" has to remain answerable years
+// later, which is impossible if either half overwrites the other.
+// ---------------------------------------------------------------------------
+
+/// Which kind of model output a decision is about. Redundant with which foreign key is
+/// populated, and deliberately so: it makes the common "all market decisions for this org"
+/// query indexable without a join, and a DB constraint keeps the two in agreement.
+enum AgentDecisionTarget {
+  market
+  buyer
+}
+
+/// What the agent decided. Not every action is meaningful for every target — a market is
+/// never `shortlisted` and a buyer is never `mark_selected` — so the target/action pairing
+/// is constrained in the database rather than left to callers to get right.
+enum AgentDecisionAction {
+  /// Both targets.
+  promote
+  demote
+  restore
+  pause_automation
+  resume_automation
+  request_review
+  /// Markets only.
+  reject
+  mark_selected
+  mark_not_selected
+  /// Buyers only.
+  shortlist
+  disqualify
+  qualify
+  unqualify
+}
+
+/// A single agent judgement. Append-only: rows are inserted, never updated.
+///
+/// Supersession points BACKWARD (`supersedes_id` on the newer row) rather than forward.
+/// A forward `superseded_by_id` would require an UPDATE of the historical row every time a
+/// newer decision arrived, which is precisely the mutation this table exists to prevent; a
+/// backward pointer records the same chain while leaving every earlier row byte-identical
+/// to when it was written. The consequence is that "is this decision still in force?" is
+/// derived (see `currentDecisions` in src/lib/agent-decisions.ts), not stored — which is
+/// correct anyway, because expiry makes it a function of time rather than a stored fact.
+model AgentDecision {
+  id              String @id @default(cuid())
+  /// Tenant key. Also the authorization boundary: an agent may only write here for an org
+  /// they hold an active AgentAssignment for.
+  exporter_org_id String
+  actor_user_id   String
+
+  /// EXACTLY ONE of these is non-null, enforced by the `AgentDecision_target_shape`
+  /// constraint. Explicit nullable foreign keys rather than a loose (type, id) pair, so a
+  /// decision cannot outlive or misname its subject: the database itself refuses a row
+  /// pointing at an assessment that does not exist.
+  market_assessment_id    String?
+  buyer_fit_assessment_id String?
+
+  target AgentDecisionTarget
+  action AgentDecisionAction
+
+  /// The agent's operational ordering, entirely separate from the model's rank. Null for
+  /// actions where ordering is meaningless (a rejection has no priority).
+  agent_priority Int?
+
+  /// Mandatory. An override without a stated reason is unreviewable, so the column is
+  /// non-null and the service rejects blank/whitespace input.
+  reason String
+
+  /// Immutable copies of what the model said AT DECISION TIME.
+  ///
+  /// Not derivable from a join later: assessments are recomputed as evidence and policy
+  /// change, so reading the score through `market_assessment_id` tomorrow answers a
+  /// different question than "what did the agent actually overrule?". Without these
+  /// columns the AI-vs-human comparison in docs/30 §3c silently comers to compare an
+  /// override against a score that did not exist when the override was made.
+  original_score            Int?
+  original_rank             Int?
+  original_confidence_score Int?
+  original_model_version    String?
+  original_policy_hash      String?
+
+  /// Optional review metadata. `expires_at` makes a decision self-limiting ("prioritise
+  /// this market for one quarter"); effective state is derived from it plus supersession.
+  expires_at DateTime?
+
+  /// Backward pointer to the decision this one replaces, for the same subject. Unique:
+  /// a given decision may be superseded by at most one successor, so the chain stays linear
+  /// and cannot fork into two competing "current" decisions.
+  supersedes_id String? @unique
+
+  created_at DateTime @default(now())
+
+  exporter_org         ExporterOrg         @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  actor                User                @relation("AgentDecisionActor", fields: [actor_user_id], references: [id])
+  market_assessment    MarketAssessment?   @relation(fields: [market_assessment_id], references: [id], onDelete: Cascade)
+  buyer_fit_assessment BuyerFitAssessment? @relation(fields: [buyer_fit_assessment_id], references: [id], onDelete: Cascade)
+  supersedes           AgentDecision?      @relation("AgentDecisionSupersession", fields: [supersedes_id], references: [id])
+  superseded_by        AgentDecision?      @relation("AgentDecisionSupersession")
+
+  @@index([exporter_org_id, target, created_at])
+  @@index([market_assessment_id, created_at])
+  @@index([buyer_fit_assessment_id, created_at])
+  @@index([actor_user_id, created_at])
 }
