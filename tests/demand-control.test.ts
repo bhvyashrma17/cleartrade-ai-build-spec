@@ -14,12 +14,15 @@ import {
   sortRows,
 } from '../src/lib/demand-control';
 import {
+  demoteMarket,
   markMarketNotSelected,
+  markMarketSelected,
   pauseMarketAutomation,
   promoteMarket,
   rejectMarket,
   requestMarketReview,
   restoreMarket,
+  resumeMarketAutomation,
 } from '../src/lib/agent-decisions';
 import { prisma } from '../src/lib/prisma';
 import type { Principal } from '../src/types';
@@ -108,15 +111,38 @@ describe('sorting into operational order', () => {
     expect(sortByOperationalOrder([topByModel, promoted]).map((r) => r.id)).toEqual(['promoted', 'top-by-model']);
   });
 
-  test('an agent priority that collides with another market\'s model rank ties, and order is stable', () => {
-    // A real and unavoidable case: agent_priority and model_rank share one number line, so
-    // promoting a market to 1 collides with whatever the model already ranked 1. Neither has
-    // a principled claim to precedence, so the sort is stable and leaves input order — worth
-    // pinning so a future change to the comparator is a deliberate decision, not a surprise.
-    const promoted = row(8, decision(AgentDecisionAction.promote, 1), 'promoted');
+  test('an explicit agent priority beats a model-rank fallback at the same number', () => {
+    // agent_priority and model_rank share one number line, so promoting a market to 1 collides
+    // with whatever the model ranked 1. The tie breaks on PROVENANCE of the number: a stated
+    // agent priority is a deliberate instruction, a model-rank fallback is only the absence of
+    // one — deferring to the fallback would let the AI outrank an override at the exact moment
+    // the agent bothered to express it.
+    const promoted = row(4, decision(AgentDecisionAction.promote, 1), 'promoted');
     const topByModel = row(1, null, 'top-by-model');
     expect(operationalOrder(promoted)).toBe(operationalOrder(topByModel));
-    expect(sortByOperationalOrder([topByModel, promoted]).map((r) => r.id)).toEqual(['top-by-model', 'promoted']);
+    expect(sortByOperationalOrder([topByModel, promoted]).map((r) => r.id)).toEqual(['promoted', 'top-by-model']);
+    // And the AI rank of neither market is touched by the reordering.
+    expect(promoted.modelRank).toBe(4);
+    expect(topByModel.modelRank).toBe(1);
+  });
+
+  test('two explicit equal priorities stay tied, resolved deterministically by AI rank', () => {
+    // The agent is entitled to create this tie; it is preserved rather than silently rewritten.
+    const worseByModel = row(7, decision(AgentDecisionAction.promote, 1), 'worse-by-model');
+    const betterByModel = row(2, decision(AgentDecisionAction.promote, 1), 'better-by-model');
+    expect(sortByOperationalOrder([worseByModel, betterByModel]).map((r) => r.id))
+      .toEqual(['better-by-model', 'worse-by-model']);
+    // Neither priority was rewritten to break the tie.
+    expect(operationalOrder(worseByModel)).toBe(1);
+    expect(operationalOrder(betterByModel)).toBe(1);
+  });
+
+  test('a fully identical tie falls back to a stable id ordering, not render order', () => {
+    const a = { id: 'x', modelRank: 3, current: null, subjectId: 'aaa' } as never as { id: string; modelRank: number | null; current: never; subjectId: string };
+    const b = { id: 'y', modelRank: 3, current: null, subjectId: 'bbb' } as never as { id: string; modelRank: number | null; current: never; subjectId: string };
+    // Same order, same rank, same (absent) priority — the list must not reshuffle on reload.
+    expect(sortByOperationalOrder([b, a]).map((r) => r.id)).toEqual(['x', 'y']);
+    expect(sortByOperationalOrder([a, b]).map((r) => r.id)).toEqual(['x', 'y']);
   });
 
   test('unscored candidates sort last within their bucket, not first', () => {
@@ -377,5 +403,173 @@ describe('marketControlRows against real data', () => {
 
     expect(rows.map((r) => r.assessment.country_code)).toEqual(['ES', 'FR', 'DE']);
     expect(rows.at(-1)!.operationalOrder).toBeNull();
+  });
+});
+
+describe('Phase 2b: the full write path, assessment -> decision -> audit -> refreshed order', () => {
+  async function scenario() {
+    const s = randomUUID().slice(0, 8);
+    const org = await prisma.exporterOrg.create({
+      data: { display_name: `WritePath ${s}`, tier: OrgTier.paid }, select: { id: true },
+    });
+    const [agentUser, otherAgentUser] = await Promise.all([
+      prisma.user.create({ data: { email: `wp-${s}@t.test`, name: 'Agent', role: UserRole.agent }, select: { id: true } }),
+      prisma.user.create({ data: { email: `wp2-${s}@t.test`, name: 'Other', role: UserRole.agent }, select: { id: true } }),
+    ]);
+    await prisma.agentAssignment.create({
+      data: { exporter_org_id: org.id, agent_user_id: agentUser.id, status: 'active' },
+    });
+    const run = await prisma.discoveryRun.create({ data: { exporter_org_id: org.id }, select: { id: true } });
+    const mk = (country: string, score: number) => prisma.marketAssessment.create({
+      data: {
+        run_id: run.id, country_code: country, overall_score: score, confidence_score: 60,
+        model_version: 'market-v3', weight_profile_key: 'default', weight_profile_version: 1,
+      },
+      select: { id: true },
+    });
+    const de = await mk('DE', 90);   // model rank 1
+    const fr = await mk('FR', 70);   // model rank 2
+    const es = await mk('ES', 50);   // model rank 3
+
+    const principal = (id: string): Principal => ({
+      id, email: 'x@t.test', name: 'Agent', role: UserRole.agent, exporter_org_id: null, tier: OrgTier.paid,
+    });
+    return {
+      runId: run.id, de: de.id, fr: fr.id, es: es.id,
+      agent: principal(agentUser.id), stranger: principal(otherAgentUser.id),
+    };
+  }
+  const base = () => ({ reason: 'Recorded during weekly account review.', correlationId: randomUUID() });
+
+  /** Every field of the assessment, so "unchanged" means genuinely byte-identical. */
+  const snapshotAll = (runId: string) =>
+    prisma.marketAssessment.findMany({ where: { run_id: runId }, orderBy: { id: 'asc' } });
+
+  test('an explicit priority beats a model-rank fallback after a real promote', async () => {
+    const f = await scenario();
+    // ES is model rank 3; promoting it to priority 1 must place it above DE (model rank 1).
+    await promoteMarket({ ...base(), actor: f.agent, subjectId: f.es, agentPriority: 1 });
+    const rows = sortByOperationalOrder(await marketControlRows(f.runId));
+
+    expect(rows.map((r) => r.assessment.country_code)).toEqual(['ES', 'DE', 'FR']);
+    const es = rows.find((r) => r.assessment.id === f.es)!;
+    const de = rows.find((r) => r.assessment.id === f.de)!;
+    expect(es.operationalOrder).toBe(1);
+    expect(de.operationalOrder).toBe(1); // same number, lower precedence
+    // Neither AI rank moved.
+    expect(es.modelRank).toBe(3);
+    expect(de.modelRank).toBe(1);
+  });
+
+  test('two explicit equal priorities stay tied and order deterministically by AI rank', async () => {
+    const f = await scenario();
+    await promoteMarket({ ...base(), actor: f.agent, subjectId: f.es, agentPriority: 1 });
+    await promoteMarket({ ...base(), actor: f.agent, subjectId: f.fr, agentPriority: 1 });
+    const rows = sortByOperationalOrder(await marketControlRows(f.runId));
+
+    // FR (model rank 2) precedes ES (model rank 3); neither priority was rewritten.
+    expect(rows.map((r) => r.assessment.country_code)).toEqual(['FR', 'ES', 'DE']);
+    expect(rows[0]!.current?.agent_priority).toBe(1);
+    expect(rows[1]!.current?.agent_priority).toBe(1);
+  });
+
+  test('reject removes a market from the active bucket; restore returns it', async () => {
+    const f = await scenario();
+    await rejectMarket({ ...base(), actor: f.agent, subjectId: f.de });
+    let rows = await marketControlRows(f.runId);
+    let de = rows.find((r) => r.assessment.id === f.de)!;
+    expect(de.bucket).toBe('terminal');
+    expect(de.operationalOrder).toBeNull();
+    expect(activeOnly(rows).map((r) => r.assessment.id)).not.toContain(f.de);
+
+    await restoreMarket({ ...base(), actor: f.agent, subjectId: f.de });
+    rows = await marketControlRows(f.runId);
+    de = rows.find((r) => r.assessment.id === f.de)!;
+    expect(de.bucket).toBe('active');
+    expect(de.operationalOrder).toBe(1);
+    expect(activeOnly(rows).map((r) => r.assessment.id)).toContain(f.de);
+  });
+
+  test('pause keeps the market in the order and shows a paused state', async () => {
+    const f = await scenario();
+    await pauseMarketAutomation({ ...base(), actor: f.agent, subjectId: f.fr });
+    const rows = await marketControlRows(f.runId);
+    const fr = rows.find((r) => r.assessment.id === f.fr)!;
+
+    expect(fr.bucket).toBe('flagged');
+    expect(fr.current?.action).toBe('pause_automation');
+    expect(fr.operationalOrder).toBe(2);
+    expect(activeOnly(rows).map((r) => r.assessment.id)).toContain(f.fr);
+  });
+
+  test('a reason is mandatory', async () => {
+    const f = await scenario();
+    await expect(rejectMarket({ ...base(), actor: f.agent, subjectId: f.de, reason: '   ' }))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(await prisma.agentDecision.count({ where: { market_assessment_id: f.de } })).toBe(0);
+  });
+
+  test('an unassigned agent is refused and writes nothing', async () => {
+    const f = await scenario();
+    await expect(rejectMarket({ ...base(), actor: f.stranger, subjectId: f.de }))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(await prisma.agentDecision.count({ where: { market_assessment_id: f.de } })).toBe(0);
+  });
+
+  test('every action writes an audit event carrying the frozen AI snapshot', async () => {
+    const f = await scenario();
+    const decision = await promoteMarket({ ...base(), actor: f.agent, subjectId: f.es, agentPriority: 2 });
+    const events = await prisma.auditEvent.findMany({
+      where: { object_type: 'agent_decision', object_id: decision.id },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.action).toBe('override');
+    expect(events[0]!.after_summary).toMatchObject({
+      action: 'promote', subject_id: f.es, original_score: 50, original_rank: 3, agent_priority: 2,
+    });
+  });
+
+  test('history keeps superseded decisions, each with its own AI snapshot', async () => {
+    const f = await scenario();
+    await rejectMarket({ ...base(), actor: f.agent, subjectId: f.de, reason: 'Tariff risk.' });
+    await restoreMarket({ ...base(), actor: f.agent, subjectId: f.de, reason: 'Risk cleared.' });
+    const rows = await marketControlRows(f.runId);
+    const de = rows.find((r) => r.assessment.id === f.de)!;
+
+    expect(de.history).toHaveLength(2);
+    expect(de.history[0]!.action).toBe('restore');
+    expect(de.history[0]!.state).toBe('active');
+    // The earlier decision is retained, marked superseded — never silently dropped.
+    expect(de.history[1]!.action).toBe('reject');
+    expect(de.history[1]!.state).toBe('superseded');
+    expect(de.history[1]!.original_score).toBe(90);
+  });
+
+  test('the underlying MarketAssessment rows are byte-identical after every action', async () => {
+    const f = await scenario();
+    const before = await snapshotAll(f.runId);
+
+    await promoteMarket({ ...base(), actor: f.agent, subjectId: f.es, agentPriority: 1 });
+    await demoteMarket({ ...base(), actor: f.agent, subjectId: f.fr, agentPriority: 9 });
+    await rejectMarket({ ...base(), actor: f.agent, subjectId: f.de });
+    await restoreMarket({ ...base(), actor: f.agent, subjectId: f.de });
+    await markMarketSelected({ ...base(), actor: f.agent, subjectId: f.es, agentPriority: 1 });
+    await markMarketNotSelected({ ...base(), actor: f.agent, subjectId: f.fr });
+    await pauseMarketAutomation({ ...base(), actor: f.agent, subjectId: f.es });
+    await resumeMarketAutomation({ ...base(), actor: f.agent, subjectId: f.es });
+    await requestMarketReview({ ...base(), actor: f.agent, subjectId: f.es });
+
+    // Nine decisions across every market action, and the model's output is untouched.
+    expect(await snapshotAll(f.runId)).toEqual(before);
+    expect(await prisma.agentDecision.count({ where: { market_assessment_id: { in: [f.de, f.fr, f.es] } } })).toBe(9);
+  });
+
+  test('there is no update path: a change of mind appends and supersedes', async () => {
+    const f = await scenario();
+    const first = await rejectMarket({ ...base(), actor: f.agent, subjectId: f.de });
+    const second = await restoreMarket({ ...base(), actor: f.agent, subjectId: f.de });
+    expect(second.supersedes_id).toBe(first.id);
+    // The original row is unchanged by the supersession.
+    expect(await prisma.agentDecision.findUniqueOrThrow({ where: { id: first.id } })).toEqual(first);
   });
 });

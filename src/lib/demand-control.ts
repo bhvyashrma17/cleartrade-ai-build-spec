@@ -77,6 +77,8 @@ export interface OperationalCandidate {
   /** The model's rank within its run. Null when the model produced no score. */
   modelRank: number | null;
   current: (AgentDecision & { state: AgentDecisionState }) | null;
+  /** Stable identity for deterministic tie-breaking. The MarketAssessment id. */
+  subjectId?: string | null;
 }
 
 /**
@@ -107,13 +109,45 @@ export function sortByOperationalOrder<T extends OperationalCandidate>(candidate
   return [...candidates].sort((a, b) => {
     const bucketDelta = BUCKET_SORT[bucketFor(a.current)] - BUCKET_SORT[bucketFor(b.current)];
     if (bucketDelta !== 0) return bucketDelta;
+
     const aOrder = operationalOrder(a);
     const bOrder = operationalOrder(b);
-    if (aOrder === null && bOrder === null) return 0;
+    if (aOrder === null && bOrder === null) return tieBreak(a, b);
     if (aOrder === null) return 1;
     if (bOrder === null) return -1;
-    return aOrder - bOrder;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    return tieBreak(a, b);
   });
+}
+
+/**
+ * Break a numeric tie in operational order.
+ *
+ * `agent_priority` and `model_rank` share one number line, so a market promoted to 1 collides
+ * with whatever the model already ranked 1. The tie is resolved by *provenance of the number*
+ * rather than by its value: an explicitly stated agent priority is a deliberate human
+ * instruction, while a model-rank fallback is only the absence of one. Deferring to the
+ * fallback would let the AI's opinion outrank an explicit override at exactly the moment the
+ * agent bothered to express one.
+ *
+ * Two markets both explicitly prioritised 1 is a genuine tie the agent is entitled to create,
+ * so it is preserved rather than silently rewritten — ordering falls to AI rank and then to
+ * assessment id, which is arbitrary but stable, so the table never reshuffles between renders.
+ */
+function tieBreak(a: OperationalCandidate, b: OperationalCandidate): number {
+  const aExplicit = a.current?.agent_priority != null;
+  const bExplicit = b.current?.agent_priority != null;
+  if (aExplicit !== bExplicit) return aExplicit ? -1 : 1;
+
+  if (a.modelRank !== b.modelRank) {
+    if (a.modelRank === null) return 1;
+    if (b.modelRank === null) return -1;
+    return a.modelRank - b.modelRank;
+  }
+
+  // Last resort: stable and deterministic, so equal candidates never swap places on reload.
+  return (a.subjectId ?? '').localeCompare(b.subjectId ?? '');
 }
 
 /** The default agent view hides terminal candidates; "All" shows them, sorted last. */
@@ -312,16 +346,22 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
   });
 
   const now = new Date();
-  // Decisions arrive newest-first, so the first one seen per subject is that subject's tip.
-  const latestBySubject = new Map<string, AgentDecision & { state: AgentDecisionState }>();
+  // Decisions arrive newest-first, so per subject the first seen is the tip and the rest are
+  // its history — kept in full, because a superseded or expired decision is still the record
+  // of what was believed and when.
+  const historyBySubject = new Map<string, (AgentDecision & { state: AgentDecisionState })[]>();
   for (const decision of decisions) {
     const subject = decision.market_assessment_id;
-    if (!subject || latestBySubject.has(subject)) continue;
-    latestBySubject.set(subject, { ...decision, state: decisionState(decision, now) });
+    if (!subject) continue;
+    const entry = { ...decision, state: decisionState(decision, now) };
+    const existing = historyBySubject.get(subject);
+    if (existing) existing.push(entry);
+    else historyBySubject.set(subject, [entry]);
   }
 
   return assessments.map((assessment) => {
-    const latest = latestBySubject.get(assessment.id) ?? null;
+    const history = historyBySubject.get(assessment.id) ?? [];
+    const latest = history[0] ?? null;
     // Only the tip may be current, and only while still in force. A superseded or expired tip
     // means no current decision — it must not fall through to an older row, which would
     // resurrect an instruction the agent already replaced (see agent-decisions.ts).
@@ -332,7 +372,9 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
       modelRank,
       current,
       latest,
+      history,
       bucket: bucketFor(current),
+      subjectId: assessment.id,
       operationalOrder: operationalOrder({ modelRank, current }),
       components: componentViews(assessment),
       provenance: modelProvenance(assessment),

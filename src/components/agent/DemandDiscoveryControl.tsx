@@ -17,6 +17,7 @@
 
 import type { MarketControlRow } from '@/lib/demand-control';
 import { StatusChip } from '@/components/ui';
+import { MarketDecisionControls } from '@/components/agent/MarketDecisionControls';
 
 const pct = (n: number | null) => (n === null ? '—' : `${(n * 100).toFixed(1)}%`);
 const num = (n: number | null) => (n === null ? '—' : String(n));
@@ -132,6 +133,52 @@ function Provenance({ row }: { row: MarketControlRow }) {
   );
 }
 
+
+/**
+ * Full decision history for one market.
+ *
+ * Superseded and expired decisions stay listed with their state rather than disappearing —
+ * they are the record of what was believed and when, and the frozen AI snapshot on each row is
+ * what makes an override reviewable long after the assessment has been recomputed.
+ */
+function DecisionHistory({ row }: { row: MarketControlRow }) {
+  if (row.history.length === 0) {
+    return <p className="text-xs text-[var(--color-text-muted)]">No decisions recorded yet.</p>;
+  }
+  return (
+    <ol className="space-y-2">
+      {row.history.map((entry) => (
+        <li key={entry.id} className="border-l-2 border-[var(--color-border)] pl-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-semibold text-primary">{entry.action.replaceAll('_', ' ')}</span>
+            <StatusChip
+              label={entry.state}
+              tone={entry.state === 'active' ? 'positive' : 'neutral'}
+              icon={entry.state === 'active' ? 'check' : 'clock'}
+              size="sm"
+              detail={entry.state === 'superseded' ? 'Replaced by a later decision.' : undefined}
+            />
+            {entry.agent_priority != null ? (
+              <span className="text-xs text-[var(--color-text-secondary)]">priority {entry.agent_priority}</span>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{entry.reason}</p>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            {fmtDate(entry.created_at)}
+            {entry.expires_at ? ` · expires ${fmtDate(entry.expires_at)}` : ''}
+            {entry.supersedes_id ? ' · supersedes an earlier decision' : ''}
+          </p>
+          {/* What the model said at the moment of the decision — not what it says now. */}
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            AI at decision time: score {num(entry.original_score)} · rank {num(entry.original_rank)}
+            {entry.original_model_version ? ` · ${entry.original_model_version}` : ''}
+          </p>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function DemandDiscoveryControl({
   rows,
   showAll,
@@ -187,6 +234,7 @@ export function DemandDiscoveryControl({
               <th scope="col" className="px-3 py-2 text-right font-medium">Confidence</th>
               <th scope="col" className="px-3 py-2 text-left font-medium">Operational order</th>
               <th scope="col" className="px-3 py-2 text-left font-medium">Agent decision</th>
+              <th scope="col" className="px-3 py-2 text-left font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -208,6 +256,12 @@ export function DemandDiscoveryControl({
                 </td>
                 <td className="px-3 py-3"><OperationalOrderCell row={row} /></td>
                 <td className="px-3 py-3"><DecisionCell row={row} /></td>
+                <td className="px-3 py-3">
+                  <MarketDecisionControls
+                    assessmentId={row.assessment.id}
+                    countryCode={row.assessment.country_code}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -229,6 +283,10 @@ export function DemandDiscoveryControl({
               </h4>
               <div className="mt-2"><ComponentBreakdown row={row} /></div>
               <div className="mt-2"><Provenance row={row} /></div>
+              <div className="mt-3">
+                <h5 className="text-xs font-semibold text-primary">Decision history</h5>
+                <div className="mt-1"><DecisionHistory row={row} /></div>
+              </div>
             </section>
           ))}
         </div>
