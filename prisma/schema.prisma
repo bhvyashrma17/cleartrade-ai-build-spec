@@ -735,6 +735,9 @@ model User {
   products_hs_confirmed       Product[]
   auth_provider_accounts      AuthProviderAccount[]
   agent_decisions             AgentDecision[]           @relation("AgentDecisionActor")
+  staff_invitations_sent      StaffInvitation[]         @relation("StaffInvitationInviter")
+  staff_invitations_revoked   StaffInvitation[]         @relation("StaffInvitationRevoker")
+  staff_invitation_accepted   StaffInvitation?          @relation("StaffInvitationAcceptor")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -3345,4 +3348,54 @@ model AgentDecision {
   @@index([market_assessment_id, created_at])
   @@index([buyer_fit_assessment_id, created_at])
   @@index([actor_user_id, created_at])
+}
+
+// ---------------------------------------------------------------------------
+// Staff provisioning (Phase 4)
+// ---------------------------------------------------------------------------
+
+enum StaffInvitationStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+/// An invitation for internal ClearTrade staff — today, agents.
+///
+/// Deliberately a separate model from `Invitation` rather than a `purpose` column on it.
+/// `Invitation` is live and exporter-specific by construction: `exporter_org_id` is non-null,
+/// it cascade-deletes with the org, both its indexes lead with the org, and a working member
+/// invite route and UI depend on that shape. Making the column nullable would weaken a running
+/// flow and create rows whose meaning depends on a NULL.
+///
+/// Here the ambiguity cannot arise: there is no organisation column to be wrong. A staff
+/// invitation grants a staff role and never fabricates exporter membership; an exporter
+/// invitation cannot be accepted as staff because it lives in a different table entirely.
+model StaffInvitation {
+  id     String                @id @default(cuid())
+  email  String
+  /// Constrained to staff roles by a database CHECK — a client cannot choose its own role,
+  /// and no code path may widen this to an exporter role.
+  role   UserRole
+  status StaffInvitationStatus @default(pending)
+  /// Random, single-use. Never written to an audit payload.
+  token  String                @unique
+
+  invited_by_id    String
+  expires_at       DateTime
+  accepted_at      DateTime?
+  accepted_user_id String?   @unique
+  revoked_at       DateTime?
+  revoked_by_id    String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  invited_by    User  @relation("StaffInvitationInviter", fields: [invited_by_id], references: [id])
+  revoked_by    User? @relation("StaffInvitationRevoker", fields: [revoked_by_id], references: [id])
+  accepted_user User? @relation("StaffInvitationAcceptor", fields: [accepted_user_id], references: [id])
+
+  @@index([email, status])
+  @@index([status, expires_at])
 }

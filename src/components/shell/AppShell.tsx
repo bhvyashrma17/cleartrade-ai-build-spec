@@ -25,6 +25,15 @@ interface NavItem {
   minTier: Tier;
 }
 
+/**
+ * Every href here must resolve to a real page — `tests/navigation.test.ts` walks this table
+ * against src/app and fails on a dead link.
+ *
+ * Removed in Phase 4 rather than left pointing at 404s: /ops/compliance, /ops/settings,
+ * /app/documents, /app/shipments, /app/payments and /app/support. None of those routes exist,
+ * and shipping navigation to a missing page is worse than omitting the entry — it reads as a
+ * broken product rather than an unbuilt one. They return when the surfaces are built.
+ */
 const NAVIGATION: Record<Portal, NavItem[]> = {
   exporter: [
     { label: 'Overview', href: '/app/overview', minTier: 'free' },
@@ -34,10 +43,6 @@ const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Deals', href: '/app/deals', minTier: 'paid' },
     { label: 'Tasks', href: '/app/tasks', minTier: 'paid' },
     { label: 'Messages', href: '/app/messages', minTier: 'paid' },
-    { label: 'Documents', href: '/app/documents', minTier: 'paid' },
-    { label: 'Shipments', href: '/app/shipments', minTier: 'paid' },
-    { label: 'Payments', href: '/app/payments', minTier: 'paid' },
-    { label: 'Support', href: '/app/support', minTier: 'free' },
     { label: 'Notifications', href: '/app/notifications', minTier: 'free' },
   ],
   agent: [
@@ -54,12 +59,11 @@ const NAVIGATION: Record<Portal, NavItem[]> = {
   ops: [
     { label: 'Control Tower', href: '/ops', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Assignments', href: '/ops/assignments', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
+    { label: 'Agents', href: '/ops/agents', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Exceptions', href: '/ops/exceptions', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
-    { label: 'Compliance / CHA', href: '/ops/compliance', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Finance', href: '/ops/finance', minTier: 'paid', roles: ['ops_finance', 'admin'] },
     { label: 'Disputes', href: '/ops/disputes', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
     { label: 'Audit', href: '/ops/audit', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
-    { label: 'Settings', href: '/ops/settings', minTier: 'paid', roles: ['admin'] },
   ],
 };
 

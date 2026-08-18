@@ -75,6 +75,11 @@ export function apiPost<T>(path: string, payload: unknown): Promise<T> {
   return request<T>(path, { method: 'POST', body: JSON.stringify(payload) });
 }
 
+/** DELETE with a body — used where the resource to remove is named in the payload. */
+export function apiDelete<T>(path: string, payload: unknown): Promise<T> {
+  return request<T>(path, { method: 'DELETE', body: JSON.stringify(payload) });
+}
+
 export function apiPatch<T>(path: string, payload: unknown): Promise<T> {
   return request<T>(path, { method: 'PATCH', body: JSON.stringify(payload) });
 }
