@@ -20,6 +20,10 @@ export { UnsupportedDocumentError } from './engine';
 export { MockDocumentEngine, renderDocumentText } from './mock-engine';
 export { LegacyDocumentEngine } from './legacy';
 export {
+  UnrenderableTextError, buildDocumentModel, isPdfRenderable, preflightPdfGlyphs,
+  unrenderableCharacters, type GlyphIssue,
+} from './legacy';
+export {
   ALL_FORMATS, DOCUMENT_FORMAT_SUPPORT, FILE_EXTENSIONS, MIME_TYPES, supportsFormat,
 } from './legacy/capabilities';
 

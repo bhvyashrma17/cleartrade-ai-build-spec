@@ -20,11 +20,13 @@ import { ApiClientError, apiPost } from '@/lib/api-client';
 type Format = 'pdf' | 'docx' | 'html';
 
 export function GenerateDocumentPanel({
-  dealId, documentId, formats,
+  dealId, documentId, formats, disabled = false,
 }: {
   dealId: string;
   documentId: string | null;
   formats: Format[];
+  /** An approved version's artifacts are frozen — regenerating means amending. */
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<Format | null>(null);
@@ -42,6 +44,14 @@ export function GenerateDocumentPanel({
       setBusy(null);
     }
   };
+
+  if (disabled) {
+    return (
+      <p className="max-w-xs text-right text-xs text-[var(--color-text-muted)]">
+        Approved — its files are frozen. Create an amendment to produce a corrected version.
+      </p>
+    );
+  }
 
   if (!documentId) {
     return (
@@ -71,7 +81,7 @@ export function GenerateDocumentPanel({
             variant={format === 'pdf' ? 'primary' : 'secondary'}
             className="min-h-9 px-3 text-sm"
             onClick={() => run(format)}
-            disabled={busy !== null}
+            disabled={busy !== null || disabled}
           >
             {busy === format ? 'Generating…' : format === 'html' ? 'Preview' : `Generate ${format.toUpperCase()}`}
           </Button>

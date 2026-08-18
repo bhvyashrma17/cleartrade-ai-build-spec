@@ -13,6 +13,7 @@ import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getConfig } from '@/lib/config';
 import { DOCUMENT_APPROVAL_POLICY, loadDocumentHistory, loadDocumentScoped } from '@/lib/documents';
 import { errorResponse, forbidden, list, newCorrelationId, single, validationError, versionConflict } from '@/lib/errors';
+import { assertDocumentApprovable } from '@/lib/document-lifecycle';
 import { canApproveDocument } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { scheduleFromThreshold } from '@/lib/state-machines/task';
@@ -77,6 +78,13 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ dealI
     if (document.version !== parsed.data.version || document.checksum !== parsed.data.checksum) {
       throw versionConflict(document.version, document.updated_at);
     }
+
+    // Phase 7 gate. Generation succeeding is not sufficient: the snapshot must exist, the
+    // authoritative artifact must exist and match the checksum the approval will record, the
+    // frozen input must still be complete, and a PDF whose text the font cannot represent must
+    // not be approvable. Shared with the agent workspace, so the exporter is never shown an
+    // Approve button the server would refuse.
+    await assertDocumentApprovable(principal, dealId, documentId);
 
     const approved = await prisma.$transaction(async (tx) => {
       const row = await tx.document.update({
@@ -173,9 +181,8 @@ async function requestChanges(args: {
           severity: 'action_required',
           object_type: 'document',
           object_id: document.id,
-          // No agent-side document detail screen exists yet — point at the deal's
-          // agent commercial page rather than a route that would 404.
-          deep_link: `/agent/deals/${dealId}/commercial`,
+          // Straight to the agent's review surface for this exact version.
+          deep_link: `/agent/deals/${dealId}/documents/${document.id}`,
           dedupe_key: dedupeKey,
         },
       });

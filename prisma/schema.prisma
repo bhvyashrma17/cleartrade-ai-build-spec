@@ -2185,6 +2185,16 @@ model Document {
   /// keeps changing after the lock. Set when the input is frozen, never rewritten.
   input_snapshot_id String? @unique
 
+  /// Why this version exists, when it supersedes an earlier one. Required by the amendment
+  /// service once a prior version has been generated — a correction with no stated reason is
+  /// a change nobody can audit later. Never auto-filled with field values: the reason is a
+  /// human sentence, and copying canonical data into it would leak buyer details into a
+  /// column that surfaces in lists.
+  amendment_reason      String?
+  /// The version this one supersedes. Cheaper and less ambiguous than re-deriving
+  /// "version - 1", which is wrong the moment a version is ever skipped.
+  amended_from_version  Int?
+
   reviewed_by_id    String?
   reviewed_at       DateTime?
   approved_by_id    String?

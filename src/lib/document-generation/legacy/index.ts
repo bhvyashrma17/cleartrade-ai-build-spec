@@ -24,6 +24,7 @@ import { FILE_EXTENSIONS, MIME_TYPES, supportsFormat } from './capabilities';
 import { renderDocx } from './docx';
 import { renderHtml } from './html';
 import { renderPdf } from './pdf';
+import { UnrenderableTextError, preflightPdfGlyphs, type GlyphIssue } from './preflight';
 
 export class LegacyDocumentEngine implements DocumentGenerationEngine {
   readonly name = 'legacy';
@@ -49,6 +50,29 @@ export class LegacyDocumentEngine implements DocumentGenerationEngine {
       request.content_hash,
     );
 
+    // PDF glyph preflight. The standard fonts are WinAnsi-encoded, so a name written in CJK or
+    // Devanagari has no glyph and the renderer would substitute question marks. A draft may
+    // still be produced — with the substitution stated on its face — but a final PDF fails
+    // closed here rather than becoming an approved document that misspells the buyer.
+    let glyphIssues: GlyphIssue[] = [];
+    if (request.format === 'pdf') {
+      glyphIssues = preflightPdfGlyphs(model);
+      if (glyphIssues.length > 0) {
+        if (!request.metadata.draft) throw new UnrenderableTextError(glyphIssues);
+        model.blocks = [
+          ...model.blocks,
+          {
+            kind: 'note',
+            title: 'Renderer limitation',
+            paragraphs: [
+              `${glyphIssues.length} value${glyphIssues.length === 1 ? '' : 's'} on this draft contain characters the PDF font cannot represent and are shown with substituted characters: ${glyphIssues.map((i) => i.label).join(', ')}.`,
+              'This draft cannot be approved as a PDF. Use the DOCX output, which represents these characters correctly, or transliterate the values in the canonical record.',
+            ],
+          },
+        ];
+      }
+    }
+
     const bytes =
       request.format === 'pdf' ? await renderPdf(model)
       : request.format === 'docx' ? await renderDocx(model)
@@ -59,6 +83,11 @@ export class LegacyDocumentEngine implements DocumentGenerationEngine {
       mime_type: MIME_TYPES[request.format],
       file_extension: FILE_EXTENSIONS[request.format],
       provenance: {
+        // Recorded on the artifact, so a draft carrying substituted characters is identifiable
+        // later without re-running the check.
+        ...(glyphIssues.length > 0
+          ? { glyph_substitutions: glyphIssues.map((i) => ({ label: i.label, code_points: i.code_points })) }
+          : {}),
         engine: this.name,
         engine_version: this.version,
         doc_type: request.doc_type,
@@ -75,3 +104,7 @@ export class LegacyDocumentEngine implements DocumentGenerationEngine {
 
 export { DOCUMENT_FORMAT_SUPPORT, ALL_FORMATS, MIME_TYPES, FILE_EXTENSIONS, supportsFormat } from './capabilities';
 export { buildDocumentModel, isSupportedDocType } from './adapters';
+export {
+  UnrenderableTextError, isPdfRenderable, preflightPdfGlyphs, unrenderableCharacters,
+  type GlyphIssue,
+} from './preflight';

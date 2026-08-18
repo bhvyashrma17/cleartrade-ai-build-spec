@@ -346,7 +346,37 @@ export async function readDocumentArtifact(input: {
   });
   if (!artifact) throw notFound('That document has not been generated in this format.');
 
+  // Stored bytes, always. Nothing on this path re-renders — a regenerated PDF would carry a
+  // different checksum from the one an approval is bound to, so "download" would quietly stop
+  // meaning "the file that was approved".
   const bytes = await getDocumentStorage().get(artifact.file_ref);
+
+  // For an approved version, the served bytes are verified against the checksum the approval
+  // actually recorded. Triggers make an in-place replacement impossible; this catches the
+  // remaining case where storage itself returned something else.
+  const document = await prisma.document.findUniqueOrThrow({
+    where: { id: input.documentId },
+    select: { approval_status: true, approved_checksum: true },
+  });
+  const served = createHash('sha256').update(bytes).digest('hex');
+  if (served !== artifact.checksum) {
+    throw validationError(
+      [{ field: 'document', code: 'checksum_mismatch', message: 'The stored file no longer matches its recorded checksum.' }],
+      'This file failed its integrity check and was not served.',
+    );
+  }
+  if (
+    document.approval_status === 'exporter_approved'
+    && artifact.format === DocumentFormat.pdf
+    && document.approved_checksum
+    && document.approved_checksum !== served
+  ) {
+    throw validationError(
+      [{ field: 'document', code: 'approval_mismatch', message: 'The stored file is not the file that was approved.' }],
+      'This file does not match the approved version and was not served.',
+    );
+  }
+
   return { artifact, bytes };
 }
 
