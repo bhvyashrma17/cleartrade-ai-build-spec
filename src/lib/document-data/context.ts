@@ -239,6 +239,14 @@ export async function buildDocumentContext(
     financial: {
       freight,
       insurance: insurancePremium,
+      insurance_policy: insurance
+        ? {
+            policy_ref: text(insurance.policy_ref),
+            provider_name: text(insurance.provider_name),
+            status: insurance.status,
+            covered_amount: money(insurance.covered_amount, insurance.covered_currency),
+          }
+        : null,
       other_charges: otherCharges,
       fob_value: fob,
       cif_value: cif,

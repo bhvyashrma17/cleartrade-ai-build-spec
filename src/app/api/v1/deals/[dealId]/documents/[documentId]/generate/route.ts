@@ -9,16 +9,18 @@
  *     never mutated after it has been acted on — regenerating an approved document must
  *     not retroactively change what was approved.
  *
- * Missing snapshot data is checked HERE, synchronously, before anything is enqueued
- * (EXP-12-AC05) — `collectMissingSnapshotFields` returns the same `Blocker[]` shape the
- * deal-lock gate uses, each with a deep link to the exact field.
+ * Missing data is checked HERE, synchronously, before anything is enqueued (EXP-12-AC05).
+ * Since Phase 6 that check is `documentReadiness()` over the full canonical context, not the
+ * handful of DealSnapshot columns it used to inspect — so a shipping bill missing its AD code
+ * is refused up front instead of failing inside a job. Same `Blocker[]` shape, each deep-linked
+ * to the record that owns the missing fact.
  */
 
 import { GenerationStatus } from '@prisma/client';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
-import { collectMissingSnapshotFields } from '@/lib/document-generation';
+import { buildDocumentContext, documentReadiness } from '@/lib/document-data';
 import { freshVersionStatuses, loadDocumentScoped } from '@/lib/documents';
 import { errorResponse, forbidden, newCorrelationId, prerequisitesNotMet, single } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
@@ -61,25 +63,19 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ dealI
       );
     }
 
-    const blockers = collectMissingSnapshotFields(dealId, document.doc_type, {
-      buyer_legal_name: snapshot.buyer_legal_name,
-      product_name: snapshot.product_name,
-      sku: snapshot.sku,
-      quantity: snapshot.quantity?.toString() ?? null,
-      unit: snapshot.unit,
-      unit_price_amount: snapshot.unit_price_amount?.toString() ?? null,
-      unit_price_currency: snapshot.unit_price_currency,
-      total_amount: snapshot.total_amount?.toString() ?? null,
-      total_currency: snapshot.total_currency,
-      incoterm: snapshot.incoterm,
-      incoterm_place: snapshot.incoterm_place,
-      payment_terms: snapshot.payment_terms,
-      ship_window_start: snapshot.ship_window_start,
-      ship_window_end: snapshot.ship_window_end,
-      special_conditions: snapshot.special_conditions,
-    });
-    if (blockers.length > 0) {
-      throw prerequisitesNotMet(blockers, `${document.doc_type} cannot be generated until the commercial terms are complete.`);
+    const context = await buildDocumentContext(principal, dealId, document.doc_type);
+    const readiness = documentReadiness(context, document.doc_type);
+    if (readiness.status !== 'ready') {
+      throw prerequisitesNotMet(
+        [...readiness.invalid, ...readiness.missing].map((issue) => ({
+          object_type: issue.owner,
+          object_id: dealId,
+          reason: issue.detail ?? issue.condition ?? `${issue.label} is not set.`,
+          // Deep-links to the panel that edits the CANONICAL OWNER, not to a document form.
+          deep_link: `/agent/deals/${dealId}/document-data`,
+        })),
+        `${document.doc_type} cannot be generated until its canonical data is complete.`,
+      );
     }
 
     const registry = await getConfig('documents.registry');

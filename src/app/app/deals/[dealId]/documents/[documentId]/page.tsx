@@ -18,10 +18,9 @@ import {
 } from '@/components/documents/statusDisplay';
 import { UploadReplacement } from '@/components/documents/UploadReplacement';
 import { getConfig } from '@/lib/config';
-import { getDocumentGenerationEngine } from '@/lib/document-generation';
+import { documentArtifacts } from '@/lib/document-rendering';
 import { loadDocumentHistory, loadDocumentScoped } from '@/lib/documents';
 import { canApproveDocument, canDownloadDocument } from '@/lib/permissions';
-import { prisma } from '@/lib/prisma';
 import { loadDealForWorkspace } from '../../loadDeal';
 
 function formatWhen(date: Date | null) {
@@ -71,35 +70,24 @@ export default async function DocumentDetailPage({
     } else {
       previewUnavailableReason = 'Preview is not available for this file type.';
     }
-  } else if (document.generated_from_snapshot_id) {
-    const snapshot = await prisma.dealSnapshot.findUnique({ where: { id: document.generated_from_snapshot_id } });
-    if (snapshot) {
-      const engine = getDocumentGenerationEngine();
-      const rendered = await engine.render({
-        doc_type: document.doc_type,
-        deal_id: dealId,
-        version: document.version,
-        snapshot: {
-          buyer_legal_name: snapshot.buyer_legal_name,
-          product_name: snapshot.product_name,
-          sku: snapshot.sku,
-          quantity: snapshot.quantity?.toString() ?? null,
-          unit: snapshot.unit,
-          unit_price_amount: snapshot.unit_price_amount?.toString() ?? null,
-          unit_price_currency: snapshot.unit_price_currency,
-          total_amount: snapshot.total_amount?.toString() ?? null,
-          total_currency: snapshot.total_currency,
-          incoterm: snapshot.incoterm,
-          incoterm_place: snapshot.incoterm_place,
-          payment_terms: snapshot.payment_terms,
-          ship_window_start: snapshot.ship_window_start,
-          ship_window_end: snapshot.ship_window_end,
-          special_conditions: snapshot.special_conditions,
-        },
-      });
-      previewText = rendered.content;
+  } else {
+    // Preview reads the STORED artifact rather than re-rendering. Re-rendering would produce
+    // bytes whose checksum could differ from the one an approval was bound to — safe while the
+    // renderer was deterministic plain text, not safe for a PDF.
+    const artifacts = await documentArtifacts(documentId);
+    const previewable = artifacts.find((a) => a.format === 'html')
+      ?? artifacts.find((a) => a.mime_type.startsWith('text/'));
+    if (previewable) {
+      try {
+        const { readStoredFile } = await import('@/lib/document-storage');
+        previewText = (await readStoredFile(previewable.file_ref)).toString('utf8');
+      } catch {
+        previewUnavailableReason = 'Could not load the generated file for preview.';
+      }
+    } else if (artifacts.length > 0) {
+      previewUnavailableReason = `Preview is not available for ${artifacts.map((a) => a.format.toUpperCase()).join(' / ')}. Download the file instead.`;
     } else {
-      previewUnavailableReason = 'The source snapshot for this document is no longer available.';
+      previewUnavailableReason = 'No generated file is stored for this version.';
     }
   }
 

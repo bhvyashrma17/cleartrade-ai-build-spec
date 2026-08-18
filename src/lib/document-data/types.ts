@@ -161,9 +161,24 @@ export interface ContextExchangeRate {
   rate_date: string;
 }
 
+/**
+ * The bound insurance policy, as far as `InsuranceCase` records it.
+ *
+ * Distinct from `ContextFinancial.insurance`, which is the PREMIUM — the cost that enters a
+ * CIF valuation. `covered_amount` is the sum insured, which is what an insurance declaration
+ * states. Conflating the two would put the premium in the "value insured" box.
+ */
+export interface ContextInsurancePolicy {
+  policy_ref: string | null;
+  provider_name: string | null;
+  status: string;
+  covered_amount: ContextMoney | null;
+}
+
 export interface ContextFinancial {
   freight: ContextMoney | null;
   insurance: ContextMoney | null;
+  insurance_policy: ContextInsurancePolicy | null;
   other_charges: ContextMoney | null;
   /** Derived: goods total, less freight and insurance when the incoterm includes them. */
   fob_value: ContextMoney | null;

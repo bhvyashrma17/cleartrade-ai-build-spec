@@ -159,6 +159,9 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
             <Link href={`/agent/deals/${dealId}/document-data`} className="text-sm font-medium text-primary underline underline-offset-2">
               Document data
             </Link>
+            <Link href={`/agent/deals/${dealId}/documents`} className="text-sm font-medium text-primary underline underline-offset-2">
+              Documents
+            </Link>
           </div>
         </div>
         {deal.risk_reason ? (

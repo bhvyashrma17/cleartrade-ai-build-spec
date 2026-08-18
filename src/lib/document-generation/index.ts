@@ -1,29 +1,50 @@
 /**
- * Document generation engine selection — the single place that decides which
- * implementation runs, mirroring `src/lib/discovery/index.ts`.
+ * Document generation engine selection — the single place that decides which implementation
+ * runs, mirroring `src/lib/discovery/index.ts`.
  *
- * Swapping in a real renderer means adding an implementation of
- * `DocumentGenerationEngine` and a case here. Nothing in the job handler, the routes, the
- * schema, or the UI names an engine, so none of them change.
+ * `mock` remains the default. Selecting `legacy` is explicit and per-environment: nothing here
+ * infers it from NODE_ENV or from the presence of a dependency, so a deployment cannot acquire
+ * a real renderer by accident. An unrecognised value fails loudly rather than falling back —
+ * a typo in `DOCUMENT_ENGINE` should not silently produce plain-text "documents".
  */
 
 import type { DocumentGenerationEngine } from './engine';
+import { LegacyDocumentEngine } from './legacy';
 import { MockDocumentEngine } from './mock-engine';
 
-export type { DocumentGenerationEngine, DocumentGenerationInput, DocumentGenerationResult } from './engine';
+export type {
+  DocumentGenerationEngine, DocumentOutputFormat,
+  DocumentRenderMetadata, DocumentRenderRequest, DocumentRenderResult,
+} from './engine';
+export { UnsupportedDocumentError } from './engine';
 export { MockDocumentEngine, renderDocumentText } from './mock-engine';
-export { collectMissingSnapshotFields } from './requirements';
+export { LegacyDocumentEngine } from './legacy';
+export {
+  ALL_FORMATS, DOCUMENT_FORMAT_SUPPORT, FILE_EXTENSIONS, MIME_TYPES, supportsFormat,
+} from './legacy/capabilities';
+
+export const DOCUMENT_ENGINE_NAMES = ['mock', 'legacy'] as const;
+export type DocumentEngineName = (typeof DOCUMENT_ENGINE_NAMES)[number];
 
 let cached: DocumentGenerationEngine | null = null;
 
-export function getDocumentGenerationEngine(): DocumentGenerationEngine {
+export function getDocumentGenerationEngine(
+  env: NodeJS.ProcessEnv = process.env,
+): DocumentGenerationEngine {
   if (cached) return cached;
 
-  switch (process.env.DOCUMENT_ENGINE ?? 'mock') {
+  const selected = env.DOCUMENT_ENGINE ?? 'mock';
+  switch (selected) {
+    case 'legacy':
+      cached = new LegacyDocumentEngine();
+      return cached;
     case 'mock':
-    default:
       cached = new MockDocumentEngine();
       return cached;
+    default:
+      throw new Error(
+        `Unknown DOCUMENT_ENGINE "${selected}". Valid values: ${DOCUMENT_ENGINE_NAMES.join(', ')}.`,
+      );
   }
 }
 

@@ -763,6 +763,7 @@ model User {
   invoice_numbers_issued      IssuedInvoiceNumber[]     @relation("InvoiceNumberIssuer")
   invoice_numbers_voided      IssuedInvoiceNumber[]     @relation("InvoiceNumberVoider")
   document_snapshots_created  DocumentInputSnapshot[]   @relation("DocumentSnapshotCreator")
+  document_artifacts_created  DocumentArtifact[]        @relation("DocumentArtifactGenerator")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -2194,6 +2195,8 @@ model Document {
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+
+  artifacts DocumentArtifact[]
 
   deal     Deal?         @relation(fields: [deal_id], references: [id], onDelete: Cascade)
   shipment Shipment?     @relation(fields: [shipment_id], references: [id])
@@ -3746,6 +3749,63 @@ model DocumentInputSnapshot {
   deal         Deal        @relation(fields: [deal_id], references: [id], onDelete: Cascade)
   created_by   User?       @relation("DocumentSnapshotCreator", fields: [created_by_id], references: [id])
   document     Document?
+  artifacts    DocumentArtifact[]
 
   @@index([deal_id, doc_type, created_at])
+}
+
+/// Output format of a rendered artifact. Not every document supports every format — see
+/// `DOCUMENT_FORMAT_SUPPORT` in src/lib/document-generation/legacy/capabilities.ts.
+enum DocumentFormat {
+  pdf
+  docx
+  html
+}
+
+/// One rendered file for one document version.
+///
+/// A child of Document, not a parallel document system: Document still owns identity, version
+/// and the four lifecycle dimensions. This row exists only because a single version can be
+/// rendered to PDF and DOCX from the SAME frozen input, and `Document` has one `file_ref`.
+/// Splitting them across two Document rows is impossible anyway — `@@unique([deal_id,
+/// doc_type, version])` forbids it, and rightly: they are one document in two formats, not two
+/// documents.
+///
+/// `input_snapshot_id` and `content_hash` are recorded per artifact so a stored file can be
+/// traced to the exact frozen input it came from, and two artifacts of one version can be
+/// shown to have been rendered from the same data rather than merely assumed to be.
+model DocumentArtifact {
+  id          String         @id @default(cuid())
+  document_id String
+  format      DocumentFormat
+
+  /// Storage object key, resolved through `src/lib/document-storage.ts`. Never a public URL.
+  file_ref        String
+  file_name       String
+  mime_type       String
+  file_size_bytes Int
+  /// SHA-256 of the rendered bytes.
+  checksum        String @db.VarChar(64)
+
+  /// Which engine produced this, and at what version. A renderer change that alters output
+  /// must bump its version, so an artifact can never be silently attributed to a renderer
+  /// that would produce something different today.
+  engine_name    String
+  engine_version String
+
+  /// The frozen input this was rendered from, and its hash. Both denormalised from the
+  /// snapshot deliberately: the artifact must remain traceable even if the Document row's
+  /// pointer is later moved to a newer snapshot.
+  input_snapshot_id String
+  content_hash      String @db.VarChar(64)
+
+  generated_at    DateTime @default(now())
+  generated_by_id String?
+
+  document        Document              @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  input_snapshot  DocumentInputSnapshot @relation(fields: [input_snapshot_id], references: [id])
+  generated_by    User?                 @relation("DocumentArtifactGenerator", fields: [generated_by_id], references: [id])
+
+  @@unique([document_id, format])
+  @@index([input_snapshot_id])
 }

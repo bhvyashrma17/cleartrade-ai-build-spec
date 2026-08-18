@@ -25,6 +25,9 @@ export {
 } from './derive';
 export {
   DOCUMENT_CONTEXT_BUILDER_VERSION,
-  type ContextAddress, type ContextLocation, type ContextMoney,
+  type ContextAddress, type ContextDeal, type ContextExporter, type ContextBuyer,
+  type ContextLineItem, type ContextLocation, type ContextMoney, type ContextPackageLine,
+  type ContextQuantity, type ContextInsurancePolicy, type ContextPackageTotals,
+  type ContextShipment, type ContextFinancial, type ContextReferences,
   type DocumentGenerationContext,
 } from './types';

@@ -1,19 +1,24 @@
 /**
  * `document_generation` job handler.
  *
- * Reads the document's frozen `generated_from_snapshot_id` — never live Deal columns
- * (docs/13 E1, the same rule `buildDealLockContext` follows for the lock itself) — and
- * renders through the engine seam. The route that enqueues this job has already run
- * `collectMissingSnapshotFields()` and refused to enqueue if anything is missing, so a
- * failure here means something unexpected, not an incomplete snapshot.
+ * Thin since Phase 6: it resolves the actor and delegates to `renderDocumentArtifact`, which
+ * owns freezing, readiness, rendering, storage and audit. Everything this file used to do
+ * inline — building an engine input out of DealSnapshot columns, hashing content, writing
+ * file metadata — now happens in one place that the route, the UI and this job all share, so
+ * they cannot drift.
+ *
+ * The output format is whatever the configured engine can produce for this document type. PDF
+ * where available; the mock engine renders text and says so.
  */
 
-import { ApprovalStatus, FilingStatus, GenerationStatus, ReviewStatus } from '@prisma/client';
-import { createHash } from 'node:crypto';
-import { getConfig } from '@/lib/config';
-import { getDocumentGenerationEngine } from '@/lib/document-generation';
+import { GenerationStatus } from '@prisma/client';
+import { getDocumentGenerationEngine, type DocumentOutputFormat } from '@/lib/document-generation';
+import { renderDocumentArtifact } from '@/lib/document-rendering';
 import type { JobContext, JobOutcome } from '@/lib/jobs';
 import { prisma } from '@/lib/prisma';
+import type { Principal } from '@/types';
+
+const PREFERRED_FORMATS: DocumentOutputFormat[] = ['pdf', 'docx', 'html'];
 
 export async function runDocumentGeneration(ctx: JobContext): Promise<JobOutcome> {
   const documentId = ctx.target_id;
@@ -21,88 +26,67 @@ export async function runDocumentGeneration(ctx: JobContext): Promise<JobOutcome
 
   const document = await prisma.document.findUnique({
     where: { id: documentId },
-    select: { id: true, deal_id: true, doc_type: true, version: true, generated_from_snapshot_id: true },
+    select: { id: true, deal_id: true, doc_type: true, version: true },
   });
   if (!document) throw new Error(`Document ${documentId} no longer exists.`);
-  if (!document.generated_from_snapshot_id) {
-    throw new Error(`Document ${documentId} has no snapshot to generate from.`);
-  }
+  if (!document.deal_id) throw new Error(`Document ${documentId} is not attached to a deal.`);
 
-  const snapshot = await prisma.dealSnapshot.findUnique({ where: { id: document.generated_from_snapshot_id } });
-  if (!snapshot) throw new Error(`Snapshot ${document.generated_from_snapshot_id} no longer exists.`);
+  // The job runs on behalf of whoever requested it. The requester is read from the Job row
+  // rather than from the payload, and their role and tenancy are re-resolved from the database
+  // — `renderDocumentArtifact` then re-checks access, so a queued job is not a way around
+  // authorization if an agent's assignment was revoked between request and run.
+  const job = await prisma.job.findUniqueOrThrow({
+    where: { id: ctx.job_id },
+    select: { requested_by_id: true },
+  });
+  const requester = job.requested_by_id
+    ? await prisma.user.findUnique({
+        where: { id: job.requested_by_id },
+        select: { id: true, email: true, name: true, role: true, exporter_org_id: true, exporter_org: { select: { tier: true } } },
+      })
+    : null;
+  if (!requester) throw new Error('The user who requested this generation no longer exists.');
+
+  const actor: Principal = {
+    id: requester.id, email: requester.email, name: requester.name, role: requester.role,
+    exporter_org_id: requester.exporter_org_id,
+    tier: requester.exporter_org?.tier ?? 'paid',
+  };
 
   await ctx.reportProgress(20);
 
   const engine = getDocumentGenerationEngine();
-  let rendered;
-  try {
-    rendered = await engine.render({
-      doc_type: document.doc_type,
-      deal_id: document.deal_id!,
-      version: document.version,
-      snapshot: {
-        buyer_legal_name: snapshot.buyer_legal_name,
-        product_name: snapshot.product_name,
-        sku: snapshot.sku,
-        quantity: snapshot.quantity?.toString() ?? null,
-        unit: snapshot.unit,
-        unit_price_amount: snapshot.unit_price_amount?.toString() ?? null,
-        unit_price_currency: snapshot.unit_price_currency,
-        total_amount: snapshot.total_amount?.toString() ?? null,
-        total_currency: snapshot.total_currency,
-        incoterm: snapshot.incoterm,
-        incoterm_place: snapshot.incoterm_place,
-        payment_terms: snapshot.payment_terms,
-        ship_window_start: snapshot.ship_window_start,
-        ship_window_end: snapshot.ship_window_end,
-        special_conditions: snapshot.special_conditions,
-      },
-    });
-  } catch (error) {
-    // The DOCUMENT's own generation_status is the durable record of "this attempt
-    // failed" (docs/09 §3: state must survive refresh) — recorded here, then rethrown so
-    // the JOB is also marked failed and the JobAttempt history captures the cause.
-    const message = error instanceof Error ? error.message : 'Generation failed.';
+  const format = PREFERRED_FORMATS.find((f) => engine.supports(document.doc_type, f));
+  if (!format) {
     await prisma.document.update({
       where: { id: documentId },
-      data: { generation_status: GenerationStatus.failed, generation_error: message },
+      data: {
+        generation_status: GenerationStatus.failed,
+        generation_error: `The ${engine.name} engine cannot render ${document.doc_type}.`,
+      },
     });
-    throw error;
+    throw new Error(`No supported format for ${document.doc_type} on engine ${engine.name}.`);
   }
 
-  await ctx.reportProgress(70);
-
-  const registry = await getConfig('documents.registry');
-  const entry = registry.find((r) => r.doc_type === document.doc_type);
-  const approvalRequired = entry?.approval_required ?? true;
-  const filingApplicable = entry?.filing_applicable ?? false;
-
-  const checksum = createHash('sha256').update(rendered.content).digest('hex');
-
-  await prisma.document.update({
-    where: { id: documentId },
-    data: {
-      generation_status: GenerationStatus.generated,
-      generation_error: null,
-      // A (re)generation always resets review — docs/07 §7.3 "a new version resets
-      // relevant review state" applies just as much to regenerating the SAME version
-      // after a failure as it does to a new one.
-      review_status: ReviewStatus.not_reviewed,
-      approval_status: approvalRequired ? ApprovalStatus.pending : ApprovalStatus.not_required,
-      filing_status: filingApplicable ? FilingStatus.draft : FilingStatus.not_applicable,
-      file_ref: `generated://${documentId}/v${document.version}`,
-      file_name: `${document.doc_type}_v${document.version}.${rendered.file_extension}`,
-      mime_type: rendered.mime_type,
-      file_size_bytes: Buffer.byteLength(rendered.content, 'utf8'),
-      checksum,
-      generation_inputs: { provenance: rendered.provenance ?? null } as never,
-    },
+  const { artifact } = await renderDocumentArtifact({
+    actor,
+    dealId: document.deal_id,
+    documentId,
+    format,
+    correlationId: ctx.correlation_id,
   });
 
   await ctx.reportProgress(100);
 
   return {
     status: 'completed',
-    result: { document_id: documentId, checksum, provenance: rendered.provenance ?? {} } as never,
+    result: {
+      document_id: documentId,
+      artifact_id: artifact.id,
+      format: artifact.format,
+      checksum: artifact.checksum,
+      content_hash: artifact.content_hash,
+      engine: `${artifact.engine_name}@${artifact.engine_version}`,
+    } as never,
   };
 }

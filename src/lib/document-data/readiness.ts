@@ -169,6 +169,10 @@ const REQUIREMENTS: Record<DocType, Requirement[]> = {
     ...CORE, ...GOODS,
     { field: 'deal.goods_total', label: 'Total value', owner: 'deal', present: (c) => hasMoney(c.deal.goods_total) },
     { field: 'financial.insurance', label: 'Insurance premium', owner: 'insurance_case', present: (c) => hasMoney(c.financial.insurance) },
+    // The declaration states a sum insured and a policy reference. Rendering it without them
+    // would produce a form that looks like cover and names none.
+    { field: 'financial.insurance_policy.policy_ref', label: 'Policy reference', owner: 'insurance_case', present: (c) => has(c.financial.insurance_policy?.policy_ref) },
+    { field: 'financial.insurance_policy.covered_amount', label: 'Sum insured', owner: 'insurance_case', present: (c) => hasMoney(c.financial.insurance_policy?.covered_amount ?? null) },
     ...PORTS,
   ],
 

@@ -95,7 +95,7 @@ const INVENTORY: Entry[] = [
   { name: 'DISCOVERY_MOCK_LATENCY_MS', cls: 'public', provider: 'ClearTrade' },
   { name: 'RATIONALE_WRITER', cls: 'public', provider: 'ClearTrade', note: 'template | claude' },
   { name: 'ANTHROPIC_API_KEY', cls: 'secret', provider: 'Anthropic', note: 'Required only when RATIONALE_WRITER=claude' },
-  { name: 'DOCUMENT_ENGINE', cls: 'public', provider: 'ClearTrade', note: 'Defaults to mock' },
+  { name: 'DOCUMENT_ENGINE', cls: 'public', provider: 'ClearTrade', note: 'mock (default) | legacy — explicit only, never inferred' },
 
   // --- Storage --------------------------------------------------------------------------
   { name: 'STORAGE_BACKEND', cls: 'public', provider: 'ClearTrade', local: 'required', staging: 'required', production: 'required', note: 'local on a dev machine; must be s3 in real environments' },

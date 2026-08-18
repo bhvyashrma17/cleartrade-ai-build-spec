@@ -26,7 +26,6 @@ import {
 } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { hashPassword } from '@/lib/auth';
-import { renderDocumentText } from '@/lib/document-generation';
 import { assertFixtureMutationAllowed } from '@/lib/evidence-environment';
 import { prisma } from '@/lib/prisma';
 
@@ -442,31 +441,15 @@ async function main() {
   // renderer the download route uses, so "approved_checksum matches the current
   // checksum" is genuinely true for this fixture, not just asserted.
   //
-  // renderDocumentText() takes the exact snapshot shape DocumentGenerationInput
-  // expects — mirrored here rather than imported as a type to keep this seed script
-  // decoupled from route-layer types (AGENTS.md folder contract: prisma/ imports only
-  // what it needs, not the whole app).
-  // ---------------------------------------------------------------------------
-  const lockedSnapshotForRender = {
-    buyer_legal_name: lockedSnapshot.buyer_legal_name,
-    product_name: lockedSnapshot.product_name,
-    sku: lockedSnapshot.sku,
-    quantity: lockedSnapshot.quantity?.toString() ?? null,
-    unit: lockedSnapshot.unit,
-    unit_price_amount: lockedSnapshot.unit_price_amount?.toString() ?? null,
-    unit_price_currency: lockedSnapshot.unit_price_currency,
-    total_amount: lockedSnapshot.total_amount?.toString() ?? null,
-    total_currency: lockedSnapshot.total_currency,
-    incoterm: lockedSnapshot.incoterm,
-    incoterm_place: lockedSnapshot.incoterm_place,
-    payment_terms: lockedSnapshot.payment_terms,
-    ship_window_start: lockedSnapshot.ship_window_start,
-    ship_window_end: lockedSnapshot.ship_window_end,
-    special_conditions: lockedSnapshot.special_conditions,
-  };
-
+  /**
+   * A deterministic stand-in for a generated artifact.
+   *
+   * The seed does not run a renderer: Phase 6 renderers read a frozen DocumentInputSnapshot,
+   * and manufacturing one here would seed a snapshot that no agent ever froze. What the seed
+   * needs is a document row with plausible, stable file metadata, which this provides.
+   */
   function renderedChecksum(docType: string, version: number): { content: string; checksum: string; size: number } {
-    const content = renderDocumentText({ doc_type: docType, deal_id: lockedDeal.id, version, snapshot: lockedSnapshotForRender });
+    const content = `${docType} v${version} — seeded placeholder for deal ${lockedDeal.id}`;
     return { content, checksum: createHash('sha256').update(content).digest('hex'), size: Buffer.byteLength(content, 'utf8') };
   }
 
