@@ -201,6 +201,14 @@ export interface ContextReferences {
 /** Everything a document generator is allowed to see. */
 export interface DocumentGenerationContext {
   builder_version: number;
+  /**
+   * The monetary presentation policy in force when this context was frozen.
+   *
+   * Frozen here rather than resolved at render time, so a document generated under v1 keeps
+   * rendering its amounts under v1 after a later policy ships. Absent on snapshots taken
+   * before this field existed, which resolve to v1 — the policy that was in force then.
+   */
+  money_policy_version: string;
   doc_type: string;
   built_at: string;
   exporter: ContextExporter;
@@ -211,5 +219,8 @@ export interface DocumentGenerationContext {
   references: ContextReferences;
 }
 
-/** Bumped whenever the shape above changes, so an old snapshot is never read under new assumptions. */
-export const DOCUMENT_CONTEXT_BUILDER_VERSION = 1;
+/**
+ * Bumped whenever the shape above changes, so an old snapshot is never read under new
+ * assumptions. v2 added `money_policy_version`.
+ */
+export const DOCUMENT_CONTEXT_BUILDER_VERSION = 2;

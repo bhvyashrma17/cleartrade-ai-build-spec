@@ -16,7 +16,10 @@
 import { DocType } from '@prisma/client';
 import type { DocumentGenerationContext } from '@/lib/document-data';
 import type { DocumentRenderMetadata } from '../engine';
-import { addressLines, cell, date, decimal, money, paymentTerms, port, quantity } from './format';
+import {
+  addressLines, cell, date, decimal, exchangeRate, money as formatMoney,
+  paymentTerms, port, quantity, unitPrice as formatUnitPrice,
+} from './format';
 import type { Block, DocumentModel, KeyValueBlock, TableBlock } from './model';
 
 const DOC_TITLES: Record<string, string> = {
@@ -30,6 +33,16 @@ const DOC_TITLES: Record<string, string> = {
 };
 
 type Ctx = DocumentGenerationContext;
+
+/**
+ * Money formatters bound to the policy frozen in THIS context.
+ *
+ * Bound once per call rather than reaching for the current policy inside each helper: a
+ * document re-rendered years later must present its amounts the way it did when it was
+ * generated, and the only way to guarantee that is to read the version off the frozen input.
+ */
+const moneyOf = (c: Ctx) => (v: Parameters<typeof formatMoney>[0]) => formatMoney(v, c.money_policy_version);
+const unitPriceOf = (c: Ctx) => (v: Parameters<typeof formatUnitPrice>[0]) => formatUnitPrice(v, c.money_policy_version);
 
 /** Exporter and buyer, side by side. Every document opens with it. */
 function parties(c: Ctx): Block {
@@ -87,6 +100,8 @@ function commercialTerms(c: Ctx): KeyValueBlock {
 
 /** Goods, one row per line item, with a totals band. */
 function goodsTable(c: Ctx, opts: { priced: boolean }): TableBlock {
+  const money = moneyOf(c);
+  const unitPrice = unitPriceOf(c);
   const columns = opts.priced
     ? [
         { header: 'Sr', align: 'center' as const, width: 6 },
@@ -107,7 +122,8 @@ function goodsTable(c: Ctx, opts: { priced: boolean }): TableBlock {
     opts.priced
       ? [
           String(i + 1), cell(item.description), cell(item.itc_hs_code ?? item.hs_code),
-          quantity(item.quantity), money(item.unit_price), money(item.line_total),
+          // Unit price keeps its agreed precision; the line amount is rounded to the currency.
+          quantity(item.quantity), unitPrice(item.unit_price), money(item.line_total),
         ]
       : [String(i + 1), cell(item.description), cell(item.itc_hs_code ?? item.hs_code), quantity(item.quantity)],
   );
@@ -184,7 +200,8 @@ function packagesTable(c: Ctx): TableBlock {
  * source is stated as what it is: `manual_entry` says so, and `rbi_reference` shows the
  * notification it cited, because Phase 5 stores an operator assertion, not a verified feed.
  */
-function exchangeRate(c: Ctx): Block | null {
+function exchangeRateBlock(c: Ctx): Block | null {
+  const money = moneyOf(c);
   const rate = c.financial.exchange_rate;
   if (!rate) return null;
   const sourceLabel: Record<string, string> = {
@@ -198,7 +215,9 @@ function exchangeRate(c: Ctx): Block | null {
     title: 'Exchange rate',
     columns: 2,
     rows: [
-      { label: 'Rate', value: `1 ${rate.base_currency} = ${rate.quote_currency} ${rate.rate}` },
+      // The rate itself is NOT rounded to the quote currency's minor units — doing so would
+      // break the conversion it states.
+      { label: 'Rate', value: `1 ${rate.base_currency} = ${rate.quote_currency} ${exchangeRate(rate.rate)}` },
       { label: 'Applicable date', value: date(rate.rate_date) },
       { label: 'Source', value: sourceLabel[rate.source] ?? rate.source },
       { label: 'Citation', value: cell(rate.source_reference) },
@@ -251,6 +270,7 @@ function reference(c: Ctx, meta: DocumentRenderMetadata, docType: DocType): { la
  * literal `{{...}}` on the page. Here the wording is a function of typed values.
  */
 function declarationParagraphs(c: Ctx): string[] {
+  const money = moneyOf(c);
   const terms = String(paymentTerms(c.deal.payment_terms) ?? '').toLowerCase();
   const exporter = c.exporter.legal_name ?? c.exporter.display_name;
   const value = money(c.deal.goods_total) ?? 'the invoice value';
@@ -286,7 +306,7 @@ const ADAPTERS: Partial<Record<DocType, (c: Ctx, meta: DocumentRenderMetadata) =
 
   [DocType.CI]: (c) => {
     const blocks: Block[] = [parties(c), identifiers(c), commercialTerms(c), goodsTable(c, { priced: true })];
-    const fx = exchangeRate(c);
+    const fx = exchangeRateBlock(c);
     if (fx) blocks.push(fx);
     const t = transport(c);
     if (t.rows.length > 0) blocks.push(t);
@@ -316,11 +336,11 @@ const ADAPTERS: Partial<Record<DocType, (c: Ctx, meta: DocumentRenderMetadata) =
     parties(c), identifiers(c, { adCode: true }), commercialTerms(c),
     goodsTable(c, { priced: true }),
     { kind: 'key_values', title: 'Valuation', columns: 2, rows: [
-      { label: 'FOB value', value: money(c.financial.fob_value) },
-      { label: 'Freight', value: money(c.financial.freight) },
-      { label: 'Insurance', value: money(c.financial.insurance) },
-      { label: 'CIF value', value: money(c.financial.cif_value) },
-      { label: 'Other charges', value: money(c.financial.other_charges) },
+      { label: 'FOB value', value: moneyOf(c)(c.financial.fob_value) },
+      { label: 'Freight', value: moneyOf(c)(c.financial.freight) },
+      { label: 'Insurance', value: moneyOf(c)(c.financial.insurance) },
+      { label: 'CIF value', value: moneyOf(c)(c.financial.cif_value) },
+      { label: 'Other charges', value: moneyOf(c)(c.financial.other_charges) },
     ].filter((r) => r.value !== null) },
     transport(c),
     { kind: 'note', muted: true, paragraphs: [
@@ -350,7 +370,7 @@ const ADAPTERS: Partial<Record<DocType, (c: Ctx, meta: DocumentRenderMetadata) =
     parties(c), identifiers(c),
     { kind: 'key_values', title: 'Consignment', columns: 2, rows: [
       { label: 'Invoice no', value: cell(c.references.invoice_number) },
-      { label: 'Value', value: money(c.deal.goods_total) },
+      { label: 'Value', value: moneyOf(c)(c.deal.goods_total) },
       { label: 'Incoterm', value: cell(c.deal.incoterm) },
       { label: 'Payment terms', value: paymentTerms(c.deal.payment_terms) },
     ] },
@@ -365,8 +385,8 @@ const ADAPTERS: Partial<Record<DocType, (c: Ctx, meta: DocumentRenderMetadata) =
       { label: 'Policy reference', value: cell(c.financial.insurance_policy?.policy_ref ?? null) },
       // The sum insured, NOT the premium. Conflating them would put the cost of cover in the
       // box that states how much cover exists.
-      { label: 'Sum insured', value: money(c.financial.insurance_policy?.covered_amount ?? null) },
-      { label: 'Premium', value: money(c.financial.insurance) },
+      { label: 'Sum insured', value: moneyOf(c)(c.financial.insurance_policy?.covered_amount ?? null) },
+      { label: 'Premium', value: moneyOf(c)(c.financial.insurance) },
       { label: 'Status', value: cell(c.financial.insurance_policy?.status ?? null) },
     ].filter((r) => r.value !== null) },
     goodsTable(c, { priced: true }),

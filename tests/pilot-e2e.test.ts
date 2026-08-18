@@ -409,10 +409,12 @@ describe('pilot: snapshot to rendered artifact', () => {
     const html = (await readDocumentArtifact({ actor: world.agent, dealId: world.A.dealId, documentId, format: 'html' })).bytes.toString('utf8');
     expect(html).toContain('6390004');
     expect(html).toContain('AD code');
-    // FOB contract, so FOB is the goods total and nothing was subtracted. Rendered at the
-    // precision the arithmetic actually produced (1250 x 1.2345 = 1543.125) rather than
-    // rounded to two places — the formatter preserves value over tidiness.
-    expect(html).toContain('USD 1,543.125');
+    // FOB contract, so FOB is the goods total and nothing was subtracted. Phase 8 flagged that
+    // this printed at derived precision (1250 x 1.2345 = 1543.125); Phase 8.1's money policy
+    // rounds it to the currency's minor units at the presentation boundary. The canonical
+    // total is still exactly 1543.125 — see tests/document-money.test.ts.
+    expect(html).toContain('USD 1,543.13');
+    expect(html).not.toContain('USD 1,543.125');
   });
 
   test('the packing list carries package totals derived from the lines', async () => {

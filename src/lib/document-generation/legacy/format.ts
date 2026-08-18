@@ -10,8 +10,15 @@
  * `Number(carton.netWeightKg || 0)` printed an unknown weight as `0.00`, and
  * `grossWeightRaw < netWeight ? netWeight : grossWeightRaw` silently rewrote a data-entry error
  * into a plausible number at print time.
+ *
+ * Monetary formatting is the one exception to "presentational and non-mutating": rounding to a
+ * currency's minor units genuinely changes the digits shown. That is why it lives in its own
+ * versioned policy module rather than here, and why the version is frozen into the snapshot.
  */
 
+import {
+  formatDocumentMoney, formatDocumentUnitPrice, formatExchangeRate,
+} from '@/lib/document-money';
 import type { ContextMoney, ContextQuantity } from '@/lib/document-data';
 import type { Cell } from './model';
 
@@ -28,23 +35,43 @@ export const cell = (value: string | null | undefined): Cell => {
 export const show = (value: Cell): string => value ?? ABSENT;
 
 /**
- * Money as "USD 1,250.00".
+ * Money as it appears on a document: `USD 1,543.13`.
  *
- * Grouping and the decimal separator are display only — the amount string is never reparsed
- * through a JS number, so a 12-digit total keeps its last cent. Currencies with other minor
- * unit counts keep whatever precision the canonical value carries rather than being forced
- * to two places.
+ * Delegates entirely to `src/lib/document-money.ts`. There is no rounding, padding or grouping
+ * logic here, and none in the PDF, DOCX or HTML renderers either — one implementation, so the
+ * three formats cannot disagree about a payable amount.
+ *
+ * `policy` is the version frozen into the context this value came from, NOT whatever is current.
  */
-export function money(value: ContextMoney | null | undefined): Cell {
+export function money(
+  value: ContextMoney | null | undefined,
+  policy?: string | null,
+): Cell {
   if (!value) return null;
-  const [whole, fraction = ''] = value.amount.split('.');
-  const negative = whole.startsWith('-');
-  const digits = negative ? whole.slice(1) : whole;
-  const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  // Pad to two places when the value has fewer, because money reads wrong at one decimal.
-  // Extra precision is preserved rather than rounded away.
-  const minor = fraction.length === 0 ? '00' : fraction.length === 1 ? `${fraction}0` : fraction;
-  return `${value.currency} ${negative ? '-' : ''}${grouped}.${minor}`;
+  return formatDocumentMoney(value.amount, value.currency, policy ?? null);
+}
+
+/**
+ * A unit price, at the precision it was agreed.
+ *
+ * Separate from `money()` on purpose: a price of USD 1.2345 is the commercial agreement, and
+ * rounding it to USD 1.23 would print an invoice whose own arithmetic does not work.
+ */
+export function unitPrice(
+  value: ContextMoney | null | undefined,
+  policy?: string | null,
+): Cell {
+  if (!value) return null;
+  return formatDocumentUnitPrice(value.amount, value.currency, policy ?? null);
+}
+
+/**
+ * An exchange rate. Not money — see `formatExchangeRate` for why rounding one to the quote
+ * currency's minor units would break the conversion it states.
+ */
+export function exchangeRate(value: string | null | undefined): Cell {
+  if (value === null || value === undefined || value === '') return null;
+  return formatExchangeRate(value);
 }
 
 /** Quantity as "1,000 kg". A quantity without its unit prints the number alone, never a guess. */

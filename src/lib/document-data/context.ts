@@ -20,6 +20,7 @@
 
 import { createHash } from 'node:crypto';
 import type { DocType } from '@prisma/client';
+import { DOCUMENT_MONEY_POLICY_VERSION } from '@/lib/document-money';
 import { assertOrgAccess } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
@@ -157,6 +158,7 @@ export async function buildDocumentContext(
 
   return {
     builder_version: DOCUMENT_CONTEXT_BUILDER_VERSION,
+    money_policy_version: DOCUMENT_MONEY_POLICY_VERSION,
     doc_type: docType,
     built_at: on.toISOString(),
 
