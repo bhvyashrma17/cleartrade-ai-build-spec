@@ -175,6 +175,20 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
                 </ul>
               ) : null}
 
+              {/* Advisories do not block. They are still shown, because the agent is the one
+                  who can tell whether a flagged oddity is a mistake or simply how this shipment
+                  works. */}
+              {row.readiness.advisory.length > 0 ? (
+                <ul className="mt-2 space-y-0.5 border-l-2 border-[var(--color-border-strong)] pl-2 text-xs text-[var(--color-text-muted)]">
+                  {row.readiness.advisory.map((issue) => (
+                    <li key={issue.field}>
+                      <span className="font-medium">Worth checking:</span> {issue.label}
+                      {issue.detail ? ` — ${issue.detail}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
               {row.history.length > 0 ? (
                 <ul className="mt-3 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)] text-xs">
                   {row.history.map((version) => (

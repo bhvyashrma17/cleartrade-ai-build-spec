@@ -190,6 +190,19 @@ export default async function AgentDocumentDetailPage({
             ))}
           </ul>
         )}
+
+        {detail.snapshotReadiness && detail.snapshotReadiness.advisory.length > 0 ? (
+          <div className="mt-3 border-t border-[var(--color-border)] pt-2">
+            <p className="text-xs font-medium text-[var(--color-text-secondary)]">
+              Worth checking — none of these block approval
+            </p>
+            <ul className="mt-1 space-y-0.5 text-xs text-[var(--color-text-muted)]">
+              {detail.snapshotReadiness.advisory.map((issue) => (
+                <li key={issue.field}>{issue.label}{issue.detail ? ` — ${issue.detail}` : ''}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <ReviewPanel

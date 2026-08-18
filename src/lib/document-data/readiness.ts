@@ -51,7 +51,17 @@ export interface DocumentReadiness {
   documentType: DocType;
   status: ReadinessStatusValue;
   missing: ReadinessIssue[];
+  /** Values that are present but unusable. These block. */
   invalid: ReadinessIssue[];
+  /**
+   * Findings worth a human look that do NOT block.
+   *
+   * Separated from `invalid` after Phase 8's pilot found the alternative: consistency rules
+   * whose own wording says "confirm this" were being treated as blockers, so an ordinary FOB
+   * shipment that had recorded its booked freight could not produce a single document. Advice
+   * belongs in front of the agent, not in the gate.
+   */
+  advisory: ReadinessIssue[];
 }
 
 type Ctx = DocumentGenerationContext;
@@ -266,13 +276,20 @@ export function documentReadiness(context: DocumentGenerationContext, docType: D
     });
   }
 
-  // Consistency findings join the invalid list rather than forming a third category: to the
-  // agent fixing it, "this value is unusable" and "these two values disagree" are the same
-  // job — reconsider something already entered.
-  const consistency = checkConsistency(context).map(({ rule: _rule, ...issue }) => issue);
+  // Consistency findings split by severity. A blocking one joins `invalid`; an advisory one
+  // is surfaced separately so the agent still sees it, and the gate does not stop on it.
+  const consistency = checkConsistency(context);
+  const blockingConsistency = consistency.filter((f) => f.severity === 'blocking');
+  const advisoryConsistency = consistency.filter((f) => f.severity === 'advisory');
+  const strip = ({ rule: _rule, severity: _severity, ...issue }: (typeof consistency)[number]) => issue;
+
   const seen = new Set<string>();
-  const invalid = [...invalidValues(context), ...consistency]
+  const invalid = [...invalidValues(context), ...blockingConsistency.map(strip)]
     .filter((i) => (seen.has(i.field) ? false : (seen.add(i.field), true)));
+
+  const advisorySeen = new Set<string>();
+  const advisory = advisoryConsistency.map(strip)
+    .filter((i) => (advisorySeen.has(i.field) ? false : (advisorySeen.add(i.field), true)));
 
   // `blocked` vs `missing_data` is not severity theatre: an invalid value means somebody has
   // to reconsider a decision already made, while missing data just needs typing in. The UI
@@ -280,7 +297,7 @@ export function documentReadiness(context: DocumentGenerationContext, docType: D
   const status: ReadinessStatusValue =
     invalid.length > 0 ? 'blocked' : missing.length > 0 ? 'missing_data' : 'ready';
 
-  return { documentType: docType, status, missing, invalid };
+  return { documentType: docType, status, missing, invalid, advisory };
 }
 
 /** The document types ClearTrade can assess. `other` is excluded: it is never generated. */

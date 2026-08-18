@@ -186,3 +186,45 @@ describe('Buyer stays global; tenant-specific facts do not go on it', () => {
     expect(forbidden.some((p) => p.test('country_code'))).toBe(false);
   });
 });
+
+describe('environment and configuration defaults are safe (Phase 8 sweep)', () => {
+  test('the document engine defaults to mock and never infers legacy', async () => {
+    const { getDocumentGenerationEngine, setDocumentGenerationEngine } = await import('../src/lib/document-generation');
+    setDocumentGenerationEngine(null);
+    expect(getDocumentGenerationEngine({} as NodeJS.ProcessEnv).name).toBe('mock');
+    setDocumentGenerationEngine(null);
+    expect(getDocumentGenerationEngine({ NODE_ENV: 'production' } as never).name).toBe('mock');
+    setDocumentGenerationEngine(null);
+    expect(getDocumentGenerationEngine({ DOCUMENT_ENGINE: 'legacy' } as never).name).toBe('legacy');
+    setDocumentGenerationEngine(null);
+    // A typo must not silently produce plain-text "documents".
+    expect(() => getDocumentGenerationEngine({ DOCUMENT_ENGINE: 'legcy' } as never)).toThrow(/Unknown DOCUMENT_ENGINE/);
+    setDocumentGenerationEngine(null);
+  });
+
+  test('the checked-in example env keeps the safe default and documents the alternative', async () => {
+    const example = await readFile('.env.example', 'utf8');
+    expect(example).toMatch(/^DOCUMENT_ENGINE="mock"$/m);
+    expect(example).toContain('legacy');
+    // No deployed environment is switched on by this phase.
+    expect(example).toContain('Not enabled on any deployed environment');
+  });
+
+  test('no legacy environment variable is required to run', async () => {
+    const files = await readAll('src');
+    for (const { file, source } of files) {
+      const body = code(source);
+      for (const legacyVar of ['MANUAL_EXCHANGE_RATE', 'PUPPETEER_', 'CHROME_', 'CHROMIUM_']) {
+        expect(body, `${file} reads ${legacyVar}`).not.toContain(legacyVar);
+      }
+    }
+  });
+
+  test('storage and scanner configuration is untouched by document rendering', async () => {
+    const files = await readAll('src/lib/document-generation');
+    for (const { file, source } of files) {
+      const body = code(source);
+      expect(body, `${file} reads storage config`).not.toMatch(/STORAGE_|CLAMAV|SCANNER_/);
+    }
+  });
+});

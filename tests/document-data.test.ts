@@ -741,3 +741,82 @@ describe('consistency rules mapped from the legacy engines', () => {
     expect(ctx.financial.invoice_total).toEqual({ amount: '1250', currency: 'USD' });
   });
 });
+
+describe('advisory findings inform, they do not block (Phase 8 regression)', () => {
+  /**
+   * The Phase 8 pilot found this: an ordinary FOB shipment that records its booked freight
+   * fires FREIGHT_OUTSIDE_PRICE, whose own message says "confirm". That finding was being
+   * merged into `invalid`, so readiness reported `blocked` and the deal could not produce a
+   * single document. Advice must not sit in the gate.
+   */
+  test('freight on an FOB deal is advisory, and the document stays ready', async () => {
+    const w = await world();
+    await issueInvoiceNumber({ actor: w.ownerA, dealId: w.dealId, correlationId: corr() });
+    await prisma.exchangeRateQuote.create({
+      data: {
+        exporter_org_id: w.orgA, base_currency: 'USD', quote_currency: 'INR',
+        rate: new Prisma.Decimal('88.5'), source: ExchangeRateSource.bank_quoted, rate_date: new Date(),
+      },
+    });
+    await prisma.shipment.update({
+      where: { id: w.shipmentId },
+      data: { freight_amount: new Prisma.Decimal('200.00'), freight_currency: 'USD' },
+    });
+
+    const readiness = documentReadiness(
+      await buildDocumentContext(w.ownerA, w.dealId, DocType.CI), DocType.CI,
+    );
+
+    expect(readiness.status).toBe('ready');
+    expect(readiness.invalid).toEqual([]);
+    // Still surfaced — the agent is the one who can tell whether it is a mistake.
+    expect(readiness.advisory.map((a) => a.field)).toContain('financial.freight');
+  });
+
+  test('shipping before the invoice date is advisory too', async () => {
+    const w = await world();
+    await issueInvoiceNumber({ actor: w.ownerA, dealId: w.dealId, correlationId: corr() });
+    await prisma.shipment.update({
+      where: { id: w.shipmentId }, data: { shipped_on_date: new Date('2020-01-01T00:00:00Z') },
+    });
+    const readiness = documentReadiness(
+      await buildDocumentContext(w.ownerA, w.dealId, DocType.packing_list), DocType.packing_list,
+    );
+    expect(readiness.invalid.map((i) => i.field)).not.toContain('shipment.shipped_on_date');
+    expect(readiness.advisory.map((a) => a.field)).toContain('shipment.shipped_on_date');
+  });
+
+  test('a genuine impossibility still blocks', async () => {
+    const w = await world();
+    // A CIF price with no freight recorded: FOB cannot be derived at all. Not advice.
+    await prisma.deal.update({ where: { id: w.dealId }, data: { incoterm: 'CIF' } });
+    const readiness = documentReadiness(
+      await buildDocumentContext(w.ownerA, w.dealId, DocType.shipping_bill_draft),
+      DocType.shipping_bill_draft,
+    );
+    expect(readiness.status).toBe('blocked');
+    expect(readiness.invalid.map((i) => i.field)).toContain('financial.freight');
+  });
+
+  test('gross below net remains blocking, not advisory', async () => {
+    const w = await world();
+    const context = await buildDocumentContext(w.ownerA, w.dealId, DocType.packing_list);
+    // The database refuses such a row, so this is constructed directly to exercise the rule
+    // as it would behave against a snapshot frozen before that constraint existed.
+    const tampered = {
+      ...context,
+      shipment: {
+        ...context.shipment,
+        packages: [{
+          sequence: 1, package_type: 'bag', package_count: 1,
+          net_weight_kg: '25', gross_weight_kg: '20', volume_cbm: null,
+          dimensions_cm: null, contents_description: null,
+        }],
+      },
+    };
+    const findings = checkConsistency(tampered);
+    const grossBelowNet = findings.find((f) => f.rule === 'GROSS_BELOW_NET')!;
+    expect(grossBelowNet.severity).toBe('blocking');
+    expect(documentReadiness(tampered, DocType.packing_list).status).toBe('blocked');
+  });
+});

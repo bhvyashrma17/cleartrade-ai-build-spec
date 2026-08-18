@@ -371,7 +371,21 @@ const ADAPTERS: Partial<Record<DocType, (c: Ctx, meta: DocumentRenderMetadata) =
     ].filter((r) => r.value !== null) },
     goodsTable(c, { priced: true }),
     transport(c),
-    signature(c),
+    // No signature block, deliberately.
+    //
+    // Every other document here carries one because the exporter is asserting something: the
+    // declaration makes FEMA undertakings, the invoice states an agreed price. This one asserts
+    // nothing — it restates cover the INSURER granted, read back from InsuranceCase. Printing
+    // "For <exporter> / Authorised Signatory" on it would imply an attestation the exporter was
+    // never asked to make, which is exactly why the registry sets `approval_required: false`.
+    // The signature line and the approval policy have to agree, and the policy is the one that
+    // matches what the document actually says.
+    {
+      kind: 'note', muted: true,
+      paragraphs: [
+        'This declaration restates the insurance cover recorded against this shipment. It is not a policy or certificate issued by an insurer, and it does not itself provide cover — the insurer\'s own document is the cover.',
+      ],
+    },
   ],
 };
 
