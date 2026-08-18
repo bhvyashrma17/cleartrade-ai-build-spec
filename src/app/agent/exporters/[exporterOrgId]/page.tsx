@@ -21,6 +21,9 @@ import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import { MetricCard, StatusChip } from '@/components/ui';
 import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
+import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
+import { buyerControlRows } from '@/lib/buyer-control';
+import { activeOnly as activeOnlyCandidates } from '@/lib/demand-control';
 import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/demand-control';
 import { requirePrincipal } from '@/lib/auth';
 import { loadExporterAccountScoped } from '@/lib/agent-accounts';
@@ -61,7 +64,7 @@ export default async function ExporterAccountPage({
 }) {
   const { exporterOrgId } = await params;
   const { tab, view } = await searchParams;
-  const activeTab = tab === 'demand' ? 'demand' : 'overview';
+  const activeTab = tab === 'demand' ? 'demand' : tab === 'buyers' ? 'buyers' : 'overview';
   const showAll = view === 'all';
   const principal = await requirePrincipal();
   const { org } = await loadExporterAccountScoped(principal, exporterOrgId);
@@ -160,6 +163,11 @@ export default async function ExporterAccountPage({
     : [];
   const visibleDemandRows = showAll ? demandRows : activeOnly(demandRows);
 
+  // Tenant- and assignment-safe: buyerControlRows asserts org access through the same helper
+  // every other org-scoped read uses, so this cannot surface an unassigned exporter's buyers.
+  const buyerRows = activeTab === 'buyers' ? await buyerControlRows(principal, exporterOrgId) : [];
+  const visibleBuyerRows = showAll ? buyerRows : activeOnlyCandidates(buyerRows);
+
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
       {/* Account header */}
@@ -190,7 +198,7 @@ export default async function ExporterAccountPage({
       {/* Exporter-scoped sections are tabs, not routes: they always concern ONE exporter, so
           nesting them keeps a single assignment check and a single data load. */}
       <nav aria-label="Exporter sections" className="flex gap-1 border-b border-[var(--color-border)]">
-        {([['overview', 'Overview'], ['demand', 'Demand Discovery']] as const).map(([key, label]) => (
+        {([['overview', 'Overview'], ['demand', 'Demand Discovery'], ['buyers', 'Buyer Discovery']] as const).map(([key, label]) => (
           <a
             key={key}
             href={`?tab=${key}`}
@@ -218,6 +226,21 @@ export default async function ExporterAccountPage({
               rows={visibleDemandRows}
               showAll={showAll}
               runId={latestDiscoveryRun?.id ?? null}
+            />
+          </div>
+        </section>
+      ) : activeTab === 'buyers' ? (
+        <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
+          <h2 className="text-lg font-semibold text-primary">Buyer Discovery control</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            Three separate layers: what the model recommends, what ClearTrade is operationally
+            doing, and what agents have decided. Agent decisions never change the AI score.
+          </p>
+          <div className="mt-4">
+            <BuyerDiscoveryControl
+              rows={visibleBuyerRows}
+              showAll={showAll}
+              totalCount={buyerRows.length}
             />
           </div>
         </section>
