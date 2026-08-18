@@ -614,6 +614,21 @@ model ExporterOrg {
   country                  String          @default("IN")
   state                    String?
   city                     String?
+
+  /// Structured postal address. Official documents print a block, not a paragraph, and
+  /// a single free-text column cannot be validated, corrected field-by-field, or mapped
+  /// onto a renderer's address lines. `city`/`state`/`country` above already existed and
+  /// are NOT duplicated here.
+  address_line1            String?
+  address_line2            String?
+  postal_code              String?
+
+  /// Authorised Dealer code issued by the exporter's bank. Consumed by the commercial
+  /// invoice, packing list and shipping bill renderers, and the single hardest blocker
+  /// on a shipping bill. Free-text because the format is bank-assigned, not a checksum
+  /// we can verify — it is recorded, never inferred.
+  ad_code                  String?
+
   pickup_location_code     String?
   preferred_origin_gateway String?
   assigned_agent_id        String?
@@ -670,6 +685,11 @@ model ExporterOrg {
   assignments           AgentAssignment[]
   invitations           Invitation[]
   agent_decisions       AgentDecision[]
+  buyer_profiles        BuyerCommercialProfile[]
+  invoice_series        InvoiceSeries[]
+  issued_invoice_numbers IssuedInvoiceNumber[]
+  exchange_rate_quotes  ExchangeRateQuote[]
+  document_input_snapshots DocumentInputSnapshot[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -738,6 +758,11 @@ model User {
   staff_invitations_sent      StaffInvitation[]         @relation("StaffInvitationInviter")
   staff_invitations_revoked   StaffInvitation[]         @relation("StaffInvitationRevoker")
   staff_invitation_accepted   StaffInvitation?          @relation("StaffInvitationAcceptor")
+  buyer_profiles_edited       BuyerCommercialProfile[]  @relation("BuyerProfileEditor")
+  exchange_rates_recorded     ExchangeRateQuote[]       @relation("ExchangeRateRecorder")
+  invoice_numbers_issued      IssuedInvoiceNumber[]     @relation("InvoiceNumberIssuer")
+  invoice_numbers_voided      IssuedInvoiceNumber[]     @relation("InvoiceNumberVoider")
+  document_snapshots_created  DocumentInputSnapshot[]   @relation("DocumentSnapshotCreator")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -1444,6 +1469,7 @@ model Buyer {
   fit_assessments      BuyerFitAssessment[]
   outcomes             BuyerOutcome[]
   sanctions_screenings SanctionsScreeningCase[]
+  commercial_profiles  BuyerCommercialProfile[]
 
   @@index([country_code])
   @@index([buyer_type])
@@ -1847,6 +1873,11 @@ model Deal {
   payment_terms  Json?
   delivery_terms Json?
 
+  /// The buyer's own purchase-order / contract reference. Printed on the invoice and
+  /// packing list so the buyer can match the shipment to their order. Ours is `id`;
+  /// this is theirs, and the two must never be conflated.
+  buyer_reference String?
+
   risk_state     RiskState @default(normal)
   risk_reason    String?
   owner_agent_id String?
@@ -1879,6 +1910,8 @@ model Deal {
   partner_handoffs PartnerHandoff[]
   insurance_cases  InsuranceCase[]
   payouts          Payout[]
+  issued_invoice_numbers IssuedInvoiceNumber[]
+  document_input_snapshots DocumentInputSnapshot[]
 
   @@index([exporter_org_id, stage])
   @@index([owner_agent_id, stage])
@@ -2145,6 +2178,12 @@ model Document {
   generated_from_snapshot_id String?
   generation_inputs          Json?
 
+  /// The frozen, hashed canonical input this version was built from. DealSnapshot above
+  /// covers the commercial terms agreed at deal lock; this covers everything else a
+  /// document consumes — exporter master data, buyer address, ports, packages, FX — which
+  /// keeps changing after the lock. Set when the input is frozen, never rewritten.
+  input_snapshot_id String? @unique
+
   reviewed_by_id    String?
   reviewed_at       DateTime?
   approved_by_id    String?
@@ -2159,6 +2198,7 @@ model Document {
   deal     Deal?         @relation(fields: [deal_id], references: [id], onDelete: Cascade)
   shipment Shipment?     @relation(fields: [shipment_id], references: [id])
   snapshot DealSnapshot? @relation(fields: [generated_from_snapshot_id], references: [id])
+  input_snapshot DocumentInputSnapshot? @relation(fields: [input_snapshot_id], references: [id])
   reviewer User?         @relation("DocumentReviewer", fields: [reviewed_by_id], references: [id])
   approver User?         @relation("DocumentApprover", fields: [approved_by_id], references: [id])
   filed_by User?         @relation("DocumentFiler", fields: [filed_by_id], references: [id])
@@ -2194,6 +2234,52 @@ model Shipment {
   booking_ref        String?
   customs_ref        String?
   shipping_bill_no   String?
+  shipping_bill_date DateTime?
+
+  /// Ports as identity, not as a label. `_name` is what a human reads, `_unlocode` is
+  /// the durable identifier customs and carriers actually key on, `_country` is where it
+  /// is. A NULL code means "not known" and stays NULL — a code is never derived from a
+  /// name, because a wrong UN/LOCODE on a shipping bill is worse than an absent one.
+  /// Format is enforced by a database CHECK (2 letters + 3 alphanumerics) when present.
+  port_of_loading_name      String?
+  port_of_loading_unlocode  String? @db.VarChar(5)
+  port_of_loading_country   String? @db.VarChar(2)
+  port_of_discharge_name    String?
+  port_of_discharge_unlocode String? @db.VarChar(5)
+  port_of_discharge_country String? @db.VarChar(2)
+  /// Where the goods finally end up, which is not always the discharge port's country.
+  final_destination_country String? @db.VarChar(2)
+
+  /// Carrier and conveyance. One field for vessel-or-flight because the renderers print
+  /// one line and the mode already says which it is; a voyage number is separate because
+  /// sea shipments carry both.
+  vessel_or_flight_no String?
+  voyage_no           String?
+  container_no        String?
+  container_type      String?
+  seal_no             String?
+
+  /// The transport document. `type` is explicit rather than inferred from two nullable
+  /// number columns, so "which document is this number?" is answered by data, not by
+  /// which column happened to be filled. A CHECK requires the type whenever a number is
+  /// present, and forbids an air waybill on a sea shipment (and vice versa).
+  transport_document_type TransportDocumentType?
+  transport_document_no   String?
+  transport_document_date DateTime?
+
+  /// Shipping marks for the consignment as a whole — what is stencilled on the packages.
+  marks_and_numbers String?
+  /// The date the goods actually shipped, distinct from any milestone ETA.
+  shipped_on_date   DateTime?
+
+  /// Actual booked freight for THIS shipment. Deliberately not read from
+  /// LogisticsRouteEvidence.freight_amount, which is market evidence used for estimates —
+  /// printing an estimate as the freight charged on a customs document would be a
+  /// misdeclaration. Insurance is NOT duplicated here: InsuranceCase already owns it.
+  freight_amount   Decimal? @db.Decimal(18, 4)
+  freight_currency String?  @db.VarChar(3)
+  other_charges_amount   Decimal? @db.Decimal(18, 4)
+  other_charges_currency String?  @db.VarChar(3)
 
   exception_state    ExceptionState @default(none)
   exception_reason   String?
@@ -2206,6 +2292,7 @@ model Shipment {
   cha_partner      Partner?            @relation("ChaPartner", fields: [cha_partner_id], references: [id])
   freight_partner  Partner?            @relation("FreightPartner", fields: [freight_partner_id], references: [id])
   milestones       ShipmentMilestone[]
+  packages         ShipmentPackage[]
   documents        Document[]
   disputes         Dispute[]
   partner_handoffs PartnerHandoff[]
@@ -3398,4 +3485,267 @@ model StaffInvitation {
 
   @@index([email, status])
   @@index([status, expires_at])
+}
+
+// ---------------------------------------------------------------------------
+// Canonical export-document data (Phase 5)
+//
+// One rule holds this section together: ClearTrade owns the business fact, and a
+// document consumes it. Nothing below is a per-document copy of a mutable value — the
+// only frozen copy in the whole design is DocumentInputSnapshot, and it exists precisely
+// so that freezing happens ONCE, at issuance, instead of seven times across seven tables.
+// ---------------------------------------------------------------------------
+
+/// Which transport document a shipment's number refers to. Explicit rather than inferred
+/// from which of two nullable columns is filled.
+enum TransportDocumentType {
+  bill_of_lading
+  air_waybill
+  courier_receipt
+  road_consignment_note
+}
+
+/// Where an exchange rate actually came from. There is no `default` or `system` member on
+/// purpose: a rate with no traceable origin must not be recordable at all, and `rbi_reference`
+/// or `customs_notified` may only be claimed when the notification is cited (enforced by a
+/// database CHECK on `source_reference`).
+enum ExchangeRateSource {
+  rbi_reference
+  customs_notified
+  bank_quoted
+  manual_entry
+}
+
+/// Buyer address and tax identity AS THIS EXPORTER TRANSACTS WITH THEM.
+///
+/// Deliberately not columns on `Buyer`: that model is global — one row is shared by every
+/// exporter org that has ever discovered the same company — so an address written there
+/// would hand one tenant's operationally-gathered buyer data to every other tenant. Scoping
+/// it to (exporter_org, buyer) keeps it inside the tenant boundary while still letting one
+/// exporter reuse the address across all their deals with that buyer.
+///
+/// Separate from the discovery-side identity architecture too: `RawImportIdentity` holds
+/// AES-GCM encrypted names/addresses derived from licensed trade data under source-rights
+/// rules. Nothing here is copied from there. These values are supplied by the exporter or
+/// agent as part of the transaction, which is a different fact with a different provenance.
+model BuyerCommercialProfile {
+  id              String @id @default(cuid())
+  exporter_org_id String
+  buyer_id        String
+
+  /// Name as it must appear on documents, when it differs from the buyer's discovered
+  /// legal name (a trading division, a transliteration the buyer insists on). NULL means
+  /// "use Buyer.legal_name" — never a silent copy that then drifts.
+  document_name String?
+
+  address_line1 String?
+  address_line2 String?
+  city          String?
+  region        String?
+  postal_code   String?
+  /// NULL means "use Buyer.country_code". Present only when the ship-to country genuinely
+  /// differs from the buyer's registered country.
+  country_code  String? @db.VarChar(2)
+
+  /// Importer tax identity. `type` is required whenever a value is present (database
+  /// CHECK) — "VAT" and "EORI" are not interchangeable on a customs document.
+  tax_identifier      String?
+  tax_identifier_type String?
+
+  contact_email String?
+  contact_phone String?
+
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  updated_by_id String?
+
+  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  buyer        Buyer       @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  updated_by   User?       @relation("BuyerProfileEditor", fields: [updated_by_id], references: [id])
+
+  @@unique([exporter_org_id, buyer_id])
+  @@index([buyer_id])
+}
+
+/// One package line on a shipment.
+///
+/// The canonical owner of package counts, weights and volume — there are no stored totals
+/// anywhere, because a total that is stored beside its parts is a second answer to the same
+/// question and the two disagree the first time one is edited alone. Totals are summed at
+/// read time by `shipmentPackageTotals()`.
+///
+/// A line represents `package_count` IDENTICAL packages, which is what makes one model cover
+/// both granularities the legacy system needed two for: "120 cartons, 1450 kg total" is one
+/// row with count 120, and per-carton detail is 120 rows with count 1 each.
+model ShipmentPackage {
+  id          String @id @default(cuid())
+  shipment_id String
+  /// Stable display order. Unique per shipment so a packing list never renumbers itself.
+  sequence    Int
+
+  package_type  String
+  package_count Int
+
+  /// Per-package weights, not line totals: 12 cartons of 10 kg is count 12, net 10. The
+  /// distinction is the whole reason line totals are derived rather than entered.
+  net_weight_kg   Decimal? @db.Decimal(12, 3)
+  gross_weight_kg Decimal? @db.Decimal(12, 3)
+
+  length_cm Decimal? @db.Decimal(10, 2)
+  width_cm  Decimal? @db.Decimal(10, 2)
+  height_cm Decimal? @db.Decimal(10, 2)
+  /// Volume per package. Nullable and never back-calculated from dimensions that are
+  /// themselves missing — an unknown volume prints as unknown.
+  volume_cbm Decimal? @db.Decimal(12, 4)
+
+  contents_description String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  shipment Shipment @relation(fields: [shipment_id], references: [id], onDelete: Cascade)
+
+  @@unique([shipment_id, sequence])
+  @@index([shipment_id])
+}
+
+/// A recorded exchange rate WITH its provenance.
+///
+/// Four facts travel together or the rate is meaningless: which currencies, what rate, for
+/// what date, and from where. A CHECK refuses `rbi_reference` and `customs_notified` without
+/// a `source_reference`, so the system cannot stamp a regulatory source onto a number that
+/// somebody typed in — the failure mode the legacy service had, where hardcoded fallback
+/// constants were stored under a column commented "RBI requirement".
+///
+/// Append-only: a wrong rate is superseded by recording a new one, never edited, because a
+/// document already issued against the old rate must stay explainable.
+model ExchangeRateQuote {
+  id              String @id @default(cuid())
+  exporter_org_id String
+
+  base_currency  String @db.VarChar(3)
+  quote_currency String @db.VarChar(3)
+  /// Units of quote_currency per ONE unit of base_currency. 8dp because customs-notified
+  /// rates for low-value currencies need more than 4.
+  rate           Decimal @db.Decimal(18, 8)
+
+  source           ExchangeRateSource
+  /// The citation: an RBI notification number, a customs notification, a bank quote ref.
+  /// Required for the two regulatory sources.
+  source_reference String?
+  /// The date the rate APPLIES to, which is what a document must state — not when it was
+  /// entered, which is `created_at`.
+  rate_date        DateTime
+
+  recorded_by_id String?
+  correlation_id String?
+  created_at     DateTime @default(now())
+
+  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  recorded_by  User?       @relation("ExchangeRateRecorder", fields: [recorded_by_id], references: [id])
+
+  @@index([exporter_org_id, base_currency, quote_currency, rate_date])
+}
+
+/// An exporter's invoice number series.
+///
+/// Holds the format and the counter only. It is not a log — every number ever handed out is
+/// an `IssuedInvoiceNumber` row, so the counter can never be the sole record of what was
+/// issued. `series_key` is normally the financial year ("2026-27"), which is how Indian
+/// exporters actually restart numbering.
+model InvoiceSeries {
+  id              String @id @default(cuid())
+  exporter_org_id String
+  series_key      String
+
+  prefix     String  @default("")
+  suffix     String  @default("")
+  pad_length Int     @default(5)
+  /// The next number to hand out. Advanced only by an atomic UPDATE ... RETURNING inside
+  /// the issuing transaction, which is what makes concurrent issuance safe without an
+  /// application-level lock.
+  next_number Int    @default(1)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  exporter_org ExporterOrg           @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  issued       IssuedInvoiceNumber[]
+
+  @@unique([exporter_org_id, series_key])
+}
+
+/// One officially issued invoice number. Append-only.
+///
+/// Issuing is a deliberate act, never a side effect of previewing or rendering: nothing in
+/// the readiness or context-building path can reach this table, so a failed render costs
+/// nothing and leaves no gap. That is the one thing the legacy implementation could not
+/// promise — it allocated on invoice creation, outside a transaction, with a read-then-write
+/// race that two concurrent requests could both win.
+///
+/// A database trigger permits exactly one post-insert change: voiding. Everything else about
+/// the row — the number, the sequence, who issued it, when — is frozen. A voided number is
+/// never reused; the series simply moves on.
+model IssuedInvoiceNumber {
+  id              String @id @default(cuid())
+  exporter_org_id String
+  series_id       String
+  deal_id         String
+
+  sequence_number  Int
+  /// The full rendered number (prefix + padded sequence + suffix). Stored rather than
+  /// re-derived so that changing the series format later cannot retroactively alter what
+  /// an already-issued document says.
+  formatted_number String
+
+  issued_at     DateTime @default(now())
+  issued_by_id  String?
+  correlation_id String?
+
+  voided_at     DateTime?
+  void_reason   String?
+  voided_by_id  String?
+
+  exporter_org ExporterOrg   @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  series       InvoiceSeries @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  deal         Deal          @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  issued_by    User?         @relation("InvoiceNumberIssuer", fields: [issued_by_id], references: [id])
+  voided_by    User?         @relation("InvoiceNumberVoider", fields: [voided_by_id], references: [id])
+
+  @@unique([series_id, sequence_number])
+  @@unique([exporter_org_id, formatted_number])
+  @@index([deal_id])
+}
+
+/// The exact canonical input a document version was built from, frozen and hashed.
+///
+/// This is what makes an issued document reproducible while the business data underneath it
+/// stays editable — the requirement that would otherwise force every document to keep its
+/// own copy of every field. Correcting a buyer address after issuance changes the canonical
+/// record and leaves this row untouched; the next version freezes a new one.
+///
+/// Append-only by trigger. `content_hash` is SHA-256 over the canonical JSON, so any
+/// tampering is detectable and two identical inputs are recognisably identical.
+model DocumentInputSnapshot {
+  id              String @id @default(cuid())
+  exporter_org_id String
+  deal_id         String
+  doc_type        DocType
+
+  /// Which builder produced `context`. A later builder that emits a different shape must
+  /// bump this, so an old snapshot is never re-read under new assumptions.
+  builder_version Int    @default(1)
+  context         Json
+  content_hash    String @db.VarChar(64)
+
+  created_by_id  String?
+  correlation_id String?
+  created_at     DateTime @default(now())
+
+  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  deal         Deal        @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  created_by   User?       @relation("DocumentSnapshotCreator", fields: [created_by_id], references: [id])
+  document     Document?
+
+  @@index([deal_id, doc_type, created_at])
 }

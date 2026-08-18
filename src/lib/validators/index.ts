@@ -567,3 +567,144 @@ export const createPayoutAdjustmentSchema = z.object({
 export const raisePayoutQuerySchema = z.object({
   reason: z.string().trim().min(5, 'Say what looks wrong with this payout.'),
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5 — canonical document data
+//
+// Every schema here writes to the model that OWNS the fact. None of them accepts a
+// document id, because correcting a buyer's address is a correction to the buyer, not an
+// edit to a document (docs Phase 5 Part 13).
+// ---------------------------------------------------------------------------
+
+/** Trim, and treat an emptied field as an explicit clear rather than as "unchanged". */
+const clearableText = (max = 200) =>
+  z.string().trim().max(max).transform((v) => (v.length === 0 ? null : v)).nullable().optional();
+
+const countryCode = z.string().trim().toUpperCase().length(2, 'Use a 2-letter country code.');
+
+/**
+ * UN/LOCODE, or explicitly nothing.
+ *
+ * Rejecting a malformed code rather than storing it is the point: a plausible-looking wrong
+ * code on a shipping bill is worse than an absent one, so "I don't know" must stay expressible.
+ */
+const unlocode = z.string().trim().toUpperCase()
+  .regex(/^[A-Z]{2}[A-Z2-9]{3}$/, 'A UN/LOCODE is 2 country letters plus 3 characters, e.g. INNSA.')
+  .transform((v) => (v.length === 0 ? null : v))
+  .nullable().optional();
+
+/** Exporter master data needed by the document renderers. */
+export const updateExporterMasterDataSchema = z.object({
+  address_line1: clearableText(),
+  address_line2: clearableText(),
+  city: clearableText(120),
+  state: clearableText(120),
+  postal_code: clearableText(20),
+  /// Free text: the format is assigned by the exporter's bank, so there is no checksum to
+  /// verify against and inventing one would reject valid codes.
+  ad_code: clearableText(40),
+});
+
+export const updateBuyerCommercialProfileSchema = z.object({
+  document_name: clearableText(200),
+  address_line1: clearableText(),
+  address_line2: clearableText(),
+  city: clearableText(120),
+  region: clearableText(120),
+  postal_code: clearableText(20),
+  country_code: countryCode.nullable().optional(),
+  tax_identifier: clearableText(60),
+  tax_identifier_type: clearableText(40),
+  contact_email: z.string().trim().email('Enter a valid email address.').nullable().optional(),
+  contact_phone: clearableText(40),
+}).refine((v) => !(v.tax_identifier && !v.tax_identifier_type), {
+  // Mirrors the database CHECK. "VAT" and "EORI" are not interchangeable on a customs form,
+  // so an identifier whose type is unknown cannot be printed.
+  path: ['tax_identifier_type'],
+  message: 'Say which kind of identifier this is (VAT, EORI, GST, …).',
+});
+
+export const updateShipmentExecutionSchema = z.object({
+  port_of_loading_name: clearableText(160),
+  port_of_loading_unlocode: unlocode,
+  port_of_loading_country: countryCode.nullable().optional(),
+  port_of_discharge_name: clearableText(160),
+  port_of_discharge_unlocode: unlocode,
+  port_of_discharge_country: countryCode.nullable().optional(),
+  final_destination_country: countryCode.nullable().optional(),
+  vessel_or_flight_no: clearableText(80),
+  voyage_no: clearableText(60),
+  container_no: clearableText(40),
+  container_type: clearableText(40),
+  seal_no: clearableText(40),
+  transport_document_type: z.enum(['bill_of_lading', 'air_waybill', 'courier_receipt', 'road_consignment_note']).nullable().optional(),
+  transport_document_no: clearableText(80),
+  transport_document_date: z.string().datetime().nullable().optional(),
+  shipping_bill_no: clearableText(60),
+  shipping_bill_date: z.string().datetime().nullable().optional(),
+  marks_and_numbers: clearableText(500),
+  shipped_on_date: z.string().datetime().nullable().optional(),
+  freight_amount: z.string().regex(/^\d+(\.\d{1,4})?$/, 'Enter an amount like 1250.00.').nullable().optional(),
+  freight_currency: z.string().trim().toUpperCase().length(3).nullable().optional(),
+  other_charges_amount: z.string().regex(/^\d+(\.\d{1,4})?$/, 'Enter an amount like 1250.00.').nullable().optional(),
+  other_charges_currency: z.string().trim().toUpperCase().length(3).nullable().optional(),
+}).refine((v) => !(v.freight_amount && !v.freight_currency), {
+  path: ['freight_currency'],
+  message: 'An amount without its currency is not a value.',
+}).refine((v) => !(v.transport_document_no && !v.transport_document_type), {
+  path: ['transport_document_type'],
+  message: 'Say which document this number belongs to.',
+});
+
+/**
+ * The full package list for a shipment, replaced as a set.
+ *
+ * A whole-list PUT rather than per-line CRUD because a packing list is only meaningful as a
+ * complete manifest — a partial update that leaves a stale line behind produces totals that
+ * disagree with the goods, which is precisely the failure the consistency rules exist to catch.
+ */
+export const replaceShipmentPackagesSchema = z.object({
+  packages: z.array(z.object({
+    package_type: z.string().trim().min(1, 'Say what kind of package this is.').max(60),
+    package_count: z.number().int().positive('A line describes at least one package.'),
+    net_weight_kg: z.string().regex(/^\d+(\.\d{1,3})?$/).nullable().optional(),
+    gross_weight_kg: z.string().regex(/^\d+(\.\d{1,3})?$/).nullable().optional(),
+    length_cm: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable().optional(),
+    width_cm: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable().optional(),
+    height_cm: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable().optional(),
+    volume_cbm: z.string().regex(/^\d+(\.\d{1,4})?$/).nullable().optional(),
+    contents_description: clearableText(300),
+  })).max(500),
+});
+
+/**
+ * Recording an exchange rate.
+ *
+ * `source` and `rate_date` are required, never defaulted: a rate whose origin and applicable
+ * date are unknown cannot be defended on a customs document. The database additionally
+ * refuses `rbi_reference`/`customs_notified` without a citation.
+ */
+export const recordExchangeRateSchema = z.object({
+  base_currency: z.string().trim().toUpperCase().length(3),
+  quote_currency: z.string().trim().toUpperCase().length(3).default('INR'),
+  rate: z.string().regex(/^\d+(\.\d{1,8})?$/, 'Enter a rate like 88.4250.'),
+  source: z.enum(['rbi_reference', 'customs_notified', 'bank_quoted', 'manual_entry']),
+  source_reference: z.string().trim().max(200).nullable().optional(),
+  rate_date: z.string().datetime(),
+}).refine((v) => v.base_currency !== v.quote_currency, {
+  path: ['quote_currency'],
+  message: 'A rate converts between two different currencies.',
+}).refine(
+  (v) => !['rbi_reference', 'customs_notified'].includes(v.source)
+    || Boolean(v.source_reference && v.source_reference.trim().length > 0),
+  {
+    path: ['source_reference'],
+    // The rule the legacy system broke: it stored hardcoded fallback constants under a column
+    // commented "RBI requirement". A regulatory source is a claim, and a claim needs a citation.
+    message: 'A rate recorded against RBI or customs must cite the notification it came from.',
+  },
+);
+
+export const voidInvoiceNumberSchema = z.object({
+  reason: z.string().trim().min(1, 'Say why this number is being voided.').max(300),
+});
