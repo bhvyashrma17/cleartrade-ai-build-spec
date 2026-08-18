@@ -63,9 +63,14 @@ describe('licensed ImportRecord use',()=>{
 
 async function files(root:string):Promise<string[]>{const entries=await readdir(root,{withFileTypes:true});return (await Promise.all(entries.map(entry=>entry.isDirectory()?files(path.join(root,entry.name)):[path.join(root,entry.name)]))).flat();}
 describe('raw warehouse route boundary',()=>{
+  // Source-level ON PURPOSE: this is a layering rule about which code MAY reach the raw
+  // warehouse, and no behavioural test can prove a future route did not add such a read.
+  // Comments are stripped first so prose naming the forbidden call cannot trip or satisfy it.
   test('no API route reads TradeFlow or ImportRecord',async()=>{
     const routeFiles=(await files(path.resolve('src/app/api'))).filter(file=>/\.(ts|tsx)$/.test(file));
-    const contents=await Promise.all(routeFiles.map(file=>readFile(file,'utf8')));
+    const contents=await Promise.all(routeFiles.map(async file=>(await readFile(file,'utf8'))
+      .replace(/\/\*[\s\S]*?\*\//g,'')
+      .split('\n').filter(line=>!line.trim().startsWith('//')).join('\n')));
     expect(contents.filter(text=>/prisma\.tradeFlow\b/.test(text))).toHaveLength(0);
     expect(contents.filter(text=>/prisma\.importRecord\b/.test(text))).toHaveLength(0);
   });

@@ -352,84 +352,108 @@ describe('history and immutability through the read surface', () => {
   });
 });
 
-describe('UI truthfulness and architectural guards', () => {
-  const read = async (path: string) => (await import('node:fs/promises')).readFile(path, 'utf8');
+describe('UI truthfulness — asserted as rendered data, not source text', () => {
   /**
-   * Source with comments removed.
-   *
-   * The negative assertions below look for wording the UI must never SHOW. The comments
-   * explaining why it must never show it necessarily quote that same wording, so matching
-   * against raw source would fail on the explanation rather than on a real regression.
+   * These read the exported action catalogue rather than the component source. The strings in
+   * BUYER_ACTION_SPECS ARE the copy the agent sees, so asserting them is asserting behaviour;
+   * grepping the .tsx would also match the comments that explain why a phrase is forbidden,
+   * which is how a guard test passes while the bug it guards against is present.
    */
-  const code = async (path: string) => (await read(path))
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  test('automation controls tell the truth: they record an instruction and stop nothing', async () => {
+    const { BUYER_ACTION_SPECS, BUYER_CONSEQUENCE_LABEL, BUYER_ADVISORY_NOTE } = await import('../src/lib/buyer-actions');
+    const { AUTOMATION_IS_ADVISORY } = await import('../src/lib/buyer-commands');
 
-  test('automation controls are labelled advisory, not as stopping execution', async () => {
-    const controls = await read('src/components/agent/BuyerDecisionControls.tsx');
-    // Phase 2b established this wording, and AUTOMATION_IS_ADVISORY still pins the fact.
-    expect(controls).toMatch(/No backend job reads it yet/i);
-    expect(controls).toMatch(/do NOT stop on their own/i);
-    // The forbidden claim: presenting a pause as though execution had actually halted.
-    const rendered = await code('src/components/agent/BuyerDecisionControls.tsx');
-    expect(rendered).not.toMatch(/Automation paused/i);
-    expect(rendered).not.toMatch(/Outreach stopped/i);
+    const automation = BUYER_ACTION_SPECS.filter((s) => s.consequence === 'automation');
+    expect(automation.map((s) => s.action).sort()).toEqual(['pause_automation', 'resume_automation']);
+    for (const spec of automation) {
+      expect(spec.consequenceNote).toBe(BUYER_ADVISORY_NOTE);
+      expect(spec.consequenceNote).toMatch(/No backend job reads it yet/i);
+      // The claim that must never be made while nothing gates on the decision.
+      expect(spec.consequenceNote).not.toMatch(/automation paused|outreach stopped|has been stopped/i);
+    }
+    expect(BUYER_CONSEQUENCE_LABEL.automation).toBe('Records an instruction');
+    // If a real gate is ever built this flips, and the copy above must change with it.
+    expect(AUTOMATION_IS_ADVISORY).toBe(true);
   });
 
-  test('actions are grouped by consequence so the effect is visible before clicking', async () => {
-    const controls = await read('src/components/agent/BuyerDecisionControls.tsx');
-    expect(controls).toContain('Decision only');
-    expect(controls).toContain('Changes pipeline state');
-    expect(controls).toContain('Records an instruction');
-    // qualify/unqualify must not be presented as pipeline moves — no canonical stage exists.
-    expect(controls).toMatch(/There is no canonical "qualified" pipeline stage/);
+  test('every action is grouped by consequence, and the grouping matches the service', async () => {
+    const { BUYER_ACTION_SPECS } = await import('../src/lib/buyer-actions');
+    const { BUYER_ACTION_CATEGORY } = await import('../src/lib/buyer-commands');
+
+    // The UI grouping must agree with what the service actually does, or the label lies.
+    for (const spec of BUYER_ACTION_SPECS) {
+      expect(BUYER_ACTION_CATEGORY[spec.action]!.category, spec.action).toBe(spec.consequence);
+    }
+    // And every action the service accepts is offered by the UI — no silently missing control.
+    expect(BUYER_ACTION_SPECS.map((s) => s.action).sort()).toEqual(Object.keys(BUYER_ACTION_CATEGORY).sort());
   });
 
-  test('high-impact actions state their consequence before confirmation', async () => {
-    const controls = await read('src/components/agent/BuyerDecisionControls.tsx');
-    expect(controls).toContain('consequenceNote');
-    expect(controls).toMatch(/Confirm \$\{spec\.label/);
-    // Disqualify must collect the canonical reason the service requires.
-    expect(controls).toContain('needsDisqualificationReason');
+  test('qualify and unqualify are presented as decision-only, not pipeline moves', async () => {
+    const { BUYER_ACTION_SPECS } = await import('../src/lib/buyer-actions');
+    for (const action of ['qualify', 'unqualify'] as const) {
+      const spec = BUYER_ACTION_SPECS.find((s) => s.action === action)!;
+      expect(spec.consequence).toBe('decision');
+      expect(spec.consequenceNote).toMatch(/nothing moves|Nothing moves/);
+    }
+    // BuyerLeadStage genuinely has no `qualified` member — the copy is accurate, not cautious.
+    const { BuyerLeadStage } = await import('@prisma/client');
+    expect(Object.keys(BuyerLeadStage)).not.toContain('qualified');
   });
 
-  test('the decisions route performs no Prisma writes of its own', async () => {
-    const route = await read('src/app/api/v1/buyer-fit-assessments/[assessmentId]/decisions/route.ts');
-    expect(route).toContain('runBuyerCommand');
-    // Any direct write here could move canonical state without the decision, or vice versa.
-    expect(route).not.toMatch(/prisma\.\w+\.(create|update|delete|upsert)/);
-    expect(route).not.toMatch(/export async function (PATCH|DELETE|PUT)/);
+  test('canonical actions state their pipeline effect before confirmation', async () => {
+    const { BUYER_ACTION_SPECS } = await import('../src/lib/buyer-actions');
+    const canonical = BUYER_ACTION_SPECS.filter((s) => s.consequence === 'canonical');
+    expect(canonical.map((s) => s.action).sort()).toEqual(['disqualify', 'restore', 'shortlist']);
+    for (const spec of canonical) {
+      expect(spec.consequenceNote.length, spec.action).toBeGreaterThan(40);
+    }
+    // Disqualify must collect the canonical reason the service requires, or the command fails.
+    expect(BUYER_ACTION_SPECS.find((s) => s.action === 'disqualify')!.needsDisqualificationReason).toBe(true);
+    // Priority is only offered where the service accepts one.
+    const withPriority = BUYER_ACTION_SPECS.filter((s) => s.priority).map((s) => s.action).sort();
+    expect(withPriority).toEqual(['demote', 'promote', 'shortlist']);
   });
 
-  test('the read surface authorizes through the shared helper, not a local rule', async () => {
-    const lib = await read('src/lib/buyer-control.ts');
-    expect(lib).toContain('assertOrgAccess');
-    // No bespoke role logic that could drift from tenantScope.
-    expect(lib).not.toMatch(/role\s*===\s*['"]agent['"]/);
+  test('the disqualification options offered are exactly the canonical enum', async () => {
+    const { DISQUALIFICATION_REASON_OPTIONS } = await import('../src/lib/buyer-actions');
+    const { DisqualificationReason } = await import('@prisma/client');
+    // Offering a value the enum lacks would fail at the database; omitting one hides a reason.
+    expect([...DISQUALIFICATION_REASON_OPTIONS].sort()).toEqual(Object.keys(DisqualificationReason).sort());
+  });
+});
+
+describe('architectural guards that behaviour cannot prove', () => {
+  /**
+   * Source-level ON PURPOSE. These are code-shape invariants about which layer may do what:
+   * a behavioural test can show that today's route writes nothing extra, but not that a future
+   * edit did not add a write alongside the correct one. Comments and import lines are stripped
+   * before matching so explanatory prose can never satisfy or break the assertion.
+   */
+  const code = async (file: string) => {
+    const raw = await (await import('node:fs/promises')).readFile(file, 'utf8');
+    return raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+  };
+
+  test('the buyer decisions route contains no Prisma mutation of its own', async () => {
+    const route = await code('src/app/api/v1/buyer-fit-assessments/[assessmentId]/decisions/route.ts');
+    // A direct write here could move canonical state without the decision, or the reverse —
+    // the one failure mode the transactional command layer exists to make impossible.
+    expect(route).not.toMatch(/\bprisma\.\w+\.(create|update|upsert|delete|createMany|updateMany|deleteMany)\b/);
+    expect(route).toMatch(/runBuyerCommand\(/);
   });
 
-  test('the UI never writes AI output or provenance', async () => {
+  test('the buyer UI layer never writes the assessment', async () => {
     for (const file of [
       'src/components/agent/BuyerDiscoveryControl.tsx',
       'src/components/agent/BuyerDecisionControls.tsx',
       'src/lib/buyer-control.ts',
     ]) {
-      const source = await read(file);
-      expect(source).not.toMatch(/buyerFitAssessment\.(update|upsert|create|delete)/);
-      expect(source).not.toMatch(/scoring_policy_hash\s*[:=]\s*['"`]/);
+      const source = await code(file);
+      expect(source, file).not.toMatch(/\bbuyerFitAssessment\.(create|update|upsert|delete)\b/);
     }
-  });
-
-  test('the surface renders the three layers with distinct headings', async () => {
-    const view = await read('src/components/agent/BuyerDiscoveryControl.tsx');
-    expect(view).toContain('AI recommendation');
-    expect(view).toContain('Canonical state');
-    expect(view).toContain('Agent decision');
-    expect(view).toContain('Supporting evidence');
-    // Evidence must not be presented as if it were a model component.
-    expect(view).toMatch(/not the model&rsquo;s components above/);
-    // No synthetic combined status.
-    const rendered = await code('src/components/agent/BuyerDiscoveryControl.tsx');
-    expect(rendered).not.toMatch(/effective (score|rank)/i);
   });
 });

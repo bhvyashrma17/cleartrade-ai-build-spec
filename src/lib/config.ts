@@ -592,3 +592,23 @@ export const DEPRECATED_CONFIG_KEYS = ['buyers.fit_score_weights'] as const sati
 export function isDeprecatedConfigKey(key: string): boolean {
   return (DEPRECATED_CONFIG_KEYS as readonly string[]).includes(key);
 }
+
+/**
+ * Config keys the Ops console offers as live, tunable settings.
+ *
+ * Derived from the editable set minus anything deprecated, so a retired key cannot reappear in
+ * the console by being forgotten in a second hand-maintained list. Exported so the page and its
+ * test read the same value — a test that greps the page source for a key name would match the
+ * comment explaining why the key is absent.
+ */
+export const OPS_TUNABLE_CONFIG_KEYS: readonly ConfigKey[] = ([
+  'sla.thresholds',
+  'payout.eligibility',
+  'documents.registry',
+  'uploads.policy',
+  'pagination.policy',
+  'buyers.fit_score_weights',
+  'leads.outreach',
+  'guest.policy',
+  'jobs.policy',
+] as const).filter((key) => !isDeprecatedConfigKey(key));

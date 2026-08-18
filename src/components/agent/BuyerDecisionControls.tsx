@@ -20,84 +20,13 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
-
-type Action =
-  | 'promote' | 'demote' | 'qualify' | 'unqualify' | 'request_review'
-  | 'shortlist' | 'disqualify' | 'restore'
-  | 'pause_automation' | 'resume_automation';
-
-type Consequence = 'decision' | 'canonical' | 'advisory';
-
-interface Spec {
-  action: Action;
-  label: string;
-  consequence: Consequence;
-  priority?: boolean;
-  needsDisqualificationReason?: boolean;
-  /** Shown before the agent commits, so the effect is never a surprise. */
-  consequenceNote: string;
-}
-
-/**
- * Wording for the automation controls.
- *
- * Verified in Phase 2b and unchanged: nothing outside the decision layer reads AgentDecision,
- * so no worker, route or scheduler consults a pause. Saying "automation paused" would describe
- * a capability the system does not have, and an agent who believed it might leave outreach
- * running they thought they had stopped.
- */
-const ADVISORY_NOTE =
-  'Records the instruction and flags this buyer for the team. No backend job reads it yet, so outreach and automation do NOT stop on their own.';
-
-const SPECS: Spec[] = [
-  {
-    action: 'promote', label: 'Promote', consequence: 'decision', priority: true,
-    consequenceNote: 'Sets your operational priority above the AI ordering. Does not change the pipeline stage or the AI score.',
-  },
-  {
-    action: 'demote', label: 'Demote', consequence: 'decision', priority: true,
-    consequenceNote: 'Lowers your operational priority. Does not change the pipeline stage or the AI score.',
-  },
-  {
-    action: 'qualify', label: 'Qualify', consequence: 'decision',
-    // Deliberately not a pipeline move: BuyerLeadStage has no `qualified` member, and
-    // `interested` means the BUYER expressed interest, which is a different fact.
-    consequenceNote: 'Records your judgement that this buyer is suitable. There is no canonical "qualified" pipeline stage, so nothing moves.',
-  },
-  {
-    action: 'unqualify', label: 'Unqualify', consequence: 'decision',
-    consequenceNote: 'Records your judgement that this buyer is not suitable. Nothing moves in the pipeline — use Disqualify for that.',
-  },
-  {
-    action: 'request_review', label: 'Request review', consequence: 'decision',
-    consequenceNote: 'Flags this buyer for compliance or Ops attention. Stays in the working order.',
-  },
-  {
-    action: 'shortlist', label: 'Shortlist', consequence: 'canonical', priority: true,
-    consequenceNote: 'Adds this buyer to the shortlist AND puts them in the pipeline: if no lead exists one is created and moved to Shortlisted. A lead already further along is not moved back.',
-  },
-  {
-    action: 'disqualify', label: 'Disqualify', consequence: 'canonical', needsDisqualificationReason: true,
-    consequenceNote: 'Moves the canonical lead to Disqualified and records the reason. The buyer leaves the active working order. The AI score and evidence are kept and stay visible.',
-  },
-  {
-    action: 'restore', label: 'Restore', consequence: 'canonical',
-    consequenceNote: 'Returns a disqualified lead to Shortlisted and clears the disqualification reason.',
-  },
-  { action: 'pause_automation', label: 'Pause automation', consequence: 'advisory', consequenceNote: ADVISORY_NOTE },
-  { action: 'resume_automation', label: 'Resume automation', consequence: 'advisory', consequenceNote: ADVISORY_NOTE },
-];
-
-const CONSEQUENCE_LABEL: Record<Consequence, string> = {
-  decision: 'Decision only',
-  canonical: 'Changes pipeline state',
-  advisory: 'Records an instruction',
-};
-
-const DISQUALIFICATION_REASONS = [
-  'no_response', 'not_importing_category', 'volume_too_small',
-  'price_mismatch', 'risk_flag', 'duplicate', 'other',
-] as const;
+import {
+  BUYER_ACTION_SPECS,
+  BUYER_CONSEQUENCE_LABEL,
+  DISQUALIFICATION_REASON_OPTIONS,
+  type BuyerActionConsequence,
+  type BuyerActionName,
+} from '@/lib/buyer-actions';
 
 export function BuyerDecisionControls({
   assessmentId,
@@ -107,14 +36,14 @@ export function BuyerDecisionControls({
   buyerName: string;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState<Action | null>(null);
+  const [open, setOpen] = useState<BuyerActionName | null>(null);
   const [reason, setReason] = useState('');
   const [priority, setPriority] = useState('');
   const [disqReason, setDisqReason] = useState<string>('no_response');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const spec = SPECS.find((s) => s.action === open) ?? null;
+  const spec = BUYER_ACTION_SPECS.find((s) => s.action === open) ?? null;
   const reset = () => { setOpen(null); setReason(''); setPriority(''); setError(null); };
 
   const submit = async () => {
@@ -145,13 +74,13 @@ export function BuyerDecisionControls({
   if (!spec) {
     return (
       <div className="space-y-1.5">
-        {(['canonical', 'decision', 'advisory'] as Consequence[]).map((group) => (
+        {(['canonical', 'decision', 'automation'] as BuyerActionConsequence[]).map((group) => (
           <div key={group}>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-              {CONSEQUENCE_LABEL[group]}
+              {BUYER_CONSEQUENCE_LABEL[group]}
             </p>
             <div className="mt-0.5 flex flex-wrap gap-1">
-              {SPECS.filter((s) => s.consequence === group).map((s) => (
+              {BUYER_ACTION_SPECS.filter((s) => s.consequence === group).map((s) => (
                 <button
                   key={s.action}
                   type="button"
@@ -179,7 +108,7 @@ export function BuyerDecisionControls({
       <div>
         <p className="text-xs font-semibold text-primary">{spec.label} — {buyerName}</p>
         <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-          {CONSEQUENCE_LABEL[spec.consequence]}
+          {BUYER_CONSEQUENCE_LABEL[spec.consequence]}
         </p>
       </div>
       {/* The consequence is stated before the agent commits, not after. */}
@@ -198,7 +127,7 @@ export function BuyerDecisionControls({
             onChange={(e) => setDisqReason(e.target.value)}
             className="focus-visible-ring mt-1 w-full rounded border border-[var(--color-border-strong)] bg-surface px-2 py-1.5 text-sm text-primary"
           >
-            {DISQUALIFICATION_REASONS.map((r) => (
+            {DISQUALIFICATION_REASON_OPTIONS.map((r) => (
               <option key={r} value={r}>{r.replaceAll('_', ' ')}</option>
             ))}
           </select>

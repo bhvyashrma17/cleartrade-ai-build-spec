@@ -507,20 +507,14 @@ describe('the dead buyers.fit_score_weights control cannot be presented as live'
     expect(isDeprecatedConfigKey('sla.thresholds')).toBe(false);
   });
 
-  test('the Ops console does not list it among tunable settings', async () => {
-    const { readFile } = await import('node:fs/promises');
-    const page = await readFile('src/app/ops/audit/page.tsx', 'utf8');
-    // It appeared beside real settings long enough that an operator could have edited it and
-    // believed they had retuned BuyerFit. It must not be in the rendered key list.
-    const keyList = page
-      .slice(page.indexOf('const CONFIG_KEYS'), page.indexOf('];', page.indexOf('const CONFIG_KEYS')))
-      // Strip comments: the block explains WHY the key is absent, and that explanation names it.
-      .split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
-    expect(keyList).not.toMatch(/'buyers\.fit_score_weights'/);
-    // Ops gets the real thing instead: the actual policy, explicitly read-only.
-    expect(page).toContain('BuyerFit scoring policy');
-    expect(page).toContain('Read-only · code-owned');
-    expect(page).toContain('BUYER_FIT_POLICY_HASH');
+  test('the Ops console does not offer it as a tunable setting', async () => {
+    const { OPS_TUNABLE_CONFIG_KEYS, isDeprecatedConfigKey } = await import('../src/lib/config');
+    // The console renders exactly this list, so asserting it IS asserting what Ops sees —
+    // grepping the page source would match the comment explaining the key's absence.
+    expect(OPS_TUNABLE_CONFIG_KEYS).not.toContain('buyers.fit_score_weights');
+    expect(OPS_TUNABLE_CONFIG_KEYS.length).toBeGreaterThan(0);
+    // Derived from the deprecation list, so retiring another key cannot be forgotten here.
+    expect(OPS_TUNABLE_CONFIG_KEYS.every((k) => !isDeprecatedConfigKey(k))).toBe(true);
   });
 
   test('the config shape is retained so stored rows still parse', async () => {

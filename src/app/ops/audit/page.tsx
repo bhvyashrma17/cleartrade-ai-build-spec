@@ -17,24 +17,13 @@ import { FeePolicyForm } from '@/components/ops/FeePolicyForm';
 import { CreatePartnerForm, PartnerStatusForm } from '@/components/ops/PartnerDirectoryForms';
 import { StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
-import { CONFIG_DEFAULTS, type ConfigKey } from '@/lib/config';
+import { CONFIG_DEFAULTS, OPS_TUNABLE_CONFIG_KEYS } from '@/lib/config';
 import { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } from '@/lib/buyer-intelligence';
 import { isAdmin } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { AuditSearch } from './AuditSearch';
 
-const CONFIG_KEYS: ConfigKey[] = [
-  'sla.thresholds',
-  'payout.eligibility',
-  'documents.registry',
-  'uploads.policy',
-  'pagination.policy',
-  // Not listed: 'buyers.fit_score_weights'. See DEPRECATED_CONFIG_KEYS in src/lib/config.ts —
-  // it is dead configuration, and showing it beside real settings implied it was live.
-  'leads.outreach',
-  'guest.policy',
-  'jobs.policy',
-];
+const CONFIG_KEYS = [...OPS_TUNABLE_CONFIG_KEYS];
 
 function fmt(d: Date | null): string {
   if (!d) return '—';
