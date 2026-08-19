@@ -7,9 +7,12 @@
  */
 
 import Link from 'next/link';
+import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
 import { StatusChip } from '@/components/ui';
+import { AgentActivationControl } from '@/components/ops/AgentActivationControl';
 import { AssignExporterForm } from '@/components/ops/AssignExporterForm';
+import { ReassignExporterForm } from '@/components/ops/ReassignExporterForm';
 import { requirePortalAccess } from '@/lib/auth';
 import { isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -25,12 +28,19 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
   const agent = await agentDetail(principal, agentId);
   const assignedIds = agent.agent_assignments.filter((a) => a.status === 'active').map((a) => a.exporter_org.id);
   // Only orgs this agent is not already working, so the control cannot create a duplicate.
-  const assignable = await prisma.exporterOrg.findMany({
-    where: { id: { notIn: assignedIds.length ? assignedIds : ['__none__'] } },
-    orderBy: { display_name: 'asc' },
-    select: { id: true, display_name: true },
-    take: 200,
-  });
+  const [assignable, otherActiveAgents] = await Promise.all([
+    prisma.exporterOrg.findMany({
+      where: { id: { notIn: assignedIds.length ? assignedIds : ['__none__'] } },
+      orderBy: { display_name: 'asc' },
+      select: { id: true, display_name: true },
+      take: 200,
+    }),
+    prisma.user.findMany({
+      where: { role: UserRole.agent, is_active: true, id: { not: agent.id } },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
@@ -47,6 +57,13 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
           <span className="text-[var(--color-text-muted)]">/ target ~{agent.capacityTarget}</span>
         </p>
       </header>
+
+      <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
+        <h2 className="text-lg font-semibold text-primary">Administrative actions</h2>
+        <div className="mt-3">
+          <AgentActivationControl agentId={agent.id} agentName={agent.name} isActive={agent.is_active} />
+        </div>
+      </section>
 
       <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Assign an exporter</h2>
@@ -88,7 +105,17 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
                 <td className="px-4 py-3 text-[var(--color-text-secondary)]">{a.assigned_by?.name ?? '—'}</td>
                 <td className="px-4 py-3 text-right">
                   {a.status === 'active' ? (
-                    <AssignExporterForm agentUserId={agent.id} unassignAssignmentId={a.id} />
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <AssignExporterForm agentUserId={agent.id} unassignAssignmentId={a.id} />
+                      {otherActiveAgents.length > 0 ? (
+                        <ReassignExporterForm
+                          assignmentId={a.id}
+                          exporterName={a.exporter_org.display_name}
+                          currentAgentName={agent.name}
+                          candidates={otherActiveAgents}
+                        />
+                      ) : null}
+                    </div>
                   ) : (
                     <span className="text-xs text-[var(--color-text-muted)]">—</span>
                   )}

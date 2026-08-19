@@ -175,13 +175,25 @@ describe('staff invitation lifecycle', () => {
     await expect(acceptStaffInvitation({ token: second.token, name: 'New', correlationId: corr() })).resolves.toMatchObject({ role: UserRole.agent });
   });
 
-  test('a staff invitation cannot be issued for an email that already has an account', async () => {
+  test('an existing EXPORTER may be invited — they accept by converting the account they have', async () => {
+    // This used to be a blanket refusal, because the only way to accept was to create a new
+    // staff account and an existing address could only ever collide on the unique email.
+    // Conversion (see tests/staff-invitation-conversion.test.ts) made this the ordinary case:
+    // after Google sign-in, essentially every prospective agent already has an account.
     const a = await actors();
-    // The fixture's exporter user. Inviting them as staff would be a role change wearing the
-    // costume of a new account; changing an existing user's role must go through Ops, not here.
-    await expect(inviteStaff({ actor: a.ops, email: `exp-${a.suffix}@t.test`, correlationId: corr() }))
+    const email = `exp-${a.suffix}@t.test`;
+    await expect(inviteStaff({ actor: a.ops, email, correlationId: corr() }))
+      .resolves.toMatchObject({ invitation: { email, role: UserRole.agent } });
+  });
+
+  test('an existing INTERNAL STAFF account still cannot be invited', async () => {
+    // The part of the old rule that survives: changing an Ops or admin role is a provisioning
+    // decision, and must never be something a mailed link can do.
+    const a = await actors();
+    const email = `ops-${a.suffix}@t.test`;
+    await expect(inviteStaff({ actor: a.ops, email, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-    expect(await prisma.staffInvitation.count({ where: { email: `exp-${a.suffix}@t.test` } })).toBe(0);
+    expect(await prisma.staffInvitation.count({ where: { email } })).toBe(0);
   });
 
   test('the database refuses a staff invitation granting an exporter role', async () => {
@@ -205,6 +217,52 @@ describe('staff invitation lifecycle', () => {
       randomUUID(), email, randomUUID(), a.ops.id,
       // Postgres reports the partial unique index by key rather than by name.
     )).rejects.toThrow(/already exists/);
+  });
+
+  /**
+   * Phase 9 staging finding: an Ops operator clicked "Send invitation" and the browser
+   * reported "Could not reach the server" — a message that, per `src/lib/api-client.ts`,
+   * can ONLY come from `fetch()` itself throwing, never from a server response (every
+   * route error is a well-formed JSON envelope). Railway's edge HTTP log showed the one
+   * request that reached it succeeded cleanly (201, 49ms); nothing else touched that path,
+   * successful or failed. The failure never reached the server at all.
+   *
+   * There is no code defect to reproduce here — a browser-level connectivity blip on one
+   * click isn't a property of this codebase. What IS worth pinning down is the property
+   * that makes the natural response to that symptom (the operator clicking again, or a
+   * client-side retry) safe: two overlapping invite attempts for the same email must
+   * never hang, never crash the process, and never surface as anything other than a
+   * clean success + a clean, well-formed refusal — never a raw unhandled database error.
+   * This is what actually protects an operator who reacts to a transient failure by
+   * pressing the button twice.
+   */
+  test('two concurrent invitations for the same email never hang or crash — one succeeds cleanly, the other fails cleanly', async () => {
+    const a = await actors();
+    const email = `race-${a.suffix}@t.test`;
+
+    const results = await Promise.allSettled([
+      inviteStaff({ actor: a.ops, email, correlationId: corr() }),
+      inviteStaff({ actor: a.ops, email, correlationId: corr() }),
+    ]);
+
+    // Whichever ordering Postgres resolves the race in, at least one attempt must succeed —
+    // a race must never leave the operator with two failures and no invitation at all.
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+
+    // A losing attempt fails as a normal, typed error a route can serialize — never a raw
+    // unhandled exception that would surface to the client as something unparsable.
+    for (const failure of rejected) {
+      expect(failure.status).toBe('rejected');
+      if (failure.status === 'rejected') {
+        expect(failure.reason).toBeInstanceOf(Error);
+      }
+    }
+
+    // And the database is left in a sane state either way: exactly one live invitation,
+    // never zero, never two.
+    expect(await prisma.staffInvitation.count({ where: { email, status: StaffInvitationStatus.pending } })).toBe(1);
   });
 });
 

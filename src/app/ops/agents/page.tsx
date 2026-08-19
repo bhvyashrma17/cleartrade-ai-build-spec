@@ -9,10 +9,15 @@
 import Link from 'next/link';
 import { AccessDenied } from '@/components/access-denied';
 import { StatusChip } from '@/components/ui';
+import { AddAgentForm } from '@/components/ops/AddAgentForm';
 import { InviteAgentForm } from '@/components/ops/InviteAgentForm';
+import { RevokeGrantButton } from '@/components/ops/RevokeGrantButton';
+import { RevokeInvitationButton } from '@/components/ops/RevokeInvitationButton';
 import { requirePortalAccess } from '@/lib/auth';
 import { isOps } from '@/lib/permissions';
-import { agentRoster, pendingStaffInvitations, AGENT_CAPACITY_TARGET } from '@/lib/staff-provisioning';
+import {
+  agentRoster, pendingStaffAccessGrants, pendingStaffInvitations, AGENT_CAPACITY_TARGET,
+} from '@/lib/staff-provisioning';
 
 const fmt = (d: Date) => new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(d);
 
@@ -20,9 +25,10 @@ export default async function OpsAgentsPage() {
   const principal = await requirePortalAccess('/ops');
   if (!isOps(principal)) return <AccessDenied message="Agent provisioning is available to Ops and administrators." />;
 
-  const [agents, invitations] = await Promise.all([
+  const [agents, invitations, grants] = await Promise.all([
     agentRoster(principal),
     pendingStaffInvitations(principal),
+    pendingStaffAccessGrants(principal),
   ]);
 
   return (
@@ -44,6 +50,15 @@ export default async function OpsAgentsPage() {
         <div className="mt-3"><InviteAgentForm /></div>
       </section>
 
+      <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
+        <h2 className="text-lg font-semibold text-primary">Add agent</h2>
+        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+          No link, no email sent. Converts an existing ClearTrade account directly, or
+          pre-authorizes an email that hasn&apos;t signed up yet.
+        </p>
+        <div className="mt-3"><AddAgentForm /></div>
+      </section>
+
       {invitations.length > 0 ? (
         <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
           <h2 className="text-lg font-semibold text-primary">Pending invitations</h2>
@@ -53,10 +68,46 @@ export default async function OpsAgentsPage() {
                 <div>
                   <span className="font-medium text-primary">{invite.email}</span>
                   <span className="ml-2 text-xs text-[var(--color-text-muted)]">
-                    {invite.role} · invited by {invite.invited_by?.name ?? 'Ops'} · expires {fmt(invite.expires_at)}
+                    {invite.role} · invited by {invite.invited_by?.name ?? 'Ops'} · created {fmt(invite.created_at)} ·
+                    expires {fmt(invite.expires_at)}
                   </span>
                 </div>
-                <StatusChip label="pending" tone="warning" icon="clock" size="sm" />
+                <div className="flex items-center gap-2">
+                  <StatusChip label="pending" tone="warning" icon="clock" size="sm" />
+                  <RevokeInvitationButton
+                    invitationId={invite.id}
+                    email={invite.email}
+                    role={invite.role}
+                    invitedBy={invite.invited_by?.name ?? 'Ops'}
+                    expiresAt={fmt(invite.expires_at)}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {grants.length > 0 ? (
+        <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
+          <h2 className="text-lg font-semibold text-primary">Pending direct provisioning</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            Pre-authorized emails with no account yet. Claimed automatically at their next
+            verified sign-in.
+          </p>
+          <ul className="mt-2 divide-y divide-[var(--color-border)]">
+            {grants.map((grant) => (
+              <li key={grant.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <div>
+                  <span className="font-medium text-primary">{grant.email}</span>
+                  <span className="ml-2 text-xs text-[var(--color-text-muted)]">
+                    {grant.role} · granted by {grant.granted_by?.name ?? 'Ops'} · {fmt(grant.granted_at)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusChip label="pending" tone="warning" icon="clock" size="sm" />
+                  <RevokeGrantButton grantId={grant.id} email={grant.email} grantedBy={grant.granted_by?.name ?? 'Ops'} />
+                </div>
               </li>
             ))}
           </ul>

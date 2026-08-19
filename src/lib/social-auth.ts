@@ -2,6 +2,7 @@ import { CommitmentFeeStatus, OrgTier, Prisma, UserRole } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getFeePolicy } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
+import { claimStaffAccessGrant } from '@/lib/staff-provisioning';
 
 export type SocialProviderId = 'google' | 'apple';
 
@@ -205,6 +206,20 @@ export async function resolveSocialIdentity(
     select: { id: true },
   });
   if (existingByEmail) return { ok: false, reason: 'email_conflict' };
+
+  // A pre-authorized agent grant for this exact, now-verified email takes priority over
+  // ordinary exporter signup. `claimStaffAccessGrant` is a no-op (returns null) when there is
+  // no pending grant, so the common case falls straight through to org creation below.
+  const claimed = await claimStaffAccessGrant({
+    email: normalizedEmail,
+    name: input.name,
+    provider: input.provider,
+    providerAccountId,
+    correlationId: input.correlationId,
+  });
+  if (claimed) {
+    return { ok: true, userId: claimed.userId, role: claimed.role, exporterOrgId: null, created: true };
+  }
 
   const feePolicy = await getFeePolicy();
   const userName = displayNameForIdentity(input.name, normalizedEmail);

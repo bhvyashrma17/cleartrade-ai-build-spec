@@ -345,7 +345,15 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
     agent: 'restricted',
     ops_supervisor: 'all',
     ops_finance: 'all',
-    admin: 'none',
+    // Widened from 'none': Admin needs the same case-management reach Ops already has —
+    // assign/wait/propose/close/reopen — for operational oversight of the dispute queue.
+    // This is NOT the same shape as `document.approve`'s admin: 'none': that rule exists
+    // because approval is specifically the EXPORTER's own act and nobody may stand in for
+    // them, a "cannot impersonate" rule with no ops-override toggle. Dispute case management
+    // has no such actor — it is already Ops/agent work end to end — so it follows the same
+    // pattern as `agent.assign`, `document.override_requirement`, `fee_policy.edit` and
+    // `config.edit`, all of which already grant Admin 'all'.
+    admin: 'all',
   },
   'payout.view': {
     exporter_owner: 'none',

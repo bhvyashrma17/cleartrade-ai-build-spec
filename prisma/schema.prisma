@@ -758,6 +758,9 @@ model User {
   staff_invitations_sent      StaffInvitation[]         @relation("StaffInvitationInviter")
   staff_invitations_revoked   StaffInvitation[]         @relation("StaffInvitationRevoker")
   staff_invitation_accepted   StaffInvitation?          @relation("StaffInvitationAcceptor")
+  staff_access_grants_made    StaffAccessGrant[]        @relation("StaffAccessGrantGrantor")
+  staff_access_grants_revoked StaffAccessGrant[]        @relation("StaffAccessGrantRevoker")
+  staff_access_grant_claimed  StaffAccessGrant?         @relation("StaffAccessGrantClaimant")
   buyer_profiles_edited       BuyerCommercialProfile[]  @relation("BuyerProfileEditor")
   exchange_rates_recorded     ExchangeRateQuote[]       @relation("ExchangeRateRecorder")
   invoice_numbers_issued      IssuedInvoiceNumber[]     @relation("InvoiceNumberIssuer")
@@ -3498,6 +3501,55 @@ model StaffInvitation {
 
   @@index([email, status])
   @@index([status, expires_at])
+}
+
+enum StaffAccessGrantStatus {
+  pending
+  claimed
+  revoked
+}
+
+/// A pre-authorized email, entitled to become staff on first VERIFIED sign-in — with no token
+/// and no link.
+///
+/// Deliberately a separate model from `StaffInvitation` rather than a tokenless row jammed into
+/// it. `StaffInvitation`'s whole security model is "possession of the token authorizes the
+/// act" — every read path matches on `hashToken(token)`, and the unique `token` column is load
+/// bearing. A grant's security model is the opposite: "a verified email match at sign-in
+/// authorizes the act," with no credential to possess at all. Forcing that through the same
+/// table would mean a dummy token nobody is ever given, a NULLable exception carved into a
+/// column everything else treats as required, and branching added to every function that walks
+/// `StaffInvitation` to skip the tokenless rows. Two small, honest models are cheaper than one
+/// model straddling two different security models.
+///
+/// Claimed automatically inside `resolveSocialIdentity()` — never by a route the browser can
+/// call directly — the moment the provider confirms the signer owns this exact address.
+model StaffAccessGrant {
+  id     String                  @id @default(cuid())
+  email  String
+  /// Constrained to `agent` by a database CHECK — see `StaffAccessGrant_role_is_agent` below.
+  /// Only agent provisioning is needed today; unlike StaffInvitation this is not widened to
+  /// every staff role, because an unattended claim landing on ops/admin the moment somebody's
+  /// Google account happens to match an email would be a far more dangerous default than
+  /// requiring a human to accept a link for that.
+  role   UserRole                @default(agent)
+  status StaffAccessGrantStatus  @default(pending)
+
+  granted_by_id  String
+  granted_at     DateTime  @default(now())
+  claimed_at     DateTime?
+  claimed_user_id String?  @unique
+  revoked_at     DateTime?
+  revoked_by_id  String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  granted_by   User  @relation("StaffAccessGrantGrantor", fields: [granted_by_id], references: [id])
+  revoked_by   User? @relation("StaffAccessGrantRevoker", fields: [revoked_by_id], references: [id])
+  claimed_user User? @relation("StaffAccessGrantClaimant", fields: [claimed_user_id], references: [id])
+
+  @@index([email, status])
 }
 
 // ---------------------------------------------------------------------------
