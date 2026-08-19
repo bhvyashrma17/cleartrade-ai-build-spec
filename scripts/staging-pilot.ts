@@ -313,19 +313,47 @@ async function status() {
  * Remove pilot data only.
  *
  * Scoped by the `[PILOT]` label and the reserved email domain, so anything else in staging is
- * untouched. Orgs cascade to their products, deals, documents, artifacts and assignments;
- * global Buyer rows are labelled and removed separately because they carry no tenant.
+ * untouched. Deletion order matters and is NOT "children before parents" in the usual sense —
+ * `ExporterOrg` cascades to nearly everything scoped under it (Product, Deal and everything
+ * hanging off Deal, BuyerLead, AgentDecision, ReadinessAssessment, Invitation,
+ * BuyerCommercialProfile, ExchangeRateQuote, DocumentInputSnapshot, InvoiceSeries), so deleting
+ * the org is usually the ONE step that clears the most ground. What it does NOT clear is
+ * exactly what broke the first version of this function:
+ *
+ *   - `AuditEvent.actor_user_id` carries no FK relation to ExporterOrg at all — the column is
+ *     explicitly denormalized (see the schema comment on it) — so org deletion never touches it;
+ *   - `StaffInvitation.{invited_by_id,revoked_by_id,accepted_user_id}` reference User directly,
+ *     unscoped by org;
+ *   - `User.exporter_org_id` is the OWNER's own outbound FK to the org. Deleting the org while
+ *     that field is still set fails exactly like deleting a user while `AgentAssignment` still
+ *     pointed at them — same shape of bug, different table;
+ *   - `AgentAssignment.{agent_user_id,assigned_by_id}` reference User directly. The org-side
+ *     cascade removes an org-scoped assignment row as a side effect of deleting the org, but an
+ *     explicit delete here is what actually fixes the reported failure, and covers the case
+ *     (not present in this fixture, but not impossible) of a pilot agent assigned to a
+ *     non-pilot org.
+ *
+ * All in one transaction: a reset that fails partway must not leave a half-deleted pilot
+ * dataset that then makes a re-run's `seed` guard ("pilot users already exist") true for data
+ * you can no longer see, or false for data you still can.
+ *
+ * Idempotent: an empty pilot (already reset, or never seeded) matches zero rows at every step
+ * and reports zero counts rather than erroring.
  */
 async function reset() {
   const env = assertSafeEnvironment();
 
-  const orgs = await prisma.exporterOrg.findMany({
-    where: { display_name: { startsWith: LABEL } }, select: { id: true },
-  });
+  const [orgs, users] = await Promise.all([
+    prisma.exporterOrg.findMany({ where: { display_name: { startsWith: LABEL } }, select: { id: true } }),
+    prisma.user.findMany({ where: { email: isPilotEmail }, select: { id: true } }),
+  ]);
   const orgIds = orgs.map((o) => o.id);
+  const userIds = users.map((u) => u.id);
 
   // Issued invoice numbers are protected by a no-delete trigger, so a pilot org cannot be
-  // removed while it holds any. Reported rather than force-deleted — the trigger is correct.
+  // removed while it holds any — the cascade would hit the trigger and the whole transaction
+  // would abort. Checked and refused BEFORE the transaction opens, so a doomed reset never
+  // starts rather than rolling back after doing the (cheap, safe) discovery work above.
   const issued = orgIds.length
     ? await prisma.issuedInvoiceNumber.count({ where: { exporter_org_id: { in: orgIds } } })
     : 0;
@@ -335,18 +363,72 @@ async function reset() {
     return;
   }
 
-  const deletedUsers = await prisma.user.deleteMany({ where: { email: isPilotEmail } });
-  const deletedOrgs = orgIds.length
-    ? await prisma.exporterOrg.deleteMany({ where: { id: { in: orgIds } } })
-    : { count: 0 };
-  const deletedBuyers = await prisma.buyer.deleteMany({ where: { display_name: { startsWith: LABEL } } });
-  const deletedInvites = await prisma.staffInvitation.deleteMany({ where: { email: isPilotEmail } });
+  if (orgIds.length === 0 && userIds.length === 0) {
+    console.log(`environment      ${env}`);
+    console.log('nothing to reset — no pilot orgs or pilot users found.');
+    return;
+  }
 
-  console.log(`environment      ${env}`);
-  console.log(`users removed    ${deletedUsers.count}`);
-  console.log(`orgs removed     ${deletedOrgs.count}`);
-  console.log(`buyers removed   ${deletedBuyers.count}`);
-  console.log(`invites removed  ${deletedInvites.count}`);
+  const [
+    orgAgentFieldCleared, ownerOrgFieldCleared, deletedAudit, deletedInvites,
+    deletedAssignments, deletedOrgs, deletedBuyers, deletedUsers,
+  ] = await prisma.$transaction([
+    // Defensive: a non-pilot org's `assigned_agent_id` pointing at a pilot agent would block
+    // deleting that USER later. Not expected from this fixture's own flows, but nulling a
+    // nullable field is free and closes the gap rather than assuming it can't happen.
+    prisma.exporterOrg.updateMany({
+      where: { assigned_agent_id: { in: userIds } },
+      data: { assigned_agent_id: null },
+    }),
+    // The pilot OWNERS' own outbound FK to their org. Must be cleared before the org can be
+    // deleted — the org has no cascade path back through this field, only forward through it.
+    prisma.user.updateMany({
+      where: { id: { in: userIds }, exporter_org_id: { in: orgIds } },
+      data: { exporter_org_id: null },
+    }),
+    // Audit rows survive independent of their subject by design (an audit trail that vanished
+    // with the account it recorded would defeat the point), so they are never cascade-deleted
+    // and must be cleared explicitly. Scoped by actor OR by the denormalized org id, since a
+    // real UAT session writes both kinds.
+    prisma.auditEvent.deleteMany({
+      where: { OR: [{ actor_user_id: { in: userIds } }, { exporter_org_id: { in: orgIds } }] },
+    }),
+    prisma.staffInvitation.deleteMany({
+      where: {
+        OR: [
+          { email: isPilotEmail },
+          { invited_by_id: { in: userIds } },
+          { revoked_by_id: { in: userIds } },
+          { accepted_user_id: { in: userIds } },
+        ],
+      },
+    }),
+    prisma.agentAssignment.deleteMany({
+      where: { OR: [{ agent_user_id: { in: userIds } }, { assigned_by_id: { in: userIds } }] },
+    }),
+    // Cascades away everything genuinely scoped to the org — see the function comment above
+    // for the full list. This is deliberately AFTER the explicit deletes above, not before:
+    // those clear the references org-deletion cannot reach. `in: []` matches zero rows when
+    // there are no pilot orgs, so this needs no separate empty-array guard.
+    prisma.exporterOrg.deleteMany({ where: { id: { in: orgIds } } }),
+    // Buyer is global and carries no tenant FK (Phase 6's architectural guard), so it is
+    // never touched by the org cascade and is removed on its own, by label, once nothing
+    // scoped to a pilot org still points at it.
+    prisma.buyer.deleteMany({ where: { display_name: { startsWith: LABEL } } }),
+    // Last: every inbound reference that could block a User row has been cleared or deleted
+    // above, in dependency order.
+    prisma.user.deleteMany({ where: { email: isPilotEmail } }),
+  ]);
+
+  console.log(`environment          ${env}`);
+  console.log(`org agent refs cleared   ${orgAgentFieldCleared.count}`);
+  console.log(`owner org refs cleared   ${ownerOrgFieldCleared.count}`);
+  console.log(`audit events removed     ${deletedAudit.count}`);
+  console.log(`invites removed          ${deletedInvites.count}`);
+  console.log(`assignments removed      ${deletedAssignments.count}`);
+  console.log(`orgs removed             ${deletedOrgs.count}`);
+  console.log(`buyers removed           ${deletedBuyers.count}`);
+  console.log(`users removed            ${deletedUsers.count}`);
 }
 
 async function main() {
