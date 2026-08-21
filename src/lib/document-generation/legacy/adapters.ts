@@ -14,7 +14,7 @@
  */
 
 import { DocType } from '@prisma/client';
-import type { DocumentGenerationContext } from '@/lib/document-data';
+import { documentApplicability, type DocumentGenerationContext } from '@/lib/document-data';
 import type { DocumentRenderMetadata } from '../engine';
 import {
   addressLines, cell, date, decimal, exchangeRate, money as formatMoney,
@@ -30,6 +30,10 @@ const DOC_TITLES: Record<string, string> = {
   [DocType.COO_draft]: 'CERTIFICATE OF ORIGIN (DRAFT)',
   [DocType.declaration]: 'EXPORTER DECLARATION',
   [DocType.insurance_declaration]: 'INSURANCE DECLARATION',
+  [DocType.shipping_instructions]: 'SHIPPING INSTRUCTIONS',
+  [DocType.vgm_declaration]: 'VERIFIED GROSS MASS DECLARATION',
+  [DocType.bill_of_exchange]: 'BILL OF EXCHANGE',
+  [DocType.bank_collection_letter]: 'BANK DOCUMENT PRESENTATION / COLLECTION COVER LETTER',
 };
 
 type Ctx = DocumentGenerationContext;
@@ -234,6 +238,279 @@ function signature(c: Ctx): Block {
   };
 }
 
+function partyPair(
+  left: { heading: string; name: string; lines?: string[] },
+  right: { heading: string; name: string; lines?: string[] },
+): Block {
+  return {
+    kind: 'parties',
+    left: { heading: left.heading, lines: [left.name, ...(left.lines ?? [])] },
+    right: { heading: right.heading, lines: [right.name, ...(right.lines ?? [])] },
+  };
+}
+
+function notifyParty(c: Ctx): KeyValueBlock | null {
+  const notify = c.shipment.notify_party;
+  if (!notify || notify.mode === 'none') return null;
+  if (notify.mode === 'same_as_consignee') {
+    return {
+      kind: 'key_values', title: 'Notify party', columns: 1,
+      rows: [{ label: 'Party', value: 'Same as consignee' }],
+    };
+  }
+  return {
+    kind: 'key_values', title: 'Notify party', columns: 2,
+    rows: [
+      { label: 'Name', value: cell(notify.name) },
+      { label: 'Address', value: cell(addressLines(notify.address).join(', ')) },
+      { label: 'Email', value: cell(notify.email) },
+      { label: 'Phone', value: cell(notify.phone) },
+    ].filter((row) => row.value !== null),
+  };
+}
+
+function routing(c: Ctx): KeyValueBlock {
+  return {
+    kind: 'key_values', title: 'Routing', columns: 2,
+    rows: [
+      { label: 'Transport mode', value: cell(c.shipment.mode) },
+      { label: 'Port of loading', value: port(c.shipment.port_of_loading) },
+      { label: 'Port of discharge', value: port(c.shipment.port_of_discharge) },
+      { label: 'Final destination', value: cell(c.shipment.final_destination_name ?? c.shipment.final_destination_country) },
+      { label: 'Booking reference', value: cell(c.shipment.booking_reference) },
+      { label: 'Carrier / forwarder', value: cell(c.shipment.freight_partner?.name) },
+      { label: 'Vessel / flight', value: cell(c.shipment.vessel_or_flight_no) },
+      { label: 'Voyage', value: cell(c.shipment.voyage_no) },
+    ].filter((row) => row.value !== null),
+  };
+}
+
+function shippingTerms(c: Ctx): KeyValueBlock {
+  return {
+    kind: 'key_values', title: 'Shipping terms', columns: 2,
+    rows: [
+      { label: 'Incoterm', value: cell(c.deal.incoterm ? `${c.deal.incoterm}${c.deal.incoterm_place ? ` ${c.deal.incoterm_place}` : ''}` : null) },
+      { label: 'Freight terms', value: cell(c.shipment.freight_payment_term) },
+      { label: 'Marks and numbers', value: cell(c.shipment.marks_and_numbers) },
+      { label: 'Buyer reference', value: cell(c.deal.buyer_reference) },
+    ],
+  };
+}
+
+function containerDetails(c: Ctx): TableBlock | null {
+  const containers = c.shipment.containers ?? [];
+  if (containers.length === 0) return null;
+  return {
+    kind: 'table', title: 'Containers',
+    columns: [
+      { header: 'Sr', align: 'center', width: 8 },
+      { header: 'Container no', width: 32 },
+      { header: 'Type', width: 25 },
+      { header: 'Seal no', width: 35 },
+    ],
+    rows: containers.map((container) => [
+      String(container.sequence), cell(container.container_number),
+      cell(container.container_type), cell(container.seal_number),
+    ]),
+  };
+}
+
+function shippingInstructionsAdapter(c: Ctx): Block[] {
+  const blocks: Block[] = [
+    parties(c),
+    { kind: 'note', paragraphs: ['Instructions to the appointed carrier or freight forwarder for preparation and movement of this shipment.'] },
+  ];
+  const notify = notifyParty(c);
+  if (notify) blocks.push(notify);
+  blocks.push(routing(c), shippingTerms(c), goodsTable(c, { priced: false }), packagesTable(c));
+  const containers = containerDetails(c);
+  if (containers) blocks.push(containers);
+  if (c.shipment.handling_instructions) {
+    blocks.push({ kind: 'note', title: 'Special instructions', paragraphs: [c.shipment.handling_instructions] });
+  }
+  blocks.push({
+    kind: 'note', muted: true,
+    paragraphs: ['These are operational shipping instructions. They are not a Bill of Lading, Air Waybill, or carrier-issued transport document.'],
+  });
+  blocks.push(signature(c));
+  return blocks;
+}
+
+function vgmDeclarationAdapter(c: Ctx): Block[] {
+  const exporter = c.exporter.legal_name ?? c.exporter.display_name;
+  const containers = c.shipment.containers ?? [];
+  return [
+    partyPair(
+      { heading: 'Shipper', name: exporter, lines: addressLines(c.exporter.address) },
+      {
+        heading: 'Shipment', name: c.shipment.booking_reference ?? c.references.deal_id,
+        lines: [c.shipment.freight_partner?.name, port(c.shipment.port_of_loading), port(c.shipment.port_of_discharge)]
+          .filter((line): line is string => Boolean(line)),
+      },
+    ),
+    {
+      kind: 'table', title: 'Verified container masses',
+      columns: [
+        { header: 'Container no', width: 22 },
+        { header: 'Type', width: 12 },
+        { header: 'Seal no', width: 14 },
+        { header: 'VGM', align: 'right', width: 16 },
+        { header: 'Method', width: 12 },
+        { header: 'Verified on', width: 15 },
+        { header: 'Verifier / authorised person', width: 24 },
+      ],
+      rows: containers.map((container) => [
+        cell(container.container_number), cell(container.container_type), cell(container.seal_number),
+        decimal(container.verified_gross_mass_kg, 'kg'),
+        container.vgm_method === 'method_1' ? 'Method 1' : container.vgm_method === 'method_2' ? 'Method 2' : cell(container.vgm_method),
+        date(container.verified_at),
+        cell([container.verifier_name, container.verifier_capacity].filter(Boolean).join(' — ')),
+      ]),
+    },
+    {
+      kind: 'note', title: 'Shipper declaration',
+      paragraphs: [
+        `We, ${exporter}, declare that the verified gross masses stated above are the shipper's declared VGM values, recorded using the stated verification methods and authorised-person details.`,
+        'No package weight or estimated cargo mass has been substituted for a verified gross mass in this declaration.',
+      ],
+    },
+    signature(c),
+  ];
+}
+
+function billOfExchangeAdapter(c: Ctx): Block[] {
+  const bill = c.trade_finance?.bill_of_exchange;
+  const payment = c.trade_finance?.payment;
+  const exporter = c.exporter.legal_name ?? c.exporter.display_name;
+  const billType = bill?.type === 'usance' ? 'Usance' : bill?.type === 'sight' ? 'Sight' : cell(bill?.type);
+  const payable = bill?.type === 'usance'
+    ? `At ${bill.tenor_days} days, pay against this Bill of Exchange the stated amount to the order of the drawer, subject to the recorded payment terms.`
+    : 'At sight, pay against this Bill of Exchange the stated amount to the order of the drawer, subject to the recorded payment terms.';
+  return [
+    partyPair(
+      { heading: 'Drawer', name: exporter, lines: addressLines(c.exporter.address) },
+      { heading: 'Drawee', name: c.buyer.document_name, lines: addressLines(c.buyer.address) },
+    ),
+    { kind: 'note', title: 'Payable wording', paragraphs: [payable] },
+    {
+      kind: 'key_values', title: 'Draft particulars', columns: 2,
+      rows: [
+        { label: 'Amount', value: moneyOf(c)(payment?.amount) },
+        { label: 'Draft type', value: billType },
+        { label: 'Tenor', value: bill?.type === 'usance' && bill.tenor_days ? `${bill.tenor_days} days` : 'At sight' },
+        { label: 'Place of drawing', value: cell(bill?.place_of_drawing) },
+        { label: 'Date of drawing', value: date(bill?.drawn_on_date) },
+        { label: 'Payment mechanism', value: cell(c.trade_finance?.payment_mechanism) },
+        { label: 'Payment reference', value: cell(payment?.reference) },
+        { label: 'Recorded payment terms', value: paymentTerms(c.deal.payment_terms) },
+      ],
+    },
+    {
+      kind: 'key_values', title: 'Commercial and shipment references', columns: 2,
+      rows: [
+        { label: 'Invoice no', value: cell(c.references.invoice_number) },
+        { label: 'Invoice date', value: date(c.references.invoice_date) },
+        { label: 'Shipment reference', value: cell(c.shipment.booking_reference ?? c.shipment.transport_document_no) },
+        { label: 'Deal reference', value: cell(c.references.deal_id) },
+      ],
+    },
+    {
+      kind: 'note', muted: true,
+      paragraphs: ['Generated as a commercial draft for presentation. ClearTrade generation does not constitute drawee acceptance, payment, or bank confirmation.'],
+    },
+    signature(c),
+  ];
+}
+
+function carrierInstructionsAdapter(c: Ctx): Block[] {
+  const blocks = shippingInstructionsAdapter(c);
+  // Replace the broader shipping-instruction notes while retaining the exact shared visual
+  // blocks for parties, routing, cargo, packages, containers and signature.
+  return [
+    blocks[0]!,
+    { kind: 'note', paragraphs: ['Instructions for carrier/forwarder preparation.'] },
+    ...blocks.slice(2, -2),
+    {
+      kind: 'note', muted: true,
+      paragraphs: [c.shipment.mode === 'air'
+        ? 'These are preparation instructions only. This is not an issued Air Waybill and carries no carrier acceptance.'
+        : 'These are preparation instructions only. This is not an issued Bill of Lading and carries no carrier acceptance.'],
+    },
+    blocks[blocks.length - 1]!,
+  ];
+}
+
+function bankCollectionLetterAdapter(c: Ctx): Block[] {
+  const presentation = c.trade_finance?.bank_presentation;
+  const bank = presentation?.bank;
+  const payment = c.trade_finance?.payment;
+  const exporter = c.exporter.legal_name ?? c.exporter.display_name;
+  return [
+    partyPair(
+      { heading: 'From', name: exporter, lines: addressLines(c.exporter.address) },
+      {
+        heading: 'To', name: bank?.name ?? 'Bank',
+        lines: [bank?.branch_name, bank?.branch_address].filter((line): line is string => Boolean(line)),
+      },
+    ),
+    {
+      kind: 'note', title: 'Presentation request',
+      paragraphs: [
+        `Please handle the enclosed export documents under the recorded ${presentation?.type ?? 'bank presentation'} instructions set out below.`,
+      ],
+    },
+    {
+      kind: 'key_values', title: 'Presentation details', columns: 2,
+      rows: [
+        { label: 'Presentation type', value: cell(presentation?.type) },
+        { label: 'Amount', value: moneyOf(c)(payment?.amount) },
+        { label: 'Payment mechanism', value: cell(c.trade_finance?.payment_mechanism) },
+        { label: 'Payment reference', value: cell(payment?.reference) },
+        { label: 'Invoice no', value: cell(c.references.invoice_number) },
+        { label: 'Invoice date', value: date(c.references.invoice_date) },
+        { label: 'Shipment reference', value: cell(c.shipment.booking_reference ?? c.shipment.transport_document_no) },
+        { label: 'Deal reference', value: cell(c.references.deal_id) },
+      ],
+    },
+    {
+      kind: 'key_values', title: 'Bank details', columns: 2,
+      rows: [
+        { label: 'Bank', value: cell(bank?.name) },
+        { label: 'Branch', value: cell(bank?.branch_name) },
+        { label: 'Account reference', value: cell(bank?.account_reference) },
+        { label: 'IFSC', value: cell(bank?.ifsc) },
+        { label: 'SWIFT / BIC', value: cell(bank?.swift_bic) },
+        { label: 'AD code', value: cell(bank?.ad_code) },
+      ].filter((row) => row.value !== null),
+    },
+    {
+      kind: 'table', title: 'Documents enclosed',
+      columns: [
+        { header: 'Document', width: 50 },
+        { header: 'Version', align: 'center', width: 15 },
+        { header: 'Originals', align: 'right', width: 17 },
+        { header: 'Copies', align: 'right', width: 18 },
+      ],
+      rows: (presentation?.enclosed_documents ?? []).map((document) => [
+        document.doc_type.replace(/_/g, ' '), String(document.version),
+        String(document.original_count), String(document.copy_count),
+      ]),
+    },
+    {
+      kind: 'note', title: 'Collection / negotiation instructions',
+      paragraphs: [presentation?.collection_instructions ?? ''],
+    },
+    {
+      kind: 'note', title: 'Charges', paragraphs: [presentation?.charges_instruction ?? ''],
+    },
+    {
+      kind: 'note', muted: true,
+      paragraphs: ['This is a document-presentation covering letter. It is not bank acceptance, negotiation, payment, or realization confirmation.'],
+    },
+    signature(c),
+  ];
+}
+
 /** Reference block: what identifies this document. */
 function reference(c: Ctx, meta: DocumentRenderMetadata, docType: DocType): { label: string; value: ReturnType<typeof cell> }[] {
   const invoiceish = docType === DocType.CI || docType === DocType.PI;
@@ -407,6 +684,12 @@ const ADAPTERS: Partial<Record<DocType, (c: Ctx, meta: DocumentRenderMetadata) =
       ],
     },
   ],
+
+  [DocType.shipping_instructions]: shippingInstructionsAdapter,
+  [DocType.vgm_declaration]: vgmDeclarationAdapter,
+  [DocType.bill_of_exchange]: billOfExchangeAdapter,
+  [DocType.carrier_instructions]: carrierInstructionsAdapter,
+  [DocType.bank_collection_letter]: bankCollectionLetterAdapter,
 };
 
 export function isSupportedDocType(docType: string): docType is DocType {
@@ -422,8 +705,14 @@ export function buildDocumentModel(
   const adapter = ADAPTERS[docType];
   if (!adapter) throw new Error(`No adapter for document type ${docType}.`);
 
+  const title = docType === DocType.carrier_instructions
+    ? documentApplicability(context, docType).variant === 'air_waybill_instructions'
+      ? 'AIR WAYBILL INSTRUCTIONS'
+      : 'BILL OF LADING INSTRUCTIONS'
+    : DOC_TITLES[docType] ?? docType.toUpperCase();
+
   return {
-    title: DOC_TITLES[docType] ?? docType.toUpperCase(),
+    title,
     // A draft says so on its face, in the title area, not only in a watermark.
     ...(metadata.draft ? { subtitle: 'DRAFT — not an issued document' } : {}),
     reference: reference(context, metadata, docType),

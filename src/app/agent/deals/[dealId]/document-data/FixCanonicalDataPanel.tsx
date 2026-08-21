@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button, Input } from '@/components/ui';
 import { ApiClientError, apiPatch, apiPost } from '@/lib/api-client';
+import { InvoiceNumberAction } from '../InvoiceNumberAction';
 
 type Fields = Record<string, string | null>;
 
@@ -32,10 +33,12 @@ function changedOnly(next: Fields, original: Fields): Record<string, string | nu
 }
 
 function Section({
-  title, note, fields, original, onSave,
+  id, title, note, usedBy, fields, original, onSave,
 }: {
+  id?: string;
   title: string;
   note: string;
+  usedBy?: string;
   fields: { key: string; label: string; placeholder?: string }[];
   original: Fields;
   onSave: (changed: Record<string, string | null>) => Promise<unknown>;
@@ -63,9 +66,10 @@ function Section({
   };
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
+    <section id={id} className="scroll-mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
       <h2 className="text-sm font-semibold text-primary">{title}</h2>
       <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{note}</p>
+      {usedBy ? <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">Used by: {usedBy}</p> : null}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {fields.map((f) => (
           <Input
@@ -87,23 +91,60 @@ function Section({
   );
 }
 
+function SummarySection({
+  id, title, note, usedBy, rows,
+}: {
+  id: string;
+  title: string;
+  note: string;
+  usedBy: string;
+  rows: { label: string; value: string | null }[];
+}) {
+  return (
+    <section id={id} className="scroll-mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
+      <h2 className="text-sm font-semibold text-primary">{title}</h2>
+      <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{note}</p>
+      <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">Used by: {usedBy}</p>
+      <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded border border-[var(--color-border)] bg-surface-muted px-3 py-2">
+            <dt className="text-xs text-[var(--color-text-muted)]">{row.label}</dt>
+            <dd className="mt-0.5 font-medium text-primary">{row.value || 'Not recorded'}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 export function FixCanonicalDataPanel(props: {
   dealId: string;
   exporterOrgId: string;
   hasShipment: boolean;
   issuedInvoiceNumber: string | null;
+  issuedAt: string | null;
+  issuedBy: string | null;
   nextInvoiceNumberPreview: string;
   dealCurrency: string | null;
   exporter: Fields;
   buyer: Fields;
   shipment: Fields;
+  containers: { container_number: string; verified_gross_mass_kg: string | null; vgm_method: string | null; verifier_name: string | null }[];
+  tradeFinance: {
+    payment_mechanism: string | null;
+    bill_type: string | null;
+    tenor_days: string | null;
+    place_of_drawing: string | null;
+    bank_presentation_type: string | null;
+    bank_name: string | null;
+    bank_branch: string | null;
+    collection_instructions: string | null;
+  };
 }) {
   const router = useRouter();
   const [rate, setRate] = useState({ rate: '', source_reference: '', rate_date: '' });
   const [rateSource, setRateSource] = useState('bank_quoted');
   const [rateError, setRateError] = useState<string | null>(null);
-  const [issuing, setIssuing] = useState(false);
-  const [issueError, setIssueError] = useState<string | null>(null);
 
   const recordRate = async () => {
     setRateError(null);
@@ -123,23 +164,17 @@ export function FixCanonicalDataPanel(props: {
     }
   };
 
-  const issueNumber = async () => {
-    setIssuing(true); setIssueError(null);
-    try {
-      await apiPost(`/api/v1/deals/${props.dealId}/invoice-number`, {});
-      router.refresh();
-    } catch (e) {
-      setIssueError(e instanceof ApiClientError ? e.message : 'Could not issue the number.');
-    } finally {
-      setIssuing(false);
-    }
-  };
-
   return (
-    <div className="space-y-4">
+    <div id="canonical-data" className="space-y-8">
+      <section id="party-data" aria-labelledby="party-data-heading" className="scroll-mt-4 space-y-4">
+        <div>
+          <h2 id="party-data-heading" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">Parties</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Exporter and tenant-scoped buyer facts shared across document families.</p>
+        </div>
       <Section
         title="Exporter record"
         note="Corrects the exporter organisation itself, so every document and every deal sees the fix."
+        usedBy="commercial, shipping, certificates and banking documents"
         original={props.exporter}
         fields={[
           { key: 'address_line1', label: 'Address line 1' },
@@ -155,6 +190,7 @@ export function FixCanonicalDataPanel(props: {
       <Section
         title="Buyer record"
         note="Held against this exporter and this buyer. The shared buyer profile other tenants see is not touched."
+        usedBy="invoices, packing list, shipping and carrier instructions, bill of exchange"
         original={props.buyer}
         fields={[
           { key: 'document_name', label: 'Name on documents', placeholder: 'Only if it differs from the legal name' },
@@ -169,11 +205,18 @@ export function FixCanonicalDataPanel(props: {
         ]}
         onSave={(changed) => apiPatch(`/api/v1/deals/${props.dealId}/buyer-profile`, changed)}
       />
+      </section>
 
+      <section id="shipment-instructions" aria-labelledby="shipment-instructions-heading" className="scroll-mt-4 space-y-4">
+        <div>
+          <h2 id="shipment-instructions-heading" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">Shipment instructions</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Routing, booking, cargo marks and freight facts; not a second document payload.</p>
+        </div>
       {props.hasShipment ? (
         <Section
           title="Shipment"
           note="Ports, transport references and freight. Leave a UN/LOCODE blank rather than guessing it."
+          usedBy="packing list, shipping bill draft, shipping instructions, carrier instructions and VGM declaration"
           original={props.shipment}
           fields={[
             { key: 'port_of_loading_name', label: 'Port of loading' },
@@ -194,7 +237,58 @@ export function FixCanonicalDataPanel(props: {
           references belong to the shipment, so there is nowhere correct to put them yet.
         </section>
       )}
+      </section>
 
+      <SummarySection
+        id="container-vgm"
+        title="Container / VGM"
+        note="Verified mass remains a per-container canonical fact. Package weights are never substituted for VGM."
+        usedBy="VGM Declaration, Shipping Instructions and Bill of Lading Instructions"
+        rows={props.containers.length > 0
+          ? props.containers.flatMap((container) => [
+              { label: `${container.container_number} · verified gross mass`, value: container.verified_gross_mass_kg ? `${container.verified_gross_mass_kg} kg` : null },
+              { label: `${container.container_number} · verification`, value: [container.vgm_method, container.verifier_name].filter(Boolean).join(' · ') || null },
+            ])
+          : [{ label: 'Containers', value: null }]}
+      />
+
+      <section id="payment-draft" aria-labelledby="payment-draft-heading" className="scroll-mt-4 space-y-4">
+        <div>
+          <h2 id="payment-draft-heading" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">Payment / draft</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Applicability and payable wording come from the deal&apos;s canonical payment workflow.</p>
+        </div>
+        <SummarySection
+          id="payment-draft-details"
+          title="Bill of Exchange instructions"
+          note="These facts describe the draft. Exporter approval does not mean drawee acceptance."
+          usedBy="Bill of Exchange"
+          rows={[
+            { label: 'Payment mechanism', value: props.tradeFinance.payment_mechanism },
+            { label: 'Sight / usance', value: props.tradeFinance.bill_type },
+            { label: 'Tenor', value: props.tradeFinance.tenor_days ? `${props.tradeFinance.tenor_days} days` : null },
+            { label: 'Place of drawing', value: props.tradeFinance.place_of_drawing },
+          ]}
+        />
+      </section>
+
+      <SummarySection
+        id="bank-presentation"
+        title="Bank presentation"
+        note="Bank, collection and enclosure facts stay on the tenant-scoped bank and trade-finance records."
+        usedBy="Bank Document Presentation / Collection Cover Letter"
+        rows={[
+          { label: 'Presentation type', value: props.tradeFinance.bank_presentation_type },
+          { label: 'Bank', value: props.tradeFinance.bank_name },
+          { label: 'Branch', value: props.tradeFinance.bank_branch },
+          { label: 'Collection instructions', value: props.tradeFinance.collection_instructions },
+        ]}
+      />
+
+      <section id="commercial-data" aria-labelledby="commercial-data-heading" className="scroll-mt-4 space-y-4">
+        <div>
+          <h2 id="commercial-data-heading" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">Commercial data</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Invoice numbering and defensible currency conversion.</p>
+        </div>
       {props.dealCurrency && props.dealCurrency !== 'INR' ? (
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
           <h2 className="text-sm font-semibold text-primary">Exchange rate ({props.dealCurrency} → INR)</h2>
@@ -232,26 +326,40 @@ export function FixCanonicalDataPanel(props: {
         </section>
       ) : null}
 
-      <section className="rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
-        <h2 className="text-sm font-semibold text-primary">Invoice number</h2>
+      <section id="invoice-numbering" className="scroll-mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
+        <h2 className="text-sm font-semibold text-primary">Commercial Invoice</h2>
         {props.issuedInvoiceNumber ? (
-          <p className="mt-1 text-sm text-primary">
-            Issued: <span className="font-mono">{props.issuedInvoiceNumber}</span>
-          </p>
+          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-[12rem_1fr]">
+            <dt className="text-[var(--color-text-secondary)]">Status</dt>
+            <dd className="font-medium text-primary">Official invoice number issued</dd>
+            <dt className="text-[var(--color-text-secondary)]">Official invoice number</dt>
+            <dd className="font-mono text-primary">{props.issuedInvoiceNumber}</dd>
+            <dt className="text-[var(--color-text-secondary)]">Issued at</dt>
+            <dd className="text-primary">{props.issuedAt ?? 'Not recorded'}</dd>
+            <dt className="text-[var(--color-text-secondary)]">Issued by</dt>
+            <dd className="text-primary">{props.issuedBy ?? 'System'}</dd>
+          </dl>
         ) : (
           <>
-            <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-              Nothing has been allocated yet. Previewing or rendering a document never consumes a
-              number — issuing is this button and nothing else. Next in the series would be{' '}
-              <span className="font-mono">{props.nextInvoiceNumberPreview}</span>, which is an
-              estimate until it is actually issued.
+            <p className="mt-1 text-sm font-medium text-primary">No official invoice number issued</p>
+            <p className="mt-1 max-w-2xl text-xs text-[var(--color-text-secondary)]">
+              Commercial Invoice cannot be finalized until a number is issued. Previewing or
+              rendering a draft never consumes a number.
             </p>
-            {issueError ? <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{issueError}</p> : null}
-            <Button type="button" className="mt-3" onClick={issueNumber} disabled={issuing}>
-              {issuing ? 'Issuing…' : 'Issue invoice number'}
-            </Button>
+            <div className="mt-3">
+              <InvoiceNumberAction dealId={props.dealId} nextInvoiceNumberPreview={props.nextInvoiceNumberPreview} />
+            </div>
           </>
         )}
+      </section>
+      </section>
+
+      <section id="certificates-data" className="scroll-mt-4 rounded-lg border border-dashed border-[var(--color-border)] bg-surface-muted p-4">
+        <h2 className="text-sm font-semibold text-primary">Certificates & declarations</h2>
+        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+          Certificate and insurance blockers continue to be corrected on the exporter, shipment,
+          insurance and commercial records above; no certificate-only copy is created here.
+        </p>
       </section>
     </div>
   );

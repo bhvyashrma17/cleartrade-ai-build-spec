@@ -30,6 +30,9 @@ import {
 } from '@/lib/document-data';
 import { compareSnapshotToCurrent, driftFieldNames, type SnapshotDrift } from '@/lib/document-drift';
 import {
+  NEW_DOCUMENT_LIFECYCLE_MATRIX, resolvedDocumentLifecyclePolicy,
+} from '@/lib/document-lifecycle-policy';
+import {
   buildDocumentModel, preflightPdfGlyphs, type GlyphIssue,
 } from '@/lib/document-generation';
 import { BRAND_NAME, auditIdFor } from '@/lib/document-rendering';
@@ -52,6 +55,9 @@ import type { Blocker, Principal } from '@/types';
  * the first non-draft format rendered — recorded on the row so it is never ambiguous).
  */
 export const AUTHORITATIVE_FORMAT_ORDER = ['pdf', 'docx'] as const;
+
+const isNewAuthorisedDocument = (docType: DocType): docType is keyof typeof NEW_DOCUMENT_LIFECYCLE_MATRIX =>
+  docType in NEW_DOCUMENT_LIFECYCLE_MATRIX;
 
 /**
  * How a ClearTrade approval should be described for each document type.
@@ -81,6 +87,31 @@ export function documentAuthorityNote(docType: DocType): { approvalMeans: string
       return {
         approvalMeans: 'Exporter declaration approved internally.',
         notThis: 'Not lodged with any authority.',
+      };
+    case DocType.shipping_instructions:
+      return {
+        approvalMeans: 'Exporter approval of the instructions supplied for shipment preparation.',
+        notThis: 'Not carrier acceptance and not an issued transport document.',
+      };
+    case DocType.vgm_declaration:
+      return {
+        approvalMeans: 'Shipper authorization of the recorded verified gross mass declaration.',
+        notThis: 'Agent review is not shipper authorization, and no unverified package mass is treated as VGM.',
+      };
+    case DocType.bill_of_exchange:
+      return {
+        approvalMeans: 'Exporter approval of the commercial draft for presentation.',
+        notThis: 'Not drawee acceptance, payment, or bank confirmation.',
+      };
+    case DocType.carrier_instructions:
+      return {
+        approvalMeans: 'Exporter approval of the B/L or AWB preparation instructions.',
+        notThis: 'Not an issued Bill of Lading or Air Waybill and not carrier acceptance.',
+      };
+    case DocType.bank_collection_letter:
+      return {
+        approvalMeans: 'Exporter approval of the document-presentation instructions.',
+        notThis: 'Not bank acceptance, negotiation, payment, or realization confirmation.',
       };
     default:
       return null;
@@ -205,12 +236,13 @@ export async function documentWorkspace(
 
   const rows = registry.map((entry) => {
     const docType = entry.doc_type as DocType;
+    const lifecycle = resolvedDocumentLifecyclePolicy(docType, entry);
     const all = (byType.get(docType) ?? []).map(toVersionView);
     return {
       doc_type: docType,
       label: entry.label,
-      approval_required: entry.approval_required,
-      filing_applicable: entry.filing_applicable,
+      approval_required: lifecycle.exporter_approval_required,
+      filing_applicable: lifecycle.filing_applicable,
       readiness: documentReadiness({ ...context, doc_type: docType }, docType),
       current: all.find((v) => v.is_current_version) ?? null,
       history: all,
@@ -322,6 +354,10 @@ export function collectApprovalBlockers(args: {
   if (!document.is_current_version) add('This version has been superseded. Only the current version can be approved.');
   if (document.generation_status !== GenerationStatus.generated) add('This version has not been generated yet.');
   if (!document.input_snapshot_id) add('This version has no frozen input snapshot, so what it was built from cannot be established.');
+  if (isNewAuthorisedDocument(document.doc_type)
+    && document.review_status !== ReviewStatus.agent_reviewed) {
+    add('An assigned ClearTrade agent must review this version before exporter authorization. Agent review does not itself approve the document.');
+  }
 
   const authoritative = AUTHORITATIVE_FORMAT_ORDER
     .map((format) => document.artifacts.find((a) => a.format === format))
@@ -339,7 +375,9 @@ export function collectApprovalBlockers(args: {
     }
   }
 
-  if (snapshotReadiness && snapshotReadiness.status !== 'ready') {
+  if (snapshotReadiness?.status === 'not_applicable') {
+    add(`This document is not applicable: ${snapshotReadiness.applicability.reason}`);
+  } else if (snapshotReadiness && snapshotReadiness.status !== 'ready') {
     for (const issue of [...snapshotReadiness.invalid, ...snapshotReadiness.missing]) {
       add(`${issue.label}: ${issue.detail ?? issue.condition ?? 'missing from the frozen input'}`);
     }
@@ -535,6 +573,7 @@ export async function createDocumentAmendment(input: {
 
   const registry = await getConfig('documents.registry');
   const entry = registry.find((r) => r.doc_type === document.doc_type);
+  const policy = resolvedDocumentLifecyclePolicy(document.doc_type, entry);
 
   const created = await prisma.$transaction(async (tx) => {
     // Highest version wins, read inside the transaction — `version + 1` off a stale read would
@@ -560,7 +599,7 @@ export async function createDocumentAmendment(input: {
         source: 'generated',
         // A new version starts unapproved and unreviewed. Inheriting either would mean an
         // approval covering content nobody has seen.
-        ...freshVersionStatuses(entry?.approval_required ?? true, entry?.filing_applicable ?? false),
+        ...freshVersionStatuses(policy.exporter_approval_required, policy.filing_applicable),
         amendment_reason: reason,
         amended_from_version: document.version,
         // Snapshot and artifacts are NOT copied. The next generation freezes current canonical

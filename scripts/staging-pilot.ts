@@ -24,12 +24,14 @@
  */
 
 import {
-  DealStage, DisputeSeverity, DisputeStatus, DocType, EvidenceOrigin, ExceptionState,
-  ExchangeRateSource, GenerationStatus, InsuranceCaseStatus, OrgTier, Prisma, PrismaClient,
-  ScopeType, ShipmentMode, ShipmentStatus, SlaState, TaskPriority, TaskState,
-  TransportDocumentType, UserRole,
+  BankPresentationType, BillOfExchangeType, DealStage, DisputeSeverity, DisputeStatus, DocType,
+  EvidenceOrigin, ExceptionState, ExchangeRateSource, FreightPaymentTerm, GenerationStatus,
+  InsuranceCaseStatus, NotifyPartyMode, OrgTier, PartnerType, PaymentSource, PaymentStatus,
+  Prisma, PrismaClient, ScopeType, ShipmentMode, ShipmentStatus, SlaState, TaskPriority,
+  TaskState, TransportDocumentType, UserRole, VgmMethod,
 } from '@prisma/client';
 import { hashPassword } from '../src/lib/auth';
+import { seedAlphaDiscoveryFixture } from '../src/lib/staging-pilot-discovery';
 
 const prisma = new PrismaClient();
 
@@ -64,6 +66,8 @@ interface SeedSpec {
 
 async function seedExporter(spec: SeedSpec, passwordHash: string) {
   const slug = spec.key.toLowerCase();
+  const documentUatFixture = spec.key === 'A' || spec.key === 'B';
+  const containerNumber = spec.key === 'B' ? 'MSCU7654321' : 'MSCU1234567';
 
   const org = await prisma.exporterOrg.create({
     data: {
@@ -105,6 +109,21 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
     select: { id: true },
   });
 
+  // Alpha/Bravo only. Charlie remains the populated, differently assigned isolation tenant;
+  // it does not need document-UAT facts to prove that boundary.
+  const freightPartner = documentUatFixture
+    ? await prisma.partner.create({
+        data: {
+          type: PartnerType.freight,
+          legal_name: `${LABEL} Concord Freight ${spec.key}`,
+          display_name: `${LABEL} Concord Freight ${spec.key}`,
+          country_code: 'IN',
+          contact_email: `freight-${slug}@${DOMAIN}`,
+        },
+        select: { id: true },
+      })
+    : null;
+
   await prisma.buyerCommercialProfile.create({
     data: {
       exporter_org_id: org.id, buyer_id: buyer.id,
@@ -122,7 +141,9 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
       quantity: new Prisma.Decimal(MONEY.quantity), unit: 'kg',
       unit_price_amount: new Prisma.Decimal(MONEY.unitPrice), unit_price_currency: MONEY.currency,
       total_amount: new Prisma.Decimal(MONEY.total), total_currency: MONEY.currency,
-      payment_terms: { kind: 'advance', label: 'Advance' },
+      payment_terms: documentUatFixture
+        ? { kind: 'DP', label: 'Documents against payment' }
+        : { kind: 'advance', label: 'Advance' },
       buyer_reference: `PO-${spec.key}-4471`,
     },
     select: { id: true },
@@ -137,10 +158,19 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
         ? { port_of_discharge_name: 'Hamburg', port_of_discharge_unlocode: 'DEHAM', port_of_discharge_country: 'DE' }
         : {}),
       final_destination_country: 'DE', marks_and_numbers: `${spec.name.toUpperCase()}/HAM/1-50`,
+      ...(documentUatFixture ? {
+        final_destination_name: 'Hamburg',
+        booking_ref: `BOOK-${spec.key}-2026-08`,
+        freight_partner_id: freightPartner!.id,
+        freight_payment_term: FreightPaymentTerm.prepaid,
+        notify_party_mode: NotifyPartyMode.same_as_consignee,
+        handling_instructions: 'Keep dry. Carrier to confirm clean, food-grade equipment before stuffing.',
+        containerized: true,
+      } : {}),
       transport_document_type: TransportDocumentType.bill_of_lading,
       transport_document_no: `BL-${spec.key}-77120`,
       vessel_or_flight_no: 'MV Concord Trader', voyage_no: '024W',
-      container_no: 'MSCU1234567', container_type: "40'HC", seal_no: 'SL889120',
+      container_no: containerNumber, container_type: "40'HC", seal_no: 'SL889120',
       shipped_on_date: new Date('2026-08-14T00:00:00Z'),
       freight_amount: new Prisma.Decimal(MONEY.freight), freight_currency: MONEY.currency,
     },
@@ -156,6 +186,31 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
       contents_description: `Bag ${i + 1} of 50 - Basmati 1121 steam, lot ${4000 + i}`,
     })),
   });
+
+  if (documentUatFixture) {
+    await prisma.shipmentContainer.create({
+      data: {
+        shipment_id: shipment.id,
+        sequence: 1,
+        container_number: containerNumber,
+        container_type: "40'HC",
+        seal_number: spec.key === 'A' ? 'SL889120' : 'SL889121',
+        tare_weight_kg: new Prisma.Decimal('3800.000'),
+        // Alpha is deliberately verified and renderable. Bravo deliberately retains the
+        // physical container but no verified value/method/person, proving VGM cannot be
+        // synthesized from its package totals.
+        ...(spec.key === 'A' ? {
+          vgm_verified_gross_mass_kg: new Prisma.Decimal('5070.000'),
+          vgm_method: VgmMethod.method_2,
+          vgm_method_2_component_mass_kg: new Prisma.Decimal('1270.000'),
+          vgm_verified_at: new Date('2026-08-13T10:30:00Z'),
+          vgm_verifier_name: `${LABEL} Alpha Authorised Signatory`,
+          vgm_verifier_capacity: 'Exporter authorised person',
+          vgm_evidence_ref: 'PILOT-WEIGHMENT-ALPHA-01',
+        } : {}),
+      },
+    });
+  }
 
   await prisma.insuranceCase.create({
     data: {
@@ -174,12 +229,19 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
     },
   });
 
-  // The document checklist, in the shape deal lock produces.
-  for (const docType of [
+  // The document checklist, in the shape deal lock produces. Alpha/Bravo get all twelve
+  // queued rows for manual lifecycle UAT; none is generated, reviewed or approved here.
+  const checklist = [
     DocType.PI, DocType.CI, DocType.packing_list, DocType.shipping_bill_draft,
     DocType.COO_draft, DocType.declaration, DocType.insurance_declaration,
-  ]) {
-    await prisma.document.create({
+    ...(documentUatFixture ? [
+      DocType.shipping_instructions, DocType.vgm_declaration, DocType.bill_of_exchange,
+      DocType.carrier_instructions, DocType.bank_collection_letter,
+    ] : []),
+  ];
+  const documents = new Map<DocType, { id: string }>();
+  for (const docType of checklist) {
+    const document = await prisma.document.create({
       data: {
         deal_id: deal.id, doc_type: docType, version: 1, is_current_version: true,
         source: 'generated', generation_status: GenerationStatus.queued,
@@ -187,6 +249,49 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
         filing_status: ([DocType.shipping_bill_draft, DocType.COO_draft, DocType.declaration] as DocType[])
           .includes(docType) ? 'draft' : 'not_applicable',
       },
+      select: { id: true },
+    });
+    documents.set(docType, document);
+  }
+
+  if (documentUatFixture) {
+    const payment = await prisma.payment.create({
+      data: {
+        deal_id: deal.id,
+        amount: new Prisma.Decimal(MONEY.total), currency: MONEY.currency,
+        payment_method: 'DP', status: PaymentStatus.due, source: PaymentSource.manual_ops,
+        label: `${LABEL} Documentary collection`, sequence: 1,
+      },
+      select: { id: true },
+    });
+    const bankAccount = await prisma.exporterBankAccount.create({
+      data: {
+        exporter_org_id: org.id,
+        bank_name: 'State Bank of India', branch_name: 'Commercial Branch, Mumbai',
+        branch_address: 'Fort, Mumbai 400001', ifsc: 'SBIN0000300', swift_bic: 'SBININBB',
+        ad_code: '6390004', account_reference: `Pilot account ending ${spec.key}234`,
+      },
+      select: { id: true },
+    });
+    const finance = await prisma.tradeFinanceInstruction.create({
+      data: {
+        deal_id: deal.id, payment_id: payment.id, exporter_bank_account_id: bankAccount.id,
+        bill_type: BillOfExchangeType.sight, place_of_drawing: 'Mumbai',
+        drawn_on_date: new Date('2026-08-15T00:00:00Z'),
+        bank_presentation_type: BankPresentationType.collection,
+        // Bravo's bank-only gap. Bill of Exchange does not consume this value.
+        collection_instructions: spec.key === 'A'
+          ? 'Release documents to the drawee against payment in full.' : null,
+        charges_instruction: 'All foreign bank charges are for the drawee account.',
+        payment_reference: `COLL-${spec.key}-2026-08`,
+      },
+      select: { id: true },
+    });
+    await prisma.bankPresentationItem.createMany({
+      data: [
+        { trade_finance_instruction_id: finance.id, document_id: documents.get(DocType.CI)!.id, original_count: 1, copy_count: 2 },
+        { trade_finance_instruction_id: finance.id, document_id: documents.get(DocType.packing_list)!.id, original_count: 1, copy_count: 1 },
+      ],
     });
   }
 
@@ -210,7 +315,54 @@ async function seedExporter(spec: SeedSpec, passwordHash: string) {
     data: { exception_state: ExceptionState.blocked, exception_reason: `${LABEL} Customs hold at discharge` },
   });
 
-  return { orgId: org.id, ownerEmail: owner.email, dealId: deal.id };
+  // Bravo also carries a small applicability-control deal. It gives UAT a truthful air +
+  // Advance case where VGM, Bill of Exchange and bank presentation are not applicable,
+  // without weakening the primary Bravo deal's meaningful VGM and bank blockers.
+  let notApplicableDealId: string | null = null;
+  if (spec.key === 'B') {
+    const controlDeal = await prisma.deal.create({
+      data: {
+        exporter_org_id: org.id, buyer_id: buyer.id, product_id: product.id,
+        stage: DealStage.executing, incoterm: 'FCA', incoterm_place: 'Mumbai Airport',
+        quantity: new Prisma.Decimal('100'), unit: 'kg',
+        unit_price_amount: new Prisma.Decimal(MONEY.unitPrice), unit_price_currency: MONEY.currency,
+        total_amount: new Prisma.Decimal('123.4500'), total_currency: MONEY.currency,
+        payment_terms: { kind: 'advance', label: 'Advance' },
+        buyer_reference: 'PO-B-AIR-CONTROL',
+      },
+      select: { id: true },
+    });
+    await prisma.shipment.create({
+      data: {
+        deal_id: controlDeal.id, status: ShipmentStatus.booking, mode: ShipmentMode.air,
+        incoterm: 'FCA', containerized: false,
+        port_of_loading_name: 'Mumbai Airport', port_of_loading_country: 'IN',
+        port_of_discharge_name: 'Frankfurt Airport', port_of_discharge_country: 'DE',
+        final_destination_name: 'Frankfurt', final_destination_country: 'DE',
+        booking_ref: 'BOOK-B-AIR-CONTROL', freight_partner_id: freightPartner!.id,
+        freight_payment_term: FreightPaymentTerm.prepaid,
+      },
+    });
+    for (const docType of [
+      DocType.PI, DocType.CI, DocType.packing_list, DocType.shipping_bill_draft,
+      DocType.COO_draft, DocType.declaration, DocType.insurance_declaration,
+      DocType.shipping_instructions, DocType.vgm_declaration, DocType.bill_of_exchange,
+      DocType.carrier_instructions, DocType.bank_collection_letter,
+    ]) {
+      await prisma.document.create({
+        data: {
+          deal_id: controlDeal.id, doc_type: docType, version: 1, is_current_version: true,
+          source: 'generated', generation_status: GenerationStatus.queued,
+          approval_status: docType === DocType.insurance_declaration ? 'not_required' : 'pending',
+          filing_status: ([DocType.shipping_bill_draft, DocType.COO_draft, DocType.declaration] as DocType[])
+            .includes(docType) ? 'draft' : 'not_applicable',
+        },
+      });
+    }
+    notApplicableDealId = controlDeal.id;
+  }
+
+  return { orgId: org.id, ownerEmail: owner.email, dealId: deal.id, notApplicableDealId };
 }
 
 async function seed() {
@@ -248,6 +400,7 @@ async function seed() {
   console.log(`environment            ${env}`);
   console.log(`exporter A (complete)  ${a.ownerEmail}   org=${a.orgId}  deal=${a.dealId}`);
   console.log(`exporter B (blocked)   ${b.ownerEmail}   org=${b.orgId}  deal=${b.dealId}`);
+  console.log(`Bravo N/A control                                  deal=${b.notApplicableDealId}`);
   console.log(`exporter C (isolation) ${c.ownerEmail}   org=${c.orgId}  deal=${c.dealId}`);
   console.log(`agent for C            agent-c@${DOMAIN}`);
   console.log('password               (the PILOT_PASSWORD you supplied - not printed)');
@@ -307,6 +460,18 @@ async function status() {
   console.log(`assignments (all)  ${assignments}`);
   console.log(`staff invitations  ${invitations}`);
   console.log(`users by role      ${JSON.stringify(byRole.map((r) => [r.role, r._count._all]))}`);
+}
+
+async function seedDiscovery() {
+  const env = assertSafeEnvironment();
+  const result = await seedAlphaDiscoveryFixture(prisma);
+  console.log(`environment       ${env}`);
+  console.log(`alpha org         ${result.exporterOrgId}`);
+  console.log(`discovery run     ${result.runId}`);
+  console.log(`candidate markets ${result.marketCount}`);
+  console.log(`synthetic buyers  ${result.buyerCount}`);
+  console.log(result.created ? 'created deterministic staging UAT fixture.' : 'fixture already exists — no rows duplicated.');
+  console.log('note              UI fixture only; this does not verify enqueue, worker, external data, or the scoring engine.');
 }
 
 /**
@@ -371,7 +536,7 @@ async function reset() {
 
   const [
     orgAgentFieldCleared, ownerOrgFieldCleared, deletedAudit, deletedInvites,
-    deletedAssignments, deletedOrgs, deletedBuyers, deletedUsers,
+    deletedAssignments, deletedOrgs, deletedBuyers, deletedPartners, deletedUsers,
   ] = await prisma.$transaction([
     // Defensive: a non-pilot org's `assigned_agent_id` pointing at a pilot agent would block
     // deleting that USER later. Not expected from this fixture's own flows, but nulling a
@@ -415,6 +580,9 @@ async function reset() {
     // never touched by the org cascade and is removed on its own, by label, once nothing
     // scoped to a pilot org still points at it.
     prisma.buyer.deleteMany({ where: { display_name: { startsWith: LABEL } } }),
+    // Freight partners are global directory rows too. Only the unmistakably labelled pilot
+    // rows are removed, after pilot shipments have cascaded away with their organisations.
+    prisma.partner.deleteMany({ where: { display_name: { startsWith: LABEL } } }),
     // Last: every inbound reference that could block a User row has been cleared or deleted
     // above, in dependency order.
     prisma.user.deleteMany({ where: { email: isPilotEmail } }),
@@ -428,6 +596,7 @@ async function reset() {
   console.log(`assignments removed      ${deletedAssignments.count}`);
   console.log(`orgs removed             ${deletedOrgs.count}`);
   console.log(`buyers removed           ${deletedBuyers.count}`);
+  console.log(`partners removed         ${deletedPartners.count}`);
   console.log(`users removed            ${deletedUsers.count}`);
 }
 
@@ -437,9 +606,10 @@ async function main() {
     case 'seed': return seed();
     case 'promote': return promote(argument ?? '');
     case 'status': return status();
+    case 'seed-discovery': return seedDiscovery();
     case 'reset': return reset();
     default:
-      console.log('Usage: staging-pilot.ts <seed|promote <email>|status|reset>');
+      console.log('Usage: staging-pilot.ts <seed|seed-discovery|promote <email>|status|reset>');
       process.exitCode = 1;
   }
 }

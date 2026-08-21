@@ -32,7 +32,7 @@ export class LegacyDocumentEngine implements DocumentGenerationEngine {
    * Bumped whenever a change would alter rendered output. Every artifact records it, so a
    * stored file is never silently attributed to a renderer that would produce something else.
    */
-  readonly version = '1.0.0';
+  readonly version = '1.1.0';
 
   supports(docType: string, format: DocumentOutputFormat): boolean {
     return isSupportedDocType(docType) && supportsFormat(docType, format);

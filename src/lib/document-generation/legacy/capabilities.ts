@@ -7,7 +7,7 @@
  * back to a single-page pdf-lib routine which lost content past the fold.
  *
  * Here all three formats render the same `DocumentModel`, so support is uniform across the
- * seven ClearTrade `DocType` values that have an adapter — and `other` supports nothing,
+ * twelve ClearTrade `DocType` values that have an adapter — and `other` supports nothing,
  * because it is the uploaded-document escape hatch and ClearTrade never generates one.
  */
 
@@ -24,6 +24,11 @@ export const DOCUMENT_FORMAT_SUPPORT: Record<DocType, DocumentOutputFormat[]> = 
   [DocType.COO_draft]: ALL_FORMATS,
   [DocType.declaration]: ALL_FORMATS,
   [DocType.insurance_declaration]: ALL_FORMATS,
+  [DocType.shipping_instructions]: ALL_FORMATS,
+  [DocType.vgm_declaration]: ALL_FORMATS,
+  [DocType.bill_of_exchange]: ALL_FORMATS,
+  [DocType.carrier_instructions]: ALL_FORMATS,
+  [DocType.bank_collection_letter]: ALL_FORMATS,
   /// Uploaded documents are stored, never rendered. An empty list is the honest answer.
   [DocType.other]: [],
 };

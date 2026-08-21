@@ -14,7 +14,11 @@
 export { buildDocumentContext, hashContext } from './context';
 export { checkConsistency, type ConsistencyFinding } from './consistency';
 export {
-  allDocumentReadiness, documentReadiness, READINESS_DOC_TYPES,
+  documentApplicability, paymentMechanism,
+  type ApplicabilityStatus, type DocumentApplicability,
+} from './applicability';
+export {
+  allDocumentReadiness, documentReadiness, LEGACY_READINESS_DOC_TYPES, READINESS_DOC_TYPES,
   type CanonicalOwner, type DocumentReadiness, type ReadinessIssue, type ReadinessStatusValue,
 } from './readiness';
 export {
@@ -28,6 +32,7 @@ export {
   type ContextAddress, type ContextDeal, type ContextExporter, type ContextBuyer,
   type ContextLineItem, type ContextLocation, type ContextMoney, type ContextPackageLine,
   type ContextQuantity, type ContextInsurancePolicy, type ContextPackageTotals,
-  type ContextShipment, type ContextFinancial, type ContextReferences,
+  type ContextShipment, type ContextShipmentContainer, type ContextTradeFinance,
+  type ContextFinancial, type ContextReferences,
   type DocumentGenerationContext,
 } from './types';

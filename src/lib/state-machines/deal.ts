@@ -22,6 +22,7 @@ import {
   validationError,
 } from '@/lib/errors';
 import type { DocTypeRegistryEntry, FeePolicySnapshot } from '@/lib/config';
+import { resolvedDocumentLifecyclePolicy } from '@/lib/document-lifecycle-policy';
 import type { Blocker, Money } from '@/types';
 
 type Stage = DealStage;
@@ -558,6 +559,8 @@ interface LockChecklistSpec {
   /** Key into `sla.thresholds` config — never a hardcoded duration (docs/01 §2). */
   sla_key: string;
   priority: TaskPriority;
+  /** Conditional documents exist as first-class rows but do not create permanent queue noise. */
+  create_task?: boolean;
 }
 
 /**
@@ -582,6 +585,40 @@ const LOCK_DOCUMENT_CHECKLIST: LockChecklistSpec[] = [
     sla_key: 'agent_document_review',
     priority: TaskPriority.normal,
   },
+  {
+    doc_type: DocType.shipping_instructions,
+    required: true,
+    sla_key: 'agent_document_review',
+    priority: TaskPriority.high,
+  },
+  {
+    doc_type: DocType.vgm_declaration,
+    required: false,
+    sla_key: 'agent_document_review',
+    priority: TaskPriority.high,
+    create_task: false,
+  },
+  {
+    doc_type: DocType.bill_of_exchange,
+    required: false,
+    sla_key: 'agent_document_review',
+    priority: TaskPriority.normal,
+    create_task: false,
+  },
+  {
+    doc_type: DocType.carrier_instructions,
+    required: false,
+    sla_key: 'agent_document_review',
+    priority: TaskPriority.high,
+    create_task: false,
+  },
+  {
+    doc_type: DocType.bank_collection_letter,
+    required: false,
+    sla_key: 'agent_document_review',
+    priority: TaskPriority.normal,
+    create_task: false,
+  },
 ];
 
 /**
@@ -596,6 +633,11 @@ const DOC_TYPE_FALLBACK_LABELS: Record<DocType, string> = {
   COO_draft: 'Certificate of origin (draft)',
   declaration: 'Export declaration',
   insurance_declaration: 'Insurance declaration',
+  shipping_instructions: 'Shipping instructions',
+  vgm_declaration: 'VGM declaration',
+  bill_of_exchange: 'Bill of exchange',
+  carrier_instructions: 'Carrier instructions',
+  bank_collection_letter: 'Bank document presentation letter',
   other: 'Document',
 };
 
@@ -680,6 +722,7 @@ export function buildExecutionPlan(
 
   for (const spec of LOCK_DOCUMENT_CHECKLIST) {
     const entry = registry.find((r) => r.doc_type === spec.doc_type);
+    const lifecycle = resolvedDocumentLifecyclePolicy(spec.doc_type, entry);
     const label = entry?.label ?? DOC_TYPE_FALLBACK_LABELS[spec.doc_type];
     const ownerRole = roleFromRegistry(entry?.default_owner_role);
 
@@ -688,23 +731,25 @@ export function buildExecutionPlan(
       doc_type: spec.doc_type,
       label,
       required: spec.required,
-      approval_required: entry?.approval_required ?? true,
-      filing_applicable: entry?.filing_applicable ?? false,
+      approval_required: lifecycle.exporter_approval_required,
+      filing_applicable: lifecycle.filing_applicable,
       owner_role: ownerRole,
       generated_from_snapshot_version: snapshotVersion,
     });
 
-    documentTasks.push({
-      deal_id: dealId,
-      scope_type: 'deal',
-      title: `Prepare ${label.toLowerCase()}`,
-      description: `Generate ${label.toLowerCase()} from the locked deal snapshot and review it before it goes to the exporter.`,
-      owner_role: ownerRole,
-      priority: spec.priority,
-      visibility: Visibility.exporter_visible,
-      task_type: `prepare_${spec.doc_type}`,
-      sla_key: spec.sla_key,
-    });
+    if (spec.create_task !== false) {
+      documentTasks.push({
+        deal_id: dealId,
+        scope_type: 'deal',
+        title: `Prepare ${label.toLowerCase()}`,
+        description: `Generate ${label.toLowerCase()} from the locked deal snapshot and review it before it goes to the exporter.`,
+        owner_role: ownerRole,
+        priority: spec.priority,
+        visibility: Visibility.exporter_visible,
+        task_type: `prepare_${spec.doc_type}`,
+        sla_key: spec.sla_key,
+      });
+    }
   }
 
   const tasks: ExecutionTaskDraft[] = [

@@ -32,6 +32,7 @@ import {
   type ContextAddress, type ContextLocation, type ContextPackageLine,
   type DocumentGenerationContext,
 } from './types';
+import { paymentMechanism } from './applicability';
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 /** Trims to null so an empty string never reaches a document as a present-but-blank field. */
@@ -89,8 +90,22 @@ export async function buildDocumentContext(
       exporter_org: true,
       buyer: true,
       product: true,
-      shipments: { orderBy: { created_at: 'asc' }, take: 1, include: { packages: { orderBy: { sequence: 'asc' } } } },
+      shipments: {
+        orderBy: { created_at: 'asc' }, take: 1,
+        include: {
+          packages: { orderBy: { sequence: 'asc' } },
+          containers: { orderBy: { sequence: 'asc' } },
+          freight_partner: true,
+        },
+      },
       insurance_cases: { orderBy: { created_at: 'desc' }, take: 1 },
+      trade_finance_instruction: {
+        include: {
+          payment: true,
+          exporter_bank_account: true,
+          presentation_items: { include: { document: true }, orderBy: { created_at: 'asc' } },
+        },
+      },
     },
   });
   if (!deal) throw new Error(`Deal ${dealId} not found.`);
@@ -103,6 +118,7 @@ export async function buildDocumentContext(
 
   const shipment = deal.shipments[0] ?? null;
   const insurance = deal.insurance_cases[0] ?? null;
+  const tradeInstruction = deal.trade_finance_instruction;
   const currency = deal.total_currency ?? deal.value_currency ?? deal.unit_price_currency ?? null;
 
   // A deal carries one product line today. Modelled as an array because every renderer
@@ -222,6 +238,58 @@ export async function buildDocumentContext(
         shipment?.port_of_discharge_country ?? null,
       ),
       final_destination_country: text(shipment?.final_destination_country),
+      final_destination_name: text(shipment?.final_destination_name),
+      booking_reference: text(shipment?.booking_ref),
+      freight_partner: shipment?.freight_partner
+        ? {
+            name: shipment.freight_partner.legal_name,
+            email: text(shipment.freight_partner.contact_email),
+            phone: text(shipment.freight_partner.contact_phone),
+          }
+        : null,
+      freight_payment_term: shipment?.freight_payment_term ?? null,
+      handling_instructions: text(shipment?.handling_instructions),
+      notify_party: shipment
+        ? {
+            mode: shipment.notify_party_mode ?? null,
+            name: shipment.notify_party_mode === 'same_as_consignee'
+              ? (text(profile?.document_name) ?? deal.buyer.legal_name)
+              : text(shipment.notify_party_name),
+            address: shipment.notify_party_mode === 'same_as_consignee'
+              ? address({
+                  line1: profile?.address_line1, line2: profile?.address_line2, city: profile?.city,
+                  region: profile?.region, postal_code: profile?.postal_code,
+                  country_code: profile?.country_code ?? deal.buyer.country_code,
+                })
+              : address({
+                  line1: shipment.notify_party_address_line1,
+                  line2: shipment.notify_party_address_line2,
+                  city: shipment.notify_party_city,
+                  region: shipment.notify_party_region,
+                  postal_code: shipment.notify_party_postal_code,
+                  country_code: shipment.notify_party_country_code,
+                }),
+            email: shipment.notify_party_mode === 'same_as_consignee'
+              ? text(profile?.contact_email) : text(shipment.notify_party_email),
+            phone: shipment.notify_party_mode === 'same_as_consignee'
+              ? text(profile?.contact_phone) : text(shipment.notify_party_phone),
+          }
+        : null,
+      containerized: shipment?.containerized ?? null,
+      containers: (shipment?.containers ?? []).map((container) => ({
+        sequence: container.sequence,
+        container_number: container.container_number,
+        container_type: text(container.container_type),
+        seal_number: text(container.seal_number),
+        tare_weight_kg: container.tare_weight_kg?.toString() ?? null,
+        verified_gross_mass_kg: container.vgm_verified_gross_mass_kg?.toString() ?? null,
+        vgm_method: container.vgm_method ?? null,
+        method_2_component_mass_kg: container.vgm_method_2_component_mass_kg?.toString() ?? null,
+        verified_at: iso(container.vgm_verified_at),
+        verifier_name: text(container.vgm_verifier_name),
+        verifier_capacity: text(container.vgm_verifier_capacity),
+        evidence_ref: text(container.vgm_evidence_ref),
+      })),
       vessel_or_flight_no: text(shipment?.vessel_or_flight_no),
       voyage_no: text(shipment?.voyage_no),
       container_no: text(shipment?.container_no),
@@ -274,6 +342,56 @@ export async function buildDocumentContext(
       invoice_date: iso(issuedNumber?.issued_at),
       deal_id: deal.id,
       document_version: options.documentVersion ?? null,
+    },
+
+    trade_finance: {
+      payment_mechanism: paymentMechanism(deal.payment_terms),
+      payment: tradeInstruction?.payment && tradeInstruction.payment.deal_id === deal.id
+        ? {
+            id: tradeInstruction.payment.id,
+            amount: {
+              amount: tradeInstruction.payment.amount.toString(),
+              currency: tradeInstruction.payment.currency,
+            },
+            reference: text(tradeInstruction.payment_reference),
+          }
+        : null,
+      bill_of_exchange: tradeInstruction
+        ? {
+            type: tradeInstruction.bill_type ?? null,
+            tenor_days: tradeInstruction.tenor_days,
+            place_of_drawing: text(tradeInstruction.place_of_drawing),
+            drawn_on_date: iso(tradeInstruction.drawn_on_date),
+          }
+        : null,
+      bank_presentation: tradeInstruction
+        ? {
+            type: tradeInstruction.bank_presentation_type ?? null,
+            collection_instructions: text(tradeInstruction.collection_instructions),
+            charges_instruction: text(tradeInstruction.charges_instruction),
+            bank: tradeInstruction.exporter_bank_account
+              && tradeInstruction.exporter_bank_account.exporter_org_id === deal.exporter_org_id
+              ? {
+                  name: tradeInstruction.exporter_bank_account.bank_name,
+                  branch_name: text(tradeInstruction.exporter_bank_account.branch_name),
+                  branch_address: text(tradeInstruction.exporter_bank_account.branch_address),
+                  ifsc: text(tradeInstruction.exporter_bank_account.ifsc),
+                  swift_bic: text(tradeInstruction.exporter_bank_account.swift_bic),
+                  ad_code: text(tradeInstruction.exporter_bank_account.ad_code),
+                  account_reference: text(tradeInstruction.exporter_bank_account.account_reference),
+                }
+              : null,
+            enclosed_documents: tradeInstruction.presentation_items
+              .filter((item) => item.document.deal_id === deal.id)
+              .map((item) => ({
+                document_id: item.document_id,
+                doc_type: item.document.doc_type,
+                version: item.document.version,
+                original_count: item.original_count,
+                copy_count: item.copy_count,
+              })),
+          }
+        : null,
     },
   };
 }

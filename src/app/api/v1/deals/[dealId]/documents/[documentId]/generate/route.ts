@@ -27,6 +27,7 @@ import { assertCan } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { enqueueJob } from '@/lib/jobs';
 import { getConfig } from '@/lib/config';
+import { resolvedDocumentLifecyclePolicy } from '@/lib/document-lifecycle-policy';
 
 export async function POST(_request: NextRequest, ctx: { params: Promise<{ dealId: string; documentId: string }> }) {
   const correlationId = newCorrelationId();
@@ -80,6 +81,7 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ dealI
 
     const registry = await getConfig('documents.registry');
     const entry = registry.find((r) => r.doc_type === document.doc_type);
+    const lifecycle = resolvedDocumentLifecyclePolicy(document.doc_type, entry);
 
     const targetDocumentId = await prisma.$transaction(async (tx) => {
       let target: { id: string; version: number };
@@ -94,7 +96,7 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ dealI
             is_current_version: true,
             source: 'generated',
             generated_from_snapshot_id: snapshot.id,
-            ...freshVersionStatuses(entry?.approval_required ?? true, entry?.filing_applicable ?? false),
+            ...freshVersionStatuses(lifecycle.exporter_approval_required, lifecycle.filing_applicable),
             generation_status: GenerationStatus.queued,
           },
         });

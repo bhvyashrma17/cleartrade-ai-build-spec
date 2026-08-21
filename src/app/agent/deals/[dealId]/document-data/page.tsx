@@ -15,20 +15,11 @@ import Link from 'next/link';
 import { DocType } from '@prisma/client';
 import { StatusChip } from '@/components/ui';
 import { allDocumentReadiness, buildDocumentContext, type CanonicalOwner } from '@/lib/document-data';
-import { previewNextInvoiceNumber } from '@/lib/invoice-numbering';
+import { documentDisplayName, notApplicableMessage } from '@/lib/document-ui';
+import { issuedInvoiceNumberForDeal, previewNextInvoiceNumber } from '@/lib/invoice-numbering';
 import { prisma } from '@/lib/prisma';
 import { loadAgentDeal } from '../loadAgentDeal';
 import { FixCanonicalDataPanel } from './FixCanonicalDataPanel';
-
-const DOC_LABELS: Record<string, string> = {
-  PI: 'Proforma Invoice',
-  CI: 'Commercial Invoice',
-  packing_list: 'Packing List',
-  shipping_bill_draft: 'Shipping Bill (draft)',
-  COO_draft: 'Certificate of Origin (draft)',
-  declaration: 'Declaration',
-  insurance_declaration: 'Insurance declaration',
-};
 
 const OWNER_LABELS: Record<CanonicalOwner, string> = {
   exporter_org: 'Exporter record',
@@ -39,6 +30,10 @@ const OWNER_LABELS: Record<CanonicalOwner, string> = {
   insurance_case: 'Insurance',
   exchange_rate_quote: 'Exchange rate',
   invoice_number: 'Invoice number',
+  shipment_containers: 'Shipment containers',
+  trade_finance_instruction: 'Trade finance instructions',
+  exporter_bank_account: 'Exporter bank account',
+  bank_presentation: 'Bank presentation',
 };
 
 export default async function AgentDocumentDataPage({ params }: { params: Promise<{ dealId: string }> }) {
@@ -47,12 +42,16 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
 
   const context = await buildDocumentContext(principal, dealId, DocType.CI);
   const readiness = allDocumentReadiness(context);
-  const preview = await previewNextInvoiceNumber(principal, deal.exporter_org_id);
-  const shipment = await prisma.shipment.findFirst({
-    where: { deal_id: dealId },
-    orderBy: { created_at: 'asc' },
-    select: { id: true },
-  });
+  const [preview, shipment, issuedNumber] = await Promise.all([
+    previewNextInvoiceNumber(principal, deal.exporter_org_id),
+    prisma.shipment.findFirst({
+      where: { deal_id: dealId }, orderBy: { created_at: 'asc' }, select: { id: true },
+    }),
+    issuedInvoiceNumberForDeal(dealId),
+  ]);
+  const issuer = issuedNumber?.issued_by_id
+    ? await prisma.user.findUnique({ where: { id: issuedNumber.issued_by_id }, select: { name: true, email: true } })
+    : null;
 
   // One gap can block several documents. Deduplicated by field so the agent sees each thing
   // to fix once, with the documents it unblocks — not the same missing AD code listed twice.
@@ -62,7 +61,7 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
       const entry = byField.get(issue.field) ?? {
         label: issue.label, owner: issue.owner, detail: issue.detail ?? issue.condition, docs: [],
       };
-      entry.docs.push(DOC_LABELS[r.documentType] ?? r.documentType);
+      entry.docs.push(documentDisplayName(r.documentType, r.applicability));
       byField.set(issue.field, entry);
     }
   }
@@ -84,6 +83,20 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
         </p>
       </header>
 
+      <nav aria-label="Document data sections" className="mb-4 flex flex-wrap gap-2 rounded-lg border border-[var(--color-border)] bg-surface p-3 shadow-card">
+        {[
+          ['#party-data', 'Parties'],
+          ['#shipment-instructions', 'Shipment instructions'],
+          ['#container-vgm', 'Container / VGM'],
+          ['#payment-draft', 'Payment / draft'],
+          ['#bank-presentation', 'Bank presentation'],
+        ].map(([href, label]) => (
+          <a key={href} href={href} className="focus-visible-ring inline-flex min-h-9 items-center rounded border border-[var(--color-border)] bg-surface-muted px-3 text-sm font-medium text-primary">
+            {label}
+          </a>
+        ))}
+      </nav>
+
       <section className="mb-6 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <table className="w-full min-w-[36rem] border-collapse text-sm">
           <thead>
@@ -96,17 +109,19 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
           <tbody>
             {readiness.map((r) => (
               <tr key={r.documentType} className="border-t border-[var(--color-border)] align-top">
-                <td className="px-3 py-3 font-medium text-primary">{DOC_LABELS[r.documentType] ?? r.documentType}</td>
+                <td className="px-3 py-3 font-medium text-primary">{documentDisplayName(r.documentType, r.applicability)}</td>
                 <td className="px-3 py-3">
                   <StatusChip
-                    label={r.status === 'ready' ? 'Ready' : r.status === 'blocked' ? 'Blocked' : `Missing ${r.missing.length}`}
-                    tone={r.status === 'ready' ? 'positive' : r.status === 'blocked' ? 'critical' : 'warning'}
+                    label={r.status === 'ready' ? 'Ready' : r.status === 'not_applicable' ? 'Not applicable' : r.status === 'blocked' ? 'Blocked' : `Missing ${r.missing.length}`}
+                    tone={r.status === 'ready' ? 'positive' : r.status === 'blocked' ? 'critical' : 'neutral'}
                     icon={r.status === 'ready' ? 'check' : 'alert'}
                     size="sm"
                   />
                 </td>
                 <td className="px-3 py-3 text-[var(--color-text-secondary)]">
-                  {r.status === 'ready' ? (
+                  {r.status === 'not_applicable' ? (
+                    <span className="text-[var(--color-text-muted)]">{notApplicableMessage(r.documentType, r.applicability)}</span>
+                  ) : r.status === 'ready' ? (
                     <span className="text-[var(--color-text-muted)]">Nothing outstanding.</span>
                   ) : (
                     <ul className="space-y-0.5">
@@ -146,6 +161,8 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
         exporterOrgId={deal.exporter_org_id}
         hasShipment={Boolean(shipment)}
         issuedInvoiceNumber={context.references.invoice_number}
+        issuedAt={issuedNumber ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(issuedNumber.issued_at) : null}
+        issuedBy={issuer?.name ?? issuer?.email ?? null}
         nextInvoiceNumberPreview={preview.preview_number}
         dealCurrency={context.deal.currency}
         exporter={{
@@ -177,6 +194,22 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
           container_no: context.shipment.container_no,
           freight_amount: context.financial.freight?.amount ?? null,
           freight_currency: context.financial.freight?.currency ?? null,
+        }}
+        containers={(context.shipment.containers ?? []).map((container) => ({
+          container_number: container.container_number,
+          verified_gross_mass_kg: container.verified_gross_mass_kg,
+          vgm_method: container.vgm_method,
+          verifier_name: container.verifier_name,
+        }))}
+        tradeFinance={{
+          payment_mechanism: context.trade_finance?.payment_mechanism ?? null,
+          bill_type: context.trade_finance?.bill_of_exchange?.type ?? null,
+          tenor_days: context.trade_finance?.bill_of_exchange?.tenor_days?.toString() ?? null,
+          place_of_drawing: context.trade_finance?.bill_of_exchange?.place_of_drawing ?? null,
+          bank_presentation_type: context.trade_finance?.bank_presentation?.type ?? null,
+          bank_name: context.trade_finance?.bank_presentation?.bank?.name ?? null,
+          bank_branch: context.trade_finance?.bank_presentation?.bank?.branch_name ?? null,
+          collection_instructions: context.trade_finance?.bank_presentation?.collection_instructions ?? null,
         }}
       />
     </div>

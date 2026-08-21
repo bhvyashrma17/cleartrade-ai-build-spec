@@ -288,7 +288,7 @@ describe('canonical data and snapshot reproducibility', () => {
     };
 
     expect(context.money_policy_version).toBe(DOCUMENT_MONEY_POLICY_VERSION);
-    expect(context.builder_version).toBe(2);
+    expect(context.builder_version).toBe(3);
     // The snapshot stores the EXACT value. Rounding is presentation, so it is not baked in.
     expect(new Prisma.Decimal(context.deal.goods_total.amount).equals(new Prisma.Decimal('1543.125'))).toBe(true);
   });

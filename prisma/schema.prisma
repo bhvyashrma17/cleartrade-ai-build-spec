@@ -328,6 +328,11 @@ enum DocType {
   COO_draft
   declaration
   insurance_declaration
+  shipping_instructions
+  vgm_declaration
+  bill_of_exchange
+  carrier_instructions
+  bank_collection_letter
   other
 }
 
@@ -388,6 +393,32 @@ enum ShipmentMode {
   courier
   road
   other
+}
+
+enum NotifyPartyMode {
+  none
+  same_as_consignee
+  named
+}
+
+enum FreightPaymentTerm {
+  prepaid
+  collect
+}
+
+enum VgmMethod {
+  method_1
+  method_2
+}
+
+enum BillOfExchangeType {
+  sight
+  usance
+}
+
+enum BankPresentationType {
+  collection
+  negotiation
 }
 
 enum ExceptionState {
@@ -604,30 +635,30 @@ enum AssignmentStatus {
 // ---------------------------------------------------------------------------
 
 model ExporterOrg {
-  id                       String          @id @default(cuid())
-  legal_name               String?
-  display_name             String
-  gstin                    String?
+  id           String    @id @default(cuid())
+  legal_name   String?
+  display_name String
+  gstin        String?
   /// Status-aware field, not a bare string (docs/02 + glossary).
-  iec                      IecStatus       @default(unknown)
-  iec_number               String?
-  country                  String          @default("IN")
-  state                    String?
-  city                     String?
+  iec          IecStatus @default(unknown)
+  iec_number   String?
+  country      String    @default("IN")
+  state        String?
+  city         String?
 
   /// Structured postal address. Official documents print a block, not a paragraph, and
   /// a single free-text column cannot be validated, corrected field-by-field, or mapped
   /// onto a renderer's address lines. `city`/`state`/`country` above already existed and
   /// are NOT duplicated here.
-  address_line1            String?
-  address_line2            String?
-  postal_code              String?
+  address_line1 String?
+  address_line2 String?
+  postal_code   String?
 
   /// Authorised Dealer code issued by the exporter's bank. Consumed by the commercial
   /// invoice, packing list and shipping bill renderers, and the single hardest blocker
   /// on a shipping bill. Free-text because the format is bank-assigned, not a checksum
   /// we can verify — it is recorded, never inferred.
-  ad_code                  String?
+  ad_code String?
 
   pickup_location_code     String?
   preferred_origin_gateway String?
@@ -671,25 +702,26 @@ model ExporterOrg {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  assigned_agent        User?                 @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
-  users                 User[]                @relation("OrgMembers")
-  products              Product[]
-  readiness_assessments ReadinessAssessment[]
-  discovery_runs        DiscoveryRun[]
-  buyer_leads           BuyerLead[]
-  buyer_fit_assessments BuyerFitAssessment[]
-  buyer_outcomes        BuyerOutcome[]
-  buyer_shortlists      BuyerShortlist[]
-  deals                 Deal[]
-  tasks                 Task[]
-  assignments           AgentAssignment[]
-  invitations           Invitation[]
-  agent_decisions       AgentDecision[]
-  buyer_profiles        BuyerCommercialProfile[]
-  invoice_series        InvoiceSeries[]
-  issued_invoice_numbers IssuedInvoiceNumber[]
-  exchange_rate_quotes  ExchangeRateQuote[]
+  assigned_agent           User?                    @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
+  users                    User[]                   @relation("OrgMembers")
+  products                 Product[]
+  readiness_assessments    ReadinessAssessment[]
+  discovery_runs           DiscoveryRun[]
+  buyer_leads              BuyerLead[]
+  buyer_fit_assessments    BuyerFitAssessment[]
+  buyer_outcomes           BuyerOutcome[]
+  buyer_shortlists         BuyerShortlist[]
+  deals                    Deal[]
+  tasks                    Task[]
+  assignments              AgentAssignment[]
+  invitations              Invitation[]
+  agent_decisions          AgentDecision[]
+  buyer_profiles           BuyerCommercialProfile[]
+  invoice_series           InvoiceSeries[]
+  issued_invoice_numbers   IssuedInvoiceNumber[]
+  exchange_rate_quotes     ExchangeRateQuote[]
   document_input_snapshots DocumentInputSnapshot[]
+  bank_accounts            ExporterBankAccount[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -779,13 +811,13 @@ model BugReport {
   id               String   @id @default(cuid())
   reporter_user_id String
   reporter_role    UserRole
-  subject           String   @db.VarChar(160)
-  what_happened     String   @db.Text
-  expected          String   @db.Text
-  page_url          String?  @db.VarChar(2048)
-  app_environment   String   @db.VarChar(32)
-  correlation_id    String   @unique
-  created_at         DateTime @default(now())
+  subject          String   @db.VarChar(160)
+  what_happened    String   @db.Text
+  expected         String   @db.Text
+  page_url         String?  @db.VarChar(2048)
+  app_environment  String   @db.VarChar(32)
+  correlation_id   String   @unique
+  created_at       DateTime @default(now())
 
   reporter User @relation(fields: [reporter_user_id], references: [id], onDelete: Restrict)
 
@@ -1918,25 +1950,26 @@ model Deal {
   /// Optimistic concurrency — a stale write returns 409 VERSION_CONFLICT.
   version       Int      @default(1)
 
-  exporter_org     ExporterOrg      @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  buyer            Buyer            @relation(fields: [buyer_id], references: [id])
-  product          Product?         @relation(fields: [product_id], references: [id])
-  buyer_lead       BuyerLead?       @relation("LeadDeal")
-  owner_agent      User?            @relation("DealOwnerAgent", fields: [owner_agent_id], references: [id])
-  proposals        DealProposal[]
-  snapshots        DealSnapshot[]
-  documents        Document[]
-  shipments        Shipment[]
-  payments         Payment[]
-  tasks            Task[]
-  messages         Message[]
-  internal_notes   InternalNote[]
-  disputes         Dispute[]
-  partner_handoffs PartnerHandoff[]
-  insurance_cases  InsuranceCase[]
-  payouts          Payout[]
-  issued_invoice_numbers IssuedInvoiceNumber[]
-  document_input_snapshots DocumentInputSnapshot[]
+  exporter_org              ExporterOrg              @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  buyer                     Buyer                    @relation(fields: [buyer_id], references: [id])
+  product                   Product?                 @relation(fields: [product_id], references: [id])
+  buyer_lead                BuyerLead?               @relation("LeadDeal")
+  owner_agent               User?                    @relation("DealOwnerAgent", fields: [owner_agent_id], references: [id])
+  proposals                 DealProposal[]
+  snapshots                 DealSnapshot[]
+  documents                 Document[]
+  shipments                 Shipment[]
+  payments                  Payment[]
+  tasks                     Task[]
+  messages                  Message[]
+  internal_notes            InternalNote[]
+  disputes                  Dispute[]
+  partner_handoffs          PartnerHandoff[]
+  insurance_cases           InsuranceCase[]
+  payouts                   Payout[]
+  issued_invoice_numbers    IssuedInvoiceNumber[]
+  document_input_snapshots  DocumentInputSnapshot[]
+  trade_finance_instruction TradeFinanceInstruction?
 
   @@index([exporter_org_id, stage])
   @@index([owner_agent_id, stage])
@@ -2214,10 +2247,10 @@ model Document {
   /// a change nobody can audit later. Never auto-filled with field values: the reason is a
   /// human sentence, and copying canonical data into it would leak buyer details into a
   /// column that surfaces in lists.
-  amendment_reason      String?
+  amendment_reason     String?
   /// The version this one supersedes. Cheaper and less ambiguous than re-deriving
   /// "version - 1", which is wrong the moment a version is ever skipped.
-  amended_from_version  Int?
+  amended_from_version Int?
 
   reviewed_by_id    String?
   reviewed_at       DateTime?
@@ -2230,16 +2263,17 @@ model Document {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  artifacts DocumentArtifact[]
+  artifacts               DocumentArtifact[]
+  bank_presentation_items BankPresentationItem[]
 
-  deal     Deal?         @relation(fields: [deal_id], references: [id], onDelete: Cascade)
-  shipment Shipment?     @relation(fields: [shipment_id], references: [id])
-  snapshot DealSnapshot? @relation(fields: [generated_from_snapshot_id], references: [id])
+  deal           Deal?                  @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  shipment       Shipment?              @relation(fields: [shipment_id], references: [id])
+  snapshot       DealSnapshot?          @relation(fields: [generated_from_snapshot_id], references: [id])
   input_snapshot DocumentInputSnapshot? @relation(fields: [input_snapshot_id], references: [id])
-  reviewer User?         @relation("DocumentReviewer", fields: [reviewed_by_id], references: [id])
-  approver User?         @relation("DocumentApprover", fields: [approved_by_id], references: [id])
-  filed_by User?         @relation("DocumentFiler", fields: [filed_by_id], references: [id])
-  disputes Dispute[]
+  reviewer       User?                  @relation("DocumentReviewer", fields: [reviewed_by_id], references: [id])
+  approver       User?                  @relation("DocumentApprover", fields: [approved_by_id], references: [id])
+  filed_by       User?                  @relation("DocumentFiler", fields: [filed_by_id], references: [id])
+  disputes       Dispute[]
 
   // A deal must never have two rows claiming the same (doc_type, version) — the
   // generate/upload routes rely on this to be the single source of truth for "which row
@@ -2278,14 +2312,34 @@ model Shipment {
   /// is. A NULL code means "not known" and stays NULL — a code is never derived from a
   /// name, because a wrong UN/LOCODE on a shipping bill is worse than an absent one.
   /// Format is enforced by a database CHECK (2 letters + 3 alphanumerics) when present.
-  port_of_loading_name      String?
-  port_of_loading_unlocode  String? @db.VarChar(5)
-  port_of_loading_country   String? @db.VarChar(2)
-  port_of_discharge_name    String?
+  port_of_loading_name       String?
+  port_of_loading_unlocode   String? @db.VarChar(5)
+  port_of_loading_country    String? @db.VarChar(2)
+  port_of_discharge_name     String?
   port_of_discharge_unlocode String? @db.VarChar(5)
-  port_of_discharge_country String? @db.VarChar(2)
+  port_of_discharge_country  String? @db.VarChar(2)
   /// Where the goods finally end up, which is not always the discharge port's country.
-  final_destination_country String? @db.VarChar(2)
+  final_destination_country  String? @db.VarChar(2)
+  final_destination_name     String?
+
+  /// Explicit instruction facts. Freight payment cannot be inferred safely from Incoterm,
+  /// and a missing notify party must not be silently treated as "same as consignee".
+  notify_party_mode          NotifyPartyMode?
+  notify_party_name          String?
+  notify_party_address_line1 String?
+  notify_party_address_line2 String?
+  notify_party_city          String?
+  notify_party_region        String?
+  notify_party_postal_code   String?
+  notify_party_country_code  String?             @db.VarChar(2)
+  notify_party_email         String?
+  notify_party_phone         String?
+  freight_payment_term       FreightPaymentTerm?
+  handling_instructions      String?
+
+  /// NULL means the containerisation decision has not been recorded. False is a deliberate
+  /// non-containerised shipment; true requires one or more ShipmentContainer rows.
+  containerized Boolean?
 
   /// Carrier and conveyance. One field for vessel-or-flight because the renderers print
   /// one line and the mode already says which it is; a voyage number is separate because
@@ -2313,8 +2367,8 @@ model Shipment {
   /// LogisticsRouteEvidence.freight_amount, which is market evidence used for estimates —
   /// printing an estimate as the freight charged on a customs document would be a
   /// misdeclaration. Insurance is NOT duplicated here: InsuranceCase already owns it.
-  freight_amount   Decimal? @db.Decimal(18, 4)
-  freight_currency String?  @db.VarChar(3)
+  freight_amount         Decimal? @db.Decimal(18, 4)
+  freight_currency       String?  @db.VarChar(3)
   other_charges_amount   Decimal? @db.Decimal(18, 4)
   other_charges_currency String?  @db.VarChar(3)
 
@@ -2330,6 +2384,7 @@ model Shipment {
   freight_partner  Partner?            @relation("FreightPartner", fields: [freight_partner_id], references: [id])
   milestones       ShipmentMilestone[]
   packages         ShipmentPackage[]
+  containers       ShipmentContainer[]
   documents        Document[]
   disputes         Dispute[]
   partner_handoffs PartnerHandoff[]
@@ -2337,6 +2392,36 @@ model Shipment {
   @@index([deal_id])
   @@index([status])
   @@index([exception_state])
+}
+
+/// One physical container on a shipment. VGM is an explicitly verified fact per container;
+/// it is never derived from ShipmentPackage totals. Multiple rows prevent the old
+/// Shipment.container_no shortcut from becoming a hidden one-container assumption.
+model ShipmentContainer {
+  id               String  @id @default(cuid())
+  shipment_id      String
+  sequence         Int
+  container_number String
+  container_type   String?
+  seal_number      String?
+
+  tare_weight_kg                 Decimal?   @db.Decimal(12, 3)
+  vgm_verified_gross_mass_kg     Decimal?   @db.Decimal(12, 3)
+  vgm_method                     VgmMethod?
+  vgm_method_2_component_mass_kg Decimal?   @db.Decimal(12, 3)
+  vgm_verified_at                DateTime?
+  vgm_verifier_name              String?
+  vgm_verifier_capacity          String?
+  vgm_evidence_ref               String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  shipment Shipment @relation(fields: [shipment_id], references: [id], onDelete: Cascade)
+
+  @@unique([shipment_id, sequence])
+  @@unique([shipment_id, container_number])
+  @@index([shipment_id])
 }
 
 /// ETA and actual are distinct columns — EXP-14-AC02 requires both to be visible.
@@ -2466,11 +2551,82 @@ model Payment {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  deal     Deal      @relation(fields: [deal_id], references: [id], onDelete: Cascade)
-  disputes Dispute[]
+  deal                       Deal                      @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  disputes                   Dispute[]
+  trade_finance_instructions TradeFinanceInstruction[]
 
   @@index([deal_id, sequence])
   @@index([status, due_at])
+}
+
+/// Tenant-owned bank identity used for export document presentation. `account_reference` is
+/// intentionally not named account_number: callers may store the bank-approved masked or
+/// documentary reference without forcing a raw account number into snapshots and audit logs.
+model ExporterBankAccount {
+  id                String   @id @default(cuid())
+  exporter_org_id   String
+  bank_name         String
+  branch_name       String?
+  branch_address    String?
+  ifsc              String?
+  swift_bic         String?
+  ad_code           String?
+  account_reference String?
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  exporter_org               ExporterOrg               @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  trade_finance_instructions TradeFinanceInstruction[]
+
+  @@index([exporter_org_id, is_active])
+}
+
+/// Deal-scoped instructions for negotiable instruments and bank presentation. These are
+/// operational trade-finance facts, not renderer payload fields.
+model TradeFinanceInstruction {
+  id                       String  @id @default(cuid())
+  deal_id                  String  @unique
+  payment_id               String?
+  exporter_bank_account_id String?
+
+  bill_type        BillOfExchangeType?
+  tenor_days       Int?
+  place_of_drawing String?
+  drawn_on_date    DateTime?
+
+  bank_presentation_type  BankPresentationType?
+  collection_instructions String?
+  charges_instruction     String?
+  payment_reference       String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  deal                  Deal                   @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  payment               Payment?               @relation(fields: [payment_id], references: [id], onDelete: SetNull)
+  exporter_bank_account ExporterBankAccount?   @relation(fields: [exporter_bank_account_id], references: [id], onDelete: SetNull)
+  presentation_items    BankPresentationItem[]
+
+  @@index([payment_id])
+  @@index([exporter_bank_account_id])
+}
+
+/// Documents deliberately enclosed in a bank presentation, bound to immutable Document
+/// versions rather than free-typed names.
+model BankPresentationItem {
+  id                           String   @id @default(cuid())
+  trade_finance_instruction_id String
+  document_id                  String
+  original_count               Int      @default(0)
+  copy_count                   Int      @default(0)
+  created_at                   DateTime @default(now())
+
+  trade_finance_instruction TradeFinanceInstruction @relation(fields: [trade_finance_instruction_id], references: [id], onDelete: Cascade)
+  document                  Document                @relation(fields: [document_id], references: [id], onDelete: Restrict)
+
+  @@unique([trade_finance_instruction_id, document_id])
+  @@index([document_id])
 }
 
 model InsuranceCase {
@@ -3509,11 +3665,11 @@ enum StaffInvitationStatus {
 /// `email` for audit/history purposes only — that column is never read by any authorization
 /// decision, on old rows or new ones (see `convertUserToAgent`).
 model StaffInvitation {
-  id    String  @id @default(cuid())
+  id     String                @id @default(cuid())
   /// Null on every row created after the bearer-invitation change (Admin no longer supplies
   /// one). Non-null only on legacy rows kept for audit history — never compared against a
   /// claimant's address; see the model doc above.
-  email String?
+  email  String?
   /// Always `agent`, enforced by `StaffInvitation_role_is_agent`. Narrowed from the original
   /// broader staff-role CHECK because no code path has ever issued anything but an agent
   /// invitation — `generateAgentInvitation` cannot choose another role, and widening a bearer
@@ -3564,22 +3720,22 @@ enum StaffAccessGrantStatus {
 /// Claimed automatically inside `resolveSocialIdentity()` — never by a route the browser can
 /// call directly — the moment the provider confirms the signer owns this exact address.
 model StaffAccessGrant {
-  id     String                  @id @default(cuid())
+  id     String                 @id @default(cuid())
   email  String
   /// Constrained to `agent` by a database CHECK — see `StaffAccessGrant_role_is_agent` below.
   /// Only agent provisioning is needed today; unlike StaffInvitation this is not widened to
   /// every staff role, because an unattended claim landing on ops/admin the moment somebody's
   /// Google account happens to match an email would be a far more dangerous default than
   /// requiring a human to accept a link for that.
-  role   UserRole                @default(agent)
-  status StaffAccessGrantStatus  @default(pending)
+  role   UserRole               @default(agent)
+  status StaffAccessGrantStatus @default(pending)
 
-  granted_by_id  String
-  granted_at     DateTime  @default(now())
-  claimed_at     DateTime?
-  claimed_user_id String?  @unique
-  revoked_at     DateTime?
-  revoked_by_id  String?
+  granted_by_id   String
+  granted_at      DateTime  @default(now())
+  claimed_at      DateTime?
+  claimed_user_id String?   @unique
+  revoked_at      DateTime?
+  revoked_by_id   String?
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
@@ -3695,9 +3851,9 @@ model ShipmentPackage {
   net_weight_kg   Decimal? @db.Decimal(12, 3)
   gross_weight_kg Decimal? @db.Decimal(12, 3)
 
-  length_cm Decimal? @db.Decimal(10, 2)
-  width_cm  Decimal? @db.Decimal(10, 2)
-  height_cm Decimal? @db.Decimal(10, 2)
+  length_cm  Decimal? @db.Decimal(10, 2)
+  width_cm   Decimal? @db.Decimal(10, 2)
+  height_cm  Decimal? @db.Decimal(10, 2)
   /// Volume per package. Nullable and never back-calculated from dimensions that are
   /// themselves missing — an unknown volume prints as unknown.
   volume_cbm Decimal? @db.Decimal(12, 4)
@@ -3727,8 +3883,8 @@ model ExchangeRateQuote {
   id              String @id @default(cuid())
   exporter_org_id String
 
-  base_currency  String @db.VarChar(3)
-  quote_currency String @db.VarChar(3)
+  base_currency  String  @db.VarChar(3)
+  quote_currency String  @db.VarChar(3)
   /// Units of quote_currency per ONE unit of base_currency. 8dp because customs-notified
   /// rates for low-value currencies need more than 4.
   rate           Decimal @db.Decimal(18, 8)
@@ -3762,9 +3918,9 @@ model InvoiceSeries {
   exporter_org_id String
   series_key      String
 
-  prefix     String  @default("")
-  suffix     String  @default("")
-  pad_length Int     @default(5)
+  prefix      String @default("")
+  suffix      String @default("")
+  pad_length  Int    @default(5)
   /// The next number to hand out. Advanced only by an atomic UPDATE ... RETURNING inside
   /// the issuing transaction, which is what makes concurrent issuance safe without an
   /// application-level lock.
@@ -3802,13 +3958,13 @@ model IssuedInvoiceNumber {
   /// an already-issued document says.
   formatted_number String
 
-  issued_at     DateTime @default(now())
-  issued_by_id  String?
+  issued_at      DateTime @default(now())
+  issued_by_id   String?
   correlation_id String?
 
-  voided_at     DateTime?
-  void_reason   String?
-  voided_by_id  String?
+  voided_at    DateTime?
+  void_reason  String?
+  voided_by_id String?
 
   exporter_org ExporterOrg   @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
   series       InvoiceSeries @relation(fields: [series_id], references: [id], onDelete: Cascade)
@@ -3831,7 +3987,7 @@ model IssuedInvoiceNumber {
 /// Append-only by trigger. `content_hash` is SHA-256 over the canonical JSON, so any
 /// tampering is detectable and two identical inputs are recognisably identical.
 model DocumentInputSnapshot {
-  id              String @id @default(cuid())
+  id              String  @id @default(cuid())
   exporter_org_id String
   deal_id         String
   doc_type        DocType
@@ -3846,9 +4002,9 @@ model DocumentInputSnapshot {
   correlation_id String?
   created_at     DateTime @default(now())
 
-  exporter_org ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  deal         Deal        @relation(fields: [deal_id], references: [id], onDelete: Cascade)
-  created_by   User?       @relation("DocumentSnapshotCreator", fields: [created_by_id], references: [id])
+  exporter_org ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  deal         Deal               @relation(fields: [deal_id], references: [id], onDelete: Cascade)
+  created_by   User?              @relation("DocumentSnapshotCreator", fields: [created_by_id], references: [id])
   document     Document?
   artifacts    DocumentArtifact[]
 
@@ -3903,9 +4059,9 @@ model DocumentArtifact {
   generated_at    DateTime @default(now())
   generated_by_id String?
 
-  document        Document              @relation(fields: [document_id], references: [id], onDelete: Cascade)
-  input_snapshot  DocumentInputSnapshot @relation(fields: [input_snapshot_id], references: [id])
-  generated_by    User?                 @relation("DocumentArtifactGenerator", fields: [generated_by_id], references: [id])
+  document       Document              @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  input_snapshot DocumentInputSnapshot @relation(fields: [input_snapshot_id], references: [id])
+  generated_by   User?                 @relation("DocumentArtifactGenerator", fields: [generated_by_id], references: [id])
 
   @@unique([document_id, format])
   @@index([input_snapshot_id])

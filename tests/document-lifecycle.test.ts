@@ -3,7 +3,7 @@ import { afterAll, afterEach, describe, expect, test } from 'vitest';
 import {
   ApprovalStatus, DealStage, DocType, DocumentFormat, ExchangeRateSource, GenerationStatus,
   InsuranceCaseStatus, OrgTier, Prisma, ReviewStatus, ShipmentMode, ShipmentStatus,
-  TransportDocumentType, UserRole,
+  TransportDocumentType, UserRole, VgmMethod,
 } from '@prisma/client';
 import { buildDocumentContext } from '../src/lib/document-data';
 import { compareSnapshotToCurrent } from '../src/lib/document-drift';
@@ -15,9 +15,13 @@ import {
   agentReviewDocument, assertDocumentApprovable, createDocumentAmendment,
   documentAuthorityNote, documentDetail, documentSnapshotDrift, documentWorkspace,
 } from '../src/lib/document-lifecycle';
+import { NEW_DOCUMENT_LIFECYCLE_MATRIX } from '../src/lib/document-lifecycle-policy';
 import { readDocumentArtifact, renderDocumentArtifact } from '../src/lib/document-rendering';
 import { issueInvoiceNumber } from '../src/lib/invoice-numbering';
 import { assignExporterToAgent } from '../src/lib/staff-provisioning';
+import { CONFIG_DEFAULTS } from '../src/lib/config';
+import { backfillDealDocumentCapabilities } from '../src/lib/documents';
+import { buildExecutionPlan } from '../src/lib/state-machines/deal';
 import { prisma } from '../src/lib/prisma';
 import type { Principal } from '../src/types';
 
@@ -126,7 +130,7 @@ async function world(opts: { buyerName?: string } = {}) {
   });
 
   return {
-    s, orgA: orgA.id, orgB: orgB.id, dealId: deal.id, dealBId: dealB.id, buyerId: buyer.id,
+    s, orgA: orgA.id, orgB: orgB.id, dealId: deal.id, dealBId: dealB.id, buyerId: buyer.id, productId: product.id,
     shipmentId: shipment.id, documentId: document.id,
     ownerA: ownerAP, ownerB: principal(ownerB.id, UserRole.exporter_owner, orgB.id),
     agent, otherAgent: principal(otherAgent.id, UserRole.agent), ops,
@@ -216,6 +220,147 @@ describe('separation of duties is preserved', () => {
     await expect(agentReviewDocument({
       actor: w.otherAgent, dealId: w.dealId, documentId: w.documentId, outcome: 'reviewed', correlationId: corr(),
     })).rejects.toMatchObject({ code: expect.stringMatching(/NOT_FOUND|FORBIDDEN/) });
+  });
+});
+
+describe('five-type lifecycle integration', () => {
+  test('deal lock creates eleven post-lock capabilities; PI makes twelve, without conditional task noise', () => {
+    const plan = buildExecutionPlan('deal-1', 1, CONFIG_DEFAULTS['documents.registry']);
+    const types = plan.documents.map((document) => document.doc_type);
+    expect(types).toHaveLength(11);
+    expect(new Set([DocType.PI, ...types]).size).toBe(12);
+    for (const type of Object.keys(NEW_DOCUMENT_LIFECYCLE_MATRIX) as DocType[]) {
+      expect(types).toContain(type);
+      const policy = NEW_DOCUMENT_LIFECYCLE_MATRIX[type as keyof typeof NEW_DOCUMENT_LIFECYCLE_MATRIX];
+      expect(policy).toEqual({
+        agent_review_required: true, exporter_approval_required: true, filing_applicable: false,
+      });
+    }
+    expect(plan.tasks.some((task) => task.task_type === 'prepare_shipping_instructions')).toBe(true);
+    for (const type of [
+      DocType.vgm_declaration, DocType.bill_of_exchange,
+      DocType.carrier_instructions, DocType.bank_collection_letter,
+    ]) expect(plan.tasks.some((task) => task.task_type === `prepare_${type}`)).toBe(false);
+  });
+
+  test('the targeted backfill is idempotent and never duplicates a capability', async () => {
+    const w = await world();
+    await prisma.dealSnapshot.create({
+      data: {
+        deal_id: w.dealId, version: 1, buyer_id: w.buyerId,
+        buyer_legal_name: `Nordwind GmbH ${w.s}`, product_id: w.productId,
+        product_name: `Basmati ${w.s}`, quantity: new Prisma.Decimal('1000'), unit: 'kg',
+        total_amount: new Prisma.Decimal('1250'), total_currency: 'USD', incoterm: 'FOB', fee_policy: {},
+      },
+    });
+    expect(await backfillDealDocumentCapabilities({ actor: w.agent, dealId: w.dealId, correlationId: corr() })).toBe(5);
+    expect(await backfillDealDocumentCapabilities({ actor: w.agent, dealId: w.dealId, correlationId: corr() })).toBe(0);
+    const rows = await prisma.document.findMany({
+      where: { deal_id: w.dealId, doc_type: { in: Object.keys(NEW_DOCUMENT_LIFECYCLE_MATRIX) as DocType[] } },
+    });
+    expect(rows).toHaveLength(5);
+    expect(new Set(rows.map((row) => row.doc_type)).size).toBe(5);
+    expect(rows.every((row) => row.version === 1 && row.is_current_version)).toBe(true);
+  });
+
+  test('a backfilled air-shipment VGM is first-class but not applicable, not blocked', async () => {
+    const w = await world();
+    await prisma.shipment.update({
+      where: { id: w.shipmentId },
+      data: {
+        mode: ShipmentMode.air, containerized: false,
+        transport_document_type: null, transport_document_no: null,
+      },
+    });
+    await prisma.dealSnapshot.create({
+      data: {
+        deal_id: w.dealId, version: 1, buyer_id: w.buyerId,
+        buyer_legal_name: `Nordwind GmbH ${w.s}`, product_id: w.productId,
+        product_name: `Basmati ${w.s}`, fee_policy: {},
+      },
+    });
+    await backfillDealDocumentCapabilities({ actor: w.agent, dealId: w.dealId, correlationId: corr() });
+    const row = (await documentWorkspace(w.agent, w.dealId)).rows
+      .find((entry) => entry.doc_type === DocType.vgm_declaration)!;
+    expect(row.current).not.toBeNull();
+    expect(row.readiness).toMatchObject({
+      status: 'not_applicable', missing: [], invalid: [], applicability: { code: 'not_sea' },
+    });
+  });
+
+  test('VGM uses generation, review, exporter authorization, artifacts, drift, and amendment unchanged', async () => {
+    const w = await world();
+    await prisma.shipment.update({
+      where: { id: w.shipmentId },
+      data: { booking_ref: 'BOOK-VGM-1', containerized: true },
+    });
+    const container = await prisma.shipmentContainer.create({
+      data: {
+        shipment_id: w.shipmentId, sequence: 1, container_number: 'MSCU1234567',
+        container_type: "40'HC", seal_number: 'SEAL-1',
+        vgm_verified_gross_mass_kg: new Prisma.Decimal('29200'), vgm_method: VgmMethod.method_1,
+        vgm_verified_at: new Date('2026-08-21T00:00:00Z'), vgm_verifier_name: 'Exporter Signatory',
+        vgm_verifier_capacity: 'Authorised person', vgm_evidence_ref: 'WB-1',
+      },
+    });
+    const v1 = await prisma.document.create({
+      data: {
+        deal_id: w.dealId, doc_type: DocType.vgm_declaration, version: 1,
+        is_current_version: true, source: 'generated', generation_status: GenerationStatus.queued,
+        approval_status: ApprovalStatus.pending,
+      },
+    });
+
+    const renderedV1 = await generate(w, v1.id);
+    await expect(assertDocumentApprovable(w.ownerA, w.dealId, v1.id))
+      .rejects.toMatchObject({ code: 'PREREQUISITES_NOT_MET' });
+    await agentReviewDocument({
+      actor: w.agent, dealId: w.dealId, documentId: v1.id,
+      outcome: 'reviewed', correlationId: corr(),
+    });
+    const html = await renderDocumentArtifact({
+      actor: w.agent, dealId: w.dealId, documentId: v1.id, format: 'html', correlationId: corr(),
+    });
+    expect(html.bytes.toString('utf8')).toContain("shipper&#39;s declared VGM values");
+    await approve(w, v1.id);
+
+    const frozenV1 = await prisma.document.findUniqueOrThrow({ where: { id: v1.id } });
+    expect(frozenV1.review_status).toBe(ReviewStatus.agent_reviewed);
+    expect(frozenV1.approval_status).toBe(ApprovalStatus.exporter_approved);
+    expect(frozenV1.filing_status).toBe('not_applicable');
+    expect(frozenV1.checksum).toBe(renderedV1.artifact.checksum);
+
+    await prisma.shipmentContainer.update({
+      where: { id: container.id }, data: { vgm_verified_gross_mass_kg: new Prisma.Decimal('29300') },
+    });
+    const drift = await documentSnapshotDrift(w.agent, w.dealId, v1.id);
+    expect(drift?.entries.map((entry) => entry.field)).toContain('shipment.containers');
+
+    const v2 = await createDocumentAmendment({
+      actor: w.agent, dealId: w.dealId, documentId: v1.id,
+      reason: 'Verified mass corrected from weighbridge evidence', correlationId: corr(),
+    });
+    const renderedV2 = await generate(w, v2.id);
+    const [oldRow, newRow] = await Promise.all([
+      prisma.document.findUniqueOrThrow({ where: { id: v1.id } }),
+      prisma.document.findUniqueOrThrow({ where: { id: v2.id } }),
+    ]);
+    expect(oldRow.is_current_version).toBe(false);
+    expect(oldRow.input_snapshot_id).toBe(frozenV1.input_snapshot_id);
+    expect(oldRow.checksum).toBe(renderedV1.artifact.checksum);
+    expect(newRow.version).toBe(2);
+    expect(newRow.input_snapshot_id).not.toBe(oldRow.input_snapshot_id);
+    expect(newRow.checksum).toBe(renderedV2.artifact.checksum);
+    expect(newRow.checksum).not.toBe(oldRow.checksum);
+    expect(await prisma.documentArtifact.findUnique({ where: { id: renderedV1.artifact.id } })).not.toBeNull();
+  });
+
+  test('authority notes preserve every external-boundary distinction', () => {
+    expect(documentAuthorityNote(DocType.vgm_declaration)?.notThis).toMatch(/not shipper authorization/i);
+    expect(documentAuthorityNote(DocType.bill_of_exchange)?.notThis).toMatch(/Not drawee acceptance/i);
+    expect(documentAuthorityNote(DocType.carrier_instructions)?.notThis).toMatch(/Not an issued Bill of Lading or Air Waybill/i);
+    expect(documentAuthorityNote(DocType.bank_collection_letter)?.notThis).toMatch(/Not bank acceptance/i);
+    expect(documentAuthorityNote(DocType.shipping_instructions)?.notThis).toMatch(/Not carrier acceptance/i);
   });
 });
 

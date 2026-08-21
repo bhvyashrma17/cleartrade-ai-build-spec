@@ -6,7 +6,7 @@ import {
   ReviewStatus, UserRole,
 } from '@prisma/client';
 import { agentEscalations } from '../src/lib/agent-escalations';
-import { buildDocumentContext, documentReadiness, READINESS_DOC_TYPES } from '../src/lib/document-data';
+import { buildDocumentContext, documentReadiness, LEGACY_READINESS_DOC_TYPES } from '../src/lib/document-data';
 import {
   LegacyDocumentEngine, UnrenderableTextError, setDocumentGenerationEngine,
 } from '../src/lib/document-generation';
@@ -251,7 +251,7 @@ describe('pilot: escalation queue aggregates real canonical state', () => {
 describe('pilot: readiness matrix', () => {
   test('exporter A is ready for every supported document type', async () => {
     const context = await buildDocumentContext(world.agent, world.A.dealId, DocType.CI);
-    const results = READINESS_DOC_TYPES.map((t) => documentReadiness({ ...context, doc_type: t }, t));
+    const results = LEGACY_READINESS_DOC_TYPES.map((t) => documentReadiness({ ...context, doc_type: t }, t));
 
     for (const result of results) {
       expect(result, `${result.documentType} should be ready: ${JSON.stringify([...result.invalid, ...result.missing])}`)
@@ -263,7 +263,7 @@ describe('pilot: readiness matrix', () => {
   test('exporter B blocks precisely the documents its gaps affect, and no others', async () => {
     const context = await buildDocumentContext(world.agent, world.B.dealId, DocType.CI);
     const byType = new Map(
-      READINESS_DOC_TYPES.map((t) => [t, documentReadiness({ ...context, doc_type: t }, t)]),
+      LEGACY_READINESS_DOC_TYPES.map((t) => [t, documentReadiness({ ...context, doc_type: t }, t)]),
     );
 
     // The exporter gap: no AD code. Only the shipping bill needs it.
@@ -271,7 +271,7 @@ describe('pilot: readiness matrix', () => {
     expect(byType.get(DocType.CI)!.missing.map((m) => m.field)).not.toContain('exporter.ad_code');
 
     // The buyer gap: no city. Every document that prints a buyer address blocks.
-    for (const docType of READINESS_DOC_TYPES) {
+    for (const docType of LEGACY_READINESS_DOC_TYPES) {
       expect(byType.get(docType)!.missing.map((m) => m.field), docType).toContain('buyer.address');
     }
 
@@ -341,7 +341,7 @@ describe('pilot: readiness matrix', () => {
 describe('pilot: snapshot to rendered artifact', () => {
   test('every supported document renders to all three formats from ONE snapshot', async () => {
     legacy();
-    for (const docType of READINESS_DOC_TYPES) {
+    for (const docType of LEGACY_READINESS_DOC_TYPES) {
       const documentId = world.A.documentIds[docType]!;
       for (const format of ['pdf', 'docx', 'html'] as const) {
         const { artifact } = await renderDocumentArtifact({
@@ -506,7 +506,7 @@ describe('pilot: no document claims external authority it does not have', () => 
   }
 
   test('no rendered artifact makes a forbidden claim', async () => {
-    for (const docType of READINESS_DOC_TYPES) {
+    for (const docType of LEGACY_READINESS_DOC_TYPES) {
       const html = (await readDocumentArtifact({
         actor: world.agent, dealId: world.A.dealId, documentId: world.A.documentIds[docType]!, format: 'html',
       })).bytes.toString('utf8');
@@ -1025,7 +1025,7 @@ describe('pilot: operational read models are not pathological', () => {
     // The workspace loads 7 document types with 14 versions and 40+ artifacts between them.
     // A per-document query pattern would be visible as a large multiple of that.
     const rows = (await documentWorkspace(world.agent, world.A.dealId)).rows;
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(12);
     const totalVersions = rows.reduce((sum, r) => sum + r.history.length, 0);
     expect(totalVersions).toBeGreaterThanOrEqual(8);
     // Structural assertion instead of a query counter, which needs a logging client: the

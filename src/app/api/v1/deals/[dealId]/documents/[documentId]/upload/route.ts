@@ -13,6 +13,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getConfig } from '@/lib/config';
+import { resolvedDocumentLifecyclePolicy } from '@/lib/document-lifecycle-policy';
 import { freshVersionStatuses, loadDocumentScoped } from '@/lib/documents';
 import { secureUpload } from '@/lib/document-storage';
 import { errorResponse, forbidden, newCorrelationId, single, validationError } from '@/lib/errors';
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
 
     const registry = await getConfig('documents.registry');
     const entry = registry.find((r) => r.doc_type === document.doc_type);
+    const lifecycle = resolvedDocumentLifecyclePolicy(document.doc_type, entry);
 
     const created = await prisma.$transaction(async (tx) => {
       await tx.document.update({ where: { id: document.id }, data: { is_current_version: false } });
@@ -75,7 +77,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ dealId
           version: document.version + 1,
           is_current_version: true,
           source: 'uploaded',
-          ...freshVersionStatuses(entry?.approval_required ?? true, entry?.filing_applicable ?? false),
+          ...freshVersionStatuses(lifecycle.exporter_approval_required, lifecycle.filing_applicable),
           // Uploaded content exists already — there is nothing to "generate".
           generation_status: 'generated',
           file_ref: stored.objectKey,

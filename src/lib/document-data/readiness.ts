@@ -17,11 +17,12 @@
  * That is what stops documents from becoming the database.
  */
 
-import { DocType } from '@prisma/client';
+import { DocType, Prisma } from '@prisma/client';
+import { documentApplicability, type DocumentApplicability } from './applicability';
 import { checkConsistency } from './consistency';
 import type { DocumentGenerationContext } from './types';
 
-export type ReadinessStatusValue = 'ready' | 'missing_data' | 'blocked';
+export type ReadinessStatusValue = 'ready' | 'missing_data' | 'blocked' | 'not_applicable';
 export type ReadinessIssueKind = 'required_for_this_document' | 'conditionally_required' | 'invalid_value';
 
 /** Where a fact is actually corrected. The UI turns this into a deep link. */
@@ -33,7 +34,11 @@ export type CanonicalOwner =
   | 'shipment_packages'
   | 'insurance_case'
   | 'exchange_rate_quote'
-  | 'invoice_number';
+  | 'invoice_number'
+  | 'shipment_containers'
+  | 'trade_finance_instruction'
+  | 'exporter_bank_account'
+  | 'bank_presentation';
 
 export interface ReadinessIssue {
   /** Dotted path into the generation context, so a caller can point at the exact value. */
@@ -62,6 +67,7 @@ export interface DocumentReadiness {
    * belongs in front of the agent, not in the gate.
    */
   advisory: ReadinessIssue[];
+  applicability: DocumentApplicability;
 }
 
 type Ctx = DocumentGenerationContext;
@@ -113,6 +119,20 @@ const PACKAGES: Requirement[] = [
 const PORTS: Requirement[] = [
   { field: 'shipment.port_of_loading.name', label: 'Port of loading', owner: 'shipment', present: (c) => has(c.shipment.port_of_loading.name) },
   { field: 'shipment.port_of_discharge.name', label: 'Port of discharge', owner: 'shipment', present: (c) => has(c.shipment.port_of_discharge.name) },
+];
+
+const SHIPMENT_INSTRUCTION_CORE: Requirement[] = [
+  ...CORE, ...GOODS, HS_CODE, ...PACKAGES, ...PORTS,
+  { field: 'shipment.mode', label: 'Mode of transport', owner: 'shipment', present: (c) => has(c.shipment.mode) },
+  { field: 'shipment.freight_payment_term', label: 'Freight prepaid or collect', owner: 'shipment', present: (c) => has(c.shipment.freight_payment_term) },
+  { field: 'shipment.booking_reference', label: 'Booking reference', owner: 'shipment', present: (c) => has(c.shipment.booking_reference) },
+  { field: 'shipment.final_destination', label: 'Final destination', owner: 'shipment', present: (c) => has(c.shipment.final_destination_name) || has(c.shipment.final_destination_country) },
+  { field: 'shipment.marks_and_numbers', label: 'Marks and numbers', owner: 'shipment', present: (c) => has(c.shipment.marks_and_numbers) },
+  {
+    field: 'shipment.notify_party', label: 'Named notify party details', owner: 'shipment',
+    when: (c) => c.shipment.notify_party?.mode === 'named' ? 'A named notify party needs a name and address.' : null,
+    present: (c) => has(c.shipment.notify_party?.name) && hasAddress(c.shipment.notify_party!.address),
+  },
 ];
 
 /**
@@ -186,6 +206,54 @@ const REQUIREMENTS: Record<DocType, Requirement[]> = {
     ...PORTS,
   ],
 
+  [DocType.shipping_instructions]: [...SHIPMENT_INSTRUCTION_CORE],
+
+  [DocType.vgm_declaration]: [
+    { field: 'exporter.legal_name', label: 'Shipper legal name', owner: 'exporter_org', present: (c) => has(c.exporter.legal_name) },
+    { field: 'shipment.booking_reference', label: 'Booking reference', owner: 'shipment', present: (c) => has(c.shipment.booking_reference) },
+    { field: 'shipment.containers', label: 'Shipment containers', owner: 'shipment_containers', present: (c) => (c.shipment.containers?.length ?? 0) > 0 },
+    { field: 'shipment.containers[].container_number', label: 'Container number', owner: 'shipment_containers', present: (c) => (c.shipment.containers ?? []).every((v) => has(v.container_number)) },
+    { field: 'shipment.containers[].verified_gross_mass_kg', label: 'Verified gross mass', owner: 'shipment_containers', present: (c) => (c.shipment.containers ?? []).length > 0 && (c.shipment.containers ?? []).every((v) => has(v.verified_gross_mass_kg)) },
+    { field: 'shipment.containers[].vgm_method', label: 'VGM method', owner: 'shipment_containers', present: (c) => (c.shipment.containers ?? []).length > 0 && (c.shipment.containers ?? []).every((v) => has(v.vgm_method)) },
+    { field: 'shipment.containers[].verified_at', label: 'VGM verification date', owner: 'shipment_containers', present: (c) => (c.shipment.containers ?? []).length > 0 && (c.shipment.containers ?? []).every((v) => has(v.verified_at)) },
+    { field: 'shipment.containers[].verifier_name', label: 'VGM verifier', owner: 'shipment_containers', present: (c) => (c.shipment.containers ?? []).length > 0 && (c.shipment.containers ?? []).every((v) => has(v.verifier_name)) },
+  ],
+
+  [DocType.bill_of_exchange]: [
+    ...CORE,
+    { field: 'references.invoice_number', label: 'Issued invoice number', owner: 'invoice_number', present: (c) => has(c.references.invoice_number) },
+    { field: 'shipment.shipment_id', label: 'Shipment', owner: 'shipment', present: (c) => has(c.shipment.shipment_id) },
+    { field: 'trade_finance.payment', label: 'Payment selected for the bill', owner: 'trade_finance_instruction', present: (c) => c.trade_finance?.payment !== null && c.trade_finance?.payment !== undefined },
+    { field: 'trade_finance.bill_of_exchange.type', label: 'Sight or usance', owner: 'trade_finance_instruction', present: (c) => has(c.trade_finance?.bill_of_exchange?.type) },
+    {
+      field: 'trade_finance.bill_of_exchange.tenor_days', label: 'Usance tenor', owner: 'trade_finance_instruction',
+      when: (c) => c.trade_finance?.bill_of_exchange?.type === 'usance' ? 'A usance bill requires a positive tenor in days.' : null,
+      present: (c) => (c.trade_finance?.bill_of_exchange?.tenor_days ?? 0) > 0,
+    },
+    { field: 'trade_finance.bill_of_exchange.place_of_drawing', label: 'Place of drawing', owner: 'trade_finance_instruction', present: (c) => has(c.trade_finance?.bill_of_exchange?.place_of_drawing) },
+    { field: 'trade_finance.bill_of_exchange.drawn_on_date', label: 'Date of drawing', owner: 'trade_finance_instruction', present: (c) => has(c.trade_finance?.bill_of_exchange?.drawn_on_date) },
+  ],
+
+  [DocType.carrier_instructions]: [
+    ...SHIPMENT_INSTRUCTION_CORE,
+    { field: 'shipment.freight_partner', label: 'Carrier or freight partner', owner: 'shipment', present: (c) => c.shipment.freight_partner !== null && c.shipment.freight_partner !== undefined },
+  ],
+
+  [DocType.bank_collection_letter]: [
+    { field: 'exporter.legal_name', label: 'Exporter legal name', owner: 'exporter_org', present: (c) => has(c.exporter.legal_name) },
+    { field: 'exporter.address', label: 'Exporter address', owner: 'exporter_org', present: (c) => hasAddress(c.exporter.address) },
+    { field: 'references.invoice_number', label: 'Issued invoice number', owner: 'invoice_number', present: (c) => has(c.references.invoice_number) },
+    { field: 'shipment.shipment_id', label: 'Shipment', owner: 'shipment', present: (c) => has(c.shipment.shipment_id) },
+    { field: 'trade_finance.payment', label: 'Payment selected for presentation', owner: 'trade_finance_instruction', present: (c) => c.trade_finance?.payment !== null && c.trade_finance?.payment !== undefined },
+    { field: 'trade_finance.bank_presentation.type', label: 'Collection or negotiation', owner: 'bank_presentation', present: (c) => has(c.trade_finance?.bank_presentation?.type) },
+    { field: 'trade_finance.bank_presentation.bank', label: 'Presenting bank', owner: 'exporter_bank_account', present: (c) => c.trade_finance?.bank_presentation?.bank !== null && c.trade_finance?.bank_presentation?.bank !== undefined },
+    { field: 'trade_finance.bank_presentation.bank.branch_name', label: 'Bank branch', owner: 'exporter_bank_account', present: (c) => has(c.trade_finance?.bank_presentation?.bank?.branch_name) },
+    { field: 'trade_finance.bank_presentation.bank.account_reference', label: 'Exporter bank account reference', owner: 'exporter_bank_account', present: (c) => has(c.trade_finance?.bank_presentation?.bank?.account_reference) },
+    { field: 'trade_finance.bank_presentation.collection_instructions', label: 'Collection or negotiation instructions', owner: 'bank_presentation', present: (c) => has(c.trade_finance?.bank_presentation?.collection_instructions) },
+    { field: 'trade_finance.bank_presentation.charges_instruction', label: 'Bank charges instruction', owner: 'bank_presentation', present: (c) => has(c.trade_finance?.bank_presentation?.charges_instruction) },
+    { field: 'trade_finance.bank_presentation.enclosed_documents', label: 'Documents enclosed', owner: 'bank_presentation', present: (c) => (c.trade_finance?.bank_presentation?.enclosed_documents.length ?? 0) > 0 },
+  ],
+
   // No renderer and no requirements — `other` is the uploaded-document escape hatch, and
   // asserting requirements for a document ClearTrade did not generate would be fiction.
   [DocType.other]: [],
@@ -198,7 +266,7 @@ const REQUIREMENTS: Record<DocType, Requirement[]> = {
  * an invalid one is corrected. Collapsing them would tell an agent to "add" something already
  * on screen.
  */
-function invalidValues(c: Ctx): ReadinessIssue[] {
+function invalidValues(c: Ctx, docType: DocType): ReadinessIssue[] {
   const issues: ReadinessIssue[] = [];
 
   if (c.deal.incoterm && c.financial.fob_value === null && hasMoney(c.deal.goods_total)) {
@@ -249,6 +317,25 @@ function invalidValues(c: Ctx): ReadinessIssue[] {
     });
   }
 
+  if (docType === DocType.vgm_declaration) {
+    for (const container of c.shipment.containers ?? []) {
+      if (container.vgm_method === 'method_2'
+        && container.tare_weight_kg && container.method_2_component_mass_kg
+        && container.verified_gross_mass_kg) {
+        const expected = new Prisma.Decimal(container.tare_weight_kg)
+          .plus(container.method_2_component_mass_kg);
+        if (!expected.equals(container.verified_gross_mass_kg)) {
+          issues.push({
+            field: `shipment.containers.${container.sequence}.verified_gross_mass_kg`,
+            label: `Container ${container.container_number} VGM`, reason: 'invalid_value',
+            owner: 'shipment_containers',
+            detail: 'Method 2 component mass plus tare does not equal the recorded verified gross mass.',
+          });
+        }
+      }
+    }
+  }
+
   return issues;
 }
 
@@ -260,6 +347,25 @@ function invalidValues(c: Ctx): ReadinessIssue[] {
  * pre-flight check, and a test — without any of them being able to drift.
  */
 export function documentReadiness(context: DocumentGenerationContext, docType: DocType): DocumentReadiness {
+  const applicability = documentApplicability(context, docType);
+  if (applicability.status === 'not_applicable') {
+    return { documentType: docType, status: 'not_applicable', missing: [], invalid: [], advisory: [], applicability };
+  }
+  if (applicability.status === 'undetermined') {
+    const owner: CanonicalOwner = docType === DocType.vgm_declaration || docType === DocType.carrier_instructions
+      ? 'shipment' : 'trade_finance_instruction';
+    return {
+      documentType: docType,
+      status: 'missing_data',
+      missing: [{
+        field: docType === DocType.vgm_declaration ? 'shipment.containerized'
+          : docType === DocType.carrier_instructions ? 'shipment.mode' : 'deal.payment_terms',
+        label: 'Applicability decision', reason: 'conditionally_required', owner,
+        condition: applicability.reason,
+      }],
+      invalid: [], advisory: [], applicability,
+    };
+  }
   const requirements = REQUIREMENTS[docType] ?? [];
   const missing: ReadinessIssue[] = [];
 
@@ -284,12 +390,21 @@ export function documentReadiness(context: DocumentGenerationContext, docType: D
   const strip = ({ rule: _rule, severity: _severity, ...issue }: (typeof consistency)[number]) => issue;
 
   const seen = new Set<string>();
-  const invalid = [...invalidValues(context), ...blockingConsistency.map(strip)]
+  const invalid = [...invalidValues(context, docType), ...blockingConsistency.map(strip)]
     .filter((i) => (seen.has(i.field) ? false : (seen.add(i.field), true)));
 
   const advisorySeen = new Set<string>();
   const advisory = advisoryConsistency.map(strip)
     .filter((i) => (advisorySeen.has(i.field) ? false : (advisorySeen.add(i.field), true)));
+
+  if ((docType === DocType.shipping_instructions || docType === DocType.carrier_instructions)
+    && !context.shipment.notify_party?.mode) {
+    advisory.push({
+      field: 'shipment.notify_party.mode', label: 'Notify party not recorded',
+      reason: 'conditionally_required', owner: 'shipment',
+      condition: 'Optional unless the shipment instructions require a notify party.',
+    });
+  }
 
   // `blocked` vs `missing_data` is not severity theatre: an invalid value means somebody has
   // to reconsider a decision already made, while missing data just needs typing in. The UI
@@ -297,13 +412,20 @@ export function documentReadiness(context: DocumentGenerationContext, docType: D
   const status: ReadinessStatusValue =
     invalid.length > 0 ? 'blocked' : missing.length > 0 ? 'missing_data' : 'ready';
 
-  return { documentType: docType, status, missing, invalid, advisory };
+  return { documentType: docType, status, missing, invalid, advisory, applicability };
 }
 
-/** The document types ClearTrade can assess. `other` is excluded: it is never generated. */
-export const READINESS_DOC_TYPES: DocType[] = [
+/** The original renderable set, retained for compatibility/golden-render regression suites. */
+export const LEGACY_READINESS_DOC_TYPES: DocType[] = [
   DocType.PI, DocType.CI, DocType.packing_list, DocType.shipping_bill_draft,
   DocType.COO_draft, DocType.declaration, DocType.insurance_declaration,
+];
+
+/** Every type with deterministic applicability/readiness. `other` is upload-only. */
+export const READINESS_DOC_TYPES: DocType[] = [
+  ...LEGACY_READINESS_DOC_TYPES,
+  DocType.shipping_instructions, DocType.vgm_declaration, DocType.bill_of_exchange,
+  DocType.carrier_instructions, DocType.bank_collection_letter,
 ];
 
 export function allDocumentReadiness(context: DocumentGenerationContext): DocumentReadiness[] {

@@ -337,6 +337,46 @@ export const CONFIG_DEFAULTS: ConfigShape = {
       approval_required: false,
       filing_applicable: false,
     },
+    {
+      doc_type: 'shipping_instructions',
+      label: 'Shipping instructions',
+      technical_label: 'Shipping Instructions',
+      default_owner_role: 'agent',
+      approval_required: true,
+      filing_applicable: false,
+    },
+    {
+      doc_type: 'vgm_declaration',
+      label: 'VGM declaration',
+      technical_label: 'Verified Gross Mass Declaration',
+      default_owner_role: 'agent',
+      approval_required: true,
+      filing_applicable: false,
+    },
+    {
+      doc_type: 'bill_of_exchange',
+      label: 'Bill of exchange',
+      technical_label: 'Bill of Exchange',
+      default_owner_role: 'agent',
+      approval_required: true,
+      filing_applicable: false,
+    },
+    {
+      doc_type: 'carrier_instructions',
+      label: 'Carrier instructions',
+      technical_label: 'B/L or AWB Instructions',
+      default_owner_role: 'agent',
+      approval_required: true,
+      filing_applicable: false,
+    },
+    {
+      doc_type: 'bank_collection_letter',
+      label: 'Bank document presentation letter',
+      technical_label: 'Collection / Presentation Cover Letter',
+      default_owner_role: 'agent',
+      approval_required: true,
+      filing_applicable: false,
+    },
   ],
   'uploads.policy': {
     max_size_mb: 25,
@@ -442,6 +482,14 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   // still active during deployment. Explicit stored values continue to win.
   if (key === 'comtrade.policy') {
     return { ...CONFIG_DEFAULTS['comtrade.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'documents.registry') {
+    const stored = row.value as unknown as DocTypeRegistryEntry[];
+    const storedTypes = new Set(stored.map((entry) => entry.doc_type));
+    return [
+      ...stored,
+      ...CONFIG_DEFAULTS['documents.registry'].filter((entry) => !storedTypes.has(entry.doc_type)),
+    ] as ConfigShape[K];
   }
   if (key === 'discovery.scoring') {
     const stored=row.value as Partial<DiscoveryScoringPolicy>;

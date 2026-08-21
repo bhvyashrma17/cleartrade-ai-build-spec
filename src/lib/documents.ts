@@ -5,9 +5,13 @@
  * to review/approval/filing across a version boundary, and who may approve.
  */
 
-import { ApprovalStatus, DocType, FilingStatus, GenerationStatus, ReviewStatus } from '@prisma/client';
+import {
+  ApprovalStatus, DocType, DocumentSource, FilingStatus, GenerationStatus, ReviewStatus,
+} from '@prisma/client';
+import { NEW_DOCUMENT_LIFECYCLE_MATRIX } from '@/lib/document-lifecycle-policy';
+import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound } from '@/lib/errors';
-import { canReadDeal } from '@/lib/permissions';
+import { assertCan, canReadDeal } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -50,6 +54,56 @@ export async function loadDocumentHistory(dealId: string, docType: DocType) {
       reviewer: { select: { name: true } },
       approver: { select: { name: true } },
     },
+  });
+}
+
+/**
+ * Idempotent repair primitive for a single pre-expansion deal.
+ *
+ * The deployment migration performs the bulk backfill. Keeping the same operation available
+ * here makes retries and targeted repairs transactionally safe without creating a UI-side
+ * document-creation path. Any historical version suppresses insertion; nothing is rewritten.
+ */
+export async function backfillDealDocumentCapabilities(input: {
+  actor: Principal;
+  dealId: string;
+  correlationId: string;
+}): Promise<number> {
+  const deal = await loadDealScoped(input.actor, input.dealId);
+  assertCan(input.actor, 'document.generate');
+  return prisma.$transaction(async (tx) => {
+    const snapshot = await tx.dealSnapshot.findFirst({
+      where: { deal_id: input.dealId }, orderBy: { version: 'desc' }, select: { id: true },
+    });
+    if (!snapshot) return 0;
+
+    const docTypes = Object.keys(NEW_DOCUMENT_LIFECYCLE_MATRIX) as DocType[];
+    const existing = await tx.document.findMany({
+      where: { deal_id: input.dealId, doc_type: { in: docTypes } }, select: { doc_type: true },
+    });
+    const existingTypes = new Set(existing.map((row) => row.doc_type));
+    const missing = docTypes.filter((docType) => !existingTypes.has(docType));
+    if (missing.length === 0) return 0;
+
+    const result = await tx.document.createMany({
+      data: missing.map((docType) => ({
+        deal_id: input.dealId, doc_type: docType, version: 1, is_current_version: true,
+        source: DocumentSource.generated, generation_status: GenerationStatus.queued,
+        review_status: ReviewStatus.not_reviewed, approval_status: ApprovalStatus.pending,
+        filing_status: FilingStatus.not_applicable, generated_from_snapshot_id: snapshot.id,
+      })),
+      skipDuplicates: true,
+    });
+    if (result.count > 0) {
+      await writeAuditEvent({
+        db: tx, actor: input.actor, action: AUDIT_ACTIONS.create,
+        object_type: 'deal_document_capabilities', object_id: input.dealId,
+        exporter_org_id: deal.exporter_org_id,
+        after_summary: { document_types_added: missing, count: result.count },
+        correlation_id: input.correlationId,
+      });
+    }
+    return result.count;
   });
 }
 

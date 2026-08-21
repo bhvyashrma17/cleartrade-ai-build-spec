@@ -15,8 +15,15 @@ import Link from 'next/link';
 import { StatusChip } from '@/components/ui';
 import { documentWorkspace } from '@/lib/document-lifecycle';
 import { DOCUMENT_FORMAT_SUPPORT, getDocumentGenerationEngine } from '@/lib/document-generation';
+import {
+  DOCUMENT_UI_GROUPS,
+  documentDataAnchor,
+  documentDisplayName,
+  notApplicableMessage,
+} from '@/lib/document-ui';
 import { issuedInvoiceNumberForDeal, previewNextInvoiceNumber } from '@/lib/invoice-numbering';
 import { loadAgentDeal } from '../loadAgentDeal';
+import { InvoiceNumberAction } from '../InvoiceNumberAction';
 import { GenerateDocumentPanel } from './GenerateDocumentPanel';
 
 const fmt = (d: Date | null) =>
@@ -25,6 +32,18 @@ const fmt = (d: Date | null) =>
 /** The single next action for a document, which is the only thing an agent scans for. */
 function nextAction(row: Awaited<ReturnType<typeof documentWorkspace>>['rows'][number]) {
   const current = row.current;
+  if (row.readiness.status === 'not_applicable') {
+    return {
+      label: 'Not applicable', tone: 'neutral' as const,
+      why: notApplicableMessage(row.doc_type, row.readiness.applicability),
+    };
+  }
+  if (invoiceNumberIsOnlyBlocker(row)) {
+    return {
+      label: 'Official invoice number required', tone: 'warning' as const,
+      why: 'Commercial Invoice cannot be finalized until an invoice number is issued.',
+    };
+  }
   if (row.readiness.status !== 'ready' && !current?.checksum) {
     return { label: 'Fix data', tone: 'warning' as const, why: `${row.readiness.missing.length + row.readiness.invalid.length} canonical field(s) outstanding` };
   }
@@ -40,6 +59,14 @@ function nextAction(row: Awaited<ReturnType<typeof documentWorkspace>>['rows'][n
   if (current.review_status === 'not_reviewed') return { label: 'Review', tone: 'info' as const, why: 'Generated, not yet reviewed by an agent' };
   if (current.review_status === 'changes_requested') return { label: 'Amend', tone: 'warning' as const, why: 'You flagged changes on this version' };
   return { label: 'With exporter', tone: 'neutral' as const, why: 'Agent-reviewed, awaiting exporter approval' };
+}
+
+const lifecycleLabel = (value: string) => value.replaceAll('_', ' ');
+
+function invoiceNumberIsOnlyBlocker(row: Awaited<ReturnType<typeof documentWorkspace>>['rows'][number]) {
+  const blockers = [...row.readiness.invalid, ...row.readiness.missing];
+  return row.doc_type === 'CI' && row.readiness.status !== 'ready'
+    && blockers.length === 1 && blockers[0]?.field === 'references.invoice_number';
 }
 
 export default async function AgentDocumentsPage({ params }: { params: Promise<{ dealId: string }> }) {
@@ -86,7 +113,7 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
               No official invoice number issued. Next in the series would be{' '}
               <span className="font-mono">{preview.preview_number}</span>, which is an estimate
               until issued on the{' '}
-              <Link href={`/agent/deals/${dealId}/document-data`} className="focus-visible-ring rounded underline underline-offset-2">
+              <Link href={`/agent/deals/${dealId}/document-data#invoice-numbering`} className="focus-visible-ring rounded underline underline-offset-2">
                 document data
               </Link>{' '}
               page.
@@ -95,19 +122,39 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
         )}
       </section>
 
-      <div className="space-y-3">
-        {rows.map((row) => {
+      <div className="space-y-8">
+        {DOCUMENT_UI_GROUPS.map((group) => {
+          const groupRows = group.documentTypes
+            .map((documentType) => rows.find((row) => row.doc_type === documentType))
+            .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+          return (
+          <section key={group.id} aria-labelledby={`documents-${group.id}`}>
+            <div className="mb-3 border-b border-[var(--color-border)] pb-2">
+              <h2 id={`documents-${group.id}`} className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                {group.label}
+              </h2>
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                {groupRows.length} {groupRows.length === 1 ? 'document capability' : 'document capabilities'}
+              </p>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+        {groupRows.map((row) => {
           const action = nextAction(row);
           const current = row.current;
+          const needsInvoiceNumber = invoiceNumberIsOnlyBlocker(row);
+          const firstBlocker = row.readiness.invalid[0] ?? row.readiness.missing[0];
+          const fixDataHref = `/agent/deals/${dealId}/document-data#${documentDataAnchor(firstBlocker?.owner ?? 'deal')}`;
+          const displayName = documentDisplayName(row.doc_type, row.readiness.applicability);
           const formats = (DOCUMENT_FORMAT_SUPPORT[row.doc_type] ?? [])
             .filter((f) => engine.supports(row.doc_type, f));
 
           return (
-            <section key={row.doc_type} className="rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
+            <article key={row.doc_type} className="rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-sm font-semibold text-primary">{row.label}</h2>
+                    <h3 className="text-sm font-semibold text-primary">{displayName}</h3>
                     {current ? (
                       <Link
                         href={`/agent/deals/${dealId}/documents/${current.id}`}
@@ -120,21 +167,38 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
                   </div>
                   <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{action.why}</p>
 
-                  {current ? (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <StatusChip label={`gen: ${current.generation_status}`} tone="neutral" icon="dot" size="sm" />
-                      <StatusChip label={`review: ${current.review_status}`} tone="neutral" icon="dot" size="sm" />
-                      <StatusChip label={`approval: ${current.approval_status}`} tone="neutral" icon="dot" size="sm" />
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded border border-[var(--color-border)] bg-surface-muted p-3 text-xs sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Applicability</dt>
+                      <dd className="mt-0.5 font-medium capitalize text-primary">{row.readiness.applicability.status.replaceAll('_', ' ')}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Readiness</dt>
+                      <dd className="mt-0.5 font-medium capitalize text-primary">{row.readiness.status === 'missing_data' ? 'Missing data' : lifecycleLabel(row.readiness.status)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Version</dt>
+                      <dd className="mt-0.5 font-medium text-primary">{current ? `v${current.version}` : 'Not created'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Artifacts</dt>
+                      <dd className="mt-0.5 font-medium text-primary">{current?.artifacts.length ? current.artifacts.map((artifact) => artifact.format === 'html' ? 'Preview' : artifact.format.toUpperCase()).join(' / ') : 'None yet'}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Document lifecycle">
+                      <StatusChip label={`Generation: ${current ? lifecycleLabel(current.generation_status) : 'not generated'}`} tone="neutral" icon="dot" size="sm" />
+                      <StatusChip label={`Review: ${current ? lifecycleLabel(current.review_status) : 'not started'}`} tone="neutral" icon="dot" size="sm" />
+                      <StatusChip label={`Approval: ${current ? lifecycleLabel(current.approval_status) : row.approval_required ? 'not started' : 'not required'}`} tone="neutral" icon="dot" size="sm" />
                       {row.filing_applicable ? (
-                        <StatusChip label={`filing: ${current.filing_status}`} tone="neutral" icon="dot" size="sm" />
+                        <StatusChip label={`Filing: ${current ? lifecycleLabel(current.filing_status) : 'not started'}`} tone="neutral" icon="dot" size="sm" />
                       ) : null}
-                      {current.content_hash ? (
+                      {current?.content_hash ? (
                         <span className="font-mono text-[11px] text-[var(--color-text-muted)]" title="Frozen input hash">
                           snap {current.content_hash.slice(0, 8)}
                         </span>
                       ) : null}
-                    </div>
-                  ) : null}
+                  </div>
 
                   {/* Wording safeguard — printed, not implied. */}
                   {row.authority ? (
@@ -145,24 +209,28 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
                 </div>
 
                 <div className="flex flex-col items-end gap-2">
-                  {row.readiness.status !== 'ready' ? (
+                  {needsInvoiceNumber ? (
+                    <InvoiceNumberAction dealId={dealId} nextInvoiceNumberPreview={preview.preview_number} />
+                  ) : row.readiness.status !== 'ready' && row.readiness.status !== 'not_applicable' ? (
                     <Link
-                      href={`/agent/deals/${dealId}/document-data`}
+                      href={fixDataHref}
                       className="focus-visible-ring inline-flex min-h-9 items-center rounded border border-primary px-3 text-sm font-medium text-primary"
                     >
                       Fix data
                     </Link>
                   ) : null}
-                  <GenerateDocumentPanel
-                    dealId={dealId}
-                    documentId={current?.id ?? null}
-                    formats={formats}
-                    disabled={current?.approval_status === 'exporter_approved'}
-                  />
+                  {row.readiness.status === 'ready' ? (
+                    <GenerateDocumentPanel
+                      dealId={dealId}
+                      documentId={current?.id ?? null}
+                      formats={formats}
+                      disabled={current?.approval_status === 'exporter_approved'}
+                    />
+                  ) : null}
                 </div>
               </div>
 
-              {row.readiness.status !== 'ready' ? (
+              {row.readiness.status !== 'ready' && row.readiness.status !== 'not_applicable' ? (
                 <ul className="mt-2 space-y-0.5 text-xs text-[var(--color-text-secondary)]">
                   {[...row.readiness.invalid, ...row.readiness.missing].map((issue) => (
                     <li key={issue.field}>
@@ -232,7 +300,11 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
                   ))}
                 </ul>
               ) : null}
-            </section>
+            </article>
+          );
+        })}
+            </div>
+          </section>
           );
         })}
       </div>

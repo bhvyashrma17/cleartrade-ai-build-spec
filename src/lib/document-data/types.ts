@@ -131,6 +131,20 @@ export interface ContextShipment {
   port_of_loading: ContextLocation;
   port_of_discharge: ContextLocation;
   final_destination_country: string | null;
+  final_destination_name?: string | null;
+  booking_reference?: string | null;
+  freight_partner?: { name: string; email: string | null; phone: string | null } | null;
+  freight_payment_term?: string | null;
+  handling_instructions?: string | null;
+  notify_party?: {
+    mode: string | null;
+    name: string | null;
+    address: ContextAddress;
+    email: string | null;
+    phone: string | null;
+  } | null;
+  containerized?: boolean | null;
+  containers?: ContextShipmentContainer[];
   vessel_or_flight_no: string | null;
   voyage_no: string | null;
   container_no: string | null;
@@ -145,6 +159,53 @@ export interface ContextShipment {
   shipped_on_date: string | null;
   packages: ContextPackageLine[];
   package_totals: ContextPackageTotals;
+}
+
+export interface ContextShipmentContainer {
+  sequence: number;
+  container_number: string;
+  container_type: string | null;
+  seal_number: string | null;
+  tare_weight_kg: string | null;
+  verified_gross_mass_kg: string | null;
+  vgm_method: string | null;
+  method_2_component_mass_kg: string | null;
+  verified_at: string | null;
+  verifier_name: string | null;
+  verifier_capacity: string | null;
+  evidence_ref: string | null;
+}
+
+export interface ContextTradeFinance {
+  payment_mechanism: string | null;
+  payment: { id: string; amount: ContextMoney; reference: string | null } | null;
+  bill_of_exchange: {
+    type: string | null;
+    tenor_days: number | null;
+    place_of_drawing: string | null;
+    drawn_on_date: string | null;
+  } | null;
+  bank_presentation: {
+    type: string | null;
+    collection_instructions: string | null;
+    charges_instruction: string | null;
+    bank: {
+      name: string;
+      branch_name: string | null;
+      branch_address: string | null;
+      ifsc: string | null;
+      swift_bic: string | null;
+      ad_code: string | null;
+      account_reference: string | null;
+    } | null;
+    enclosed_documents: {
+      document_id: string;
+      doc_type: string;
+      version: number;
+      original_count: number;
+      copy_count: number;
+    }[];
+  } | null;
 }
 
 /**
@@ -217,10 +278,12 @@ export interface DocumentGenerationContext {
   shipment: ContextShipment;
   financial: ContextFinancial;
   references: ContextReferences;
+  /** Added in builder v3. Absent on historical v1/v2 snapshots. */
+  trade_finance?: ContextTradeFinance;
 }
 
 /**
  * Bumped whenever the shape above changes, so an old snapshot is never read under new
  * assumptions. v2 added `money_policy_version`.
  */
-export const DOCUMENT_CONTEXT_BUILDER_VERSION = 2;
+export const DOCUMENT_CONTEXT_BUILDER_VERSION = 3;

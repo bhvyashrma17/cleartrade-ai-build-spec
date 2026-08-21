@@ -18,7 +18,7 @@
  * bank, and asserting materiality it cannot determine would be worse than saying nothing.
  */
 
-import type { DocType } from '@prisma/client';
+import { DocType } from '@prisma/client';
 import type { CanonicalOwner, DocumentGenerationContext } from '@/lib/document-data';
 
 export type DriftKind = 'changed' | 'added' | 'removed';
@@ -52,6 +52,7 @@ const WATCHED: {
   field: string;
   label: string;
   owner: CanonicalOwner;
+  docTypes?: DocType[];
   read: (c: DocumentGenerationContext) => string | null;
 }[] = [
   { field: 'exporter.legal_name', label: 'Exporter legal name', owner: 'exporter_org', read: (c) => c.exporter.legal_name },
@@ -86,6 +87,57 @@ const WATCHED: {
         ? `${c.financial.exchange_rate.rate} ${c.financial.exchange_rate.base_currency}/${c.financial.exchange_rate.quote_currency} (${c.financial.exchange_rate.source})`
         : null },
   { field: 'references.invoice_number', label: 'Invoice number', owner: 'invoice_number', read: (c) => c.references.invoice_number },
+  {
+    field: 'deal.payment_terms', label: 'Payment terms', owner: 'deal',
+    docTypes: [DocType.bill_of_exchange, DocType.bank_collection_letter],
+    read: (c) => c.deal.payment_terms === null || c.deal.payment_terms === undefined
+      ? null : JSON.stringify(c.deal.payment_terms),
+  },
+  {
+    field: 'shipment.booking_reference', label: 'Booking reference', owner: 'shipment',
+    docTypes: [DocType.shipping_instructions, DocType.vgm_declaration, DocType.carrier_instructions, DocType.bank_collection_letter],
+    read: (c) => c.shipment.booking_reference ?? null,
+  },
+  {
+    field: 'shipment.freight_payment_term', label: 'Freight terms', owner: 'shipment',
+    docTypes: [DocType.shipping_instructions, DocType.carrier_instructions],
+    read: (c) => c.shipment.freight_payment_term ?? null,
+  },
+  {
+    field: 'shipment.final_destination_name', label: 'Final destination place', owner: 'shipment',
+    docTypes: [DocType.shipping_instructions, DocType.carrier_instructions],
+    read: (c) => c.shipment.final_destination_name ?? null,
+  },
+  {
+    field: 'shipment.handling_instructions', label: 'Special handling instructions', owner: 'shipment',
+    docTypes: [DocType.shipping_instructions, DocType.carrier_instructions],
+    read: (c) => c.shipment.handling_instructions ?? null,
+  },
+  {
+    field: 'shipment.notify_party', label: 'Notify party', owner: 'shipment',
+    docTypes: [DocType.shipping_instructions, DocType.carrier_instructions],
+    read: (c) => c.shipment.notify_party ? JSON.stringify(c.shipment.notify_party) : null,
+  },
+  {
+    field: 'shipment.containers', label: 'Container and verified mass details', owner: 'shipment_containers',
+    docTypes: [DocType.shipping_instructions, DocType.vgm_declaration, DocType.carrier_instructions],
+    read: (c) => c.shipment.containers?.length ? JSON.stringify(c.shipment.containers) : null,
+  },
+  {
+    field: 'trade_finance.bill_of_exchange', label: 'Bill of Exchange instructions', owner: 'trade_finance_instruction',
+    docTypes: [DocType.bill_of_exchange],
+    read: (c) => c.trade_finance?.bill_of_exchange ? JSON.stringify(c.trade_finance.bill_of_exchange) : null,
+  },
+  {
+    field: 'trade_finance.payment', label: 'Selected payment', owner: 'trade_finance_instruction',
+    docTypes: [DocType.bill_of_exchange, DocType.bank_collection_letter],
+    read: (c) => c.trade_finance?.payment ? JSON.stringify(c.trade_finance.payment) : null,
+  },
+  {
+    field: 'trade_finance.bank_presentation', label: 'Bank presentation instructions', owner: 'bank_presentation',
+    docTypes: [DocType.bank_collection_letter],
+    read: (c) => c.trade_finance?.bank_presentation ? JSON.stringify(c.trade_finance.bank_presentation) : null,
+  },
 ];
 
 function joinNonNull(parts: (string | null)[]): string | null {
@@ -119,6 +171,7 @@ export function compareSnapshotToCurrent(
   const entries: DriftEntry[] = [];
 
   for (const watched of WATCHED) {
+    if (watched.docTypes && !watched.docTypes.includes(documentType)) continue;
     const from = watched.read(frozen);
     const to = watched.read(current);
     if (from === to) continue;

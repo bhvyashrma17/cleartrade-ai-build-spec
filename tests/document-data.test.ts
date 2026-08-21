@@ -187,6 +187,34 @@ describe('canonical ownership', () => {
 });
 
 describe('tenant and assignment access', () => {
+  test('new container and trade-finance facts remain scoped through their deal and exporter', async () => {
+    const w = await world();
+    await prisma.shipment.update({ where: { id: w.shipmentId }, data: { containerized: true } });
+    await prisma.shipmentContainer.create({
+      data: {
+        shipment_id: w.shipmentId, sequence: 1, container_number: 'MSCU1234567',
+        vgm_verified_gross_mass_kg: new Prisma.Decimal('29200'), vgm_method: 'method_1',
+        vgm_verified_at: new Date(), vgm_verifier_name: 'Authorized Weigher',
+      },
+    });
+    const payment = await prisma.payment.create({
+      data: { deal_id: w.dealId, amount: new Prisma.Decimal('1250'), currency: 'USD', payment_method: 'DP' },
+    });
+    const bank = await prisma.exporterBankAccount.create({
+      data: { exporter_org_id: w.orgA, bank_name: 'Tenant A Bank', account_reference: 'ending 1234' },
+    });
+    await prisma.tradeFinanceInstruction.create({
+      data: { deal_id: w.dealId, payment_id: payment.id, exporter_bank_account_id: bank.id },
+    });
+
+    const own = await buildDocumentContext(w.ownerA, w.dealId, DocType.vgm_declaration);
+    expect(own.shipment.containers?.map((container) => container.container_number)).toEqual(['MSCU1234567']);
+    expect(own.trade_finance?.bank_presentation?.bank?.name).toBe('Tenant A Bank');
+
+    await expect(buildDocumentContext(w.ownerB, w.dealId, DocType.vgm_declaration))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   test('an assigned agent can build a context for their exporter', async () => {
     const w = await world();
     const ctx = await buildDocumentContext(w.agent, w.dealId, DocType.CI);
@@ -447,6 +475,31 @@ describe('financial precision', () => {
 });
 
 describe('readiness', () => {
+  test('an otherwise complete CI is blocked only by the specifically owned invoice-number fact', async () => {
+    const w = await world();
+    await prisma.exchangeRateQuote.create({
+      data: {
+        exporter_org_id: w.orgA, base_currency: 'USD', quote_currency: 'INR',
+        rate: new Prisma.Decimal('88.5'), source: ExchangeRateSource.bank_quoted,
+        rate_date: new Date(),
+      },
+    });
+
+    const ctx = await buildDocumentContext(w.ownerA, w.dealId, DocType.CI);
+    const readiness = documentReadiness(ctx, DocType.CI);
+
+    expect(readiness.status).not.toBe('ready');
+    expect(readiness.invalid).toEqual([]);
+    expect(readiness.missing).toEqual([
+      expect.objectContaining({
+        field: 'references.invoice_number', label: 'Issued invoice number',
+        owner: 'invoice_number', reason: 'required_for_this_document',
+      }),
+    ]);
+    expect(documentReadiness(ctx, DocType.PI).missing.map((issue) => issue.field))
+      .not.toContain('references.invoice_number');
+  });
+
   test('complete canonical data makes the commercial invoice ready', async () => {
     const w = await world();
     await issueInvoiceNumber({ actor: w.ownerA, dealId: w.dealId, correlationId: corr() });
@@ -526,7 +579,11 @@ describe('readiness', () => {
     const ctx = await buildDocumentContext(w.ownerA, w.dealId, DocType.CI);
     const all = allDocumentReadiness(ctx);
     expect(all.map((r) => r.documentType).sort()).toEqual(
-      ['COO_draft', 'CI', 'PI', 'declaration', 'insurance_declaration', 'packing_list', 'shipping_bill_draft'].sort(),
+      [
+        'COO_draft', 'CI', 'PI', 'declaration', 'insurance_declaration', 'packing_list',
+        'shipping_bill_draft', 'shipping_instructions', 'vgm_declaration', 'bill_of_exchange',
+        'carrier_instructions', 'bank_collection_letter',
+      ].sort(),
     );
     expect(all.some((r) => r.documentType === DocType.other)).toBe(false);
   });
