@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, test } from 'vitest';
 import { AssignmentStatus, OrgTier, StaffInvitationStatus, UserRole } from '@prisma/client';
 import {
-  acceptStaffInvitation,
   agentDetail,
   agentRoster,
   assignExporterToAgent,
   assertCanProvisionStaff,
-  inviteStaff,
+  convertUserToAgent,
+  generateAgentInvitation,
   revokeStaffInvitation,
   unassignExporterFromAgent,
 } from '../src/lib/staff-provisioning';
@@ -55,162 +55,162 @@ describe('who may provision staff', () => {
     expect(() => assertCanProvisionStaff(a.exporter)).toThrow(/Ops or an administrator/);
   });
 
-  test('an agent cannot issue a staff invitation, and none is written', async () => {
+  test('an agent cannot generate an invitation link, and none is written', async () => {
     const a = await actors();
-    const email = `new-${a.suffix}@cleartrade.test`;
-    await expect(inviteStaff({ actor: a.agent, email, correlationId: corr() }))
+    const before = await prisma.staffInvitation.count({ where: { invited_by_id: a.agent.id } });
+    await expect(generateAgentInvitation({ actor: a.agent, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });
-    expect(await prisma.staffInvitation.count({ where: { email } })).toBe(0);
+    expect(await prisma.staffInvitation.count({ where: { invited_by_id: a.agent.id } })).toBe(before);
   });
 
-  test('an exporter cannot issue a staff invitation', async () => {
+  test('an exporter cannot generate an invitation link', async () => {
     const a = await actors();
-    await expect(inviteStaff({ actor: a.exporter, email: `x-${a.suffix}@t.test`, correlationId: corr() }))
+    await expect(generateAgentInvitation({ actor: a.exporter, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
 
-describe('staff invitation lifecycle', () => {
-  test('Ops issues an invitation; the token is returned once and stored only as a hash', async () => {
+describe('bearer invitation lifecycle', () => {
+  test('Ops generates a link with no email; the token is returned once and stored only as a hash', async () => {
     const a = await actors();
-    const email = `agent-${a.suffix}@cleartrade.test`;
-    const { invitation, token } = await inviteStaff({ actor: a.ops, email, correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
 
     expect(invitation.role).toBe(UserRole.agent);
     expect(invitation.status).toBe(StaffInvitationStatus.pending);
+    expect(invitation.email).toBeNull();
     expect(token).toHaveLength(43); // 32 random bytes, base64url
     // The raw token must not be recoverable from the row.
     const stored = await prisma.staffInvitation.findUniqueOrThrow({ where: { id: invitation.id } });
     expect(stored.token).not.toBe(token);
     expect(stored.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.email).toBeNull();
   });
 
-  test('the audit event records the invite but never the token', async () => {
+  test('the audit event records the invite but never an email or the token', async () => {
     const a = await actors();
-    const email = `audit-${a.suffix}@cleartrade.test`;
-    const { invitation, token } = await inviteStaff({ actor: a.ops, email, correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
 
     const events = await prisma.auditEvent.findMany({
       where: { object_type: 'staff_invitation', object_id: invitation.id },
     });
     expect(events).toHaveLength(1);
-    expect(events[0]!.after_summary).toMatchObject({ email, role: 'agent' });
+    expect(events[0]!.after_summary).toMatchObject({ role: 'agent', bearer: true });
+    expect('email' in (events[0]!.after_summary as object)).toBe(false);
     // A token in an audit payload would make the audit log a way to steal the invitation.
     expect(JSON.stringify(events[0]!.after_summary)).not.toContain(token);
   });
 
-  test('accepting provisions an agent with NO exporter org', async () => {
+  test('confirming as a signed-in, eligible account provisions an agent with NO exporter org', async () => {
     const a = await actors();
-    const email = `accept-${a.suffix}@cleartrade.test`;
-    const { token } = await inviteStaff({ actor: a.ops, email, correlationId: corr() });
+    const { token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
 
-    const result = await acceptStaffInvitation({ token, name: 'New Agent', correlationId: corr() });
+    const result = await convertUserToAgent({ actor: a.exporter, token, correlationId: corr() });
     expect(result.role).toBe(UserRole.agent);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: result.userId } });
     expect(user.role).toBe(UserRole.agent);
     // Staff hold no tenant; access arrives only through AgentAssignment.
     expect(user.exporter_org_id).toBeNull();
-    expect(user.email).toBe(email);
+    expect(user.id).toBe(a.exporter.id);
   });
 
-  test('the role comes from the invitation, never from the acceptance payload', async () => {
+  test('a claimed token cannot be reused by a different account', async () => {
     const a = await actors();
-    const { token } = await inviteStaff({ actor: a.ops, email: `role-${a.suffix}@t.test`, correlationId: corr() });
-    // acceptStaffInvitation takes name and password only — there is no role parameter to pass,
-    // so a client cannot choose one. The provisioned role matches the stored invitation.
-    const result = await acceptStaffInvitation({ token, name: 'Agent', correlationId: corr() });
-    const invitation = await prisma.staffInvitation.findFirstOrThrow({ where: { accepted_user_id: result.userId } });
-    expect(result.role).toBe(invitation.role);
-    expect(result.role).toBe(UserRole.agent);
-  });
+    const { token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
+    await convertUserToAgent({ actor: a.exporter, token, correlationId: corr() });
 
-  test('a token cannot be reused', async () => {
-    const a = await actors();
-    const { token } = await inviteStaff({ actor: a.ops, email: `once-${a.suffix}@t.test`, correlationId: corr() });
-    await acceptStaffInvitation({ token, name: 'First', correlationId: corr() });
-    await expect(acceptStaffInvitation({ token, name: 'Second', correlationId: corr() }))
-      .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-    expect(await prisma.user.count({ where: { email: `once-${a.suffix}@t.test` } })).toBe(1);
+    const second = await prisma.user.create({
+      data: { email: `second-${a.suffix}@t.test`, name: 'Second', role: UserRole.exporter_owner },
+      select: { id: true, email: true },
+    });
+    await expect(convertUserToAgent({
+      actor: principal(second.id, UserRole.exporter_owner), token, correlationId: corr(),
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: second.id } })).role).toBe(UserRole.exporter_owner);
   });
 
   test('an expired invitation cannot be accepted, and is marked expired', async () => {
     const a = await actors();
-    const { invitation, token } = await inviteStaff({ actor: a.ops, email: `lapsed-${a.suffix}@t.test`, correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
     // Expiry is evaluated against the clock, not trusted from `status` — a row can sit at
     // pending past its expiry until something sweeps it.
     const future = new Date(invitation.expires_at.getTime() + 1000);
-    await expect(acceptStaffInvitation({ token, name: 'Late', correlationId: corr() }, future))
+    await expect(convertUserToAgent({ actor: a.exporter, token, correlationId: corr(), now: future }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     expect((await prisma.staffInvitation.findUniqueOrThrow({ where: { id: invitation.id } })).status)
       .toBe(StaffInvitationStatus.expired);
-    expect(await prisma.user.count({ where: { email: `lapsed-${a.suffix}@t.test` } })).toBe(0);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: a.exporter.id } })).role).toBe(UserRole.exporter_owner);
   });
 
   test('a revoked invitation cannot be accepted', async () => {
     const a = await actors();
-    const { invitation, token } = await inviteStaff({ actor: a.ops, email: `rev-${a.suffix}@t.test`, correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
     await revokeStaffInvitation({ actor: a.ops, invitationId: invitation.id, correlationId: corr() });
-    await expect(acceptStaffInvitation({ token, name: 'Nope', correlationId: corr() }))
+    await expect(convertUserToAgent({ actor: a.exporter, token, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
   test('an unknown token is refused identically to a revoked one', async () => {
     // Distinguishing them would let a caller probe which tokens exist.
-    await expect(acceptStaffInvitation({ token: 'not-a-real-token', name: 'X', correlationId: corr() }))
+    const a = await actors();
+    await expect(convertUserToAgent({ actor: a.exporter, token: 'not-a-real-token', correlationId: corr() }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
-  test('re-inviting the same email replaces the pending invitation rather than stacking', async () => {
+  test('generating another link never touches an earlier one — there is no shared email to collide on', async () => {
+    // Unlike the old email-bound design, an Admin may deliberately want several live
+    // invitations out at once for several different people; each call is independent.
     const a = await actors();
-    const email = `dup-${a.suffix}@t.test`;
-    const first = await inviteStaff({ actor: a.ops, email, correlationId: corr() });
-    const second = await inviteStaff({ actor: a.ops, email, correlationId: corr() });
+    const first = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
+    const second = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
 
-    expect(await prisma.staffInvitation.count({ where: { email, status: StaffInvitationStatus.pending } })).toBe(1);
     expect((await prisma.staffInvitation.findUniqueOrThrow({ where: { id: first.invitation.id } })).status)
-      .toBe(StaffInvitationStatus.revoked);
-    // The superseded token stops working immediately.
-    await expect(acceptStaffInvitation({ token: first.token, name: 'Old', correlationId: corr() })).rejects.toThrow();
-    await expect(acceptStaffInvitation({ token: second.token, name: 'New', correlationId: corr() })).resolves.toMatchObject({ role: UserRole.agent });
+      .toBe(StaffInvitationStatus.pending);
+    expect(await prisma.staffInvitation.count({
+      where: { invited_by_id: a.ops.id, status: StaffInvitationStatus.pending },
+    })).toBeGreaterThanOrEqual(2);
+
+    const claimantA = await prisma.user.create({ data: { email: `link-a-${a.suffix}@t.test`, name: 'A', role: UserRole.exporter_owner }, select: { id: true } });
+    const claimantB = await prisma.user.create({ data: { email: `link-b-${a.suffix}@t.test`, name: 'B', role: UserRole.exporter_owner }, select: { id: true } });
+    await expect(convertUserToAgent({ actor: principal(claimantA.id, UserRole.exporter_owner), token: first.token, correlationId: corr() }))
+      .resolves.toMatchObject({ role: UserRole.agent });
+    await expect(convertUserToAgent({ actor: principal(claimantB.id, UserRole.exporter_owner), token: second.token, correlationId: corr() }))
+      .resolves.toMatchObject({ role: UserRole.agent });
   });
 
-  test('an existing EXPORTER may be invited — they accept by converting the account they have', async () => {
-    // This used to be a blanket refusal, because the only way to accept was to create a new
-    // staff account and an existing address could only ever collide on the unique email.
-    // Conversion (see tests/staff-invitation-conversion.test.ts) made this the ordinary case:
-    // after Google sign-in, essentially every prospective agent already has an account.
-    const a = await actors();
-    const email = `exp-${a.suffix}@t.test`;
-    await expect(inviteStaff({ actor: a.ops, email, correlationId: corr() }))
-      .resolves.toMatchObject({ invitation: { email, role: UserRole.agent } });
-  });
-
-  test('an existing INTERNAL STAFF account still cannot be invited', async () => {
-    // The part of the old rule that survives: changing an Ops or admin role is a provisioning
-    // decision, and must never be something a mailed link can do.
-    const a = await actors();
-    const email = `ops-${a.suffix}@t.test`;
-    await expect(inviteStaff({ actor: a.ops, email, correlationId: corr() }))
-      .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
-    expect(await prisma.staffInvitation.count({ where: { email } })).toBe(0);
-  });
-
-  test('the database refuses a staff invitation granting an exporter role', async () => {
+  test('the database refuses a non-agent role on a StaffInvitation', async () => {
     const a = await actors();
     // Bypassing the service entirely: the CHECK is the guarantee, because this is the
-    // privilege-escalation boundary.
+    // privilege-escalation boundary. A bearer link landing on ops/admin with no confirmation
+    // step beyond "click and sign in" would be a materially more dangerous default.
     await expect(prisma.$executeRawUnsafe(
       `INSERT INTO "StaffInvitation" ("id","email","role","token","invited_by_id","expires_at","updated_at")
-       VALUES ($1,$2,'exporter_owner',$3,$4, NOW() + interval '1 day', NOW())`,
-      randomUUID(), `bad-${a.suffix}@t.test`, randomUUID(), a.ops.id,
-    )).rejects.toThrow(/StaffInvitation_role_is_staff/);
+       VALUES ($1,NULL,'ops_supervisor',$2,$3, NOW() + interval '1 day', NOW())`,
+      randomUUID(), randomUUID(), a.ops.id,
+    )).rejects.toThrow(/StaffInvitation_role_is_agent/);
   });
 
-  test('the database refuses two pending invitations for one email', async () => {
+  test('the partial unique index allows any number of concurrently pending bearer (NULL-email) invitations', async () => {
+    // The rule it still enforces — "at most one pending invitation per email" — only ever
+    // applied to non-null emails. Postgres never treats two NULLs as equal, so this needs no
+    // migration change; this test pins that behaviour down directly rather than trusting the
+    // reasoning.
     const a = await actors();
-    const email = `two-${a.suffix}@t.test`;
-    await inviteStaff({ actor: a.ops, email, correlationId: corr() });
+    await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
+    await expect(generateAgentInvitation({ actor: a.ops, correlationId: corr() })).resolves.toBeTruthy();
+    expect(await prisma.staffInvitation.count({
+      where: { invited_by_id: a.ops.id, status: StaffInvitationStatus.pending, email: null },
+    })).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the database still refuses two pending LEGACY (non-null-email) invitations for the same email', async () => {
+    const a = await actors();
+    const email = `legacy-two-${a.suffix}@t.test`;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "StaffInvitation" ("id","email","role","token","invited_by_id","expires_at","updated_at")
+       VALUES ($1,$2,'agent',$3,$4, NOW() + interval '1 day', NOW())`,
+      randomUUID(), email, randomUUID(), a.ops.id,
+    );
     await expect(prisma.$executeRawUnsafe(
       `INSERT INTO "StaffInvitation" ("id","email","role","token","invited_by_id","expires_at","updated_at")
        VALUES ($1,$2,'agent',$3,$4, NOW() + interval '1 day', NOW())`,
@@ -220,49 +220,30 @@ describe('staff invitation lifecycle', () => {
   });
 
   /**
-   * Phase 9 staging finding: an Ops operator clicked "Send invitation" and the browser
-   * reported "Could not reach the server" — a message that, per `src/lib/api-client.ts`,
-   * can ONLY come from `fetch()` itself throwing, never from a server response (every
-   * route error is a well-formed JSON envelope). Railway's edge HTTP log showed the one
-   * request that reached it succeeded cleanly (201, 49ms); nothing else touched that path,
-   * successful or failed. The failure never reached the server at all.
-   *
-   * There is no code defect to reproduce here — a browser-level connectivity blip on one
-   * click isn't a property of this codebase. What IS worth pinning down is the property
-   * that makes the natural response to that symptom (the operator clicking again, or a
-   * client-side retry) safe: two overlapping invite attempts for the same email must
-   * never hang, never crash the process, and never surface as anything other than a
-   * clean success + a clean, well-formed refusal — never a raw unhandled database error.
-   * This is what actually protects an operator who reacts to a transient failure by
-   * pressing the button twice.
+   * Item 2's concurrency requirement: two users attempting the same bearer link must result in
+   * exactly ONE successful claim. Unlike the old email-bound design (where the race was on
+   * creating a second invitation for one email), the load-bearing race here is two different
+   * accounts confirming the SAME token at once.
    */
-  test('two concurrent invitations for the same email never hang or crash — one succeeds cleanly, the other fails cleanly', async () => {
+  test('two different accounts racing to confirm the same bearer link produce exactly one agent', async () => {
     const a = await actors();
-    const email = `race-${a.suffix}@t.test`;
-
-    const results = await Promise.allSettled([
-      inviteStaff({ actor: a.ops, email, correlationId: corr() }),
-      inviteStaff({ actor: a.ops, email, correlationId: corr() }),
+    const { invitation, token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
+    const [racerA, racerB] = await Promise.all([
+      prisma.user.create({ data: { email: `race-a-${a.suffix}@t.test`, name: 'A', role: UserRole.exporter_owner }, select: { id: true } }),
+      prisma.user.create({ data: { email: `race-b-${a.suffix}@t.test`, name: 'B', role: UserRole.exporter_owner }, select: { id: true } }),
     ]);
 
-    // Whichever ordering Postgres resolves the race in, at least one attempt must succeed —
-    // a race must never leave the operator with two failures and no invitation at all.
-    const fulfilled = results.filter((r) => r.status === 'fulfilled');
-    const rejected = results.filter((r) => r.status === 'rejected');
-    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+    const results = await Promise.allSettled([
+      convertUserToAgent({ actor: principal(racerA.id, UserRole.exporter_owner), token, correlationId: corr() }),
+      convertUserToAgent({ actor: principal(racerB.id, UserRole.exporter_owner), token, correlationId: corr() }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
 
-    // A losing attempt fails as a normal, typed error a route can serialize — never a raw
-    // unhandled exception that would surface to the client as something unparsable.
-    for (const failure of rejected) {
-      expect(failure.status).toBe('rejected');
-      if (failure.status === 'rejected') {
-        expect(failure.reason).toBeInstanceOf(Error);
-      }
-    }
-
-    // And the database is left in a sane state either way: exactly one live invitation,
-    // never zero, never two.
-    expect(await prisma.staffInvitation.count({ where: { email, status: StaffInvitationStatus.pending } })).toBe(1);
+    const consumed = await prisma.staffInvitation.findUniqueOrThrow({ where: { id: invitation.id } });
+    expect(consumed.status).toBe(StaffInvitationStatus.accepted);
+    // Exactly one of the two racers actually became an agent.
+    const roles = await prisma.user.findMany({ where: { id: { in: [racerA.id, racerB.id] } }, select: { role: true } });
+    expect(roles.filter((r) => r.role === UserRole.agent)).toHaveLength(1);
   });
 });
 
@@ -419,15 +400,14 @@ describe('public registration cannot mint staff', () => {
     expect(createInvitationSchema.safeParse({ email: 'x@t.test', role: UserRole.exporter_member }).success).toBe(true);
   });
 
-  test('the only path to a staff role runs through an Ops-issued invitation', async () => {
+  test('the only path to a staff role runs through an Ops-generated invitation or Admin action', async () => {
     const a = await actors();
-    const { token } = await inviteStaff({ actor: a.ops, email: `only-${a.suffix}@t.test`, correlationId: corr() });
-    const { role } = await acceptStaffInvitation({
-      token, name: 'Invited', correlationId: corr(),
-      // The acceptance payload has no role field at all; this is the whole surface.
-    });
+    const { token } = await generateAgentInvitation({ actor: a.ops, correlationId: corr() });
+    // The confirmation call carries no role field at all — the role always comes from the
+    // invitation row (`agent`, enforced by a database CHECK); this is the whole surface.
+    const { role } = await convertUserToAgent({ actor: a.exporter, token, correlationId: corr() });
     expect(role).toBe(UserRole.agent);
-    const user = await prisma.user.findUniqueOrThrow({ where: { email: `only-${a.suffix}@t.test` } });
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: a.exporter.id } });
     expect(user.exporter_org_id).toBeNull();
   });
 });

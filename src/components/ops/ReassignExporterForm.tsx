@@ -39,12 +39,12 @@ export function ReassignExporterForm({
   }
 
   const submit = async () => {
-    if (!newAgentId) return;
+    if (!newAgentId || !reason.trim()) return;
     setBusy(true);
     setError(null);
     try {
       await apiPatch('/api/v1/ops/agent-assignments', {
-        assignment_id: assignmentId, new_agent_user_id: newAgentId, reason: reason.trim() || null,
+        assignment_id: assignmentId, new_agent_user_id: newAgentId, reason: reason.trim(),
       });
       setOpen(false);
       router.refresh();
@@ -71,7 +71,7 @@ export function ReassignExporterForm({
         ))}
       </select>
       <label className="mt-2 block text-xs font-medium text-primary">
-        Reason (optional)
+        Reason (required)
         <input
           type="text"
           value={reason}
@@ -81,7 +81,7 @@ export function ReassignExporterForm({
       </label>
       {error ? <p role="alert" className="mt-1.5 text-xs text-critical">{error}</p> : null}
       <div className="mt-2 flex gap-1.5">
-        <Button type="button" disabled={busy || !newAgentId} className="min-h-8 px-2.5 text-xs" onClick={() => void submit()}>
+        <Button type="button" disabled={busy || !newAgentId || !reason.trim()} className="min-h-8 px-2.5 text-xs" onClick={() => void submit()}>
           {busy ? 'Reassigning…' : 'Confirm reassign'}
         </Button>
         <Button type="button" variant="secondary" className="min-h-8 px-2.5 text-xs" disabled={busy} onClick={() => setOpen(false)}>

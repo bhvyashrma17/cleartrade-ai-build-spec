@@ -11,10 +11,19 @@ import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import { getPrincipal, homeRouteForRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { normalizeCallbackUrl } from '@/lib/social-auth';
 import { RegisterForm } from './RegisterForm';
 
-export default async function RegisterPage() {
+export default async function RegisterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackUrl?: string }>;
+}) {
   const principal = await getPrincipal();
+  const { callbackUrl } = await searchParams;
+  // Same guard `/login` uses: a crafted callbackUrl is attacker-supplied input, so it is only
+  // ever honoured after passing through the same origin/path allowlist, never used raw.
+  const safeCallbackUrl = callbackUrl ? normalizeCallbackUrl(callbackUrl) : null;
 
   // Already a real account — nothing to register.
   if (principal && principal.tier !== OrgTier.guest) {
@@ -55,6 +64,7 @@ export default async function RegisterPage() {
         <div className="mt-6">
           <RegisterForm
             adHocProductLabel={isGuestUpgrade ? (snapshot?.description ?? null) : null}
+            callbackUrl={safeCallbackUrl}
           />
         </div>
       </section>

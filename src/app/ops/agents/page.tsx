@@ -1,22 +1,27 @@
 /**
- * `/ops/agents` — the agent roster and staff invitations.
+ * `/ops/agents` — the agent roster and the two, deliberately separate, provisioning paths.
  *
- * The provisioning path that replaces editing Postgres by hand. Ops invites an agent, the
- * invitee accepts with a one-time token, and the account is created with `role = agent` and no
- * exporter org — access arrives separately through assignments.
+ *   A. Generate invitation link — no email. A single-use bearer link; whoever opens it,
+ *      authenticates and confirms becomes the Agent. Possession of the link is the authority.
+ *   B. Add agent directly — email required. Converts an existing account immediately, or
+ *      pre-authorizes an email that hasn't signed up yet (`StaffAccessGrant`, no token/link).
+ *
+ * The roster below is never derived from either provisioning queue: `agentRoster` reads
+ * `User.role = agent` directly, so an account's Active/Deactivated status here can never
+ * disagree with whether it actually holds the role.
  */
 
 import Link from 'next/link';
 import { AccessDenied } from '@/components/access-denied';
 import { StatusChip } from '@/components/ui';
 import { AddAgentForm } from '@/components/ops/AddAgentForm';
-import { InviteAgentForm } from '@/components/ops/InviteAgentForm';
+import { GenerateInvitationLinkForm } from '@/components/ops/GenerateInvitationLinkForm';
 import { RevokeGrantButton } from '@/components/ops/RevokeGrantButton';
 import { RevokeInvitationButton } from '@/components/ops/RevokeInvitationButton';
 import { requirePortalAccess } from '@/lib/auth';
 import { isOps } from '@/lib/permissions';
 import {
-  agentRoster, pendingStaffAccessGrants, pendingStaffInvitations, AGENT_CAPACITY_TARGET,
+  agentRoster, pendingStaffAccessGrants, pendingStaffInvitations,
 } from '@/lib/staff-provisioning';
 
 const fmt = (d: Date) => new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(d);
@@ -43,15 +48,16 @@ export default async function OpsAgentsPage() {
       </header>
 
       <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-        <h2 className="text-lg font-semibold text-primary">Invite an agent</h2>
+        <h2 className="text-lg font-semibold text-primary">Generate invitation link</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Creates a single-use invitation. The link is shown once — it is not recoverable afterwards.
+          Creates a single-use Agent invitation link. Anyone with this link can claim the
+          invitation, so send it only to the intended person.
         </p>
-        <div className="mt-3"><InviteAgentForm /></div>
+        <div className="mt-3"><GenerateInvitationLinkForm /></div>
       </section>
 
       <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-        <h2 className="text-lg font-semibold text-primary">Add agent</h2>
+        <h2 className="text-lg font-semibold text-primary">Add agent directly</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           No link, no email sent. Converts an existing ClearTrade account directly, or
           pre-authorizes an email that hasn&apos;t signed up yet.
@@ -61,14 +67,17 @@ export default async function OpsAgentsPage() {
 
       {invitations.length > 0 ? (
         <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-          <h2 className="text-lg font-semibold text-primary">Pending invitations</h2>
+          <h2 className="text-lg font-semibold text-primary">Pending invitation links</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            Bearer links — not bound to any email address.
+          </p>
           <ul className="mt-2 divide-y divide-[var(--color-border)]">
             {invitations.map((invite) => (
               <li key={invite.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                 <div>
-                  <span className="font-medium text-primary">{invite.email}</span>
+                  <span className="font-medium text-primary">Agent invitation</span>
                   <span className="ml-2 text-xs text-[var(--color-text-muted)]">
-                    {invite.role} · invited by {invite.invited_by?.name ?? 'Ops'} · created {fmt(invite.created_at)} ·
+                    created by {invite.invited_by?.name ?? 'Ops'} · created {fmt(invite.created_at)} ·
                     expires {fmt(invite.expires_at)}
                   </span>
                 </div>
@@ -76,9 +85,8 @@ export default async function OpsAgentsPage() {
                   <StatusChip label="pending" tone="warning" icon="clock" size="sm" />
                   <RevokeInvitationButton
                     invitationId={invite.id}
-                    email={invite.email}
-                    role={invite.role}
-                    invitedBy={invite.invited_by?.name ?? 'Ops'}
+                    createdBy={invite.invited_by?.name ?? 'Ops'}
+                    createdAt={fmt(invite.created_at)}
                     expiresAt={fmt(invite.expires_at)}
                   />
                 </div>
@@ -90,7 +98,7 @@ export default async function OpsAgentsPage() {
 
       {grants.length > 0 ? (
         <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-          <h2 className="text-lg font-semibold text-primary">Pending direct provisioning</h2>
+          <h2 className="text-lg font-semibold text-primary">Pending direct access grants</h2>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
             Pre-authorized emails with no account yet. Claimed automatically at their next
             verified sign-in.
@@ -147,7 +155,7 @@ export default async function OpsAgentsPage() {
                 </td>
                 <td className="px-4 py-3 text-right text-primary">
                   {/* Capacity is guidance, not a cap — assignment 11 is allowed and flagged. */}
-                  {agent.assignedCount} / target ~{AGENT_CAPACITY_TARGET}
+                  {agent.assignedCount} / target ~{agent.capacityTarget}
                   {agent.overTarget ? <div className="text-xs text-critical">over target</div> : null}
                 </td>
                 <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">

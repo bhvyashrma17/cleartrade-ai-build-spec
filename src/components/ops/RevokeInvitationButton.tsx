@@ -1,11 +1,14 @@
 'use client';
 
 /**
- * Revoke a pending staff invitation.
+ * Revoke a pending bearer invitation link.
  *
  * A binary, reversible-by-reissue action with nothing else to record, so this follows the
  * `window.confirm` convention `AssignExporterForm` already uses for unassign — the confirmation
  * text itself carries the target and consequence per item #20, rather than a separate dialog.
+ *
+ * No email in the prompt: a bearer invitation carries no invited address, so there is nothing
+ * to name beyond who created it and when.
  */
 
 import { useRouter } from 'next/navigation';
@@ -14,9 +17,9 @@ import { Button } from '@/components/ui';
 import { ApiClientError, apiDelete } from '@/lib/api-client';
 
 export function RevokeInvitationButton({
-  invitationId, email, role, invitedBy, expiresAt,
+  invitationId, createdBy, createdAt, expiresAt,
 }: {
-  invitationId: string; email: string; role: string; invitedBy: string; expiresAt: string;
+  invitationId: string; createdBy: string; createdAt: string; expiresAt: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -24,7 +27,7 @@ export function RevokeInvitationButton({
 
   const revoke = async () => {
     const confirmed = window.confirm(
-      `Revoke the invitation for ${email} (${role})?\n\nInvited by ${invitedBy} · expires ${expiresAt}.\n\nThe invitation link will stop working immediately. This cannot be undone — send a new invitation if needed.`,
+      `Revoke this agent invitation link?\n\nCreated by ${createdBy} on ${createdAt} · expires ${expiresAt}.\n\nThe link will stop working immediately, whether or not anyone has already opened it. This cannot be undone — generate a new link if needed.`,
     );
     if (!confirmed) return;
     setBusy(true);

@@ -26,11 +26,18 @@ export function FeePolicyForm({ initial }: { initial: FeePolicyFields }) {
   const [fields, setFields] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const set = (key: keyof FeePolicyFields) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setFields((f) => ({ ...f, [key]: e.target.value }));
 
   const submit = async () => {
+    if (!confirmed || !reason.trim()) {
+      setError('Confirm the version change and record a change reason.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -45,7 +52,9 @@ export function FeePolicyForm({ initial }: { initial: FeePolicyFields }) {
         agent_share_rate: Number(fields.agent_share_rate),
         minimum_shipment_amount: Number(fields.minimum_shipment_amount),
         minimum_shipment_currency: fields.minimum_shipment_currency,
+        change_reason: reason.trim(),
       });
+      setSuccess('The new fee policy version is active.');
       setOpen(false);
       router.refresh();
     } catch (e) {
@@ -58,7 +67,7 @@ export function FeePolicyForm({ initial }: { initial: FeePolicyFields }) {
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="focus-visible-ring text-xs font-medium text-primary underline underline-offset-2">
-        New version
+        Edit commercial policy
       </button>
     );
   }
@@ -78,7 +87,8 @@ export function FeePolicyForm({ initial }: { initial: FeePolicyFields }) {
 
   return (
     <div className="mt-2 rounded-md border border-[color-mix(in_srgb,var(--color-warning)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_6%,transparent)] p-3">
-      <p className="text-xs font-semibold text-primary">High-risk: this becomes the active fee policy for every deal locked from now on.</p>
+      <p className="text-xs font-semibold text-primary">Proposed active fee policy</p>
+      <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Existing locked deals retain their quoted fee terms. This change applies only according to the FeePolicy versioning rules.</p>
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
         {FIELDS.map((f) => (
           <label key={f.key}>
@@ -87,9 +97,18 @@ export function FeePolicyForm({ initial }: { initial: FeePolicyFields }) {
           </label>
         ))}
       </div>
+      <label className="mt-2 block text-xs font-medium text-primary">
+        Change reason
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className="mt-0.5 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
+      </label>
+      <label className="mt-2 flex items-start gap-2 text-xs text-primary">
+        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
+        Confirm creation of a new active version. Historical versions remain unchanged.
+      </label>
       {error ? <p className="mt-1.5 text-xs text-[var(--color-critical-text)]">{error}</p> : null}
+      {success ? <p className="mt-1.5 text-xs text-[var(--color-action-text)]">{success}</p> : null}
       <div className="mt-2 flex gap-1.5">
-        <Button disabled={busy} onClick={() => void submit()} className="min-h-8 px-3 text-xs">
+        <Button disabled={busy || !confirmed || !reason.trim()} onClick={() => void submit()} className="min-h-8 px-3 text-xs">
           {busy ? 'Saving…' : 'Save new version'}
         </Button>
         <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)} className="min-h-8 px-3 text-xs">

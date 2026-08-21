@@ -16,15 +16,20 @@ export function AssignExporterForm({
   agentUserId,
   exporters,
   unassignAssignmentId,
+  exporterName,
 }: {
   agentUserId: string;
   exporters?: { id: string; display_name: string }[];
   unassignAssignmentId?: string;
+  /** Shown in the unassign confirmation panel, for the org-wide `/ops/assignments` view. */
+  exporterName?: string;
 }) {
   const router = useRouter();
   const [orgId, setOrgId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -40,21 +45,45 @@ export function AssignExporterForm({
   };
 
   if (unassignAssignmentId) {
+    if (!confirming) {
+      return (
+        <div>
+          <Button type="button" variant="secondary" className="min-h-8 px-3 text-xs" disabled={busy} onClick={() => setConfirming(true)}>
+            Unassign
+          </Button>
+          {error ? <p role="alert" className="mt-1 text-xs text-critical">{error}</p> : null}
+        </div>
+      );
+    }
     return (
-      <div>
-        <Button
-          type="button"
-          variant="secondary"
-          className="min-h-8 px-3 text-xs"
-          disabled={busy}
-          onClick={() => {
-            if (!window.confirm('Unassign this exporter? The agent immediately loses access to their data.')) return;
-            void run(() => apiDelete('/api/v1/ops/agent-assignments', { assignment_id: unassignAssignmentId }));
-          }}
-        >
-          {busy ? 'Removing…' : 'Unassign'}
-        </Button>
-        {error ? <p role="alert" className="mt-1 text-xs text-critical">{error}</p> : null}
+      <div className="max-w-sm rounded-md border border-[var(--color-border)] bg-surface-muted p-2.5 text-left">
+        <p className="text-xs text-primary">
+          Unassign {exporterName ? <strong>{exporterName}</strong> : 'this exporter'}? The agent immediately loses
+          access to their data. This does not delete assignment history.
+        </p>
+        <label className="mt-2 block text-xs font-medium text-primary">
+          Reason (required)
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-surface px-2 py-1.5 text-sm text-primary focus-visible-ring"
+          />
+        </label>
+        {error ? <p role="alert" className="mt-1.5 text-xs text-critical">{error}</p> : null}
+        <div className="mt-2 flex gap-1.5">
+          <Button
+            type="button"
+            disabled={busy || !reason.trim()}
+            className="min-h-8 px-2.5 text-xs"
+            onClick={() => void run(() => apiDelete('/api/v1/ops/agent-assignments', { assignment_id: unassignAssignmentId, reason: reason.trim() }))}
+          >
+            {busy ? 'Removing…' : 'Confirm unassign'}
+          </Button>
+          <Button type="button" variant="secondary" className="min-h-8 px-2.5 text-xs" disabled={busy} onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </div>
       </div>
     );
   }

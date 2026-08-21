@@ -15,7 +15,14 @@ interface RegisterResult {
   saved_product_id: string | null;
 }
 
-export function RegisterForm({ adHocProductLabel }: { adHocProductLabel: string | null }) {
+export function RegisterForm({
+  adHocProductLabel,
+  callbackUrl,
+}: {
+  adHocProductLabel: string | null;
+  /** Already passed through `normalizeCallbackUrl` server-side — safe to use as-is. */
+  callbackUrl?: string | null;
+}) {
   const router = useRouter();
   const [fields, setFields] = useState({ name: '', email: '', password: '', organization_name: '' });
   const [saveProduct, setSaveProduct] = useState(true);
@@ -36,14 +43,18 @@ export function RegisterForm({ adHocProductLabel }: { adHocProductLabel: string 
         ...fields,
         ...(adHocProductLabel ? { save_discovery_input_as_product: saveProduct } : {}),
       });
-      // Straight into Markets, not /login.
+      // Straight into Markets by default, not /login.
       //
       // Registration upgrades the guest's User row in place, so the session cookie they
       // already hold now resolves to the new free-tier account — they are signed in the
       // moment this returns. Routing to /login would bounce off its "already signed in"
       // redirect anyway, and land them on a route that doesn't exist yet. Markets is also
       // where the searches we just promised to keep actually become visible.
-      router.push('/app/markets');
+      //
+      // A caller can override that destination (e.g. the staff-invitation flow, which needs
+      // the new account to land back on the invitation it came from) via `callbackUrl` — already
+      // passed through `normalizeCallbackUrl` server-side, so it is safe to use here as-is.
+      router.push(callbackUrl || '/app/markets');
       router.refresh();
     } catch (error) {
       if (error instanceof ApiClientError) {

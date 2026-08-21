@@ -83,6 +83,10 @@ export interface PayoutEligibilityPolicy {
 }
 
 export interface ConfigShape {
+  'agent.capacity': {
+    /** Advisory staffing target only; assignment authorization never reads this as a gate. */
+    target_exporters_per_agent: number;
+  };
   'sla.thresholds': Record<string, SlaThreshold>;
   'payout.eligibility': PayoutEligibilityPolicy;
   'documents.registry': DocTypeRegistryEntry[];
@@ -257,6 +261,7 @@ export type ConfigKey = keyof ConfigShape;
  * SLA starting values from AGT-07 (docs/13 E4).
  */
 export const CONFIG_DEFAULTS: ConfigShape = {
+  'agent.capacity': { target_exporters_per_agent: 10 },
   'sla.thresholds': {
     default: { due_in_hours: 24, warning_in_hours: 18, escalate_after_hours: 24 },
     buyer_outreach_first_contact: { due_in_hours: 24, warning_in_hours: 16, escalate_after_hours: 24 },
@@ -602,6 +607,7 @@ export function isDeprecatedConfigKey(key: string): boolean {
  * comment explaining why the key is absent.
  */
 export const OPS_TUNABLE_CONFIG_KEYS: readonly ConfigKey[] = ([
+  'agent.capacity',
   'sla.thresholds',
   'payout.eligibility',
   'documents.registry',

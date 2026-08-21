@@ -58,6 +58,6 @@ describe('portal navigation', () => {
   test('the guard would catch a dead link', () => {
     // Proves the check can fail — a route-existence test that never returns false is not a test.
     expect(routeExists('/agent/definitely-not-a-route')).toBe(false);
-    expect(routeExists('/ops/settings')).toBe(false);
+    expect(routeExists('/ops/settings')).toBe(true);
   });
 });

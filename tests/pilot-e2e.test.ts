@@ -69,26 +69,35 @@ function docxText(buffer: Buffer): string {
 
 describe('pilot: Ops provisions an agent and grants access', () => {
   test('the invitation token is returned once and stored only as a hash', async () => {
-    const { inviteStaff, acceptStaffInvitation } = await import('../src/lib/staff-provisioning');
-    const email = `newagent-${randomUUID().slice(0, 8)}@pilot.test`;
+    const { generateAgentInvitation, convertUserToAgent } = await import('../src/lib/staff-provisioning');
 
-    const { invitation, token } = await inviteStaff({ actor: world.ops, email, correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: world.ops, correlationId: corr() });
     expect(token).toMatch(/^[A-Za-z0-9_-]{20,}$/);
 
     const stored = await prisma.staffInvitation.findUniqueOrThrow({ where: { id: invitation.id } });
     expect(stored.token).not.toBe(token);
     expect(stored.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.email).toBeNull(); // Bearer invitation: no invited address on the row.
 
     // And the raw token never reaches the audit log.
     const events = await prisma.auditEvent.findMany({ where: { object_type: 'staff_invitation', object_id: invitation.id } });
     expect(JSON.stringify(events)).not.toContain(token);
 
-    const { role } = await acceptStaffInvitation({ token, name: 'Fresh Agent', correlationId: corr() });
+    // The claimant is an ordinary, freshly-authenticated account — bearer invitations have no
+    // invited address, so whoever confirms while authenticated is the accepted recipient.
+    const claimant = await prisma.user.create({
+      data: { email: `newagent-${randomUUID().slice(0, 8)}@pilot.test`, name: 'Fresh Agent', role: UserRole.exporter_owner },
+      select: { id: true, email: true },
+    });
+    const { role } = await convertUserToAgent({
+      actor: principalFor(claimant.id, UserRole.exporter_owner), token, correlationId: corr(),
+    });
     expect(role).toBe(UserRole.agent);
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: claimant.id } });
     // Staff hold no tenant. Access arrives only through an assignment.
     expect(user.exporter_org_id).toBeNull();
+    expect(user.role).toBe(UserRole.agent);
 
     const fresh = principalFor(user.id, UserRole.agent);
     expect(await tenantScope(fresh)).toEqual({ exporter_org_id: { in: [] } });
@@ -986,8 +995,8 @@ describe('pilot: privacy and role boundaries', () => {
   });
 
   test('an exporter cannot acquire an agent role, and an agent cannot self-assign', async () => {
-    const { inviteStaff, assignExporterToAgent: assign } = await import('../src/lib/staff-provisioning');
-    await expect(inviteStaff({ actor: world.A.ownerPrincipal, email: `esc-${randomUUID().slice(0, 6)}@pilot.test`, correlationId: corr() }))
+    const { generateAgentInvitation, assignExporterToAgent: assign } = await import('../src/lib/staff-provisioning');
+    await expect(generateAgentInvitation({ actor: world.A.ownerPrincipal, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(assign({ actor: world.agent, agentUserId: world.agent.id, exporterOrgId: world.C.orgId, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });

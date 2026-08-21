@@ -17,5 +17,5 @@ export default async function AgentLayout({
     if (error instanceof ApiError) return <AccessDenied message={error.message} />;
     throw error;
   }
-  return <AppShell portal="agent" userName={principal.name} tier={principal.tier} role={principal.role}>{children}</AppShell>;
+  return <AppShell portal="agent" userName={principal.name} userEmail={principal.email} tier={principal.tier} role={principal.role}>{children}</AppShell>;
 }

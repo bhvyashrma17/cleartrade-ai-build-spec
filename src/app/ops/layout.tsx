@@ -17,5 +17,5 @@ export default async function OpsLayout({
     if (error instanceof ApiError) return <AccessDenied message={error.message} />;
     throw error;
   }
-  return <AppShell portal="ops" userName={principal.name} tier={principal.tier} role={principal.role}>{children}</AppShell>;
+  return <AppShell portal="ops" userName={principal.name} userEmail={principal.email} tier={principal.tier} role={principal.role}>{children}</AppShell>;
 }

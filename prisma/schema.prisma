@@ -3464,7 +3464,7 @@ enum StaffInvitationStatus {
   expired
 }
 
-/// An invitation for internal ClearTrade staff — today, agents.
+/// A bearer invitation for the Agent role.
 ///
 /// Deliberately a separate model from `Invitation` rather than a `purpose` column on it.
 /// `Invitation` is live and exporter-specific by construction: `exporter_org_id` is non-null,
@@ -3475,11 +3475,29 @@ enum StaffInvitationStatus {
 /// Here the ambiguity cannot arise: there is no organisation column to be wrong. A staff
 /// invitation grants a staff role and never fabricates exporter membership; an exporter
 /// invitation cannot be accepted as staff because it lives in a different table entirely.
+///
+/// UNBOUND BEARER SEMANTICS. `email` is nullable and, for every row this app creates going
+/// forward, always null: possession of the raw token is the entire authorization, exactly like
+/// a signed URL. There is no invited address to compare a claimant against — whoever holds the
+/// link and confirms while authenticated is the accepted recipient. This is a deliberate
+/// narrowing from the original design (which minted one invitation per email and matched the
+/// claimant's address against it): Admin asked for a plain "generate a link" flow with no email
+/// step, and a still-email-bound acceptance path alongside a now-email-less one would be two
+/// different security models sharing one `accept` button, which is exactly the kind of blur
+/// this change exists to remove. Legacy rows created under the old design keep a non-null
+/// `email` for audit/history purposes only — that column is never read by any authorization
+/// decision, on old rows or new ones (see `convertUserToAgent`).
 model StaffInvitation {
-  id     String                @id @default(cuid())
-  email  String
-  /// Constrained to staff roles by a database CHECK — a client cannot choose its own role,
-  /// and no code path may widen this to an exporter role.
+  id    String  @id @default(cuid())
+  /// Null on every row created after the bearer-invitation change (Admin no longer supplies
+  /// one). Non-null only on legacy rows kept for audit history — never compared against a
+  /// claimant's address; see the model doc above.
+  email String?
+  /// Always `agent`, enforced by `StaffInvitation_role_is_agent`. Narrowed from the original
+  /// broader staff-role CHECK because no code path has ever issued anything but an agent
+  /// invitation — `generateAgentInvitation` cannot choose another role, and widening a bearer
+  /// (no-email, no-confirmation-of-identity-in-advance) link to Ops/admin would be a materially
+  /// more dangerous default than the token-and-email design it replaces.
   role   UserRole
   status StaffInvitationStatus @default(pending)
   /// Random, single-use. Never written to an audit payload.

@@ -33,6 +33,7 @@ export default async function ExporterLayout({ children }: { children: React.Rea
     <AppShell
       portal="exporter"
       userName={principal?.name ?? null}
+      userEmail={principal?.email ?? null}
       tier={principal?.tier ?? OrgTier.guest}
       role={principal?.role ?? 'exporter_owner'}
     >

@@ -1,17 +1,24 @@
 /**
  * Staff provisioning — inviting internal agents, and managing their exporter assignments.
  *
- * Two rules this module exists to hold:
+ * Three rules this module exists to hold:
  *
  *   1. **An agent is never self-declared.** Public registration and social sign-in produce
- *      exporter users only (asserted by tests in social-auth). The single path to
- *      `role = agent` is an invitation issued by authorized Ops and accepted with a token the
- *      recipient could not have guessed. The role travels on the server-side invitation row,
- *      never on the client's payload.
+ *      exporter users only (asserted by tests in social-auth). Every path to `role = agent`
+ *      is authorized server-side — a bearer invitation link, an Admin's direct action, or a
+ *      pre-authorized email — never a role the client's payload gets to choose.
  *
- *   2. **Staff have no tenant.** Accepting a staff invitation must not fabricate exporter
- *      membership; access comes later and only from `AgentAssignment`. A staff user with an
- *      `exporter_org_id` would be inside a tenant while also holding cross-tenant powers.
+ *   2. **Staff have no tenant.** Becoming staff must not fabricate exporter membership; access
+ *      comes later and only from `AgentAssignment`. A staff user with an `exporter_org_id`
+ *      would be inside a tenant while also holding cross-tenant powers.
+ *
+ *   3. **Two provisioning mechanisms, never blurred.** A generated `StaffInvitation` is a
+ *      bearer credential — possession of the link is the entire authority, and it carries no
+ *      email to match a claimant against. `StaffAccessGrant` (below) is the opposite: a
+ *      specific, pre-authorized email claimed only by a verified sign-in for that exact
+ *      address, with no token or link at all. Mixing the two security models into one
+ *      "invitation" concept is exactly what produced the bug this file's stale-provisioning
+ *      reconciliation exists to prevent — see `reconcileStaleProvisioning`.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -23,6 +30,7 @@ import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { OPS_ROLES, isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { getConfig } from '@/lib/config';
 import type { Principal } from '@/types';
 
 /** How long a staff invitation stays usable. */
@@ -35,13 +43,6 @@ export const STAFF_INVITE_TTL_DAYS = 7;
  * deliberately does not block assignment 11 — no business rule requires that, and a hard cap
  * would turn a planning signal into an outage during a reassignment.
  */
-export const AGENT_CAPACITY_TARGET = 10;
-
-/** Roles a staff invitation may grant. Mirrored by a database CHECK. */
-export const INVITABLE_STAFF_ROLES: readonly UserRole[] = [
-  UserRole.agent, UserRole.ops_supervisor, UserRole.ops_finance, UserRole.admin,
-];
-
 /**
  * Who may provision staff or move assignments.
  *
@@ -65,61 +66,32 @@ export interface IssuedStaffInvitation {
   token: string;
 }
 
-export async function inviteStaff(
-  input: { actor: Principal; email: string; role?: UserRole; correlationId: string },
+/**
+ * Generate a single-use, email-less Agent invitation link.
+ *
+ * No email in, no email on the row: `StaffInvitation.email` is left null for every invitation
+ * created here (see the model doc for why — this is the deliberate bearer-credential design,
+ * not an oversight). Possession of the returned token is the entire authorization; whoever
+ * holds the link and confirms while authenticated is the accepted recipient, so the security
+ * warning is real and belongs in the UI, not just this comment: share the link only with the
+ * intended person.
+ *
+ * Unlike the old email-bound design, generating another link never revokes an earlier one —
+ * there is no shared email to make them collide, and an Admin may deliberately want several
+ * live invitations out at once for several different people. Each call is independent.
+ */
+export async function generateAgentInvitation(
+  input: { actor: Principal; correlationId: string },
 ): Promise<IssuedStaffInvitation> {
   assertCanProvisionStaff(input.actor);
-
-  const email = input.email.trim().toLowerCase();
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    throw validationError([{ field: 'email', code: 'invalid', message: 'Enter a valid email address.' }]);
-  }
-  // Defaulting to `agent` rather than accepting whatever arrives: Phase 4 provisions agents,
-  // and a caller-chosen role is exactly the escalation vector this path must not have.
-  const role = input.role ?? UserRole.agent;
-  if (!INVITABLE_STAFF_ROLES.includes(role)) {
-    throw validationError([{ field: 'role', code: 'invalid', message: 'That role cannot be granted by a staff invitation.' }]);
-  }
-
-  // An existing account is no longer a blanket refusal.
-  //
-  // It used to be, because the only way to accept was to CREATE a staff account, so an
-  // invitation to an existing address could only ever end in a unique-email collision. Now
-  // that an invitee can accept by converting the account they already have — explicitly,
-  // once, with a sole-owner guard and an audit trail — inviting an existing exporter is the
-  // ordinary case rather than a mistake.
-  //
-  // What stays refused is an existing STAFF account. Changing an Ops or admin role is a
-  // provisioning decision that belongs in Ops, not something a mailed link should be able to
-  // do, and `convertUserToAgent` refuses those roles for the same reason.
-  const existingUser = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
-  if (existingUser && OPS_ROLES.includes(existingUser.role)) {
-    throw validationError(
-      [{ field: 'email', code: 'taken', message: 'This email belongs to an internal staff account.' }],
-      'This person already has an internal ClearTrade account. Change their role through Ops rather than inviting them.',
-    );
-  }
 
   const token = randomBytes(32).toString('base64url');
 
   return prisma.$transaction(async (tx) => {
-    const live = await tx.staffInvitation.findFirst({
-      where: { email, status: StaffInvitationStatus.pending },
-    });
-    // Idempotent rather than an error, matching the exporter invite route's behaviour. The
-    // original token is NOT re-issuable — only its hash was kept — so re-inviting revokes and
-    // replaces rather than resurrecting a token nobody can produce.
-    if (live) {
-      await tx.staffInvitation.update({
-        where: { id: live.id },
-        data: { status: StaffInvitationStatus.revoked, revoked_at: new Date(), revoked_by_id: input.actor.id },
-      });
-    }
-
     const invitation = await tx.staffInvitation.create({
       data: {
-        email,
-        role,
+        email: null,
+        role: UserRole.agent,
         token: hashToken(token),
         invited_by_id: input.actor.id,
         expires_at: new Date(Date.now() + STAFF_INVITE_TTL_DAYS * 86_400_000),
@@ -132,9 +104,9 @@ export async function inviteStaff(
       action: AUDIT_ACTIONS.create,
       object_type: 'staff_invitation',
       object_id: invitation.id,
-      // Email and role only. The token is a credential; putting it in an audit payload would
+      // No email to record. The token is a credential; putting it in an audit payload would
       // make the audit log itself a way to take over the invitation.
-      after_summary: { email, role, expires_at: invitation.expires_at.toISOString(), replaced_pending: Boolean(live) },
+      after_summary: { role: UserRole.agent, expires_at: invitation.expires_at.toISOString(), bearer: true },
       correlation_id: input.correlationId,
     });
 
@@ -166,87 +138,6 @@ export async function revokeStaffInvitation(
   });
 }
 
-export type AcceptStaffInvitationResult = { userId: string; role: UserRole };
-
-/**
- * Accept a staff invitation and provision the account.
- *
- * The role comes from the invitation row, never from the caller. Expiry is evaluated here
- * rather than trusted from `status`, because a row can sit at `pending` past its expiry until
- * something sweeps it — treating the stored status as authoritative would make an expired token
- * usable for as long as nobody ran the sweep.
- */
-export async function acceptStaffInvitation(
-  input: { token: string; name: string; passwordHash?: string | null; correlationId: string },
-  now: Date = new Date(),
-): Promise<AcceptStaffInvitationResult> {
-  const tokenHash = hashToken(input.token ?? '');
-
-  // Sweep an expired invitation BEFORE opening the transaction below. Marking it inside that
-  // transaction and then throwing would roll the marking back with everything else, leaving the
-  // row at `pending` forever — the status would then disagree with the expiry it already has.
-  const candidate = await prisma.staffInvitation.findUnique({ where: { token: tokenHash } });
-  if (candidate
-      && candidate.status === StaffInvitationStatus.pending
-      && candidate.expires_at.getTime() <= now.getTime()) {
-    await prisma.staffInvitation.update({
-      where: { id: candidate.id },
-      data: { status: StaffInvitationStatus.expired },
-    });
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const invitation = await tx.staffInvitation.findUnique({ where: { token: tokenHash } });
-    // One message for unknown, revoked, accepted and expired: distinguishing them would let a
-    // caller probe which tokens exist.
-    const unusable = () => validationError(
-      [{ field: 'token', code: 'invalid', message: 'This invitation is not valid. Ask Ops to send a new one.' }],
-      'This invitation is not valid.',
-    );
-    if (!invitation) throw unusable();
-    if (invitation.status !== StaffInvitationStatus.pending) throw unusable();
-    // Re-checked rather than trusted from `status`: the sweep above runs on this same clock,
-    // but a row could also have been written expired by another path.
-    if (invitation.expires_at.getTime() <= now.getTime()) throw unusable();
-
-    const existing = await tx.user.findUnique({ where: { email: invitation.email }, select: { id: true } });
-    if (existing) throw unusable();
-
-    const user = await tx.user.create({
-      data: {
-        email: invitation.email,
-        name: input.name?.trim() || invitation.email.split('@')[0],
-        role: invitation.role,
-        password_hash: input.passwordHash ?? null,
-        // Explicitly null: staff hold no tenant. Access arrives later via AgentAssignment.
-        exporter_org_id: null,
-      },
-      select: { id: true, role: true },
-    });
-
-    await tx.staffInvitation.update({
-      where: { id: invitation.id },
-      data: { status: StaffInvitationStatus.accepted, accepted_at: now, accepted_user_id: user.id },
-    });
-
-    await writeAuditEvent({
-      db: tx,
-      // The invitee is the actor: they performed the acceptance.
-      actor: { id: user.id, email: invitation.email, name: input.name ?? '', role: user.role, exporter_org_id: null, tier: 'paid' } as Principal,
-      action: AUDIT_ACTIONS.create,
-      object_type: 'user',
-      object_id: user.id,
-      after_summary: {
-        provisioned_role: user.role,
-        via_staff_invitation: invitation.id,
-        invited_by: invitation.invited_by_id,
-      },
-      correlation_id: input.correlationId,
-    });
-
-    return { userId: user.id, role: user.role };
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Assignments
@@ -288,6 +179,12 @@ export async function assignExporterToAgent(
         reason: input.reason ?? null,
       },
     });
+    // `ExporterOrg.assigned_agent_id` is a read-convenience cache of "which agent currently has
+    // an active assignment" — kept in sync here rather than left to drift, since the Unassigned
+    // queue and the Ops dashboard both query it directly instead of joining `AgentAssignment`.
+    // `AgentAssignment` (status=active) remains the actual source of truth everywhere access is
+    // decided (`assignedOrgIds`, `canAccessOrg`) — this column is never read for authorization.
+    await tx.exporterOrg.update({ where: { id: org.id }, data: { assigned_agent_id: agent.id } });
 
     await writeAuditEvent({
       db: tx, actor: input.actor, action: AUDIT_ACTIONS.reassign,
@@ -318,6 +215,13 @@ export async function unassignExporterFromAgent(
       where: { id: assignment.id },
       data: { status: AssignmentStatus.ended, ended_at: new Date(), reason: input.reason ?? assignment.reason },
     });
+    // Clear the cache column only if it still points at the agent losing access — an org with a
+    // newer active assignment (from a concurrent assign) must not have its live agent erased by
+    // an unassign call that targeted the older, already-superseded row.
+    await tx.exporterOrg.updateMany({
+      where: { id: assignment.exporter_org_id, assigned_agent_id: assignment.agent_user_id },
+      data: { assigned_agent_id: null },
+    });
 
     await writeAuditEvent({
       db: tx, actor: input.actor, action: AUDIT_ACTIONS.reassign,
@@ -337,7 +241,7 @@ export async function unassignExporterFromAgent(
 
 export async function agentRoster(principal: Principal, db: Prisma.TransactionClient | typeof prisma = prisma) {
   assertCanProvisionStaff(principal);
-  const agents = await db.user.findMany({
+  const [agents, capacityPolicy] = await Promise.all([db.user.findMany({
     where: { role: UserRole.agent },
     orderBy: { name: 'asc' },
     select: {
@@ -347,13 +251,14 @@ export async function agentRoster(principal: Principal, db: Prisma.TransactionCl
         select: { id: true, exporter_org_id: true, started_at: true, exporter_org: { select: { display_name: true } } },
       },
     },
-  });
+  }), getConfig('agent.capacity')]);
+  const capacityTarget = capacityPolicy.target_exporters_per_agent;
   return agents.map((agent) => ({
     ...agent,
     assignedCount: agent.agent_assignments.length,
-    capacityTarget: AGENT_CAPACITY_TARGET,
-    // Guidance, not a gate — see AGENT_CAPACITY_TARGET.
-    overTarget: agent.agent_assignments.length > AGENT_CAPACITY_TARGET,
+    capacityTarget,
+    // Guidance, not a gate: assignment mutations do not consult this value.
+    overTarget: agent.agent_assignments.length > capacityTarget,
   }));
 }
 
@@ -375,7 +280,8 @@ export async function agentDetail(principal: Principal, agentUserId: string) {
   });
   if (!agent || agent.role !== UserRole.agent) throw notFound('That agent does not exist.');
   const active = agent.agent_assignments.filter((a) => a.status === AssignmentStatus.active);
-  return { ...agent, activeCount: active.length, capacityTarget: AGENT_CAPACITY_TARGET };
+  const capacityPolicy = await getConfig('agent.capacity');
+  return { ...agent, activeCount: active.length, capacityTarget: capacityPolicy.target_exporters_per_agent };
 }
 
 export async function pendingStaffInvitations(principal: Principal) {
@@ -400,9 +306,10 @@ export async function pendingStaffInvitations(principal: Principal) {
  * What the invitation page should render, resolved server-side.
  *
  * A discriminated union rather than a bag of booleans, so the page cannot accidentally render
- * a state it has not handled, and so each state carries exactly the data that state is allowed
- * to reveal — `invitation_email` appears only where the viewer has demonstrably been sent the
- * link AND the token is genuinely live.
+ * a state it has not handled. There is no `invitation_email` field anywhere in this union —
+ * bearer invitations carry no invited address to reveal, and legacy rows that happen to have
+ * one are deliberately treated the same way (see the `StaffInvitation` model doc): a claimant
+ * is decided by who confirms while authenticated, not by an email comparison.
  */
 export type StaffInvitationView =
   /** No token, or no such invitation. Deliberately says nothing more. */
@@ -410,23 +317,16 @@ export type StaffInvitationView =
   /** The token exists and the holder has it, so naming the reason is not a disclosure. */
   | { state: 'expired' }
   | { state: 'consumed' }
-  /** Live invitation, nobody signed in, and no account exists for the invited address yet. */
-  | { state: 'ready_new_account'; invitation_email: string }
-  /**
-   * Live invitation, nobody signed in, but the invited address already has an account.
-   * Creating a second User would hit the unique-email constraint, so they sign in and convert.
-   */
-  | { state: 'ready_needs_signin'; invitation_email: string }
-  /** Signed in, email matches, conversion is permitted. */
-  | { state: 'ready_convert'; invitation_email: string; current_email: string }
-  /** Signed in, email matches, but converting would break a domain invariant. */
-  | { state: 'blocked_convert'; invitation_email: string; current_email: string; reason: string }
-  /** Signed in as somebody else. Both addresses are shown so the mismatch is actionable. */
-  | { state: 'mismatch'; invitation_email: string; current_email: string }
-  /** Already the invited role. Nothing to do; not an error. */
-  | { state: 'already_agent'; invitation_email: string }
+  /** Live invitation, nobody signed in. Sign in or create an account, then return here. */
+  | { state: 'unauthenticated' }
+  /** Signed in, eligible, conversion is permitted. */
+  | { state: 'ready_convert'; current_email: string }
+  /** Signed in, eligible, but converting would break a domain invariant. */
+  | { state: 'blocked_convert'; current_email: string; reason: string }
+  /** Already an agent. Nothing to do; not an error. */
+  | { state: 'already_agent' }
   /** Ops/admin. Fail closed — a staff role is never silently rewritten by a link. */
-  | { state: 'already_staff'; invitation_email: string; current_email: string };
+  | { state: 'already_staff'; current_email: string };
 
 /** Emails are compared case-insensitively and trimmed, on both sides, every time. */
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
@@ -486,6 +386,70 @@ async function exporterConversionBlocker(
 }
 
 /**
+ * Whenever a user becomes `role = agent` through ANY provisioning path, clean up now-stale
+ * pending records for the same normalized email — revoking rather than deleting, so an active
+ * agent never simultaneously shows as an actionable pending grant or invitation anywhere in Ops.
+ *
+ * This is the fix for the staging bug that motivated it: an account converted to Agent while a
+ * pending `StaffAccessGrant` or a legacy email-bound `StaffInvitation` for the same address was
+ * still sitting there unrevoked, reading as a live request nobody had actually made anymore.
+ * Called unconditionally on every path that confirms an email now belongs to an agent —
+ * including the already-agent idempotent branches — so an account that became an agent BEFORE
+ * this reconciliation existed still gets cleaned up the next time any provisioning path touches
+ * it, rather than only on the moment of a fresh role change.
+ *
+ * Runs inside the same transaction as the role check/change it is called from, so it can never
+ * observably commit only one side.
+ *
+ * A bearer `StaffInvitation` (email IS NULL) can never match here — this only ever queries by a
+ * specific normalized email, so an unrelated bearer link is structurally untouched, never merely
+ * "not selected".
+ *
+ * Exported (not just used internally) so `scripts/reconcile-stale-provisioning.ts` — the
+ * one-time staging cleanup for accounts that became agents before this reconciliation existed —
+ * calls this exact function rather than a second, hand-rolled copy of the same logic.
+ */
+export async function reconcileStaleProvisioning(
+  tx: Prisma.TransactionClient,
+  input: { email: string; actor: Principal; correlationId: string },
+): Promise<void> {
+  const email = normalizeEmail(input.email ?? '');
+  if (!email) return;
+
+  const staleGrants = await tx.staffAccessGrant.findMany({
+    where: { email, status: StaffAccessGrantStatus.pending },
+  });
+  for (const grant of staleGrants) {
+    await tx.staffAccessGrant.update({
+      where: { id: grant.id },
+      data: { status: StaffAccessGrantStatus.revoked, revoked_at: new Date(), revoked_by_id: input.actor.id },
+    });
+    await writeAuditEvent({
+      db: tx, actor: input.actor, action: AUDIT_ACTIONS.cancel,
+      object_type: 'staff_access_grant', object_id: grant.id,
+      after_summary: { email, status: 'revoked', auto_reconciled: true, reason: 'account already holds the agent role' },
+      correlation_id: input.correlationId,
+    });
+  }
+
+  const staleInvitations = await tx.staffInvitation.findMany({
+    where: { email, status: StaffInvitationStatus.pending },
+  });
+  for (const invitation of staleInvitations) {
+    await tx.staffInvitation.update({
+      where: { id: invitation.id },
+      data: { status: StaffInvitationStatus.revoked, revoked_at: new Date(), revoked_by_id: input.actor.id },
+    });
+    await writeAuditEvent({
+      db: tx, actor: input.actor, action: AUDIT_ACTIONS.cancel,
+      object_type: 'staff_invitation', object_id: invitation.id,
+      after_summary: { status: 'revoked', auto_reconciled: true, reason: 'account already holds the agent role' },
+      correlation_id: input.correlationId,
+    });
+  }
+}
+
+/**
  * Resolve what the invitation page should show, without mutating anything.
  *
  * Read-only by design: opening a link must never change a role, so this performs no writes at
@@ -501,7 +465,7 @@ export async function inspectStaffInvitation(
 
   const invitation = await prisma.staffInvitation.findUnique({
     where: { token: hashToken(token) },
-    select: { email: true, role: true, status: true, expires_at: true },
+    select: { role: true, status: true, expires_at: true },
   });
   // An unrecognised token reveals nothing — not even that it was unrecognised rather than
   // consumed. Everything below has proven possession of a real 32-byte token.
@@ -516,36 +480,21 @@ export async function inspectStaffInvitation(
     return { state: 'expired' };
   }
 
-  const invitationEmail = normalizeEmail(invitation.email);
-
-  if (!principal) {
-    const existing = await prisma.user.findUnique({
-      where: { email: invitationEmail },
-      select: { id: true },
-    });
-    return existing
-      ? { state: 'ready_needs_signin', invitation_email: invitationEmail }
-      : { state: 'ready_new_account', invitation_email: invitationEmail };
-  }
+  // Bearer semantics: there is no invited address to compare against. Whoever is authenticated
+  // (or becomes authenticated and returns) when they confirm is the accepted recipient.
+  if (!principal) return { state: 'unauthenticated' };
 
   const currentEmail = normalizeEmail(principal.email);
-  if (currentEmail !== invitationEmail) {
-    return { state: 'mismatch', invitation_email: invitationEmail, current_email: currentEmail };
-  }
 
-  if (principal.role === UserRole.agent) {
-    return { state: 'already_agent', invitation_email: invitationEmail };
-  }
-  if (OPS_ROLES.includes(principal.role)) {
-    return { state: 'already_staff', invitation_email: invitationEmail, current_email: currentEmail };
-  }
+  if (principal.role === UserRole.agent) return { state: 'already_agent' };
+  if (OPS_ROLES.includes(principal.role)) return { state: 'already_staff', current_email: currentEmail };
 
   const blocker = await exporterConversionBlocker(prisma, {
     id: principal.id, role: principal.role, exporter_org_id: principal.exporter_org_id,
   });
   return blocker
-    ? { state: 'blocked_convert', invitation_email: invitationEmail, current_email: currentEmail, reason: blocker }
-    : { state: 'ready_convert', invitation_email: invitationEmail, current_email: currentEmail };
+    ? { state: 'blocked_convert', current_email: currentEmail, reason: blocker }
+    : { state: 'ready_convert', current_email: currentEmail };
 }
 
 export interface ConvertToAgentResult {
@@ -558,12 +507,19 @@ export interface ConvertToAgentResult {
 }
 
 /**
- * Convert the SIGNED-IN account into the agent the invitation names.
+ * Convert the SIGNED-IN account into the agent this bearer invitation grants.
  *
  * Every input that decides the outcome comes from the server: the actor is the session
- * principal, and the email and role come off the invitation row. The browser supplies exactly
- * one thing — the token — and cannot influence which account is converted, to what role, or on
- * whose behalf.
+ * principal, the role comes off the invitation row (always `agent`, enforced by a database
+ * CHECK), and which account converts is exactly whoever is authenticated when they confirm.
+ * The browser supplies exactly one thing — the token — and cannot influence which account is
+ * converted, to what role, or on whose behalf.
+ *
+ * There is deliberately no email-match check. A bearer invitation carries no invited address at
+ * all; possession of the token plus an explicit, authenticated confirmation IS the
+ * authorization. (A handful of legacy rows created under the old, email-bound design still have
+ * a non-null `email` — it is never read here, on old rows or new ones, so the two designs do
+ * not end up on two different acceptance code paths.)
  *
  * The account is updated in place rather than recreated, which is what preserves
  * `password_hash` and every `AuthProviderAccount` link: Google and password sign-in keep
@@ -620,22 +576,21 @@ export async function convertUserToAgent(input: {
     });
     if (!user || !user.is_active) throw forbidden('This account cannot accept an invitation.');
 
-    if (normalizeEmail(user.email) !== normalizeEmail(invitation.email)) {
-      throw forbidden('This invitation was sent to a different email address.');
-    }
-
     if (OPS_ROLES.includes(user.role)) {
       throw forbidden('An Ops or administrator account cannot be converted by an invitation.');
     }
 
     // Already an agent: consume the invitation and report it, rather than erroring. Re-running
-    // the same link must not look like a failure, and must not detach anything.
+    // the same link must not look like a failure, and must not detach anything. Reconciliation
+    // still runs — this is exactly the idempotent path the staging bug fell through: an account
+    // already an agent, with a stale pending record nobody had cleaned up.
     if (user.role === UserRole.agent) {
       const consumed = await tx.staffInvitation.updateMany({
         where: { id: invitation.id, status: StaffInvitationStatus.pending },
         data: { status: StaffInvitationStatus.accepted, accepted_at: now, accepted_user_id: user.id },
       });
       if (consumed.count === 0) throw unusable();
+      await reconcileStaleProvisioning(tx, { email: user.email, actor: input.actor, correlationId: input.correlationId });
       return { userId: user.id, role: user.role, detachedFromOrgId: null, alreadyAgent: true };
     }
 
@@ -663,6 +618,7 @@ export async function convertUserToAgent(input: {
       data: { role: UserRole.agent, exporter_org_id: null },
       select: { id: true, role: true },
     });
+    await reconcileStaleProvisioning(tx, { email: user.email, actor: input.actor, correlationId: input.correlationId });
 
     await writeAuditEvent({
       db: tx,
@@ -763,6 +719,9 @@ export async function adminConvertUserToAgent(input: {
       throw forbidden('An Ops or administrator account cannot be converted to Agent.');
     }
     if (user.role === UserRole.agent) {
+      // Idempotent, and still reconciled — this is exactly the shape of the staging bug: an
+      // account already an agent, with a stale pending grant/invitation nobody had cleaned up.
+      await reconcileStaleProvisioning(tx, { email: user.email, actor: input.actor, correlationId: input.correlationId });
       return { userId: user.id, role: user.role, detachedFromOrgId: null, alreadyAgent: true };
     }
 
@@ -775,6 +734,7 @@ export async function adminConvertUserToAgent(input: {
       data: { role: UserRole.agent, exporter_org_id: null },
       select: { id: true, role: true },
     });
+    await reconcileStaleProvisioning(tx, { email: user.email, actor: input.actor, correlationId: input.correlationId });
 
     await writeAuditEvent({
       db: tx,
@@ -958,9 +918,10 @@ export async function claimStaffAccessGrant(input: {
       });
       if (consumed.count === 0) throw new GrantNoLongerPendingError();
 
+      const claimant = { id: user.id, email, name: displayName, role: user.role, exporter_org_id: null, tier: 'paid' } as Principal;
       await writeAuditEvent({
         db: tx,
-        actor: { id: user.id, email, name: displayName, role: user.role, exporter_org_id: null, tier: 'paid' } as Principal,
+        actor: claimant,
         action: AUDIT_ACTIONS.create,
         object_type: 'user',
         object_id: user.id,
@@ -970,6 +931,10 @@ export async function claimStaffAccessGrant(input: {
         },
         correlation_id: input.correlationId,
       });
+      // Cleans up any stale LEGACY email-bound StaffInvitation for this same address. The grant
+      // just claimed is already `claimed`, not `pending`, so it is never revoked by its own
+      // reconciliation call.
+      await reconcileStaleProvisioning(tx, { email, actor: claimant, correlationId: input.correlationId });
 
       return { userId: user.id, role: user.role };
     });
@@ -1104,6 +1069,9 @@ export async function reassignExporterToAgent(input: {
         assigned_by_id: input.actor.id, status: AssignmentStatus.active, reason: input.reason ?? null,
       },
     });
+    // Same read-convenience cache column `assignExporterToAgent`/`unassignExporterFromAgent`
+    // maintain — moved in the same transaction so it is never observably stale.
+    await tx.exporterOrg.update({ where: { id: current.exporter_org_id }, data: { assigned_agent_id: newAgent.id } });
 
     await writeAuditEvent({
       db: tx, actor: input.actor, action: AUDIT_ACTIONS.reassign,

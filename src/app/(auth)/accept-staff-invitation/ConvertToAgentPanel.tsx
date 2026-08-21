@@ -8,7 +8,8 @@
  * link that gets prefetched, previewed or scanned cannot change anyone's role.
  *
  * The only thing sent to the server is the token. The account being converted is whoever the
- * session says is signed in, resolved server-side.
+ * session says is signed in, resolved server-side — this is a bearer invitation, so that is the
+ * entire identity check: there is no invited address on the link to compare against.
  */
 
 import { useRouter } from 'next/navigation';

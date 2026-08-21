@@ -1,45 +1,30 @@
 /**
- * POST /api/v1/ops/staff-invitations — invite internal staff (today: agents).
+ * POST /api/v1/ops/staff-invitations — generate a single-use, email-less Agent invitation link.
  *
- * Thin. Authorization, role constraint, duplicate handling, token generation and audit all live
- * in `inviteStaff`, which is itself backed by database CHECKs that refuse a non-staff role.
- * The route never chooses a role from the request body — see the schema below.
+ * Thin. Authorization, token generation and audit all live in `generateAgentInvitation`, which
+ * is itself backed by a database CHECK pinning the role to `agent`. There is no `email` field
+ * anywhere in this route: a bearer invitation carries no invited address, and the role is never
+ * a request parameter — see `generateAgentInvitation`'s doc for why blurring this with the
+ * email-bound "Add agent" flow is exactly what this design avoids.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { z } from 'zod';
-import { requirePrincipal } from '@/lib/auth';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
-import { inviteStaff, revokeStaffInvitation } from '@/lib/staff-provisioning';
+import { requirePrincipal } from '@/lib/auth';
+import { generateAgentInvitation, revokeStaffInvitation } from '@/lib/staff-provisioning';
 import { zodFieldErrors } from '@/lib/validators';
+import { z } from 'zod';
 
-/**
- * No `role` field, deliberately.
- *
- * Phase 4 provisions agents, and a client-supplied role is precisely the privilege-escalation
- * vector this endpoint must not have. Widening to other staff roles is a server-side decision,
- * not a request parameter.
- */
-const inviteSchema = z.object({
-  email: z.string().trim().email('Enter a valid email address.'),
-});
-
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   const correlationId = newCorrelationId();
   try {
     const principal = await requirePrincipal();
-    const body = await request.json().catch(() => null);
-    const parsed = inviteSchema.safeParse(body);
-    if (!parsed.success) throw validationError(zodFieldErrors(parsed.error));
-
-    const { invitation, token } = await inviteStaff({
-      actor: principal, email: parsed.data.email, correlationId,
-    });
+    const { invitation, token } = await generateAgentInvitation({ actor: principal, correlationId });
 
     // The token is returned ONCE, to the inviting operator, and is never stored in readable
     // form or written to an audit payload.
     return NextResponse.json(
-      single({ id: invitation.id, email: invitation.email, role: invitation.role, expires_at: invitation.expires_at, token }),
+      single({ id: invitation.id, role: invitation.role, expires_at: invitation.expires_at, token }),
       { status: 201, headers: { 'x-correlation-id': correlationId } },
     );
   } catch (error) {

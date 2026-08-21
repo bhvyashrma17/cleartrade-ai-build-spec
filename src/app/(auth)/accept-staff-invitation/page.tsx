@@ -1,15 +1,17 @@
 /**
- * `/accept-staff-invitation` — where an invitation becomes an agent account.
+ * `/accept-staff-invitation` — where a bearer invitation becomes an agent account.
  *
- * Two ways in, both driven by the same link. Somebody with no ClearTrade account creates one;
- * somebody who is already a ClearTrade user converts the account they already have, which is
- * what keeps their Google/password sign-in working instead of colliding with the unique-email
- * constraint.
+ * SECURITY MODEL: this is a bearer credential. There is no invited address on the link — Ops
+ * generates it with no email, and possession of the raw token plus an explicit, authenticated
+ * confirmation is the entire authorization. Whoever holds the link, signs in (or creates an
+ * account) and presses "Confirm" is the accepted recipient. This is deliberately different from
+ * `StaffAccessGrant` (see `/lib/staff-provisioning`), which authorizes by verified email match
+ * at sign-in and has no link at all — the two are never blurred into one flow.
  *
- * The role is never shown as a choice, in either path, because it is not one — it was decided
- * by Ops and lives on the invitation row.
+ * The role is never shown as a choice, because it is not one — a bearer invitation always
+ * grants `agent`, enforced by a database CHECK.
  *
- * Opening this page never mutates anything. `inspectStaffInvitation` is read-only, and the
+ * Opening this page never mutates anything. `inspectStaffInvitation` is read-only, and
  * conversion happens only when the signed-in user explicitly confirms it. A link that changed a
  * role merely by being fetched would be changed by every link preview and mail scanner that
  * ever touched it.
@@ -17,9 +19,9 @@
 
 import Link from 'next/link';
 import { getPrincipal } from '@/lib/auth';
+import { invitationPath } from '@/lib/invitation-link';
 import { inspectStaffInvitation } from '@/lib/staff-provisioning';
 import { ConvertToAgentPanel } from './ConvertToAgentPanel';
-import { AcceptStaffInvitationForm } from './AcceptStaffInvitationForm';
 import { SignOutAndReturn } from './SignOutAndReturn';
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
@@ -84,39 +86,36 @@ export default async function AcceptStaffInvitationPage({
         />
       );
 
-    case 'ready_new_account':
+    // Bearer semantics: nobody is signed in, and there is no invited address to name. Sending
+    // them to sign in OR create an account, both carrying this exact link as the return
+    // destination, is what lets "no account yet" and "already have one" converge on the same
+    // explicit confirmation screen below instead of forking into a separate creation flow.
+    case 'unauthenticated': {
+      const destination = invitationPath(token!);
       return (
-        <Shell title="Set up your staff account">
+        <Shell title="Agent invitation">
           <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-            You were invited by ClearTrade Ops as{' '}
-            <span className="font-medium text-primary">{view.invitation_email}</span>. Your role
-            and access were set when the invitation was issued — choose a name and password to
-            finish.
+            You&apos;ve received a single-use invitation to join ClearTrade as an Agent. Sign in
+            with an existing account, or create a new one — either way, you&apos;ll come straight
+            back here to confirm.
           </p>
-          <div className="mt-6">
-            <AcceptStaffInvitationForm token={token!} />
-          </div>
-          <p className="mt-6 text-sm text-[var(--color-text-secondary)]">
-            Already set up?{' '}
-            <Link href="/login" className="focus-visible-ring rounded font-medium text-primary underline underline-offset-2">
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Link
+              href={`/login?callbackUrl=${encodeURIComponent(destination)}`}
+              className="focus-visible-ring inline-flex min-h-10 items-center rounded bg-primary px-4 text-sm font-medium text-[var(--color-text-inverse)]"
+            >
               Sign in
             </Link>
-          </p>
+            <Link
+              href={`/register?callbackUrl=${encodeURIComponent(destination)}`}
+              className="focus-visible-ring inline-flex min-h-10 items-center rounded border border-primary px-4 text-sm font-medium text-primary"
+            >
+              Create an account
+            </Link>
+          </div>
         </Shell>
       );
-
-    // An account already exists for the invited address, so creating a second User would hit
-    // the unique-email constraint. Signing in first turns this into the conversion path.
-    case 'ready_needs_signin':
-      return (
-        <Shell title="Sign in to accept">
-          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-            <span className="font-medium text-primary">{view.invitation_email}</span> already has a
-            ClearTrade account. Sign in with it and open this link again to accept the invitation.
-          </p>
-          <SignOutAndReturn token={token!} label="Go to sign in" signOutFirst={false} />
-        </Shell>
-      );
+    }
 
     case 'ready_convert':
       return (
@@ -135,22 +134,6 @@ export default async function AcceptStaffInvitationPage({
             {view.reason}
           </p>
           <SignOutAndReturn token={token!} label="Sign out and use a different account" signOutFirst />
-        </Shell>
-      );
-
-    case 'mismatch':
-      return (
-        <Shell title="Signed in as a different account">
-          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-            This invitation was sent to{' '}
-            <span className="font-medium text-primary">{view.invitation_email}</span>, but you are
-            signed in as <span className="font-medium text-primary">{view.current_email}</span>.
-          </p>
-          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-            Sign out and sign in as the invited address to continue. You will come straight back
-            here.
-          </p>
-          <SignOutAndReturn token={token!} label="Sign out and continue" signOutFirst />
         </Shell>
       );
 

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { UserRole } from '@prisma/client';
+import { ProfileMenu } from './ProfileMenu';
 
 type Portal = 'exporter' | 'agent' | 'ops';
 type Tier = 'guest' | 'free' | 'paid';
@@ -63,6 +64,7 @@ const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Exceptions', href: '/ops/exceptions', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Finance', href: '/ops/finance', minTier: 'paid', roles: ['ops_finance', 'admin'] },
     { label: 'Disputes', href: '/ops/disputes', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
+    { label: 'Settings', href: '/ops/settings', minTier: 'paid', roles: ['admin'] },
     { label: 'Audit', href: '/ops/audit', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
   ],
 };
@@ -119,12 +121,14 @@ export function AppShell({
   children,
   portal,
   userName,
+  userEmail,
   tier,
   role,
 }: {
   children: ReactNode;
   portal: Portal;
   userName: string | null;
+  userEmail: string | null;
   tier: Tier;
   role: UserRole;
 }) {
@@ -157,9 +161,7 @@ export function AppShell({
           ) : (
             <>
               <button type="button" className="focus-visible-ring hidden rounded px-2 py-1 hover:bg-white/10 sm:block">{UTILITY_LABEL[portal]}</button>
-              <span className="rounded bg-white/10 px-2 py-1" aria-label={`Signed in as ${userName ?? 'user'}`}>
-                {userName ?? 'Profile'}
-              </span>
+              {userEmail ? <ProfileMenu name={userName} email={userEmail} portal={portal} role={role} /> : null}
             </>
           )}
         </div>

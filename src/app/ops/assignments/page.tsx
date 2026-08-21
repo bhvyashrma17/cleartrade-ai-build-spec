@@ -3,6 +3,9 @@
 import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
 import { StatusChip } from '@/components/ui';
+import { AssignAgentToExporterForm } from '@/components/ops/AssignAgentToExporterForm';
+import { AssignExporterForm } from '@/components/ops/AssignExporterForm';
+import { ReassignExporterForm } from '@/components/ops/ReassignExporterForm';
 import { requirePortalAccess } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -25,7 +28,7 @@ export default async function OpsAssignmentsPage() {
     return <AccessDenied message="Assignments are available to Ops supervisors and administrators." />;
   }
 
-  const [unassigned, agents, history] = await Promise.all([
+  const [unassigned, agents, active, history] = await Promise.all([
     prisma.exporterOrg.findMany({
       where: { assigned_agent_id: null },
       orderBy: { created_at: 'asc' },
@@ -47,11 +50,20 @@ export default async function OpsAssignmentsPage() {
       },
     }),
     prisma.agentAssignment.findMany({
+      where: { status: 'active' },
+      orderBy: { started_at: 'desc' },
+      include: { exporter_org: true, agent: true, assigned_by: true },
+    }),
+    prisma.agentAssignment.findMany({
       orderBy: { started_at: 'desc' },
       take: 20,
       include: { exporter_org: true, agent: true, assigned_by: true },
     }),
   ]);
+
+  // Only active agents are ever offered — Assign/Reassign both refuse an inactive one
+  // server-side too, but there is no reason to let the operator pick a dead end.
+  const assignCandidates = agents.map((agent) => ({ id: agent.id, name: agent.name, assignedCount: agent._count.agent_assignments }));
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
@@ -81,13 +93,14 @@ export default async function OpsAssignmentsPage() {
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="text-xs uppercase text-[var(--color-text-muted)]">
                 <tr>
                   <th className="pb-2">Exporter</th>
                   <th className="pb-2">Journey stage</th>
                   <th className="pb-2">Readiness</th>
                   <th className="pb-2">Age</th>
+                  <th className="pb-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -97,6 +110,68 @@ export default async function OpsAssignmentsPage() {
                     <td className="py-3 text-[var(--color-text-secondary)]">{org.journey_stage.replace(/_/g, ' ')}</td>
                     <td className="py-3 text-[var(--color-text-secondary)]">{org.readiness_status.replace(/_/g, ' ')}</td>
                     <td className="py-3 text-[var(--color-text-secondary)]">{age(org.created_at)}</td>
+                    <td className="py-3 text-right">
+                      {assignCandidates.length > 0 ? (
+                        <AssignAgentToExporterForm exporterOrgId={org.id} exporterName={org.display_name} agents={assignCandidates} />
+                      ) : (
+                        <span className="text-xs text-[var(--color-text-muted)]">No active agents</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
+        <div className="p-5 pb-0">
+          <h2 className="text-lg font-semibold text-primary">
+            Current assignments <span className="font-normal text-[var(--color-text-secondary)]">({active.length})</span>
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Every exporter with a live agent, and the controls to move them.</p>
+        </div>
+        {active.length === 0 ? (
+          <div className="p-5">
+            <EmptyQueue>No active assignments yet.</EmptyQueue>
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[820px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-primary text-[var(--color-text-inverse)]">
+                  <th scope="col" className="px-4 py-3 text-left font-medium">Exporter</th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium">Agent</th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium">Started</th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium">Assigned by</th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium">Reason</th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {active.map((entry) => (
+                  <tr key={entry.id} className="border-t border-[var(--color-border)]">
+                    <td className="px-4 py-3 font-medium text-primary">{entry.exporter_org.display_name}</td>
+                    <td className="px-4 py-3 text-primary">{entry.agent.name}</td>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                      {entry.started_at.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{entry.assigned_by?.name ?? 'system'}</td>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{entry.reason ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <AssignExporterForm agentUserId={entry.agent_user_id} unassignAssignmentId={entry.id} exporterName={entry.exporter_org.display_name} />
+                        {assignCandidates.filter((c) => c.id !== entry.agent_user_id).length > 0 ? (
+                          <ReassignExporterForm
+                            assignmentId={entry.id}
+                            exporterName={entry.exporter_org.display_name}
+                            currentAgentName={entry.agent.name}
+                            candidates={assignCandidates.filter((c) => c.id !== entry.agent_user_id)}
+                          />
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

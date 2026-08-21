@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         object_type: 'fee_policy',
         object_id: row.id,
         before_summary: current ? { version: current.version } : null,
-        after_summary: { version: row.version },
+        after_summary: { version: row.version, change_reason: input.change_reason },
         correlation_id: correlationId,
       });
 

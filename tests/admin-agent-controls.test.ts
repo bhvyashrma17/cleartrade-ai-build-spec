@@ -11,19 +11,23 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 import { AssignmentStatus, CommitmentFeeStatus, OrgTier, StaffAccessGrantStatus, StaffInvitationStatus, UserRole } from '@prisma/client';
+import { readFileSync } from 'node:fs';
 import {
   adminConvertUserToAgent,
   assignExporterToAgent,
   claimStaffAccessGrant,
+  convertUserToAgent,
   deactivateAgent,
+  generateAgentInvitation,
   grantStaffAccess,
-  inviteStaff,
   lookupStaffCandidate,
   reactivateAgent,
   reassignExporterToAgent,
   revokeStaffAccessGrant,
   revokeStaffInvitation,
+  unassignExporterFromAgent,
 } from '../src/lib/staff-provisioning';
+import { assignedOrgIds } from '../src/lib/permissions';
 import { resolveSocialIdentity } from '../src/lib/social-auth';
 import { prisma } from '../src/lib/prisma';
 import type { Principal } from '../src/types';
@@ -86,32 +90,40 @@ async function actors() {
 
 const corr = () => randomUUID();
 
+/** A fresh, ordinary account with no org — always eligible to convert, no sole-owner guard to trip. */
+async function convertibleAccount(suffix: string) {
+  const user = await prisma.user.create({
+    data: { email: `conv-${suffix}-${randomUUID().slice(0, 6)}@t.test`, name: 'Convertee', role: UserRole.exporter_owner },
+    select: { id: true, email: true },
+  });
+  return { id: user.id, principal: principal(user.id, user.email, UserRole.exporter_owner) };
+}
+
 describe('#14 revoking a pending invitation', () => {
   test('admin can revoke; the token is refused afterwards', async () => {
     const a = await actors();
-    const email = `rev-${a.suffix}@t.test`;
-    const { invitation, token } = await inviteStaff({ actor: a.admin, email, correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: a.admin, correlationId: corr() });
 
     const revoked = await revokeStaffInvitation({ actor: a.admin, invitationId: invitation.id, correlationId: corr() });
     expect(revoked.status).toBe(StaffInvitationStatus.revoked);
 
-    const { acceptStaffInvitation } = await import('../src/lib/staff-provisioning');
-    await expect(acceptStaffInvitation({ token, name: 'X', correlationId: corr() }))
+    const claimant = await convertibleAccount(a.suffix);
+    await expect(convertUserToAgent({ actor: claimant.principal, token, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
   test('a non-admin, non-ops actor cannot revoke', async () => {
     const a = await actors();
-    const { invitation } = await inviteStaff({ actor: a.admin, email: `rev2-${a.suffix}@t.test`, correlationId: corr() });
+    const { invitation } = await generateAgentInvitation({ actor: a.admin, correlationId: corr() });
     await expect(revokeStaffInvitation({ actor: a.agent, invitationId: invitation.id, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
   test('an already-accepted invitation cannot be revoked as if it were pending', async () => {
     const a = await actors();
-    const { invitation, token } = await inviteStaff({ actor: a.admin, email: `rev3-${a.suffix}@t.test`, correlationId: corr() });
-    const { acceptStaffInvitation } = await import('../src/lib/staff-provisioning');
-    await acceptStaffInvitation({ token, name: 'X', correlationId: corr() });
+    const { invitation, token } = await generateAgentInvitation({ actor: a.admin, correlationId: corr() });
+    const claimant = await convertibleAccount(a.suffix);
+    await convertUserToAgent({ actor: claimant.principal, token, correlationId: corr() });
 
     await expect(revokeStaffInvitation({ actor: a.admin, invitationId: invitation.id, correlationId: corr() }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
@@ -463,5 +475,221 @@ describe('#17 transactional reassignment', () => {
 
     const deactivateEvent = await prisma.auditEvent.findFirstOrThrow({ where: { object_type: 'user', object_id: a.otherAgent.id, action: 'update' } });
     expect(deactivateEvent.actor_user_id).toBe(a.admin.id);
+  });
+});
+
+describe('#2 the Unassigned queue tracks live AgentAssignment state', () => {
+  // `/ops/assignments`' Unassigned queue and the Ops dashboard both query
+  // `ExporterOrg.assigned_agent_id` directly rather than joining `AgentAssignment` — a
+  // read-convenience column the assignment service must keep in sync, or the queue never
+  // reflects reality even though authorization (`assignedOrgIds`) is already correct.
+  test('assigning an exporter clears it from the unassigned set', async () => {
+    const a = await actors();
+    expect((await prisma.exporterOrg.findUniqueOrThrow({ where: { id: a.orgId } })).assigned_agent_id).toBeNull();
+    expect(await prisma.exporterOrg.count({ where: { id: a.orgId, assigned_agent_id: null } })).toBe(1);
+
+    await assignExporterToAgent({ actor: a.admin, agentUserId: a.agent.id, exporterOrgId: a.orgId, correlationId: corr() });
+
+    const org = await prisma.exporterOrg.findUniqueOrThrow({ where: { id: a.orgId } });
+    expect(org.assigned_agent_id).toBe(a.agent.id);
+    expect(await prisma.exporterOrg.count({ where: { id: a.orgId, assigned_agent_id: null } })).toBe(0);
+  });
+
+  test('unassigning returns the exporter to the unassigned set', async () => {
+    const a = await actors();
+    const assignment = await assignExporterToAgent({ actor: a.admin, agentUserId: a.agent.id, exporterOrgId: a.orgId, correlationId: corr() });
+    await unassignExporterFromAgent({ actor: a.admin, assignmentId: assignment.id, reason: 'Test', correlationId: corr() });
+
+    expect((await prisma.exporterOrg.findUniqueOrThrow({ where: { id: a.orgId } })).assigned_agent_id).toBeNull();
+  });
+
+  test('reassigning moves the cache column to the new agent, not just the join row', async () => {
+    const a = await actors();
+    const original = await assignExporterToAgent({ actor: a.admin, agentUserId: a.agent.id, exporterOrgId: a.orgId, correlationId: corr() });
+    await reassignExporterToAgent({ actor: a.admin, assignmentId: original.id, newAgentUserId: a.otherAgent.id, reason: 'Rebalance', correlationId: corr() });
+
+    expect((await prisma.exporterOrg.findUniqueOrThrow({ where: { id: a.orgId } })).assigned_agent_id).toBe(a.otherAgent.id);
+  });
+});
+
+describe('#4 pilot UAT scenario — Alpha/Bravo move to one agent, Charlie stays isolated', () => {
+  test('Alpha and Bravo end up owned by the same agent; Charlie, untouched, stays with its own agent and is invisible to the other', async () => {
+    const a = await actors();
+    const [alpha, bravo, charlie] = await Promise.all([
+      prisma.exporterOrg.create({ data: { display_name: '[PILOT] Alpha', tier: OrgTier.paid }, select: { id: true } }),
+      prisma.exporterOrg.create({ data: { display_name: '[PILOT] Bravo', tier: OrgTier.paid }, select: { id: true } }),
+      prisma.exporterOrg.create({ data: { display_name: '[PILOT] Charlie', tier: OrgTier.paid }, select: { id: true } }),
+    ]);
+    // Charlie is assigned up front to the OTHER agent and must never be touched below.
+    await assignExporterToAgent({ actor: a.admin, agentUserId: a.otherAgent.id, exporterOrgId: charlie.id, correlationId: corr() });
+
+    await assignExporterToAgent({ actor: a.admin, agentUserId: a.agent.id, exporterOrgId: alpha.id, correlationId: corr() });
+    await assignExporterToAgent({ actor: a.admin, agentUserId: a.agent.id, exporterOrgId: bravo.id, correlationId: corr() });
+
+    const ownedByAgent = (await assignedOrgIds(a.agent)).sort();
+    expect(ownedByAgent).toEqual([alpha.id, bravo.id].sort());
+    expect(ownedByAgent).not.toContain(charlie.id);
+
+    const ownedByOtherAgent = await assignedOrgIds(a.otherAgent);
+    expect(ownedByOtherAgent).toEqual([charlie.id]);
+
+    expect(await prisma.exporterOrg.count({ where: { id: { in: [alpha.id, bravo.id] } }, })).toBe(2);
+    const orgs = await prisma.exporterOrg.findMany({ where: { id: { in: [alpha.id, bravo.id, charlie.id] } } });
+    expect(orgs.find((o) => o.id === alpha.id)!.assigned_agent_id).toBe(a.agent.id);
+    expect(orgs.find((o) => o.id === bravo.id)!.assigned_agent_id).toBe(a.agent.id);
+    expect(orgs.find((o) => o.id === charlie.id)!.assigned_agent_id).toBe(a.otherAgent.id);
+  });
+});
+
+describe('UI exposes the controls this feature requires', () => {
+  // Source-level, in the same spirit as tests/navigation.test.ts: the question here is "does the
+  // markup wire the button to the mutation", which grepping the rendered-from-server page module
+  // proves directly, without standing up a browser.
+  test('/ops/assignments renders an Assign control for the unassigned queue and Reassign/Unassign for current assignments', () => {
+    const source = readFileSync('src/app/ops/assignments/page.tsx', 'utf8');
+    expect(source).toMatch(/AssignAgentToExporterForm/);
+    expect(source).toMatch(/ReassignExporterForm/);
+    expect(source).toMatch(/AssignExporterForm/);
+    // The Unassigned queue table must offer the control per row, not just import it unused.
+    expect(source).toMatch(/exporterOrgId=\{org\.id\}/);
+  });
+
+  test('AssignAgentToExporterForm only offers agents it was given, and posts to the canonical assignment route', () => {
+    const source = readFileSync('src/components/ops/AssignAgentToExporterForm.tsx', 'utf8');
+    expect(source).toMatch(/\/api\/v1\/ops\/agent-assignments/);
+    expect(source).not.toMatch(/\/api\/v1\/ops\/agent-assignments-v2|\/api\/v1\/assignments/); // no parallel implementation
+  });
+
+  test('the invitation generator has no email input, and the direct-add section still requires one', () => {
+    const page = readFileSync('src/app/ops/agents/page.tsx', 'utf8');
+    expect(page).toMatch(/GenerateInvitationLinkForm/);
+    expect(page).toMatch(/AddAgentForm/);
+
+    const generator = readFileSync('src/components/ops/GenerateInvitationLinkForm.tsx', 'utf8');
+    expect(generator).not.toMatch(/type="email"|email:/);
+
+    const addAgent = readFileSync('src/components/ops/AddAgentForm.tsx', 'utf8');
+    expect(addAgent).toMatch(/type="email"/);
+  });
+
+  test('the pending invitation list renders no email for bearer invitations', () => {
+    const page = readFileSync('src/app/ops/agents/page.tsx', 'utf8');
+    // The invitations map block must not reference `invite.email` anywhere — bearer invitations
+    // carry none, and the whole point of this redesign is that the UI never fabricates one.
+    expect(page).not.toMatch(/invite\.email/);
+  });
+
+  test('agent roster status is derived from User.role/is_active, never from a provisioning-record join', () => {
+    // agentRoster's own where-clause is the guarantee; this pins the source shape down so a
+    // future edit that starts deriving "Active" from an invitation/grant table trips a test.
+    const source = readFileSync('src/lib/staff-provisioning.ts', 'utf8');
+    const rosterFn = source.slice(source.indexOf('export async function agentRoster'), source.indexOf('export async function agentDetail'));
+    expect(rosterFn).toMatch(/role:\s*UserRole\.agent/);
+    expect(rosterFn).not.toMatch(/staffInvitation|staffAccessGrant/i);
+  });
+});
+
+describe('#10 stale provisioning reconciliation', () => {
+  test('admin direct conversion revokes a pending StaffAccessGrant for the same normalized email', async () => {
+    const a = await actors();
+    const email = `stale-grant-${a.suffix}@t.test`;
+    // Grant first, while there is no account yet — the only order grantStaffAccess allows.
+    const grant = await grantStaffAccess({ actor: a.admin, email, correlationId: corr() });
+    // Then the account shows up through an unrelated path (e.g. ordinary sign-up), leaving the
+    // grant stale — exactly the staging bug: an active-agent-to-be with a pending grant nobody
+    // revoked yet.
+    await prisma.user.create({ data: { email, name: 'Somebody', role: UserRole.exporter_owner } });
+
+    await adminConvertUserToAgent({ actor: a.admin, targetEmail: email, correlationId: corr() });
+
+    const reconciled = await prisma.staffAccessGrant.findUniqueOrThrow({ where: { id: grant.id } });
+    expect(reconciled.status).toBe(StaffAccessGrantStatus.revoked);
+    expect(await prisma.staffAccessGrant.count({ where: { email, status: StaffAccessGrantStatus.pending } })).toBe(0);
+  });
+
+  test('admin direct conversion revokes a legacy pending email-bound StaffInvitation for the same email', async () => {
+    const a = await actors();
+    const email = `stale-invite-${a.suffix}@t.test`;
+    const legacyId = randomUUID();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "StaffInvitation" ("id","email","role","token","invited_by_id","expires_at","updated_at")
+       VALUES ($1,$2,'agent',$3,$4, NOW() + interval '7 days', NOW())`,
+      legacyId, email, randomUUID(), a.admin.id,
+    );
+    await prisma.user.create({ data: { email, name: 'Somebody', role: UserRole.exporter_owner } });
+
+    await adminConvertUserToAgent({ actor: a.admin, targetEmail: email, correlationId: corr() });
+
+    const reconciled = await prisma.staffInvitation.findUniqueOrThrow({ where: { id: legacyId } });
+    expect(reconciled.status).toBe(StaffInvitationStatus.revoked);
+  });
+
+  test('the already-an-agent idempotent path ALSO reconciles — this is the exact shape of the staging bug', async () => {
+    const a = await actors();
+    // a.agent is already role=agent. A pending grant for their email is exactly the staging
+    // observation: "Bhavya Sharma, status = Active" alongside "themechanicboy...@gmail.com,
+    // status = pending" for the SAME identity.
+    const legacyId = randomUUID();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "StaffInvitation" ("id","email","role","token","invited_by_id","expires_at","updated_at")
+       VALUES ($1,$2,'agent',$3,$4, NOW() + interval '7 days', NOW())`,
+      legacyId, a.agent.email, randomUUID(), a.admin.id,
+    );
+
+    const result = await adminConvertUserToAgent({ actor: a.admin, targetEmail: a.agent.email, correlationId: corr() });
+    expect(result.alreadyAgent).toBe(true);
+
+    expect((await prisma.staffInvitation.findUniqueOrThrow({ where: { id: legacyId } })).status)
+      .toBe(StaffInvitationStatus.revoked);
+  });
+
+  test('claiming a StaffAccessGrant cleans a conflicting legacy pending StaffInvitation for the same email', async () => {
+    const a = await actors();
+    const email = `claim-cleanup-${a.suffix}@t.test`;
+    const legacyId = randomUUID();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "StaffInvitation" ("id","email","role","token","invited_by_id","expires_at","updated_at")
+       VALUES ($1,$2,'agent',$3,$4, NOW() + interval '7 days', NOW())`,
+      legacyId, email, randomUUID(), a.admin.id,
+    );
+    await grantStaffAccess({ actor: a.admin, email, correlationId: corr() });
+
+    const result = await resolveSocialIdentity({
+      provider: 'google', providerAccountId: `g-${randomUUID()}`, email, emailVerified: true, name: 'Claimant', correlationId: corr(),
+    });
+    expect(result).toMatchObject({ ok: true, role: UserRole.agent });
+
+    expect((await prisma.staffInvitation.findUniqueOrThrow({ where: { id: legacyId } })).status)
+      .toBe(StaffInvitationStatus.revoked);
+  });
+
+  test('reconciliation never deletes — revoked/accepted rows remain queryable with their final status', async () => {
+    const a = await actors();
+    const email = `history-${a.suffix}@t.test`;
+    const grant = await grantStaffAccess({ actor: a.admin, email, correlationId: corr() });
+    await prisma.user.create({ data: { email, name: 'Somebody', role: UserRole.exporter_owner } });
+    await adminConvertUserToAgent({ actor: a.admin, targetEmail: email, correlationId: corr() });
+
+    // Still there, still findable, just no longer pending.
+    const row = await prisma.staffAccessGrant.findUnique({ where: { id: grant.id } });
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe(StaffAccessGrantStatus.revoked);
+    const auditRow = await prisma.auditEvent.findFirst({
+      where: { object_type: 'staff_access_grant', object_id: grant.id, after_summary: { path: ['auto_reconciled'], equals: true } },
+    });
+    expect(auditRow).not.toBeNull();
+  });
+
+  test('an unrelated bearer invitation (different email-less link) is never touched by someone else becoming an agent', async () => {
+    const a = await actors();
+    const { invitation: unrelatedBearer } = await generateAgentInvitation({ actor: a.admin, correlationId: corr() });
+    const email = `other-${a.suffix}@t.test`;
+    await grantStaffAccess({ actor: a.admin, email, correlationId: corr() });
+    await prisma.user.create({ data: { email, name: 'Somebody Else', role: UserRole.exporter_owner } });
+
+    await adminConvertUserToAgent({ actor: a.admin, targetEmail: email, correlationId: corr() });
+
+    expect((await prisma.staffInvitation.findUniqueOrThrow({ where: { id: unrelatedBearer.id } })).status)
+      .toBe(StaffInvitationStatus.pending);
   });
 });

@@ -32,6 +32,12 @@ export async function POST(request: NextRequest) {
     if (value === undefined || value === null || (typeof value === 'object' && Object.keys(value).length === 0)) {
       throw validationError([{ field: 'value', code: 'required', message: 'Provide the new config value.' }]);
     }
+    if (key === 'agent.capacity') {
+      const target = (value as { target_exporters_per_agent?: unknown }).target_exporters_per_agent;
+      if (!Number.isInteger(target) || Number(target) < 1 || Number(target) > 500) {
+        throw validationError([{ field: 'target_exporters_per_agent', code: 'invalid', message: 'Enter a whole-number target from 1 to 500.' }]);
+      }
+    }
 
     const created = await prisma.$transaction(async (tx) => {
       const current = await tx.configSetting.findFirst({ where: { key, is_active: true }, orderBy: { version: 'desc' } });
@@ -58,7 +64,7 @@ export async function POST(request: NextRequest) {
         object_type: 'config_setting',
         object_id: row.id,
         before_summary: current ? { key, version: current.version } : null,
-        after_summary: { key, version: row.version },
+        after_summary: { key, version: row.version, change_reason: description ?? null },
         correlation_id: correlationId,
       });
 

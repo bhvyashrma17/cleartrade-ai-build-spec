@@ -12,8 +12,6 @@
 
 import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
-import { ConfigVersionForm } from '@/components/ops/ConfigVersionForm';
-import { FeePolicyForm } from '@/components/ops/FeePolicyForm';
 import { CreatePartnerForm, PartnerStatusForm } from '@/components/ops/PartnerDirectoryForms';
 import { StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
@@ -55,9 +53,9 @@ export default async function OpsAuditPage() {
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
       <header>
         <p className="text-sm font-medium text-primary">Operations</p>
-        <h1 className="text-2xl font-semibold text-primary">Audit log &amp; admin configuration</h1>
+        <h1 className="text-2xl font-semibold text-primary">Audit log &amp; configuration history</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Immutable traceability for material changes, plus a controlled place for business configuration.
+          Immutable traceability for material changes, actors, versions and evidence. Current configuration changes are made in Settings.
         </p>
       </header>
 
@@ -72,29 +70,13 @@ export default async function OpsAuditPage() {
       <section id="config" className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Config registry</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Fee policy, SLA thresholds, document type registry and platform config. {admin ? 'You can create new versions.' : 'Read-only — Admin-only write.'}
+          Historical fee policy, SLA thresholds, document type registry and platform configuration. Read-only on this page.
         </p>
 
         {/* Fee policy */}
         <div className="mt-4 rounded-md border border-[var(--color-border)] p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-primary">Fee policy</h3>
-            {admin && activeFeePolicy ? (
-              <FeePolicyForm
-                initial={{
-                  commitment_fee_amount: activeFeePolicy.commitment_fee_amount.toString(),
-                  commitment_fee_currency: activeFeePolicy.commitment_fee_currency,
-                  success_fee_rate: activeFeePolicy.success_fee_rate.toString(),
-                  small_shipment_threshold_amount: activeFeePolicy.small_shipment_threshold_amount.toString(),
-                  small_shipment_threshold_currency: activeFeePolicy.small_shipment_threshold_currency,
-                  small_shipment_rate: activeFeePolicy.small_shipment_rate.toString(),
-                  small_shipment_flat_amount: activeFeePolicy.small_shipment_flat_amount.toString(),
-                  agent_share_rate: activeFeePolicy.agent_share_rate.toString(),
-                  minimum_shipment_amount: activeFeePolicy.minimum_shipment_amount.toString(),
-                  minimum_shipment_currency: activeFeePolicy.minimum_shipment_currency,
-                }}
-              />
-            ) : null}
           </div>
           {activeFeePolicy ? (
             <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
@@ -154,7 +136,6 @@ export default async function OpsAuditPage() {
             <div key={key} className="mt-3 rounded-md border border-[var(--color-border)] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-primary">{key}</h3>
-                {admin ? <ConfigVersionForm configKey={key} currentValue={value} /> : null}
               </div>
               <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
                 {active ? `Active: v${active.version} · effective ${fmt(active.effective_from)}` : 'No DB row yet — running on the seed default.'}
@@ -213,4 +194,3 @@ export default async function OpsAuditPage() {
     </div>
   );
 }
-

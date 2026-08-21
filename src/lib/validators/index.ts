@@ -492,6 +492,7 @@ export const overrideDocumentRequirementSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const CONFIG_KEYS = [
+  'agent.capacity',
   'sla.thresholds',
   'payout.eligibility',
   'documents.registry',
@@ -509,7 +510,7 @@ const CONFIG_KEYS = [
 export const updateConfigSchema = z.object({
   key: z.enum(CONFIG_KEYS),
   value: z.unknown(),
-  description: z.string().trim().nullish(),
+  description: z.string().trim().min(1, 'Record why this configuration is changing.').max(500).nullish(),
 });
 
 export const updateFeePolicySchema = z.object({
@@ -523,6 +524,7 @@ export const updateFeePolicySchema = z.object({
   agent_share_rate: z.number().min(0).max(1),
   minimum_shipment_amount: z.number().nonnegative(),
   minimum_shipment_currency: z.string().trim().length(3),
+  change_reason: z.string().trim().min(1, 'Record why the fee policy is changing.').max(500),
 });
 
 export const createPartnerSchema = z.object({
