@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/errors';
 import { requirePrincipal } from '@/lib/auth';
 import { loadUserSettings } from '@/lib/user-settings';
 import { signOutFromSettings } from './actions';
+import { AboutSettingsSection } from '@/components/settings/AboutSettingsSection';
 
 function Card({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
@@ -23,18 +24,6 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function UnavailableRow({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0 last:pb-0">
-      <div>
-        <p className="font-medium text-primary">{title}</p>
-        <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">{description}</p>
-      </div>
-      <span className="shrink-0 text-xs font-medium text-[var(--color-text-muted)]">Not available yet</span>
-    </div>
-  );
-}
-
 export default async function SettingsPage() {
   let principal;
   try {
@@ -44,6 +33,7 @@ export default async function SettingsPage() {
     throw error;
   }
   const settings = await loadUserSettings(principal);
+  const reportBugHref = principal.role === 'agent' ? '/agent/support/report-bug' : principal.exporter_org_id ? '/app/support/report-bug' : '/ops/support/report-bug';
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6 lg:p-8">
@@ -106,11 +96,7 @@ export default async function SettingsPage() {
             </form>
           </Card>
 
-          <Card id="about" title="About">
-            <UnavailableRow title="Report a bug" description="Tell us what went wrong." />
-            <UnavailableRow title="Privacy policy" description="Read how your data is handled." />
-            <UnavailableRow title="Terms of service" description="Review ClearTrade's service terms." />
-          </Card>
+          <AboutSettingsSection reportBugHref={reportBugHref} />
         </div>
       </div>
     </div>

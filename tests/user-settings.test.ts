@@ -73,7 +73,8 @@ describe('normal-user settings', () => {
     expect(action).toContain("signOut({ redirectTo: '/login' })");
     expect(action).not.toMatch(/cookie|document\.cookie/i);
     expect(page).not.toMatch(/password_hash|provider_account_id|access_token|refresh_token|client_secret/i);
-    // No legal/support routes exist yet: rows are deliberately non-links instead of dead URLs.
-    expect(page).not.toMatch(/href=["']\/(privacy|terms|support)/);
+    // Approved legal copy is absent, so those rows are hidden; authenticated support is real.
+    expect(page).not.toMatch(/Privacy policy|Terms of service|Not available yet/);
+    expect(page).toContain('AboutSettingsSection');
   });
 });

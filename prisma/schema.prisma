@@ -767,9 +767,30 @@ model User {
   invoice_numbers_voided      IssuedInvoiceNumber[]     @relation("InvoiceNumberVoider")
   document_snapshots_created  DocumentInputSnapshot[]   @relation("DocumentSnapshotCreator")
   document_artifacts_created  DocumentArtifact[]        @relation("DocumentArtifactGenerator")
+  bug_reports                 BugReport[]
 
   @@index([exporter_org_id])
   @@index([role])
+}
+
+/// Authenticated product feedback. Contains only user-entered report text and a small,
+/// server-generated diagnostic envelope; no cookies, tokens, browser storage or auth data.
+model BugReport {
+  id               String   @id @default(cuid())
+  reporter_user_id String
+  reporter_role    UserRole
+  subject           String   @db.VarChar(160)
+  what_happened     String   @db.Text
+  expected          String   @db.Text
+  page_url          String?  @db.VarChar(2048)
+  app_environment   String   @db.VarChar(32)
+  correlation_id    String   @unique
+  created_at         DateTime @default(now())
+
+  reporter User @relation(fields: [reporter_user_id], references: [id], onDelete: Restrict)
+
+  @@index([reporter_user_id, created_at])
+  @@index([created_at])
 }
 
 /// External identity linkage for social authentication.
