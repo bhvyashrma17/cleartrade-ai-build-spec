@@ -28,6 +28,7 @@
     "worker:platform": "tsx scripts/worker.ts",
     "worker:once": "tsx --env-file=.env.local scripts/worker.ts --once",
     "ingest:comtrade": "tsx --env-file=.env.local scripts/ingest-comtrade.ts",
+    "plan:country-evidence": "tsx --env-file=.env.local scripts/plan-country-evidence.ts",
     "ingest:sanctions": "tsx --env-file=.env.local scripts/ingest-sanctions.ts",
     "sanctions:schedule": "tsx --env-file=.env.local scripts/schedule-sanctions-refresh.ts",
     "sanctions:schedule:platform": "tsx scripts/schedule-sanctions-refresh.ts",

@@ -1,0 +1,82 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { EvidenceOrigin, OrgTier, ProductClassificationMethod, ProductClassificationStatus, TradeSourceMode, UserRole } from '@prisma/client';
+import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
+import { setComtradeClient, type ComtradeFetchParams } from '../src/lib/comtrade';
+import { createCountryEvidencePlan, executeCountryEvidencePlan, resolveCountryEvidencePlan } from '../src/lib/country-evidence/service';
+import { prisma } from '../src/lib/prisma';
+import { reserveProviderQuota } from '../src/lib/provider-quota';
+
+async function confirmedClassification(revision='HS2022'){
+  const marker=`country-plan-${randomUUID()}`;
+  const org=await prisma.exporterOrg.create({data:{display_name:marker,tier:OrgTier.paid}});
+  const user=await prisma.user.create({data:{email:`${marker}@example.test`,name:'Planner',role:UserRole.exporter_owner,exporter_org_id:org.id}});
+  const product=await prisma.product.create({data:{exporter_org_id:org.id,name:'Coffee',evidence_origin:EvidenceOrigin.fixture}});
+  return prisma.productClassification.create({data:{product_id:product.id,revision:1,hs6_code:'090111',nomenclature:'HS',nomenclature_version:revision,method:ProductClassificationMethod.exporter_supplied,evidence:{source:'test'},confidence:.99,status:ProductClassificationStatus.confirmed,proposed_by_id:user.id,confirmed_by_id:user.id,confirmed_at:new Date()}});
+}
+
+function fixtureClient(options:{omitIndia?:boolean}={}){
+  const calls=vi.fn();
+  return {calls,client:{name:'country-evidence-fixture',identity:{provider:'un_comtrade' as const,mode:'fixture' as const,authenticated:false,credential_fingerprint:`fixture-${randomUUID()}`,source_dataset:'fixture-country-evidence',source_dataset_version:'v1'},async resolveChapter(){throw new Error('explicit HS6 should bypass reference');},async fetchChapter(params:ComtradeFetchParams){
+    calls(params);
+    const values=params.partner==='all'?[['156',60],['699',40]]:params.partner==='699'?(options.omitIndia?[]:[['699',10]]):[['0',100]];
+    const rows=values.map(([partner,value])=>({reporter:params.reporter,partner:String(partner),partner2:'0',hs_code:'090111',year:params.year,period:String(params.year),value:Number(value),value_status:'observed' as const,quantity:null,quantity_status:'missing' as const,unit:null,flow_code:'M',frequency:'A',customs_code:'C00',mode_of_supply:'0'}));
+    const raw=JSON.stringify({count:rows.length,data:rows});
+    return {rows,request_count:1,retrieved_at:new Date(),source_dataset_version:'v1',evidence_pages:[{http_status:200,raw_response_text:raw,response_checksum:createHash('sha256').update(raw).digest('hex'),redacted_request:'comtrade://fixture',provider_row_count:rows.length,returned_row_count:rows.length,completeness:'COMPLETE' as const,completeness_metadata:{truncated:false,rejected_rows:0},quota_metadata:null,retrieved_at:new Date()}]};
+  }}};
+}
+
+afterEach(()=>setComtradeClient(null));afterAll(()=>prisma.$disconnect());
+
+describe('Country Evidence persisted plan and manifest',()=>{
+  test('is idempotent, cache-resumable, supplier-complete, and freezes immutable lineage',async()=>{
+    const classification=await confirmedClassification(),fixture=fixtureClient();setComtradeClient(fixture.client);
+    const args={product_classification_id:classification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['276'],source_mode:TradeSourceMode.fixture};
+    const first=await createCountryEvidencePlan(args),same=await createCountryEvidencePlan(args);
+    expect(same.id).toBe(first.id);expect(first.items).toHaveLength(11);expect(first.estimated_call_cost).toBe(11);
+    await expect(prisma.countryEvidencePlan.update({where:{id:first.id},data:{hs_revision:'rewritten'}})).rejects.toThrow(/immutable/);
+    const executed=await executeCountryEvidencePlan(first.id);
+    expect(executed).toMatchObject({status:'metric_ready',physical_calls:11});expect(fixture.calls).toHaveBeenCalledTimes(11);
+    const rerun=await executeCountryEvidencePlan(first.id);
+    expect(rerun).toMatchObject({status:'metric_ready',physical_calls:0});expect(fixture.calls).toHaveBeenCalledTimes(11);
+    if(!rerun.manifest)throw new Error('Expected a frozen manifest.');
+    expect(rerun.manifest.checksum).toBe(executed.manifest?.checksum);expect(rerun.manifest.references).toHaveLength(11);
+    await expect(prisma.countryEvidenceManifest.update({where:{id:rerun.manifest.id},data:{evaluation_state:'rewritten'}})).rejects.toThrow(/immutable/);
+  });
+
+  test('does not convert a provider-complete absent India row into zero',async()=>{
+    const classification=await confirmedClassification(),fixture=fixtureClient({omitIndia:true});setComtradeClient(fixture.client);
+    const plan=await createCountryEvidencePlan({product_classification_id:classification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['842'],source_mode:TradeSourceMode.fixture});
+    const result=await executeCountryEvidencePlan(plan.id);
+    expect(result.status).toBe('partial');
+    const india=await prisma.countryEvidencePlanItem.findMany({where:{plan_id:plan.id,purpose:'INDIA_IMPORT_HISTORY'}});
+    expect(india.every(item=>item.resolution_state==='missing'&&(item.resolution_metadata as {absence_is_not_zero?:boolean}).absence_is_not_zero===true)).toBe(true);
+    const callCount=fixture.calls.mock.calls.length;
+    await executeCountryEvidencePlan(plan.id);
+    expect(fixture.calls).toHaveBeenCalledTimes(callCount);
+  });
+
+  test('preflights shared authenticated quota and defers the whole plan by default',async()=>{
+    const classification=await confirmedClassification(),fixture=fixtureClient();
+    const credential=`auth-${randomUUID()}`;
+    setComtradeClient({...fixture.client,identity:{...fixture.client.identity,mode:'authenticated',authenticated:true,credential_fingerprint:credential}});
+    await reserveProviderQuota({provider:'un_comtrade',credential_fingerprint:credential,configured_limit:450,request_count:450});
+    const plan=await createCountryEvidencePlan({product_classification_id:classification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['826'],source_mode:TradeSourceMode.authenticated});
+    const result=await executeCountryEvidencePlan(plan.id);
+    expect(result).toMatchObject({status:'deferred_quota',estimated_calls:11,available_calls:0,physical_calls:0});
+    expect(fixture.calls).not.toHaveBeenCalled();
+  });
+
+  test('marks wrong-revision evidence incompatible and never admits fixture evidence to an authenticated plan',async()=>{
+    const fixture=fixtureClient();setComtradeClient(fixture.client);
+    const oldClassification=await confirmedClassification('HS2017');
+    const oldPlan=await createCountryEvidencePlan({product_classification_id:oldClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.fixture});
+    await executeCountryEvidencePlan(oldPlan.id);
+    const currentClassification=await confirmedClassification('HS2022');
+    const fixturePlan=await createCountryEvidencePlan({product_classification_id:currentClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.fixture});
+    const incompatible=await resolveCountryEvidencePlan(fixturePlan.id);
+    expect(incompatible.items.every(item=>item.resolution_state==='incompatible')).toBe(true);
+    const authenticatedPlan=await createCountryEvidencePlan({product_classification_id:currentClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.authenticated});
+    const isolated=await resolveCountryEvidencePlan(authenticatedPlan.id);
+    expect(isolated.items.every(item=>item.resolution_state==='fetch_required'&&item.source_evidence_id===null)).toBe(true);
+  });
+});

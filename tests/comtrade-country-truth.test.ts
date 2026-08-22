@@ -40,6 +40,13 @@ describe('Country Truth provider boundary',()=>{
     expect(result.rows.map(item=>[item.value,item.value_status])).toEqual([[null,'missing'],[0,'observed_zero']]);
   });
 
+  test('explicit all-suppliers scope accepts distinct partner rows without weakening other dimensions',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([{...row,partnerCode:156},{...row,partnerCode:699}],2)));
+    const result=await new ComtradeApiClient('key',policy).fetchChapter({...params,partner:'all'});
+    expect(result.rows.map(item=>item.partner)).toEqual(['156','699']);
+    expect(result.evidence_pages?.[0]).toMatchObject({completeness:'COMPLETE',completeness_metadata:{rejected_rows:0}});
+  });
+
   test('real zero quantity remains observed zero without becoming a unit-value denominator',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([{...row,qty:0}])))
     const result=await new ComtradeApiClient('key',policy).fetchChapter(params);

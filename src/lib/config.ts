@@ -111,6 +111,7 @@ export interface ConfigShape {
   'guest.policy': GuestPolicy;
   'jobs.policy': JobsPolicy;
   'comtrade.policy': ComtradePolicy;
+  'country_evidence.policy': CountryEvidencePolicy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
 }
@@ -234,6 +235,24 @@ export interface ComtradePolicy {
   daily_request_budget: number;
   /** Highest-value chapters first; the full ingest script consumes this exact order. */
   chapter_priority: string[];
+}
+
+/** Versioned acquisition policy. It chooses evidence, never scores a country. */
+export interface CountryEvidencePolicy {
+  policy_version: string;
+  history_years: number;
+  annual_release_month_utc: number;
+  minimum_candidate_coverage_ratio: number;
+  latest_period_freshness_days: number;
+  closed_period_freshness_days: number;
+  supplier_distribution_freshness_days: number;
+  supplier_coverage_min_ratio: number;
+  supplier_coverage_max_ratio: number;
+  india_partner_code: string;
+  world_partner_code: string;
+  all_suppliers_partner_code: string;
+  candidate_strategy: 'explicit_candidates_v1';
+  allow_partial_execution: boolean;
 }
 
 /**
@@ -434,6 +453,22 @@ export const CONFIG_DEFAULTS: ConfigShape = {
       '83', '86', '88', '89', '90', '91', '92', '93', '94', '95', '96', '97', '99',
     ],
   },
+  'country_evidence.policy': {
+    policy_version: 'country-evidence-acquisition-v1',
+    history_years: 5,
+    annual_release_month_utc: 8,
+    minimum_candidate_coverage_ratio: 0.8,
+    latest_period_freshness_days: 90,
+    closed_period_freshness_days: 3650,
+    supplier_distribution_freshness_days: 90,
+    supplier_coverage_min_ratio: 0.95,
+    supplier_coverage_max_ratio: 1.05,
+    india_partner_code: '699',
+    world_partner_code: '0',
+    all_suppliers_partner_code: 'all',
+    candidate_strategy: 'explicit_candidates_v1',
+    allow_partial_execution: false,
+  },
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
     base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
@@ -488,6 +523,9 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   // still active during deployment. Explicit stored values continue to win.
   if (key === 'comtrade.policy') {
     return { ...CONFIG_DEFAULTS['comtrade.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'country_evidence.policy') {
+    return { ...CONFIG_DEFAULTS['country_evidence.policy'], ...(row.value as object) } as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];

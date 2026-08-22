@@ -935,25 +935,26 @@ model Product {
 }
 
 model ProductClassification {
-  id                   String                      @id @default(cuid())
-  product_id           String
-  revision             Int
-  itc_hs_code          String?
-  hs6_code             String
-  nomenclature         String
-  nomenclature_version String
-  method               ProductClassificationMethod
-  evidence             Json
-  confidence           Decimal                     @db.Decimal(5, 4)
-  status               ProductClassificationStatus
-  proposed_by_id       String
-  proposed_at          DateTime                    @default(now())
-  confirmed_by_id      String?
-  confirmed_at         DateTime?
-  superseded_at        DateTime?
-  product              Product                     @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  proposed_by          User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
-  confirmed_by         User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+  id                     String                      @id @default(cuid())
+  product_id             String
+  revision               Int
+  itc_hs_code            String?
+  hs6_code               String
+  nomenclature           String
+  nomenclature_version   String
+  method                 ProductClassificationMethod
+  evidence               Json
+  confidence             Decimal                     @db.Decimal(5, 4)
+  status                 ProductClassificationStatus
+  proposed_by_id         String
+  proposed_at            DateTime                    @default(now())
+  confirmed_by_id        String?
+  confirmed_at           DateTime?
+  superseded_at          DateTime?
+  product                Product                     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  proposed_by            User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
+  confirmed_by           User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+  country_evidence_plans CountryEvidencePlan[]
 
   @@unique([product_id, revision])
   @@index([product_id, status])
@@ -3370,11 +3371,121 @@ model SourceEvidence {
   error_metadata        Json?
   created_at            DateTime                   @default(now())
 
-  ingest_run   IngestRun?                   @relation(fields: [ingest_run_id], references: [id], onDelete: Restrict)
-  observations NormalizedTradeObservation[]
+  ingest_run                  IngestRun?                         @relation(fields: [ingest_run_id], references: [id], onDelete: Restrict)
+  observations                NormalizedTradeObservation[]
+  country_evidence_items      CountryEvidencePlanItem[]
+  country_evidence_references CountryEvidenceManifestReference[]
 
   @@index([request_fingerprint, source_origin, retrieved_at])
   @@index([response_checksum])
+}
+
+/// Frozen acquisition intent for one confirmed HS classification and one common reporting period.
+/// Execution state lives on child items; the definition and policy snapshot are never recalculated.
+model CountryEvidencePlan {
+  id                        String          @id @default(cuid())
+  plan_key                  String          @unique
+  product_classification_id String
+  hs_code                   String
+  hs_revision               String
+  as_of_date                DateTime
+  candidate_reporters       String[]
+  source_mode               TradeSourceMode
+  policy_version            String
+  policy_hash               String
+  policy_snapshot           Json
+  period_set                Int[]
+  latest_common_year        Int
+  requested_history_years   Int
+  actual_history_years      Int
+  candidate_strategy        String
+  status                    String          @default("planned")
+  estimated_call_cost       Int
+  allow_partial_execution   Boolean         @default(false)
+  created_at                DateTime        @default(now())
+  updated_at                DateTime        @updatedAt
+
+  product_classification ProductClassification     @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  items                  CountryEvidencePlanItem[]
+  manifests              CountryEvidenceManifest[]
+
+  @@index([product_classification_id, created_at])
+  @@index([status, created_at])
+}
+
+/// One independently resolvable provider request in a Country Evidence Plan.
+model CountryEvidencePlanItem {
+  id                  String    @id @default(cuid())
+  plan_id             String
+  item_key            String    @unique
+  purpose             String
+  reporter_code       String
+  partner_scope       String
+  partner_code        String
+  flow_direction      String
+  frequency           String
+  period              Int
+  hs_code             String
+  hs_revision         String
+  customs_code        String
+  mode_of_supply      String
+  priority            Int
+  freshness_days      Int
+  estimated_call_cost Int       @default(1)
+  resolution_state    String    @default("fetch_required")
+  source_evidence_id  String?
+  resolution_metadata Json?
+  attempts            Int       @default(0)
+  last_attempted_at   DateTime?
+  error               String?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  plan            CountryEvidencePlan @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  source_evidence SourceEvidence?     @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
+
+  @@index([plan_id, priority, reporter_code, period])
+  @@index([resolution_state, updated_at])
+}
+
+/// Immutable evidence-set snapshot consumed by the later deterministic metric phase.
+model CountryEvidenceManifest {
+  id               String   @id @default(cuid())
+  plan_id          String
+  checksum         String   @unique
+  evaluation_state String
+  policy_version   String
+  policy_hash      String
+  policy_snapshot  Json
+  manifest_payload Json
+  created_at       DateTime @default(now())
+
+  plan       CountryEvidencePlan                @relation(fields: [plan_id], references: [id], onDelete: Restrict)
+  references CountryEvidenceManifestReference[]
+
+  @@index([plan_id, created_at])
+}
+
+model CountryEvidenceManifestReference {
+  id                    String   @id @default(cuid())
+  manifest_id           String
+  plan_item_key         String
+  purpose               String
+  reporter_code         String
+  period                Int
+  source_evidence_id    String
+  observation_ids       String[]
+  cell_state            String
+  freshness_state       String
+  evidence_completeness String
+  evidence_retrieved_at DateTime
+  created_at            DateTime @default(now())
+
+  manifest        CountryEvidenceManifest @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
+  source_evidence SourceEvidence          @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
+
+  @@unique([manifest_id, plan_item_key])
+  @@index([source_evidence_id])
 }
 
 /// Provider facts normalized without collapsing missing, suppressed, invalid, and observed-zero.

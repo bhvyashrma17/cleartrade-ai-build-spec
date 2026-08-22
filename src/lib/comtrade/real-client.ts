@@ -71,7 +71,8 @@ export class ComtradeApiClient implements ComtradeClient {
       const requested=new Set(params.hs_codes),seen=new Set<string>(),rows:ComtradeFlowRow[]=[];let rejected=0;
       for(const row of data){
         const expectedFlow=params.flow_direction==='export'?'X':'M';
-        const mismatch=String(row.reporterCode)!==params.reporter||String(row.partnerCode)!==params.partner||String(row.partner2Code??'0')!==partner2||Number(row.refYear)!==params.year||String(row.period)!==String(params.year)||!requested.has(row.cmdCode)||(row.flowCode!=null&&row.flowCode!==expectedFlow)||(row.freqCode!=null&&row.freqCode!==frequency)||(row.customsCode!=null&&row.customsCode!==customs)||(row.mosCode!=null&&row.mosCode!==mos)||(row.clCode!=null&&row.clCode!==revisionCode(revision));
+        const partnerMismatch=params.partner==='all'?false:String(row.partnerCode)!==params.partner;
+        const mismatch=String(row.reporterCode)!==params.reporter||partnerMismatch||String(row.partner2Code??'0')!==partner2||Number(row.refYear)!==params.year||String(row.period)!==String(params.year)||!requested.has(row.cmdCode)||(row.flowCode!=null&&row.flowCode!==expectedFlow)||(row.freqCode!=null&&row.freqCode!==frequency)||(row.customsCode!=null&&row.customsCode!==customs)||(row.mosCode!=null&&row.mosCode!==mos)||(row.clCode!=null&&row.clCode!==revisionCode(revision));
         if(mismatch){rejected++;continue;}
         const key=`${row.reporterCode}:${row.partnerCode}:${row.partner2Code??0}:${row.cmdCode}:${row.refYear}:${expectedFlow}:${frequency}:${customs}:${mos}`;if(seen.has(key)){rejected++;continue;}seen.add(key);
         const trade=parseOptionalProviderNumber(row.primaryValue),qty=parseOptionalProviderNumber(row.qty),alt=parseOptionalProviderNumber(row.altQty),net=parseOptionalProviderNumber(row.netWgt),gross=parseOptionalProviderNumber(row.grossWgt);

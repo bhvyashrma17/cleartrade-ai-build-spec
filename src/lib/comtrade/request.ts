@@ -29,7 +29,7 @@ function canonical(value: unknown): unknown {
 
 export function canonicalComtradeRequest(input: CanonicalComtradeRequest): CanonicalComtradeRequest {
   const hsCodes = [...new Set(input.hs_codes.map(String))].sort();
-  if (!/^\d+$/.test(input.reporter_code) || !/^\d+$/.test(input.partner_code) || !/^\d+$/.test(input.partner2_code)) throw new Error('Comtrade area codes must be numeric strings.');
+  if (!/^\d+$/.test(input.reporter_code) || (!/^\d+$/.test(input.partner_code) && input.partner_code !== 'all') || !/^\d+$/.test(input.partner2_code)) throw new Error('Comtrade area codes must be numeric strings (or the explicit all-suppliers partner scope).');
   if (!hsCodes.length || hsCodes.some((code) => !/^\d{6}$/.test(code))) throw new Error('Country Truth requests require explicit HS6 codes.');
   if (!/^\d{4}(\d{2})?$/.test(input.period)) throw new Error('Comtrade period must be YYYY or YYYYMM.');
   if (!input.hs_revision.trim()) throw new Error('Comtrade request requires an explicit HS revision.');
