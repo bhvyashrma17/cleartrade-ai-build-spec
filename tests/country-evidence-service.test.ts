@@ -7,6 +7,7 @@ import { prisma } from '../src/lib/prisma';
 import { reserveProviderQuota } from '../src/lib/provider-quota';
 import { calculateAndPersistCountryTradeMetrics, formatCountryTradeMetricsReconciliation } from '../src/lib/country-trade-metrics/service';
 import { CONFIG_DEFAULTS } from '../src/lib/config';
+import { createCountryTruthV4Assessments } from '../src/lib/discovery/country-truth-v4-service';
 
 async function confirmedClassification(revision='HS2022'){
   const marker=`country-plan-${randomUUID()}`;
@@ -50,6 +51,16 @@ describe('Country Evidence persisted plan and manifest',()=>{
     expect(formatCountryTradeMetricsReconciliation(metric)).toContain('evidence:');
     const v2=await calculateAndPersistCountryTradeMetrics(rerun.manifest.id,{...CONFIG_DEFAULTS['country_trade_metrics.policy'],policy_version:'country-trade-metrics-v2',calculation_version:'country-trade-calculator-v2'});
     expect(v2[0].checksum).not.toBe(metric.checksum);
+    const product=await prisma.product.findUniqueOrThrow({where:{id:classification.product_id}});
+    const makeRun=()=>prisma.discoveryRun.create({data:{exporter_org_id:product.exporter_org_id,product_id:product.id,input_snapshot:{phase:'country_truth_v4_test'}}});
+    const legacyRun=await makeRun(),legacy=await prisma.marketAssessment.create({data:{run_id:legacyRun.id,product_id:product.id,country_code:'GB',overall_score:73,demand_score:70,confidence_score:44,model_version:'market-attractiveness-v3',weight_profile_key:'general',weight_profile_version:1}});
+    const runA=await makeRun(),[assessmentA]=await createCountryTruthV4Assessments({run_id:runA.id,country_trade_metrics_ids:[metric.id],source_mode:TradeSourceMode.fixture,scoring_clock:new Date('2026-08-22T00:00:00Z')});
+    await prisma.tradeFlow.updateMany({where:{reporter:'276'},data:{value:1}});
+    const runB=await makeRun(),[assessmentB]=await createCountryTruthV4Assessments({run_id:runB.id,country_trade_metrics_ids:[metric.id],source_mode:TradeSourceMode.fixture,scoring_clock:new Date('2026-08-22T00:00:00Z')});
+    expect(assessmentB).toMatchObject({model_version:'market-attractiveness-v4',overall_score:assessmentA.overall_score,confidence_score:assessmentA.confidence_score,assessment_checksum:assessmentA.assessment_checksum,country_trade_metrics_id:metric.id,country_evidence_manifest_id:rerun.manifest.id,evidence_origins:['fixture']});
+    const forbiddenRun=await makeRun();await expect(createCountryTruthV4Assessments({run_id:forbiddenRun.id,country_trade_metrics_ids:[metric.id],source_mode:TradeSourceMode.authenticated,scoring_clock:new Date('2026-08-22T00:00:00Z')})).rejects.toThrow(/source mode|fixture/i);
+    await expect(prisma.marketAssessment.update({where:{id:assessmentA.id},data:{overall_score:99}})).rejects.toThrow(/immutable/);
+    expect(await prisma.marketAssessment.findUniqueOrThrow({where:{id:legacy.id}})).toMatchObject({overall_score:73,model_version:'market-attractiveness-v3',country_trade_metrics_id:null});
     await expect(prisma.countryTradeMetrics.update({where:{id:metric.id},data:{reporter_code:'999'}})).rejects.toThrow(/immutable/);
     await expect(prisma.countryEvidenceManifest.update({where:{id:rerun.manifest.id},data:{evaluation_state:'rewritten'}})).rejects.toThrow(/immutable/);
   });

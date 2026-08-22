@@ -1,0 +1,40 @@
+import { EvidenceOrigin,Prisma,TradeSourceMode } from '@prisma/client';
+import { getConfigWithVersion } from '@/lib/config';
+import { canonicalHash } from '@/lib/country-evidence/planner';
+import { tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
+import { prisma } from '@/lib/prisma';
+import { scoreCountryTruthV4,type AuthoritativeComponentInput,type CountryTruthMetricPayload,type V4ScoringInput } from './country-truth-scoring-v4';
+
+export interface CountryTruthV4Context{non_trade?:V4ScoringInput['non_trade'];exporter_unit_value?:V4ScoringInput['exporter_unit_value'];exporter_snapshot?:Record<string,unknown>}
+
+export async function createCountryTruthV4Assessments(args:{run_id:string;country_trade_metrics_ids:string[];source_mode:TradeSourceMode;scoring_clock:Date;contexts?:Record<string,CountryTruthV4Context>}){
+  if(!args.country_trade_metrics_ids.length)throw new Error('Country Truth v4 requires at least one immutable CountryTradeMetrics record.');
+  const run=await prisma.discoveryRun.findUniqueOrThrow({where:{id:args.run_id},include:{market_assessments:{select:{id:true}}}});
+  if(run.market_assessments.length)throw new Error('Country Truth v4 only writes to a new DiscoveryRun; historical assessments are never replaced.');
+  const metrics=await prisma.countryTradeMetrics.findMany({where:{id:{in:args.country_trade_metrics_ids}},include:{manifest:{include:{plan:true}}}});
+  if(metrics.length!==new Set(args.country_trade_metrics_ids).size)throw new Error('One or more CountryTradeMetrics records do not exist.');
+  const configured=await getConfigWithVersion('country_truth.scoring_v4'),policyHash=canonicalHash({...configured.value,config_version:configured.version});
+  const drafts=[];
+  for(const record of metrics){
+    if(record.manifest.plan.source_mode!==args.source_mode)throw new Error('Country Truth v4 source mode must match the frozen metrics evidence origin.');
+    if(args.source_mode===TradeSourceMode.authenticated&&record.manifest.plan.source_mode!==TradeSourceMode.authenticated)throw new Error('Authenticated v4 scoring refuses fixture metrics.');
+    if(run.product_id&&record.product_classification_id!==await prisma.productClassification.findFirst({where:{id:record.product_classification_id,product_id:run.product_id},select:{id:true}}).then(x=>x?.id))throw new Error('CountryTradeMetrics classification does not belong to the DiscoveryRun product.');
+    const payload=record.metrics_payload as unknown as {manifest_checksum:string;metrics:CountryTruthMetricPayload};
+    if(payload.manifest_checksum!==record.manifest.checksum)throw new Error('CountryTradeMetrics manifest checksum does not match its frozen manifest.');
+    const context=args.contexts?.[record.reporter_code]??{};
+    const scoreInput:V4ScoringInput={country_trade_metrics_id:record.id,metrics_checksum:record.checksum,manifest_id:record.manifest_id,manifest_checksum:record.manifest.checksum,metrics_policy_version:record.metric_policy_version,metrics_policy_hash:record.metric_policy_hash,reporter_code:record.reporter_code,country_code:record.country_code??record.reporter_code,hs_code:record.hs_code,hs_revision:record.hs_revision,period_set:record.period_set,as_of_date:record.as_of_date.toISOString(),metrics:payload.metrics,non_trade:context.non_trade??{},exporter_unit_value:context.exporter_unit_value,policy:configured.value};
+    const result=scoreCountryTruthV4(scoreInput),assessmentPayload={schema_version:'country-truth-assessment-v4',scoring_clock:args.scoring_clock.toISOString(),scoring_policy_version:configured.version,scoring_policy_hash:policyHash,exporter_snapshot:context.exporter_snapshot??{},score:result};
+    drafts.push({record,result,checksum:canonicalHash(assessmentPayload),assessmentPayload});
+  }
+  await prisma.discoveryRun.update({where:{id:run.id},data:{as_of_date:args.scoring_clock,scoring_policy_version:configured.version,scoring_policy_hash:policyHash,scoring_policy_snapshot:configured.value as unknown as Prisma.InputJsonValue,reproducibility_status:'reproducible',input_snapshot:{...((run.input_snapshot as Record<string,unknown>|null)??{}),country_truth_v4:{country_trade_metrics_ids:metrics.map(m=>m.id).sort(),scoring_clock:args.scoring_clock.toISOString(),source_mode:args.source_mode}} as Prisma.InputJsonValue}});
+  const created=[];
+  for(const draft of drafts.sort((a,b)=>(b.result.overall_score??-1)-(a.result.overall_score??-1)||a.record.reporter_code.localeCompare(b.record.reporter_code))){
+    const c=draft.result.components,p=draft.result.provenance,origin=tradeSourceModeToEvidenceOrigin(args.source_mode);
+    created.push(await prisma.marketAssessment.create({data:{run_id:run.id,product_id:run.product_id,country_code:draft.record.country_code??draft.record.reporter_code,overall_score:draft.result.overall_score,demand_score:c.demand_strength.score,growth_score:c.growth_momentum.score,competition_score:c.competitive_opportunity.score,market_access_score:c.market_access.score,export_economics_score:c.export_economics.score,exporter_market_fit_score:c.exporter_market_fit.score,logistics_feasibility_score:c.logistics_feasibility.score,risk_resilience_score:c.risk_resilience.score,confidence_score:draft.result.confidence_score,model_version:configured.value.model_version,weight_profile_key:'country_truth_v4',weight_profile_version:configured.version,as_of_date:args.scoring_clock,scoring_policy_version:configured.version,scoring_policy_hash:policyHash,scoring_policy_snapshot:configured.value as unknown as Prisma.InputJsonValue,reproducibility_status:'reproducible',evidence_origins:[origin as EvidenceOrigin],classification_id:draft.record.product_classification_id,classification_hs6_code:draft.record.hs_code,classification_version:draft.record.hs_revision,rationale:draft.result.rationale,field_provenance:{overall_score:{...p,assessment_checksum:draft.checksum,formula_version:draft.result.formula_version,assessment_state:draft.result.assessment_state,available_base_weight:draft.result.available_base_weight},demand_score:c.demand_strength,growth_score:c.growth_momentum,competition_score:c.competitive_opportunity,market_access:c.market_access,export_economics:c.export_economics,exporter_market_fit:c.exporter_market_fit,logistics_feasibility:c.logistics_feasibility,risk_resilience:c.risk_resilience,confidence_score:{formula_version:configured.value.confidence.formula_version,value:draft.result.confidence_score,basis:'Base-weighted evidence coverage and component evidence quality; unavailable components contribute zero confidence.'},rationale:{source:'deterministic_country_truth_v4',note:'Programmatic summary of frozen facts and explicit missingness; no causal claims.'}} as unknown as Prisma.InputJsonValue,country_trade_metrics_id:draft.record.id,country_trade_metrics_checksum:draft.record.checksum,country_evidence_manifest_id:draft.record.manifest_id,country_evidence_manifest_checksum:draft.record.manifest.checksum,country_metric_policy_version:draft.record.metric_policy_version,country_metric_policy_hash:draft.record.metric_policy_hash,country_truth_period_set:draft.record.period_set,country_truth_as_of_date:draft.record.as_of_date,country_truth_assessment_state:draft.result.assessment_state,assessment_checksum:draft.checksum}}));
+  }
+  return created;
+}
+
+export function reconcileCountryTruthV4(input:V4ScoringInput){const result=scoreCountryTruthV4(input);return[`${input.country_code} / HS ${input.hs_code}`,`Metrics: ${input.country_trade_metrics_id} (${input.metrics_checksum})`,`Manifest: ${input.manifest_id} (${input.manifest_checksum})`,`State: ${result.assessment_state}`,`Overall: ${result.overall_score??'unavailable'}`,`Confidence: ${result.confidence_score}`,...Object.entries(result.components).map(([name,c])=>`${name}: ${c.score??'unavailable'} | base ${c.base_weight} | effective ${(c.effective_weight*100).toFixed(2)}% | confidence ${c.confidence} | ${Object.entries(c.sub_signals).map(([s,v])=>`${s}=${v.score??'unavailable'}@${(v.effective_weight*100).toFixed(2)}%`).join(', ')}`)].join('\n');}
+
+export type {AuthoritativeComponentInput};

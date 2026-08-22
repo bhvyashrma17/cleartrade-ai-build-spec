@@ -113,6 +113,7 @@ export interface ConfigShape {
   'comtrade.policy': ComtradePolicy;
   'country_evidence.policy': CountryEvidencePolicy;
   'country_trade_metrics.policy': CountryTradeMetricPolicy;
+  'country_truth.scoring_v4': CountryTruthScoringV4Policy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
 }
@@ -279,6 +280,18 @@ export interface CountryTradeMetricPolicy {
   unit_value_outlier_method: 'tukey_1_5_iqr_v1';
   stale_input_behavior: 'metric_stale';
   zero_value_behavior: 'explicit_zero_only';
+}
+
+export interface CountryTruthScoringV4Policy {
+  model_version:'market-attractiveness-v4';formula_version:string;
+  base_component_weights:DiscoveryComponentWeights;
+  demand:{method:'absolute_log10_usd_v1';floor_usd:number;ceiling_usd:number};
+  growth:{cagr_weight:number;recent_momentum_weight:number;floor_percent:number;ceiling_percent:number};
+  competition:{hhi_weight:number;india_share_weight:number;india_share_trend_weight:number;trend_floor_pp_per_year:number;trend_ceiling_pp_per_year:number};
+  risk:{trade_stability_weight:number;macro_resilience_weight:number;payment_resilience_weight:number;volatility_ceiling_pp:number};
+  export_economics:{existing_economics_weight:number;unit_value_weight:number;benchmark_ratio_ceiling:number};
+  ranking:{minimum_available_base_weight:number;require_demand:boolean;require_growth_or_competition:boolean};
+  confidence:{formula_version:'weighted_component_evidence_coverage_v4'};
 }
 
 /**
@@ -519,6 +532,17 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     stale_input_behavior: 'metric_stale',
     zero_value_behavior: 'explicit_zero_only',
   },
+  'country_truth.scoring_v4': {
+    model_version:'market-attractiveness-v4',formula_version:'country-truth-scoring-v4',
+    base_component_weights:{demand_strength:25,growth_momentum:10,competitive_opportunity:10,market_access:10,export_economics:15,exporter_market_fit:15,logistics_feasibility:10,risk_resilience:5},
+    demand:{method:'absolute_log10_usd_v1',floor_usd:100_000,ceiling_usd:10_000_000_000},
+    growth:{cagr_weight:70,recent_momentum_weight:30,floor_percent:-20,ceiling_percent:20},
+    competition:{hhi_weight:50,india_share_weight:30,india_share_trend_weight:20,trend_floor_pp_per_year:-5,trend_ceiling_pp_per_year:5},
+    risk:{trade_stability_weight:60,macro_resilience_weight:20,payment_resilience_weight:20,volatility_ceiling_pp:50},
+    export_economics:{existing_economics_weight:80,unit_value_weight:20,benchmark_ratio_ceiling:2},
+    ranking:{minimum_available_base_weight:45,require_demand:true,require_growth_or_competition:true},
+    confidence:{formula_version:'weighted_component_evidence_coverage_v4'},
+  },
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
     base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
@@ -579,6 +603,10 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   }
   if (key === 'country_trade_metrics.policy') {
     return { ...CONFIG_DEFAULTS['country_trade_metrics.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'country_truth.scoring_v4') {
+    const defaults=CONFIG_DEFAULTS['country_truth.scoring_v4'],stored=row.value as Partial<CountryTruthScoringV4Policy>;
+    return {...defaults,...stored,base_component_weights:{...defaults.base_component_weights,...(stored.base_component_weights??{})},demand:{...defaults.demand,...(stored.demand??{})},growth:{...defaults.growth,...(stored.growth??{})},competition:{...defaults.competition,...(stored.competition??{})},risk:{...defaults.risk,...(stored.risk??{})},export_economics:{...defaults.export_economics,...(stored.export_economics??{})},ranking:{...defaults.ranking,...(stored.ranking??{})},confidence:{...defaults.confidence,...(stored.confidence??{})}} as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];

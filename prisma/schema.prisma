@@ -1116,12 +1116,25 @@ model MarketAssessment {
   /// selection. Non-exclusive: any number of assessments may be saved at once.
   saved_at    DateTime?
 
-  run             DiscoveryRun    @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  product         Product?        @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  agent_decisions AgentDecision[]
+  run                   DiscoveryRun         @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  product               Product?             @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  agent_decisions       AgentDecision[]
+  country_trade_metrics CountryTradeMetrics? @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+
+  country_trade_metrics_id           String?
+  country_trade_metrics_checksum     String?
+  country_evidence_manifest_id       String?
+  country_evidence_manifest_checksum String?
+  country_metric_policy_version      String?
+  country_metric_policy_hash         String?
+  country_truth_period_set           Int[]
+  country_truth_as_of_date           DateTime?
+  country_truth_assessment_state     String?
+  assessment_checksum                String?
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
+  @@index([country_trade_metrics_id])
 }
 
 /// Explicit destination/HS hard gates. Sanctions entity-list rows never become a country
@@ -3490,6 +3503,7 @@ model CountryTradeMetrics {
 
   manifest               CountryEvidenceManifest @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
   product_classification ProductClassification   @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  market_assessments     MarketAssessment[]
 
   @@unique([manifest_id, reporter_code, metric_policy_hash, calculation_version])
   @@index([product_classification_id, reporter_code, created_at])
