@@ -112,6 +112,7 @@ export interface ConfigShape {
   'jobs.policy': JobsPolicy;
   'comtrade.policy': ComtradePolicy;
   'country_evidence.policy': CountryEvidencePolicy;
+  'country_trade_metrics.policy': CountryTradeMetricPolicy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
 }
@@ -253,6 +254,31 @@ export interface CountryEvidencePolicy {
   all_suppliers_partner_code: string;
   candidate_strategy: 'explicit_candidates_v1';
   allow_partial_execution: boolean;
+}
+
+export interface CountryTradeMetricPolicy {
+  policy_version: string;
+  calculation_version: string;
+  expected_history_years: number;
+  cagr_method: 'endpoint_geometric_v1';
+  recent_momentum_method: 'latest_year_simple_growth_v1';
+  india_share_method: 'india_over_world_percent_v1';
+  india_share_trend_method: 'ols_slope_and_endpoint_pp_v1';
+  supplier_hhi_method: 'sum_normalized_supplier_share_squared_v1';
+  supplier_coverage_min_ratio: number;
+  supplier_coverage_max_ratio: number;
+  require_mappable_supplier_country: boolean;
+  volatility_method: 'population_stddev_simple_annual_growth_v1';
+  minimum_volatility_observations: number;
+  unit_value_preference: 'net_weight_then_compatible_quantity_v1';
+  weight_based_hs_chapters: string[];
+  accepted_quantity_units_by_hs_chapter: Record<string,string[]>;
+  minimum_unit_value_observations: number;
+  unit_value_low_percentile: number;
+  unit_value_high_percentile: number;
+  unit_value_outlier_method: 'tukey_1_5_iqr_v1';
+  stale_input_behavior: 'metric_stale';
+  zero_value_behavior: 'explicit_zero_only';
 }
 
 /**
@@ -469,6 +495,30 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     candidate_strategy: 'explicit_candidates_v1',
     allow_partial_execution: false,
   },
+  'country_trade_metrics.policy': {
+    policy_version: 'country-trade-metrics-v1',
+    calculation_version: 'country-trade-calculator-v1',
+    expected_history_years: 5,
+    cagr_method: 'endpoint_geometric_v1',
+    recent_momentum_method: 'latest_year_simple_growth_v1',
+    india_share_method: 'india_over_world_percent_v1',
+    india_share_trend_method: 'ols_slope_and_endpoint_pp_v1',
+    supplier_hhi_method: 'sum_normalized_supplier_share_squared_v1',
+    supplier_coverage_min_ratio: 0.95,
+    supplier_coverage_max_ratio: 1.05,
+    require_mappable_supplier_country: true,
+    volatility_method: 'population_stddev_simple_annual_growth_v1',
+    minimum_volatility_observations: 4,
+    unit_value_preference: 'net_weight_then_compatible_quantity_v1',
+    weight_based_hs_chapters: ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26','27','28','29','30','31','32','33','34','35','36','37','38','39','40','41','42','43','44','45','46','47','48','50','51','52','53','54','55','56','57','58','59','60','61','62','63','68','69','70','71','72','73','74','75','76','78','79','80','81','82','83'],
+    accepted_quantity_units_by_hs_chapter: {'09':['kg']},
+    minimum_unit_value_observations: 3,
+    unit_value_low_percentile: 0.1,
+    unit_value_high_percentile: 0.9,
+    unit_value_outlier_method: 'tukey_1_5_iqr_v1',
+    stale_input_behavior: 'metric_stale',
+    zero_value_behavior: 'explicit_zero_only',
+  },
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
     base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
@@ -526,6 +576,9 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   }
   if (key === 'country_evidence.policy') {
     return { ...CONFIG_DEFAULTS['country_evidence.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'country_trade_metrics.policy') {
+    return { ...CONFIG_DEFAULTS['country_trade_metrics.policy'], ...(row.value as object) } as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];

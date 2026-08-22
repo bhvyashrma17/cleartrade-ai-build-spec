@@ -955,6 +955,7 @@ model ProductClassification {
   proposed_by            User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
   confirmed_by           User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
   country_evidence_plans CountryEvidencePlan[]
+  country_trade_metrics  CountryTradeMetrics[]
 
   @@unique([product_id, revision])
   @@index([product_id, status])
@@ -3462,8 +3463,36 @@ model CountryEvidenceManifest {
 
   plan       CountryEvidencePlan                @relation(fields: [plan_id], references: [id], onDelete: Restrict)
   references CountryEvidenceManifestReference[]
+  metrics    CountryTradeMetrics[]
 
   @@index([plan_id, created_at])
+}
+
+/// Immutable factual calculations derived only from one frozen CountryEvidenceManifest.
+model CountryTradeMetrics {
+  id                        String   @id @default(cuid())
+  manifest_id               String
+  product_classification_id String
+  reporter_code             String
+  country_code              String?  @db.VarChar(2)
+  hs_code                   String
+  hs_revision               String
+  as_of_date                DateTime
+  period_set                Int[]
+  latest_common_year        Int
+  metric_policy_version     String
+  metric_policy_hash        String
+  metric_policy_snapshot    Json
+  calculation_version       String
+  metrics_payload           Json
+  checksum                  String   @unique
+  created_at                DateTime @default(now())
+
+  manifest               CountryEvidenceManifest @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
+  product_classification ProductClassification   @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+
+  @@unique([manifest_id, reporter_code, metric_policy_hash, calculation_version])
+  @@index([product_classification_id, reporter_code, created_at])
 }
 
 model CountryEvidenceManifestReference {

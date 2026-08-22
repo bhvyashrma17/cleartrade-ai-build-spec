@@ -5,6 +5,8 @@ import { setComtradeClient, type ComtradeFetchParams } from '../src/lib/comtrade
 import { createCountryEvidencePlan, executeCountryEvidencePlan, resolveCountryEvidencePlan } from '../src/lib/country-evidence/service';
 import { prisma } from '../src/lib/prisma';
 import { reserveProviderQuota } from '../src/lib/provider-quota';
+import { calculateAndPersistCountryTradeMetrics, formatCountryTradeMetricsReconciliation } from '../src/lib/country-trade-metrics/service';
+import { CONFIG_DEFAULTS } from '../src/lib/config';
 
 async function confirmedClassification(revision='HS2022'){
   const marker=`country-plan-${randomUUID()}`;
@@ -40,6 +42,15 @@ describe('Country Evidence persisted plan and manifest',()=>{
     expect(rerun).toMatchObject({status:'metric_ready',physical_calls:0});expect(fixture.calls).toHaveBeenCalledTimes(11);
     if(!rerun.manifest)throw new Error('Expected a frozen manifest.');
     expect(rerun.manifest.checksum).toBe(executed.manifest?.checksum);expect(rerun.manifest.references).toHaveLength(11);
+    const metrics=await calculateAndPersistCountryTradeMetrics(rerun.manifest.id);
+    expect(metrics).toHaveLength(1);const metric=metrics[0];
+    await prisma.tradeFlow.updateMany({where:{reporter:'276'},data:{value:999999}});
+    const recalculated=await calculateAndPersistCountryTradeMetrics(rerun.manifest.id);
+    expect(recalculated[0].id).toBe(metric.id);expect(recalculated[0].checksum).toBe(metric.checksum);
+    expect(formatCountryTradeMetricsReconciliation(metric)).toContain('evidence:');
+    const v2=await calculateAndPersistCountryTradeMetrics(rerun.manifest.id,{...CONFIG_DEFAULTS['country_trade_metrics.policy'],policy_version:'country-trade-metrics-v2',calculation_version:'country-trade-calculator-v2'});
+    expect(v2[0].checksum).not.toBe(metric.checksum);
+    await expect(prisma.countryTradeMetrics.update({where:{id:metric.id},data:{reporter_code:'999'}})).rejects.toThrow(/immutable/);
     await expect(prisma.countryEvidenceManifest.update({where:{id:rerun.manifest.id},data:{evaluation_state:'rewritten'}})).rejects.toThrow(/immutable/);
   });
 
