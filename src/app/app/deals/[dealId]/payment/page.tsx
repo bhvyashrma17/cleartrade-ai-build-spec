@@ -56,7 +56,7 @@ export default async function DealPaymentPage({ params }: { params: Promise<{ de
   if (payments.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface p-8 text-center">
-        <p className="text-sm font-medium text-primary">No payment milestones yet</p>
+        <p className="text-sm font-normal text-primary">No payment milestones yet</p>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           Payment tracking begins once your agent sets up the payment schedule for this deal. There is
           nothing to show until then.
@@ -76,7 +76,7 @@ export default async function DealPaymentPage({ params }: { params: Promise<{ de
           role="alert"
           className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4"
         >
-          <p className="text-sm font-medium text-primary">
+          <p className="text-sm font-normal text-primary">
             {overdue.length} payment{overdue.length > 1 ? 's' : ''} overdue from the buyer.
           </p>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
@@ -103,7 +103,7 @@ export default async function DealPaymentPage({ params }: { params: Promise<{ de
               <div key={p.id} className="rounded-md border border-[var(--color-border)] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium text-primary">{p.label ?? `Milestone ${p.sequence}`}</p>
+                    <p className="font-normal text-primary">{p.label ?? `Milestone ${p.sequence}`}</p>
                     <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">
                       {money(p.amount.toString(), p.currency)}
                       {p.amount_received ? ` · ${money(p.amount_received.toString(), p.currency)} received` : ''}
@@ -158,7 +158,7 @@ export default async function DealPaymentPage({ params }: { params: Promise<{ de
             </div>
             <div>
               <dt className="text-xs uppercase text-[var(--color-text-muted)]">Policy ref</dt>
-              <dd className="mt-0.5 select-all font-mono text-sm text-primary">{insuranceCase?.policy_ref ?? '—'}</dd>
+              <dd className="record mt-0.5 select-all text-primary">{insuranceCase?.policy_ref ?? '—'}</dd>
             </div>
           </dl>
         ) : null}

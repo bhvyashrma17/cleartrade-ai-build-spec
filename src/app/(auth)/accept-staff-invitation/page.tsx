@@ -29,7 +29,7 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
     <main className="flex min-h-screen items-center justify-center bg-surface-muted px-4 py-10">
       <section className="w-full max-w-md rounded-lg bg-surface p-6 shadow-card sm:p-8">
         <p className="text-sm font-semibold text-primary">ClearTrade AI</p>
-        <h1 className="mt-2 text-2xl font-bold text-primary">{title}</h1>
+        <h1 className="mt-2 font-serif text-title-page text-primary">{title}</h1>
         {children}
       </section>
     </main>

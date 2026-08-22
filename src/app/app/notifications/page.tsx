@@ -63,7 +63,7 @@ export default async function NotificationsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
       <header>
-        <h1 className="text-2xl font-semibold text-primary">Notifications & Account</h1>
+        <h1 className="font-serif text-title-page text-primary">Notifications & Account</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           Your alerts, notification preferences, organization profile and team.
         </p>

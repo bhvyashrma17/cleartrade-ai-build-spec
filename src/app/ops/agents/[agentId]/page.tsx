@@ -9,7 +9,7 @@
 import Link from 'next/link';
 import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { AgentActivationControl } from '@/components/ops/AgentActivationControl';
 import { AssignExporterForm } from '@/components/ops/AssignExporterForm';
 import { ReassignExporterForm } from '@/components/ops/ReassignExporterForm';
@@ -47,16 +47,16 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
       <Link href="/ops/agents" className="focus-visible-ring rounded text-xs font-medium text-primary underline underline-offset-2">
         ← All agents
       </Link>
-      <header className="mt-2 mb-4">
-        <h1 className="text-2xl font-semibold text-primary">{agent.name}</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          {agent.email} · {agent.is_active ? 'Active' : 'Deactivated'} · joined {fmt(agent.created_at)}
-        </p>
+      <div className="mt-2 mb-4">
+        <PageHeader
+          title={agent.name}
+          description={`${agent.email} · ${agent.is_active ? 'Active' : 'Deactivated'} · joined ${fmt(agent.created_at)}`}
+        />
         <p className="mt-1 text-sm text-primary">
           Assigned exporters: <strong>{agent.activeCount}</strong>{' '}
           <span className="text-[var(--color-text-muted)]">/ target ~{agent.capacityTarget}</span>
         </p>
-      </header>
+      </div>
 
       <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Administrative actions</h2>
@@ -73,37 +73,37 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
       </section>
 
       <section className="rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-[var(--color-text-inverse)]">
-              <th scope="col" className="px-4 py-3 text-left font-medium">Exporter</th>
-              <th scope="col" className="px-4 py-3 text-left font-medium">Status</th>
-              <th scope="col" className="px-4 py-3 text-left font-medium">Started</th>
-              <th scope="col" className="px-4 py-3 text-left font-medium">Ended</th>
-              <th scope="col" className="px-4 py-3 text-left font-medium">Assigned by</th>
-              <th scope="col" className="px-4 py-3 text-right font-medium">Action</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <Thead>
+            <Tr className="bg-primary text-[var(--color-text-inverse)]">
+              <Th className="font-medium">Exporter</Th>
+              <Th className="font-medium">Status</Th>
+              <Th className="font-medium">Started</Th>
+              <Th className="font-medium">Ended</Th>
+              <Th className="font-medium">Assigned by</Th>
+              <Th align="right" className="font-medium">Action</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
             {agent.agent_assignments.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]">
+              <Tr><Td colSpan={6} className="text-center text-sm text-[var(--color-text-secondary)]">
                 No assignments yet.
-              </td></tr>
+              </Td></Tr>
             ) : agent.agent_assignments.map((a) => (
-              <tr key={a.id} className="border-t border-[var(--color-border)]">
-                <td className="px-4 py-3 text-primary">{a.exporter_org.display_name}</td>
-                <td className="px-4 py-3">
+              <Tr key={a.id}>
+                <Td className="text-primary">{a.exporter_org.display_name}</Td>
+                <Td>
                   <StatusChip
                     label={a.status}
                     tone={a.status === 'active' ? 'positive' : 'neutral'}
                     icon={a.status === 'active' ? 'check' : 'clock'}
                     size="sm"
                   />
-                </td>
-                <td className="px-4 py-3 text-[var(--color-text-secondary)]">{fmt(a.started_at)}</td>
-                <td className="px-4 py-3 text-[var(--color-text-secondary)]">{fmt(a.ended_at)}</td>
-                <td className="px-4 py-3 text-[var(--color-text-secondary)]">{a.assigned_by?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-right">
+                </Td>
+                <Td className="text-[var(--color-text-secondary)]">{fmt(a.started_at)}</Td>
+                <Td className="text-[var(--color-text-secondary)]">{fmt(a.ended_at)}</Td>
+                <Td className="text-[var(--color-text-secondary)]">{a.assigned_by?.name ?? '—'}</Td>
+                <Td align="right">
                   {a.status === 'active' ? (
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <AssignExporterForm agentUserId={agent.id} unassignAssignmentId={a.id} />
@@ -119,11 +119,11 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
                   ) : (
                     <span className="text-xs text-[var(--color-text-muted)]">—</span>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </Tbody>
+        </Table>
       </section>
     </div>
   );

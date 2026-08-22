@@ -58,7 +58,7 @@ export function DocumentApprovalPanel({
 
       {error ? (
         <div role="alert" className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-3 text-sm text-[var(--color-critical-text)]">
-          <p className="font-medium">{error}</p>
+          <p className="font-normal">{error}</p>
           {stale ? (
             <button type="button" onClick={() => router.refresh()} className="mt-2 font-medium underline underline-offset-2">
               Reload

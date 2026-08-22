@@ -81,7 +81,7 @@ export function NextActionCard({
         <div className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-2.5 text-xs text-critical">
           <p>{blocker.reason}</p>
           {blocker.deep_link ? (
-            <Link href={blocker.deep_link} className="mt-1 inline-block font-medium underline underline-offset-2">
+            <Link href={blocker.deep_link} className="mt-1 inline-block font-normal underline underline-offset-2">
               Resolve this first
             </Link>
           ) : null}

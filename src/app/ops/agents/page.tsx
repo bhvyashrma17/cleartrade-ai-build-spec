@@ -13,7 +13,7 @@
 
 import Link from 'next/link';
 import { AccessDenied } from '@/components/access-denied';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { AddAgentForm } from '@/components/ops/AddAgentForm';
 import { GenerateInvitationLinkForm } from '@/components/ops/GenerateInvitationLinkForm';
 import { RevokeGrantButton } from '@/components/ops/RevokeGrantButton';
@@ -38,14 +38,12 @@ export default async function OpsAgentsPage() {
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-4">
-        <p className="text-sm font-medium text-primary">Ops</p>
-        <h1 className="text-2xl font-semibold text-primary">Agents</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Internal staff. Agents are provisioned by invitation only — there is no self-registration
-          path to this role.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-4"
+        eyebrow="Ops"
+        title="Agents"
+        description="Internal staff. Agents are provisioned by invitation only — there is no self-registration path to this role."
+      />
 
       <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Generate invitation link</h2>
@@ -123,50 +121,50 @@ export default async function OpsAgentsPage() {
       ) : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-[var(--color-text-inverse)]">
-              <th scope="col" className="px-4 py-3 text-left font-medium">Agent</th>
-              <th scope="col" className="px-4 py-3 text-left font-medium">Status</th>
-              <th scope="col" className="px-4 py-3 text-right font-medium">Assigned</th>
-              <th scope="col" className="px-4 py-3 text-left font-medium">Exporters</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <Thead>
+            <Tr className="bg-primary text-[var(--color-text-inverse)]">
+              <Th className="font-medium">Agent</Th>
+              <Th className="font-medium">Status</Th>
+              <Th align="right" className="font-medium">Assigned</Th>
+              <Th className="font-medium">Exporters</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
             {agents.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-[var(--color-text-secondary)]">
+              <Tr><Td colSpan={4} className="text-center text-sm text-[var(--color-text-secondary)]">
                 No agents yet. Invite one above.
-              </td></tr>
+              </Td></Tr>
             ) : agents.map((agent) => (
-              <tr key={agent.id} className="border-t border-[var(--color-border)] hover:bg-surface-muted">
-                <td className="px-4 py-3">
+              <Tr key={agent.id} className="hover:bg-surface-muted">
+                <Td>
                   <Link href={`/ops/agents/${agent.id}`} className="focus-visible-ring rounded font-medium text-primary underline underline-offset-2">
                     {agent.name}
                   </Link>
                   <div className="text-xs text-[var(--color-text-muted)]">{agent.email}</div>
-                </td>
-                <td className="px-4 py-3">
+                </Td>
+                <Td>
                   <StatusChip
                     label={agent.is_active ? 'Active' : 'Deactivated'}
                     tone={agent.is_active ? 'positive' : 'neutral'}
                     icon={agent.is_active ? 'check' : 'pause'}
                     size="sm"
                   />
-                </td>
-                <td className="px-4 py-3 text-right text-primary">
+                </Td>
+                <Td align="right" className="text-primary">
                   {/* Capacity is guidance, not a cap — assignment 11 is allowed and flagged. */}
                   {agent.assignedCount} / target ~{agent.capacityTarget}
                   {agent.overTarget ? <div className="text-xs text-critical">over target</div> : null}
-                </td>
-                <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">
+                </Td>
+                <Td className="text-xs text-[var(--color-text-secondary)]">
                   {agent.agent_assignments.length === 0
                     ? '—'
                     : agent.agent_assignments.map((a) => a.exporter_org.display_name).join(', ')}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </Tbody>
+        </Table>
       </section>
     </div>
   );

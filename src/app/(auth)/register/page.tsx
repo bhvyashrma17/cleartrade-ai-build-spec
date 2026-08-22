@@ -49,7 +49,7 @@ export default async function RegisterPage({
     <main className="flex min-h-screen items-center justify-center bg-surface-muted px-4 py-10">
       <section className="w-full max-w-md rounded-lg bg-surface p-6 shadow-card sm:p-8">
         <p className="text-sm font-semibold text-primary">ClearTrade AI</p>
-        <h1 className="mt-2 text-2xl font-bold text-primary">Create your free account</h1>
+        <h1 className="mt-2 font-serif text-title-page text-primary">Create your free account</h1>
         <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
           Save your searches, see buyer contacts, and track leads.
         </p>

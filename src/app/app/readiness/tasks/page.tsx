@@ -86,7 +86,7 @@ export default async function EnablementCenterPage() {
       <li className="rounded-md border border-[var(--color-border)] p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-sm font-medium text-primary">{task.title}</p>
+            <p className="text-sm font-normal text-primary">{task.title}</p>
             {task.description ? <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">{task.description}</p> : null}
           </div>
           <StatusChip {...stateChip} size="sm" />
@@ -121,7 +121,7 @@ export default async function EnablementCenterPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
       <header>
-        <h1 className="text-2xl font-semibold text-primary">Enablement Center</h1>
+        <h1 className="font-serif text-title-page text-primary">Enablement Center</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           One checklist for becoming export-ready — requirements ClearTrade can guide, evidence you
           upload, and items your agent owns.
@@ -169,7 +169,7 @@ export default async function EnablementCenterPage() {
 
       {tasks.length === 0 ? (
         <section className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface p-8 text-center">
-          <p className="text-sm font-medium text-primary">No enablement tasks yet</p>
+          <p className="text-sm font-normal text-primary">No enablement tasks yet</p>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
             Complete your readiness assessment to generate a checklist.
           </p>

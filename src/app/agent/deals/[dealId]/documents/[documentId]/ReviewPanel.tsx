@@ -122,7 +122,7 @@ export function ReviewPanel({
         </div>
       ) : null}
 
-      {error ? <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{error}</p> : null}
+      {error ? <p role="alert" className="mt-2 text-sm text-[var(--crit-text)]">{error}</p> : null}
     </section>
   );
 }

@@ -66,7 +66,7 @@ export function HandoffStatusForm({
           value={ref}
           onChange={(e) => setRef(e.target.value)}
           placeholder="Job / booking number they quoted"
-          className="mt-1 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-surface px-2 py-1.5 text-sm text-primary focus-visible-ring"
+          className="record mt-1 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-surface px-2 py-1.5 text-primary focus-visible-ring"
         />
       </label>
       {error ? <p className="mt-1.5 text-xs text-[var(--color-critical-text)]">{error}</p> : null}

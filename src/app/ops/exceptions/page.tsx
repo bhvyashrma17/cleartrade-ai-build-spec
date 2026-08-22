@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { RiskState, SlaState, TaskState, UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
-import { StatusChip } from '@/components/ui';
+import { EmptyState, PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -32,14 +32,6 @@ const age = (date: Date) => {
   const hours = Math.max(0, Math.floor((Date.now() - date.getTime()) / 3_600_000));
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 };
-
-function EmptyQueue({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded border border-dashed border-[var(--color-border)] bg-surface-muted px-4 py-6 text-sm text-[var(--color-text-secondary)]">
-      {children}
-    </p>
-  );
-}
 
 async function loadBlockedDeals(): Promise<ExceptionRow[]> {
   const deals = await prisma.deal.findMany({
@@ -143,13 +135,12 @@ export default async function OpsExceptionsPage({
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-6">
-        <p className="text-sm font-medium text-primary">Operations</p>
-        <h1 className="text-2xl font-semibold text-primary">Exceptions &amp; escalations</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Blocked, overdue, rejected and exception work across every domain, centralized in one queue.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Operations"
+        title="Exceptions & escalations"
+        description="Blocked, overdue, rejected and exception work across every domain, centralized in one queue."
+      />
 
       <nav aria-label="Exception filters" className="mb-5 flex flex-wrap gap-2">
         {TABS.map((tab) => {
@@ -178,38 +169,36 @@ export default async function OpsExceptionsPage({
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Sorted oldest first — age drives priority alongside severity.</p>
         {rows.length === 0 ? (
           <div className="mt-4">
-            <EmptyQueue>
-              No active exceptions in this view. New and aging exceptions will be listed here with type, owner, reason and age.
-            </EmptyQueue>
+            <EmptyState bordered title="No active exceptions in this view. New and aging exceptions will be listed here with type, owner, reason and age." />
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-                <tr>
-                  <th className="pb-2">Type</th>
-                  <th className="pb-2">Object</th>
-                  <th className="pb-2">Reason</th>
-                  <th className="pb-2">Category</th>
-                  <th className="pb-2">Owner</th>
-                  <th className="pb-2">Age</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[720px]">
+              <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+                <Tr>
+                  <Th>Type</Th>
+                  <Th>Object</Th>
+                  <Th>Reason</Th>
+                  <Th>Category</Th>
+                  <Th>Owner</Th>
+                  <Th>Age</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-[var(--color-border)]">
-                    <td className="py-3">
+                  <Tr key={row.id}>
+                    <Td>
                       <StatusChip label={row.type} tone={row.severity} icon="alert" size="sm" />
-                    </td>
-                    <td className="py-3 font-medium text-primary">{row.object}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{row.reason}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{row.category}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{row.owner}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{age(row.createdAt)}</td>
-                  </tr>
+                    </Td>
+                    <Td className="font-medium text-primary">{row.object}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{row.reason}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{row.category}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{row.owner}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{age(row.createdAt)}</Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </Tbody>
+            </Table>
           </div>
         )}
       </section>

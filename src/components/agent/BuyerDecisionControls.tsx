@@ -81,18 +81,19 @@ export function BuyerDecisionControls({
             </p>
             <div className="mt-0.5 flex flex-wrap gap-1">
               {BUYER_ACTION_SPECS.filter((s) => s.consequence === group).map((s) => (
-                <button
+                <Button
                   key={s.action}
                   type="button"
+                  variant="secondary"
                   onClick={() => { setOpen(s.action); setError(null); }}
-                  className={`focus-visible-ring rounded border px-2 py-1 text-xs font-medium hover:bg-surface-muted ${
+                  className={`min-h-0 rounded px-2 py-1 text-xs font-medium ${
                     s.consequence === 'canonical'
-                      ? 'border-[var(--color-border-strong)] text-primary'
+                      ? ''
                       : 'border-[var(--color-border)] text-[var(--color-text-secondary)]'
                   }`}
                 >
                   {s.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -173,7 +174,7 @@ export function BuyerDecisionControls({
       ) : null}
 
       {error ? (
-        <p role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-red-50 px-2 py-1 text-xs text-critical">
+        <p role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-[color-mix(in_srgb,var(--crit-fill)_8%,var(--card))] px-2 py-1 text-xs text-critical">
           {error}
         </p>
       ) : null}

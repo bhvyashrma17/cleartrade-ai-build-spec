@@ -32,7 +32,7 @@ export function InvoiceNumberAction({ dealId, nextInvoiceNumberPreview }: {
     return (
       <div className="flex flex-col items-start gap-1">
         <p className="text-xs text-[var(--color-text-secondary)]">
-          Next estimated number: <span className="font-mono">{nextInvoiceNumberPreview}</span>
+          Next estimated number: <span className="record">{nextInvoiceNumberPreview}</span>
         </p>
         <Button type="button" onClick={() => setConfirming(true)}>Issue invoice number</Button>
       </div>
@@ -47,9 +47,9 @@ export function InvoiceNumberAction({ dealId, nextInvoiceNumberPreview }: {
         The next number in this exporter’s invoice series will be permanently allocated to this Commercial Invoice.
       </p>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-        Current estimate: <span className="font-mono">{nextInvoiceNumberPreview}</span>. The final number is assigned atomically when you confirm.
+        Current estimate: <span className="record">{nextInvoiceNumberPreview}</span>. The final number is assigned atomically when you confirm.
       </p>
-      {error ? <p role="alert" className="mt-2 text-xs text-[var(--color-danger)]">{error}</p> : null}
+      {error ? <p role="alert" className="mt-2 text-xs text-[var(--crit-text)]">{error}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" variant="secondary" onClick={() => setConfirming(false)} disabled={issuing}>Cancel</Button>
         <Button type="button" onClick={issue} disabled={issuing}>{issuing ? 'Issuing…' : 'Issue number'}</Button>

@@ -2,7 +2,7 @@
 
 import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
-import { StatusChip } from '@/components/ui';
+import { EmptyState, PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { AssignAgentToExporterForm } from '@/components/ops/AssignAgentToExporterForm';
 import { AssignExporterForm } from '@/components/ops/AssignExporterForm';
 import { ReassignExporterForm } from '@/components/ops/ReassignExporterForm';
@@ -13,14 +13,6 @@ const age = (date: Date) => {
   const hours = Math.max(0, Math.floor((Date.now() - date.getTime()) / 3_600_000));
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 };
-
-function EmptyQueue({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded border border-dashed border-[var(--color-border)] bg-surface-muted px-4 py-6 text-sm text-[var(--color-text-secondary)]">
-      {children}
-    </p>
-  );
-}
 
 export default async function OpsAssignmentsPage() {
   const principal = await requirePortalAccess('/ops');
@@ -67,13 +59,12 @@ export default async function OpsAssignmentsPage() {
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-6">
-        <p className="text-sm font-medium text-primary">Operations</p>
-        <h1 className="text-2xl font-semibold text-primary">Assignments &amp; agent capacity</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Every exporter, lead and deal must have a visible owner. No hard capacity cap — advisory load only.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Operations"
+        title="Assignments & agent capacity"
+        description="Every exporter, lead and deal must have a visible owner. No hard capacity cap — advisory load only."
+      />
 
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -89,38 +80,38 @@ export default async function OpsAssignmentsPage() {
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Exporters with no assigned agent, oldest first.</p>
         {unassigned.length === 0 ? (
           <div className="mt-4">
-            <EmptyQueue>No newly active exporter is currently unassigned.</EmptyQueue>
+            <EmptyState bordered title="No newly active exporter is currently unassigned." />
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-                <tr>
-                  <th className="pb-2">Exporter</th>
-                  <th className="pb-2">Journey stage</th>
-                  <th className="pb-2">Readiness</th>
-                  <th className="pb-2">Age</th>
-                  <th className="pb-2 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[680px]">
+              <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+                <Tr>
+                  <Th>Exporter</Th>
+                  <Th>Journey stage</Th>
+                  <Th>Readiness</Th>
+                  <Th>Age</Th>
+                  <Th align="right">Action</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
                 {unassigned.map((org) => (
-                  <tr key={org.id} className="border-t border-[var(--color-border)]">
-                    <td className="py-3 font-medium text-primary">{org.display_name}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{org.journey_stage.replace(/_/g, ' ')}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{org.readiness_status.replace(/_/g, ' ')}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{age(org.created_at)}</td>
-                    <td className="py-3 text-right">
+                  <Tr key={org.id}>
+                    <Td className="font-medium text-primary">{org.display_name}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{org.journey_stage.replace(/_/g, ' ')}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{org.readiness_status.replace(/_/g, ' ')}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{age(org.created_at)}</Td>
+                    <Td align="right">
                       {assignCandidates.length > 0 ? (
                         <AssignAgentToExporterForm exporterOrgId={org.id} exporterName={org.display_name} agents={assignCandidates} />
                       ) : (
                         <span className="text-xs text-[var(--color-text-muted)]">No active agents</span>
                       )}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </Tbody>
+            </Table>
           </div>
         )}
       </section>
@@ -134,32 +125,32 @@ export default async function OpsAssignmentsPage() {
         </div>
         {active.length === 0 ? (
           <div className="p-5">
-            <EmptyQueue>No active assignments yet.</EmptyQueue>
+            <EmptyState bordered title="No active assignments yet." />
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[820px] border-collapse text-sm">
-              <thead>
-                <tr className="bg-primary text-[var(--color-text-inverse)]">
-                  <th scope="col" className="px-4 py-3 text-left font-medium">Exporter</th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">Agent</th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">Started</th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">Assigned by</th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">Reason</th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[820px]">
+              <Thead>
+                <Tr className="bg-primary text-[var(--color-text-inverse)]">
+                  <Th className="font-medium">Exporter</Th>
+                  <Th className="font-medium">Agent</Th>
+                  <Th className="font-medium">Started</Th>
+                  <Th className="font-medium">Assigned by</Th>
+                  <Th className="font-medium">Reason</Th>
+                  <Th align="right" className="font-medium">Actions</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
                 {active.map((entry) => (
-                  <tr key={entry.id} className="border-t border-[var(--color-border)]">
-                    <td className="px-4 py-3 font-medium text-primary">{entry.exporter_org.display_name}</td>
-                    <td className="px-4 py-3 text-primary">{entry.agent.name}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                  <Tr key={entry.id}>
+                    <Td className="font-medium text-primary">{entry.exporter_org.display_name}</Td>
+                    <Td className="text-primary">{entry.agent.name}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">
                       {entry.started_at.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{entry.assigned_by?.name ?? 'system'}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{entry.reason ?? '—'}</td>
-                    <td className="px-4 py-3">
+                    </Td>
+                    <Td className="text-[var(--color-text-secondary)]">{entry.assigned_by?.name ?? 'system'}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{entry.reason ?? '—'}</Td>
+                    <Td>
                       <div className="flex flex-wrap items-center justify-end gap-1.5">
                         <AssignExporterForm agentUserId={entry.agent_user_id} unassignAssignmentId={entry.id} exporterName={entry.exporter_org.display_name} />
                         {assignCandidates.filter((c) => c.id !== entry.agent_user_id).length > 0 ? (
@@ -171,11 +162,11 @@ export default async function OpsAssignmentsPage() {
                           />
                         ) : null}
                       </div>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
+              </Tbody>
+            </Table>
           </div>
         )}
       </section>
@@ -186,7 +177,7 @@ export default async function OpsAssignmentsPage() {
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Advisory load signal — not a hard cap.</p>
           {agents.length === 0 ? (
             <div className="mt-4">
-              <EmptyQueue>No active agents are available for assignment.</EmptyQueue>
+              <EmptyState bordered title="No active agents are available for assignment." />
             </div>
           ) : (
             <div className="mt-4 space-y-3">
@@ -207,13 +198,13 @@ export default async function OpsAssignmentsPage() {
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Audit-backed — who assigned or reassigned, and why.</p>
           {history.length === 0 ? (
             <div className="mt-4">
-              <EmptyQueue>No assignments have been recorded yet.</EmptyQueue>
+              <EmptyState bordered title="No assignments have been recorded yet." />
             </div>
           ) : (
             <ul className="mt-4 space-y-3">
               {history.map((entry) => (
                 <li key={entry.id} className="border-b border-[var(--color-border)] pb-3 text-sm last:border-0">
-                  <p className="font-medium text-primary">
+                  <p className="font-normal text-primary">
                     {entry.exporter_org.display_name} <span className="font-normal text-[var(--color-text-secondary)]">→ {entry.agent.name}</span>
                   </p>
                   <p className="mt-1 text-[var(--color-text-secondary)]">

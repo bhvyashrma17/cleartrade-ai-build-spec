@@ -14,7 +14,7 @@
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip } from '@/components/ui';
 import { documentDetail } from '@/lib/document-lifecycle';
 import { prisma } from '@/lib/prisma';
 import { requirePortalAccess } from '@/lib/auth';
@@ -53,16 +53,22 @@ export default async function AgentDocumentDetailPage({
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <header className="mb-4">
-        <p className="text-sm font-medium text-primary">
-          <Link href={`/agent/deals/${dealId}/documents`} className="focus-visible-ring rounded underline underline-offset-2">
-            Documents
-          </Link>{' '}
-          · {detail.exporter_name}
-        </p>
-        <h1 className="text-2xl font-semibold text-primary">
-          {detail.label} <span className="text-[var(--color-text-secondary)]">v{d.version}</span>
-        </h1>
+      <div className="mb-4">
+        <PageHeader
+          eyebrow={
+            <>
+              <Link href={`/agent/deals/${dealId}/documents`} className="focus-visible-ring rounded underline underline-offset-2">
+                Documents
+              </Link>{' '}
+              · {detail.exporter_name}
+            </>
+          }
+          title={
+            <>
+              {detail.label} <span className="text-[var(--color-text-secondary)]">v{d.version}</span>
+            </>
+          }
+        />
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <StatusChip label={d.is_current_version ? 'Current version' : 'Superseded'} tone={d.is_current_version ? 'info' : 'neutral'} icon="dot" size="sm" />
           <StatusChip label={`gen: ${d.generation_status}`} tone="neutral" icon="dot" size="sm" />
@@ -75,7 +81,7 @@ export default async function AgentDocumentDetailPage({
             <span className="font-medium">{detail.authority.notThis}</span>
           </p>
         ) : null}
-      </header>
+      </div>
 
       <section className="mb-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
         <h2 className="mb-3 text-sm font-semibold text-primary">Identity</h2>
@@ -83,10 +89,10 @@ export default async function AgentDocumentDetailPage({
           <Field label="Version">v{d.version}{d.amended_from_version ? ` (amended from v${d.amended_from_version})` : ''}</Field>
           <Field label="Generated">{fmt(d.created_at)}</Field>
           <Field label="Snapshot hash">
-            <span className="font-mono text-xs">{d.content_hash ?? '—'}</span>
+            <span className="record">{d.content_hash ?? '—'}</span>
           </Field>
           <Field label="Recorded checksum">
-            <span className="font-mono text-xs">{d.checksum ?? '—'}</span>
+            <span className="record">{d.checksum ?? '—'}</span>
           </Field>
           <Field label="Reviewed by">{d.reviewed_by ?? '—'}{d.reviewed_at ? ` · ${fmt(d.reviewed_at)}` : ''}</Field>
           <Field label="Approved by">{d.approved_by ?? '—'}{d.approved_at ? ` · ${fmt(d.approved_at)}` : ''}</Field>
@@ -111,7 +117,7 @@ export default async function AgentDocumentDetailPage({
                   <span className="text-xs text-[var(--color-text-muted)]">
                     {' '}· {(a.file_size_bytes / 1024).toFixed(1)} kB · {a.engine} · {fmt(a.generated_at)}
                   </span>
-                  <div className="font-mono text-[11px] text-[var(--color-text-muted)]">
+                  <div className="record text-[var(--color-text-muted)]">
                     sha256 {a.checksum.slice(0, 16)}… · snap {a.content_hash.slice(0, 8)}
                   </div>
                 </span>
@@ -127,7 +133,7 @@ export default async function AgentDocumentDetailPage({
         )}
         {detail.glyphIssues.length > 0 ? (
           <div role="alert" className="mt-3 rounded border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-3 text-sm">
-            <p className="font-medium text-primary">This PDF cannot be approved</p>
+            <p className="font-normal text-primary">This PDF cannot be approved</p>
             <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
               The PDF font cannot represent every character in this document, so a PDF rendering
               would substitute them. Use the DOCX output, which represents them correctly, or
@@ -193,7 +199,7 @@ export default async function AgentDocumentDetailPage({
 
         {detail.snapshotReadiness && detail.snapshotReadiness.advisory.length > 0 ? (
           <div className="mt-3 border-t border-[var(--color-border)] pt-2">
-            <p className="text-xs font-medium text-[var(--color-text-secondary)]">
+            <p className="text-xs font-normal text-[var(--color-text-secondary)]">
               Worth checking — none of these block approval
             </p>
             <ul className="mt-1 space-y-0.5 text-xs text-[var(--color-text-muted)]">

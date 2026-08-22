@@ -13,7 +13,7 @@ import type { VerificationStatus } from '@prisma/client';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { DataTable, StatusChip, type DataTableColumn } from '@/components/ui';
+import { DataTable, PageHeader, StatusChip, type DataTableColumn } from '@/components/ui';
 import { ApiClientError, apiGet } from '@/lib/api-client';
 import type { ListResponse, PageMeta, StatusDescriptor } from '@/types';
 
@@ -184,12 +184,11 @@ export function OutreachPipeline({ initialExporterOrgId = null }: { initialExpor
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Outreach pipeline</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Buyer leads across your assigned exporters, from shortlist through conversion.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-6"
+        title="Outreach pipeline"
+        description="Buyer leads across your assigned exporters, from shortlist through conversion."
+      />
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
         <div>
@@ -231,7 +230,7 @@ export function OutreachPipeline({ initialExporterOrgId = null }: { initialExpor
 
       {loadError ? (
         <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4 text-sm text-critical">
-          <p className="font-medium">{loadError}</p>
+          <p className="font-normal">{loadError}</p>
           <button type="button" onClick={fetchLeads} className="mt-2 font-medium underline underline-offset-2">
             Retry
           </button>

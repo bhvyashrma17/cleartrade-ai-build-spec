@@ -19,7 +19,7 @@ import { InternalNoteForm } from '@/components/agent/InternalNoteForm';
 import { MessageForm } from '@/components/agent/MessageForm';
 import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
-import { MetricCard, StatusChip } from '@/components/ui';
+import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
 import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
 import { buyerControlRows } from '@/lib/buyer-control';
@@ -171,17 +171,13 @@ export default async function ExporterAccountPage({
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
       {/* Account header */}
-      <header className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-primary">Exporter 360</p>
-            <h1 className="text-2xl font-semibold text-primary">{org.display_name}</h1>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              {org.city ? `${org.city}, ` : ''}{org.state ?? ''} · {org.country}
-            </p>
-          </div>
-          <StatusChip label={health.label} tone={health.tone} icon={health.tone === 'positive' ? 'check' : 'alert'} />
-        </div>
+      <Card as="header" elevated>
+        <PageHeader
+          eyebrow="Exporter 360"
+          title={org.display_name}
+          description={`${org.city ? `${org.city}, ` : ''}${org.state ?? ''} · ${org.country}`}
+          actions={<StatusChip label={health.label} tone={health.tone} icon={health.tone === 'positive' ? 'check' : 'alert'} />}
+        />
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <span className="text-[var(--color-text-secondary)]">
             Assignment: {org.assigned_agent ? <span className="text-primary">{org.assigned_agent.name}</span> : <span className="text-[var(--color-critical-text)]">Unassigned</span>}
@@ -193,7 +189,7 @@ export default async function ExporterAccountPage({
         <div className="mt-4 flex flex-wrap gap-2">
           <CreateTaskForm exporterOrgId={org.id} />
         </div>
-      </header>
+      </Card>
 
       {/* Exporter-scoped sections are tabs, not routes: they always concern ONE exporter, so
           nesting them keeps a single assignment check and a single data load. */}
@@ -258,8 +254,8 @@ export default async function ExporterAccountPage({
               {org.products.map((p) => (
                 <li key={p.id} className="rounded-md border border-[var(--color-border)] p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-primary">{p.name}</p>
-                    <span className="text-xs text-[var(--color-text-secondary)]">HS {p.hs_code ?? 'unassigned'} ({p.hs_code_source})</span>
+                    <p className="text-sm font-normal text-primary">{p.name}</p>
+                    <span className="text-xs text-[var(--color-text-secondary)]">HS <span className="record">{p.hs_code ?? 'unassigned'}</span> ({p.hs_code_source})</span>
                   </div>
                   <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
                     <div><dt className="uppercase text-[var(--color-text-muted)]">Capacity</dt><dd className="text-primary">{p.capacity_value ? `${p.capacity_value} ${p.capacity_unit ?? ''}` : '—'}</dd></div>
@@ -455,7 +451,7 @@ export default async function ExporterAccountPage({
           <ol className="mt-3 space-y-2 border-l border-[var(--color-border)] pl-4">
             {timeline.map((e, i) => (
               <li key={i}>
-                <p className="text-sm font-medium capitalize text-primary">{e.label}</p>
+                <p className="text-sm font-normal capitalize text-primary">{e.label}</p>
                 <p className="text-xs text-[var(--color-text-secondary)]">{fmt(e.at)} · {e.detail}</p>
               </li>
             ))}

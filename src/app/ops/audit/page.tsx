@@ -13,7 +13,7 @@
 import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
 import { CreatePartnerForm, PartnerStatusForm } from '@/components/ops/PartnerDirectoryForms';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { CONFIG_DEFAULTS, OPS_TUNABLE_CONFIG_KEYS } from '@/lib/config';
 import { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } from '@/lib/buyer-intelligence';
@@ -51,13 +51,11 @@ export default async function OpsAuditPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
-      <header>
-        <p className="text-sm font-medium text-primary">Operations</p>
-        <h1 className="text-2xl font-semibold text-primary">Audit log &amp; configuration history</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Immutable traceability for material changes, actors, versions and evidence. Current configuration changes are made in Settings.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="Operations"
+        title="Audit log & configuration history"
+        description="Immutable traceability for material changes, actors, versions and evidence. Current configuration changes are made in Settings."
+      />
 
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Audit search</h2>

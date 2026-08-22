@@ -11,7 +11,7 @@
  * object key is shown as a storage location without any signed or public URL.
  */
 
-import {StatusChip} from '@/components/ui';
+import {Card,Stack,StatusChip} from '@/components/ui';
 import type {StatusIconName,StatusTone} from '@/types';
 import type {DatasetHealth,GlobalScreeningState,SanctionsSourceHealth} from '@/lib/sanctions/source-health';
 
@@ -37,7 +37,8 @@ function Field({label,value,muted}:{label:string;value:React.ReactNode;muted?:bo
 
 export function SanctionsSourceHealthPanel({health}:{health:SanctionsSourceHealth}){
   const g=GLOBAL_TONE[health.global_state];
-  return <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-surface p-4">
+  return <Card as="section" inset="md">
+    <Stack gap="md">
     {/* E3 — one server-computed verdict, stated before any per-dataset detail. */}
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -65,7 +66,7 @@ export function SanctionsSourceHealthPanel({health}:{health:SanctionsSourceHealt
         return <article key={d.dataset} className="rounded border border-[var(--color-border)] p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="font-medium">{d.dataset_name} <span className="text-[var(--color-text-secondary)]">· {d.dataset}</span></p>
+              <p className="font-normal">{d.dataset_name} <span className="text-[var(--color-text-secondary)]">· {d.dataset}</span></p>
               <p className="text-xs text-[var(--color-text-secondary)]">{d.authority.toUpperCase()} · contract {d.source_contract_version} · required dataset</p>
             </div>
             <StatusChip size="sm" label={t.label} tone={t.tone} icon={t.icon}/>
@@ -94,7 +95,7 @@ export function SanctionsSourceHealthPanel({health}:{health:SanctionsSourceHealt
             <Field label="Parsed entities" value={d.parsed_count??'unavailable'}/>
             <Field label="Rejected records" value={d.rejected_count??'unavailable'}/>
             <Field label="Parse errors" value={d.parse_error_count}/>
-            <Field label="Checksum" value={<code className="text-xs">{d.checksum_abbrev??'unavailable'}</code>}/>
+            <Field label="Checksum" value={<code className="record">{d.checksum_abbrev??'unavailable'}</code>}/>
             <Field label="Raw artifact" value={d.artifact_retained
               ?<>retained · {d.artifact_storage_provider} · verification {d.artifact_verification??'unknown'}</>
               :<span className="text-[var(--color-text-secondary)]">{d.artifact_required?'NOT RETAINED (required)':'not retained (not required in this environment)'}</span>}/>
@@ -104,7 +105,7 @@ export function SanctionsSourceHealthPanel({health}:{health:SanctionsSourceHealt
           </dl>
 
           {d.anomaly_count>0&&<div className="mt-3 rounded border border-[var(--color-border)] bg-surface-muted p-2">
-            <p className="text-xs font-medium">{d.anomaly_count} anomaly finding{d.anomaly_count===1?'':'s'}</p>
+            <p className="text-xs font-normal">{d.anomaly_count} anomaly finding{d.anomaly_count===1?'':'s'}</p>
             <ul className="mt-1 space-y-0.5 text-xs text-[var(--color-text-secondary)]">
               {d.anomalies.slice(0,5).map((a,i)=><li key={`${a.code}-${i}`}>· [{a.severity}] {a.code}: {a.detail}</li>)}
             </ul>
@@ -121,5 +122,6 @@ export function SanctionsSourceHealthPanel({health}:{health:SanctionsSourceHealt
       engineering default and is <strong>{health.freshness_policy_status.replace(/_/g,' ')}</strong> — it has not been
       ratified as the tolerated staleness for screening.
     </p>
-  </section>;
+  </Stack>
+  </Card>;
 }

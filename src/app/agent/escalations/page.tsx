@@ -11,7 +11,7 @@
  */
 
 import Link from 'next/link';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import {
   agentEscalations,
@@ -55,14 +55,12 @@ export default async function AgentEscalationsPage({
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-4">
-        <p className="text-sm font-medium text-primary">Agent workspace</p>
-        <h1 className="text-2xl font-semibold text-primary">Escalations</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Open exceptions across your assigned exporters, worst first. Each row links to the
-          record that owns it — resolve it there, not here.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-4"
+        eyebrow="Agent workspace"
+        title="Escalations"
+        description="Open exceptions across your assigned exporters, worst first. Each row links to the record that owns it — resolve it there, not here."
+      />
 
       <nav aria-label="Escalation sources" className="mb-3 flex flex-wrap gap-1">
         {SOURCES.map((s) => (
@@ -87,22 +85,22 @@ export default async function AgentEscalationsPage({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
-          <table className="w-full min-w-[58rem] border-collapse text-sm">
-            <thead>
-              <tr className="bg-primary text-[var(--color-text-inverse)]">
-                <th scope="col" className="px-3 py-2 text-left font-medium">What happened</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Exporter</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Source</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Severity</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Owner</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Due</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">Age</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-[58rem]">
+            <Thead>
+              <Tr className="bg-primary text-[var(--color-text-inverse)]">
+                <Th className="font-medium">What happened</Th>
+                <Th className="font-medium">Exporter</Th>
+                <Th className="font-medium">Source</Th>
+                <Th className="font-medium">Severity</Th>
+                <Th className="font-medium">Owner</Th>
+                <Th className="font-medium">Due</Th>
+                <Th align="right" className="font-medium">Age</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-[var(--color-border)] align-top hover:bg-surface-muted">
-                  <td className="px-3 py-3">
+                <Tr key={row.id} className="align-top hover:bg-surface-muted">
+                  <Td>
                     {row.href ? (
                       <Link href={row.href} className="focus-visible-ring rounded font-medium text-primary underline underline-offset-2">
                         {row.title}
@@ -114,29 +112,29 @@ export default async function AgentEscalationsPage({
                       <div className="text-xs text-[var(--color-text-secondary)]">{row.detail}</div>
                     ) : null}
                     <div className="text-xs text-[var(--color-text-muted)]">state: {row.state}</div>
-                  </td>
-                  <td className="px-3 py-3 text-[var(--color-text-secondary)]">{row.exporterName}</td>
-                  <td className="px-3 py-3 text-[var(--color-text-secondary)]">{row.source}</td>
-                  <td className="px-3 py-3">
+                  </Td>
+                  <Td className="text-[var(--color-text-secondary)]">{row.exporterName}</Td>
+                  <Td className="text-[var(--color-text-secondary)]">{row.source}</Td>
+                  <Td>
                     <StatusChip
                       label={row.severity}
                       tone={SEVERITY_TONE[row.severity]}
                       icon={row.severity === 'critical' || row.severity === 'high' ? 'alert' : 'dot'}
                       size="sm"
                     />
-                  </td>
-                  <td className="px-3 py-3 text-[var(--color-text-secondary)]">
+                  </Td>
+                  <Td className="text-[var(--color-text-secondary)]">
                     {/* Null where the source tracks no owner — never defaulted to the reader. */}
                     {row.ownerName ?? <span className="text-[var(--color-text-muted)]">Unassigned</span>}
-                  </td>
-                  <td className="px-3 py-3 text-[var(--color-text-secondary)]">
+                  </Td>
+                  <Td className="text-[var(--color-text-secondary)]">
                     {row.dueAt ? fmtDate(row.dueAt) : <span className="text-[var(--color-text-muted)]">No due date</span>}
-                  </td>
-                  <td className="px-3 py-3 text-right text-[var(--color-text-secondary)]">{ageDays(row.raisedAt)}d</td>
-                </tr>
+                  </Td>
+                  <Td align="right" className="text-[var(--color-text-secondary)]">{ageDays(row.raisedAt)}d</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         </div>
       )}
 

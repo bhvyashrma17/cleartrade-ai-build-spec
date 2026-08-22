@@ -92,7 +92,7 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
   return (
     <div className="mx-auto max-w-4xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">See where your product is already selling</h1>
+        <h1 className="font-serif text-title-page text-primary">See where your product is already selling</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           A free look at customs-recorded trade history for your product&rsquo;s HS code — which
           countries buy it, and at what price. This is historical data, not a forecast.
@@ -101,7 +101,7 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
 
       {isGuest ? (
         <div className="mb-5 rounded-lg border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 p-4 text-sm">
-          <p className="font-medium text-primary">You&rsquo;re browsing as a guest — no account needed.</p>
+          <p className="font-normal text-primary">You&rsquo;re browsing as a guest — no account needed.</p>
           <p className="mt-1 text-[var(--color-text-secondary)]">
             You get {guestRunLimit} free estimates.{' '}
             <Link href="/register" className="font-semibold text-primary underline underline-offset-2">

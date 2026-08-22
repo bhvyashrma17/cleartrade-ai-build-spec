@@ -95,7 +95,7 @@ export default async function DocumentDetailPage({
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <p className="text-sm font-medium text-primary">
+      <p className="text-sm font-normal text-primary">
         <Link href={`/app/deals/${dealId}/documents`} className="underline underline-offset-2">
           Document checklist
         </Link>
@@ -104,7 +104,7 @@ export default async function DocumentDetailPage({
       <header className="mt-2 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-primary">{label}</h1>
+            <h1 className="font-serif text-title-page text-primary">{label}</h1>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               Version {document.version} · {document.source === 'uploaded' ? 'Uploaded' : 'Generated'}
             </p>
@@ -135,7 +135,7 @@ export default async function DocumentDetailPage({
           <div>
             <dt className="text-[var(--color-text-secondary)]">Filed</dt>
             <dd className="mt-0.5 text-primary">
-              {document.filing_reference ? `Ref ${document.filing_reference} · ` : ''}
+              {document.filing_reference ? <>Ref <span className="record">{document.filing_reference}</span> · </> : ''}
               {formatWhen(document.filed_at) ?? '—'}
             </dd>
           </div>
@@ -211,7 +211,7 @@ export default async function DocumentDetailPage({
             <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
               <h2 className="text-lg font-semibold text-primary">Filed</h2>
               <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                This version was filed and is read-only. Reference: {document.filing_reference ?? 'not recorded'}.
+                This version was filed and is read-only. Reference: <span className="record">{document.filing_reference ?? 'not recorded'}</span>.
               </p>
             </section>
           ) : document.approval_status === 'pending' && mayApprove ? (

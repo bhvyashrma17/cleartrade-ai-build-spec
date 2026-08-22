@@ -13,7 +13,7 @@ import { VerificationStatus } from '@prisma/client';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { DataTable, StatusChip, type DataTableColumn, UpgradeNotice } from '@/components/ui';
+import { Button, DataTable, StatusChip, type DataTableColumn, UpgradeNotice } from '@/components/ui';
 import { useDebouncedValue } from '@/hooks';
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import type { Blocker, ListResponse, PageMeta, SingleResponse, StatusDescriptor } from '@/types';
@@ -231,7 +231,7 @@ export function BuyersExplorer({
   return (
     <div className="mx-auto max-w-6xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Buyer discovery</h1>
+        <h1 className="font-serif text-title-page text-primary">Buyer discovery</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           Search importers and create a tracked lead for your product.
         </p>
@@ -243,7 +243,7 @@ export function BuyersExplorer({
       <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
         {isGuest ? (
           <>
-            <p className="text-sm font-medium text-primary">Searching for</p>
+            <p className="text-sm font-normal text-primary">Searching for</p>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               {adHocContext ?? 'All buyers — run a market search to narrow this to your product.'}
             </p>
@@ -322,7 +322,7 @@ export function BuyersExplorer({
 
       {loadError ? (
         <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4 text-sm text-critical">
-          <p className="font-medium">{loadError}</p>
+          <p className="font-normal">{loadError}</p>
           <button type="button" onClick={fetchBuyers} className="mt-2 font-medium underline underline-offset-2">
             Retry
           </button>
@@ -410,16 +410,14 @@ function LeadAction({
     );
   }
   return (
-    <button
+    <Button
       type="button"
       disabled={disabled || state.status === 'loading'}
       onClick={onCreate}
-      // Navy text on teal: 7.05:1 contrast. White-on-teal (the previous color here)
-      // measures 2.49:1 — fails WCAG AA's 4.5:1 minimum for normal-size text.
-      className="rounded-md bg-action px-3 py-1.5 text-xs font-medium text-primary disabled:cursor-not-allowed disabled:opacity-40"
+      className="min-h-0 rounded-md px-3 py-1.5 text-xs font-medium"
       title={disabled ? 'Choose a product first' : undefined}
     >
       {state.status === 'loading' ? 'Creating…' : 'Create lead'}
-    </button>
+    </Button>
   );
 }

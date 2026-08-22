@@ -246,8 +246,8 @@ export function DealsList({ initialFilters = {} }: { initialFilters?: DealsListI
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       <header className="mb-6">
-        <p className="text-sm font-medium text-primary">Your pipeline</p>
-        <h1 className="text-2xl font-semibold text-primary">Deals</h1>
+        <p className="text-sm font-normal text-primary">Your pipeline</p>
+        <h1 className="font-serif text-title-page text-primary">Deals</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           Every deal your agent is working, across every buyer.
         </p>
@@ -351,7 +351,7 @@ export function DealsList({ initialFilters = {} }: { initialFilters?: DealsListI
 
       {loadError ? (
         <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4 text-sm text-[var(--color-critical-text)]">
-          <p className="font-medium">{loadError}</p>
+          <p className="font-normal">{loadError}</p>
           <button type="button" onClick={fetchDeals} className="mt-2 font-medium underline underline-offset-2">
             Retry
           </button>

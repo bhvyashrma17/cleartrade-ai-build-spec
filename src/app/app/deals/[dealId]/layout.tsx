@@ -55,14 +55,14 @@ export default async function DealWorkspaceLayout({
       <header className="mb-4 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card md:sticky md:top-16 md:z-10">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-primary">Deal workspace</p>
-            <h1 className="text-2xl font-semibold text-primary">{deal.buyer.display_name}</h1>
+            <p className="text-sm font-normal text-primary">Deal workspace</p>
+            <h1 className="font-serif text-title-page text-primary">{deal.buyer.display_name}</h1>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               {deal.product?.name ?? 'No product on record'} · {deal.buyer.country_code}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-secondary)]">
+            <p className="text-xs font-normal uppercase tracking-wide text-[var(--color-text-secondary)]">
               {DEAL_STAGE_LABELS[deal.stage]}
             </p>
             <p className="mt-0.5 text-xl font-semibold text-primary">{money(deal.value_amount, deal.value_currency)}</p>

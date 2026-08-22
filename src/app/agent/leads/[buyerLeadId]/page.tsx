@@ -22,7 +22,7 @@ import { ConvertLeadForm } from '@/components/agent/ConvertLeadForm';
 import { DisqualifyLeadForm } from '@/components/agent/DisqualifyLeadForm';
 import { LogOutreachForm } from '@/components/agent/LogOutreachForm';
 import { VerifyContactForm } from '@/components/agent/VerifyContactForm';
-import { StatusChip } from '@/components/ui';
+import { Card, PageHeader, StatusChip } from '@/components/ui';
 import { requirePrincipal } from '@/lib/auth';
 import { loadLeadScoped } from '@/lib/agent-leads';
 import { permits } from '@/lib/permissions';
@@ -82,23 +82,25 @@ export default async function LeadWorkspacePage({ params }: { params: Promise<{ 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
       {/* Lead header — persistent identity for the workspace. */}
-      <header className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-primary">Lead workspace</p>
-            <h1 className="text-2xl font-semibold text-primary">{full.buyer.display_name}</h1>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+      <Card as="header" elevated>
+        <PageHeader
+          eyebrow="Lead workspace"
+          title={full.buyer.display_name}
+          description={
+            <>
               <Link href={`/agent/exporters/${full.exporter_org.id}`} className="focus-visible-ring underline underline-offset-2">
                 {full.exporter_org.display_name}
               </Link>
               {' · '}{full.product.name}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1.5">
-            <StatusChip label={LEAD_STAGE_LABELS[full.stage]} tone={STAGE_TONE[full.stage]} icon={full.stage === 'disqualified' ? 'x' : full.stage === 'converted' ? 'check' : 'dot'} />
-            {riskFlags.length > 0 ? <StatusChip label="Risk flagged" tone="critical" icon="alert" size="sm" detail={riskFlags.map((f) => f.summary).join(' ')} /> : null}
-          </div>
-        </div>
+            </>
+          }
+          actions={
+            <div className="flex flex-col items-end gap-1.5">
+              <StatusChip label={LEAD_STAGE_LABELS[full.stage]} tone={STAGE_TONE[full.stage]} icon={full.stage === 'disqualified' ? 'x' : full.stage === 'converted' ? 'check' : 'dot'} />
+              {riskFlags.length > 0 ? <StatusChip label="Risk flagged" tone="critical" icon="alert" size="sm" detail={riskFlags.map((f) => f.summary).join(' ')} /> : null}
+            </div>
+          }
+        />
         <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Owner: {full.assigned_agent?.name ?? 'Unassigned'}</p>
         {full.deal ? (
           <p className="mt-2 text-sm text-primary">
@@ -108,7 +110,7 @@ export default async function LeadWorkspacePage({ params }: { params: Promise<{ 
             </Link>
           </p>
         ) : null}
-      </header>
+      </Card>
 
       {/* Buyer intelligence — evidence and verification come BEFORE contacts (AC01). */}
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">

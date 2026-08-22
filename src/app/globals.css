@@ -4,41 +4,67 @@
 
 :root {
   --font-inter: 'Inter', system-ui, sans-serif;
+  /* brand-logo.svg is not present in this repo, so the wordmark's actual face could not
+     be inspected. Falling back to the doc's specified substitute — docs/27 §4.1. */
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-primary: #0B1739;
-  --color-action: #14B8A6;
-  --color-info: #27C2E8;
-  --color-warning: #F59E0B;
-  --color-critical: #EF4444;
-  --color-accent: #7C3AED;
-  --color-surface-raised: #132654;
-  --color-surface-muted: #F4F7FB;
-  --color-surface: #FFFFFF;
+  /* === Foundation — docs/27-ui-redesign.md §3.2, verbatim from brand-logo.svg === */
+  --bone:            #EFE9E9;
+  --slate:           #9B9EA7;
 
-  --color-border: rgba(11, 23, 57, 0.12);
-  --color-border-strong: rgba(11, 23, 57, 0.24);
-  --color-text-primary: #0B1739;
-  --color-text-secondary: rgba(11, 23, 57, 0.7);
-  /* 0.64, not 0.48. At 0.48 this composites to rgb(138,144,160) on white = 3.19:1,
-     which fails WCAG AA (4.5:1). It was assumed safe as "de-emphasized metadata only",
-     but a sweep found it carrying journey-rail stage labels, MetricCard explanations
-     and the Ops KPI drill-down link — all essential text. 0.64 gives 5.35:1 on white
-     and 5.20:1 on --color-surface-muted, while staying a visible step lighter than
-     --color-text-secondary (0.70). */
-  --color-text-muted: rgba(11, 23, 57, 0.64);
-  --color-text-inverse: #FFFFFF;
+  --ink-900:         #15171B;
+  --ink-700:         #24272E;
+  --ink-500:         #4A4E58;
+  --ink-300:         #666B78;
+  --ink-200:         #9B9EA7;   /* = slate. Border/decorative only — never body text. */
 
-  /* Semantic hues as TEXT on a light surface.
-     The docs/00 §2 palette values are tuned as fills and accents, not as small text:
-     measured on white they are teal 2.49:1, cyan 2.42:1, amber 2.15:1, red 3.76:1 —
-     all below AA's 4.5:1. Blending 55% hue into navy keeps each colour identifiable
-     while clearing AA on both --color-surface (>=5.18:1) and --color-surface-muted
-     (>=4.82:1). Use these anywhere a semantic colour carries words; keep the raw
-     tokens for fills, borders and icons. */
-  --color-action-text: color-mix(in srgb, var(--color-action) 55%, var(--color-primary));
-  --color-info-text: color-mix(in srgb, var(--color-info) 55%, var(--color-primary));
-  --color-warning-text: color-mix(in srgb, var(--color-warning) 55%, var(--color-primary));
-  --color-critical-text: color-mix(in srgb, var(--color-critical) 55%, var(--color-primary));
+  --paper:           #F4F5F7;
+  --paper-sunk:      #EDEFF3;
+  --card:            #FFFFFF;
+  --line:            #E2E5EA;
+  --line-strong:     #CBD0D8;
+
+  /* === Seal — the one accent, §3.3. Used sparingly, never as a status. === */
+  --seal-600:        #4B3FAE;
+  --seal-500:        #5C51C4;
+  --seal-tint:       color-mix(in srgb, var(--seal-600) 8%, var(--card));
+
+  /* === Status — the only other colour, §3.4. fill = icons/tints/borders, text = AA on --card and --paper. === */
+  --ok-fill:   #12805A;  --ok-text:   #0B6344;
+  --info-fill: #0E7490;  --info-text: #0A5A70;
+  --warn-fill: #B45309;  --warn-text: #8A4008;
+  --crit-fill: #C0271D;  --crit-text: #9B1F17;
+
+  /* Tints via color-mix, never a Tailwind alpha modifier on a bare var() colour —
+     that silent-failure combination is what left every StatusChip tint transparent. */
+  --ok-tint:   color-mix(in srgb, var(--ok-fill) 8%, var(--card));
+  --info-tint: color-mix(in srgb, var(--info-fill) 8%, var(--card));
+  --warn-tint: color-mix(in srgb, var(--warn-fill) 8%, var(--card));
+  --crit-tint: color-mix(in srgb, var(--crit-fill) 8%, var(--card));
+
+  /* === Legacy aliases — pre-redesign token names, kept live so nothing breaks in this
+     pass. Each points at its closest §3 equivalent. Removing these is a later step. === */
+  --color-primary: var(--ink-900);
+  --color-action: var(--seal-600);
+  --color-info: var(--info-fill);
+  --color-warning: var(--warn-fill);
+  --color-critical: var(--crit-fill);
+  --color-surface-raised: var(--ink-700);
+  --color-surface-muted: var(--paper);
+  --color-surface: var(--card);
+
+  --color-border: var(--line);
+  --color-border-strong: var(--line-strong);
+  --color-text-primary: var(--ink-900);
+  --color-text-secondary: var(--ink-500);
+  --color-text-muted: var(--ink-300);
+  --color-text-inverse: var(--bone);
+
+  --color-action-text: var(--seal-600);
+  --color-info-text: var(--info-text);
+  --color-warning-text: var(--warn-text);
+  --color-critical-text: var(--crit-text);
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -73,6 +99,25 @@
   --leading-normal: 1.5;
   --leading-relaxed: 1.625;
 
+  /* === Type scale — docs/27-ui-redesign.md §4.2 === */
+  --text-display: 2.75rem;          /* 44px, serif, landing hero only */
+  --text-title-page: 1.875rem;      /* 30px, serif, page h1 */
+  --text-title-section: 1.3125rem;  /* 21px, Inter, section h2 */
+  --text-subtitle: 1.0625rem;       /* 17px, Inter, card h3 */
+  --text-body: 0.9375rem;           /* 15px, Inter, default paragraph */
+  --text-body-sm: 0.8125rem;        /* 13px, Inter, dense tables, agent/ops */
+  --text-label: 0.71875rem;         /* 11.5px, Inter, eyebrows/table headers/dt */
+  --text-record: 0.8125rem;         /* 13px, mono, reference fields — see .record below */
+
+  --leading-display: 1.05;
+  --leading-title-page: 1.15;
+  --leading-title-section: 1.3;
+  --leading-subtitle: 1.4;
+  --leading-body: 1.55;
+  --leading-body-sm: 1.5;
+  --leading-label: 1.35;
+  --leading-record: 1.5;
+
   --shadow-card: 0 1px 3px rgba(11, 23, 57, 0.08), 0 1px 2px rgba(11, 23, 57, 0.06);
   --shadow-raised: 0 4px 12px rgba(11, 23, 57, 0.12), 0 2px 4px rgba(11, 23, 57, 0.08);
 
@@ -83,24 +128,6 @@
   --topbar-height: 56px;
   --leftnav-width: 256px;
   --leftnav-width-collapsed: 72px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-primary: #0B1739;
-    --color-surface-raised: #0F1F44;
-    --color-surface-muted: #0D1B3A;
-    --color-surface: #132654;
-    --color-border: rgba(255, 255, 255, 0.12);
-    --color-border-strong: rgba(255, 255, 255, 0.24);
-    --color-text-primary: #F4F7FB;
-    --color-text-secondary: rgba(244, 247, 251, 0.7);
-    /* Mirrors the light-mode fix above; same reasoning, inverted ramp. */
-    --color-text-muted: rgba(244, 247, 251, 0.64);
-    --color-text-inverse: #0B1739;
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-    --shadow-raised: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
-  }
 }
 
 * {
@@ -161,5 +188,18 @@ select {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+@layer components {
+  /* The `record` face — docs/27 §4.1/§4.3. Every reference number (HS code, B/L,
+     container number, invoice number, LC ref, filing ref, hash, correlation ID,
+     UN/LOCODE, ...) is set through this single class so the mono treatment stays
+     consistent rather than re-derived per call site. */
+  .record {
+    font-family: var(--font-mono);
+    font-size: var(--text-record);
+    line-height: var(--leading-record);
+    font-variant-numeric: tabular-nums;
   }
 }

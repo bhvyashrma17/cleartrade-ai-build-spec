@@ -355,6 +355,10 @@ re-implementing a check.
 
 ## Automated regression and CI
 
+- **Applied migrations are immutable.** Once a migration has been applied to any shared or
+  persistent database, never edit its SQL in place. Put every correction, backfill, constraint,
+  or compatibility adjustment in a new, forward-only migration so Prisma checksums and database
+  history remain reproducible.
 - `npm test` is the canonical fast regression command. Vitest creates a unique disposable PostgreSQL
   schema, applies the complete migration history, runs files serially, and drops the schema afterward.
 - Tests refuse production/staging environments and refuse database names that do not clearly identify

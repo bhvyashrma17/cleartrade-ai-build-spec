@@ -113,7 +113,7 @@ export default async function DealOverviewPage({ params }: { params: Promise<{ d
           <ul className="mt-4 space-y-3">
             {recentActivity.map((event) => (
               <li key={event.id} className="border-b border-[var(--color-border)] pb-3 text-sm last:border-0">
-                <p className="font-medium text-primary">{event.action.replace(/_/g, ' ')}</p>
+                <p className="font-normal text-primary">{event.action.replace(/_/g, ' ')}</p>
                 <p className="text-xs text-[var(--color-text-secondary)]">
                   {event.timestamp.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                 </p>
@@ -134,7 +134,7 @@ export default async function DealOverviewPage({ params }: { params: Promise<{ d
             {exporterTasks.map((task) => (
               <li key={task.id} className="flex items-center justify-between gap-4 py-3">
                 <div>
-                  <p className="font-medium text-primary">{task.title}</p>
+                  <p className="font-normal text-primary">{task.title}</p>
                   {task.description ? <p className="text-sm text-[var(--color-text-secondary)]">{task.description}</p> : null}
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">{formatDue(task.due_at)}</p>
                 </div>
@@ -161,7 +161,7 @@ export default async function DealOverviewPage({ params }: { params: Promise<{ d
           <ul className="mt-4 space-y-3">
             {agentTasks.map((task) => (
               <li key={task.id} className="border-b border-[var(--color-border)] pb-3 text-sm last:border-0">
-                <p className="font-medium text-primary">{task.title}</p>
+                <p className="font-normal text-primary">{task.title}</p>
                 <p className="text-xs text-[var(--color-text-secondary)]">{formatDue(task.due_at)}</p>
               </li>
             ))}

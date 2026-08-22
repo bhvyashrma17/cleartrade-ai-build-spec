@@ -10,6 +10,7 @@
  *   npm run ingest:comtrade -- --chapter=09 --reporter=699 --partner=0 --year=2024 --flow=export
  */
 
+import { createHash } from 'node:crypto';
 import { IngestStatus, JobStatus, JobType, TradeDataSource } from '@prisma/client';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, enqueueJob, runClaimedJob } from '../src/lib/jobs';
@@ -35,12 +36,13 @@ async function main() {
   const chapters = requestedChapter ? [requestedChapter] : policy.chapter_priority;
   if (!chapters?.length) throw new Error('comtrade.policy.chapter_priority is empty; refusing an unordered full ingest.');
   for (const chapter of chapters) {
-    const basePayload = { hs_chapter: chapter, ...(argValue('reporter') ? { reporter: argValue('reporter') } : {}), ...(argValue('partner') ? { partner: argValue('partner') } : {}), ...(argValue('year') ? { year: Number(argValue('year')) } : {}), ...(argValue('flow') ? { flow_direction: argValue('flow') } : {}) };
+    const basePayload = { hs_chapter: chapter, ...(argValue('reporter') ? { reporter: argValue('reporter') } : {}), ...(argValue('partner') ? { partner: argValue('partner') } : {}), ...(argValue('partner2') ? { partner2: argValue('partner2') } : {}), ...(argValue('year') ? { year: Number(argValue('year')) } : {}), ...(argValue('flow') ? { flow_direction: argValue('flow') } : {}), ...(argValue('hs-revision') ? { hs_revision: argValue('hs-revision') } : {}), frequency:argValue('frequency')??'A', purpose:argValue('purpose')??'general_ingest', customs_code:argValue('customs')??'C00', mode_of_supply:argValue('mos')??'0' };
     const year = Number(argValue('year') ?? new Date().getFullYear() - 1);
     const prior = await prisma.ingestRun.findFirst({ where: { source: TradeDataSource.comtrade, status: { in: [IngestStatus.running, IngestStatus.partial, IngestStatus.throttled] }, params: { path: ['hs_chapter'], equals: chapter }, AND: [{ params: { path: ['year'], equals: year } }] }, orderBy: { started_at: 'desc' } });
     if (prior?.retry_after && prior.retry_after > new Date()) { console.log(`Chapter ${chapter} paused until ${prior.retry_after.toISOString()} after throttling.`); break; }
     const payload = { ...basePayload, ...(prior ? { ingest_run_id: prior.id } : {}) };
-    const job = await enqueueJob({ type: JobType.comtrade_ingest, payload, dedupe_key: `comtrade_ingest:${chapter}:${year}` });
+    const identity=JSON.stringify(Object.fromEntries(Object.entries({...payload,source_mode:process.env.COMTRADE_CLIENT??'mock',provider:'un_comtrade'}).sort(([a],[b])=>a.localeCompare(b))));
+    const job = await enqueueJob({ type: JobType.comtrade_ingest, payload, dedupe_key: `comtrade_ingest:${createHash('sha256').update(identity).digest('hex')}` });
     console.log(`${prior ? 'Resuming' : 'Starting'} chapter ${chapter} in job ${job.id}${prior ? ` (run ${prior.id})` : ''}`);
     while (true) {
       const claimed = await claimNextJob([JobType.comtrade_ingest]);

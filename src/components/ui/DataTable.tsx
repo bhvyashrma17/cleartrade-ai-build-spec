@@ -15,6 +15,7 @@
 
 import clsx from 'clsx';
 import type { PageMeta } from '@/types';
+import { EmptyState } from './EmptyState';
 import { Skeleton } from './Skeleton';
 
 export interface DataTableColumn<T> {
@@ -263,15 +264,7 @@ export function DataTable<T>({
 }
 
 function EmptyStateBlock({ state }: { state: DataTableEmptyState }) {
-  return (
-    <div className="flex flex-col items-center gap-1 text-center">
-      <p className="text-sm font-medium text-primary">{state.title}</p>
-      {state.description ? (
-        <p className="text-sm text-[var(--color-text-secondary)]">{state.description}</p>
-      ) : null}
-      {state.action ? <div className="mt-2">{state.action}</div> : null}
-    </div>
-  );
+  return <EmptyState title={state.title} description={state.description} action={state.action} />;
 }
 
 function Pagination({

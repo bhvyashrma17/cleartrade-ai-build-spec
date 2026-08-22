@@ -60,7 +60,7 @@ export function GenerateButton({
       </Button>
       {error ? (
         <div className="mt-2 max-w-xs rounded-md border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-2 text-xs text-[var(--color-critical-text)]">
-          <p className="font-medium">{error}</p>
+          <p className="font-normal">{error}</p>
           {blockers.length > 0 ? (
             <ul className="mt-1 space-y-1">
               {blockers.map((b, i) => (

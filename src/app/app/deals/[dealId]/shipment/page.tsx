@@ -16,7 +16,7 @@ import {
   SHIPMENT_STATUS_DISPLAY,
   shipmentChip,
 } from '@/components/shipment/statusDisplay';
-import { StatusChip } from '@/components/ui';
+import { StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { prisma } from '@/lib/prisma';
 import { MILESTONE_LABELS } from '@/lib/state-machines/shipment';
 import { loadDealForWorkspace } from '../loadDeal';
@@ -43,7 +43,7 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
   if (!shipment) {
     return (
       <section className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface p-8 text-center">
-        <p className="text-sm font-medium text-primary">No shipment yet</p>
+        <p className="text-sm font-normal text-primary">No shipment yet</p>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           Shipment tracking begins once your agent creates the shipment record for this deal. There is
           nothing to show until then.
@@ -65,7 +65,7 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
         >
           <div className="flex items-center gap-2">
             <StatusChip {...exceptionChip} size="sm" />
-            <p className="text-sm font-medium text-primary">This shipment has an open issue.</p>
+            <p className="text-sm font-normal text-primary">This shipment has an open issue.</p>
           </div>
           {shipment.exception_reason ? (
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{shipment.exception_reason}</p>
@@ -97,15 +97,15 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
           </div>
           <div>
             <dt className="text-xs uppercase text-[var(--color-text-muted)]">Booking ref</dt>
-            <dd className="mt-0.5 select-all font-mono text-sm text-primary">{shipment.booking_ref ?? '—'}</dd>
+            <dd className="record mt-0.5 select-all text-primary">{shipment.booking_ref ?? '—'}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase text-[var(--color-text-muted)]">Customs ref</dt>
-            <dd className="mt-0.5 select-all font-mono text-sm text-primary">{shipment.customs_ref ?? '—'}</dd>
+            <dd className="record mt-0.5 select-all text-primary">{shipment.customs_ref ?? '—'}</dd>
           </div>
           <div>
             <dt className="text-xs uppercase text-[var(--color-text-muted)]">Shipping bill no.</dt>
-            <dd className="mt-0.5 select-all font-mono text-sm text-primary">{shipment.shipping_bill_no ?? '—'}</dd>
+            <dd className="record mt-0.5 select-all text-primary">{shipment.shipping_bill_no ?? '—'}</dd>
           </div>
         </dl>
         <p className="mt-3 text-xs text-[var(--color-text-secondary)]">
@@ -128,45 +128,45 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
           ETA and actual are tracked separately for every milestone.
         </p>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-              <tr>
-                <th className="pb-2">Milestone</th>
-                <th className="pb-2">State</th>
-                <th className="pb-2">ETA</th>
-                <th className="pb-2">Actual</th>
-                <th className="pb-2">Evidence</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-[720px]">
+            <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+              <Tr>
+                <Th>Milestone</Th>
+                <Th>State</Th>
+                <Th>ETA</Th>
+                <Th>Actual</Th>
+                <Th>Evidence</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {shipment.milestones.map((m) => {
                 const chip = shipmentChip(MILESTONE_STATE_DISPLAY, m.state);
                 const diverges = m.eta_at && m.actual_at && m.eta_at.getTime() !== m.actual_at.getTime();
                 return (
-                  <tr key={m.id} className="border-t border-[var(--color-border)] align-top">
-                    <td className="py-3 font-medium text-primary">{MILESTONE_LABELS[m.code as keyof typeof MILESTONE_LABELS] ?? m.label}</td>
-                    <td className="py-3"><StatusChip {...chip} size="sm" /></td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">{fmt(m.eta_at)}</td>
-                    <td className="py-3 text-[var(--color-text-secondary)]">
+                  <Tr key={m.id} className="align-top">
+                    <Td className="font-medium text-primary">{MILESTONE_LABELS[m.code as keyof typeof MILESTONE_LABELS] ?? m.label}</Td>
+                    <Td><StatusChip {...chip} size="sm" /></Td>
+                    <Td className="text-[var(--color-text-secondary)]">{fmt(m.eta_at)}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">
                       {fmt(m.actual_at)}
                       {diverges ? (
                         <span className="ml-1.5 inline-block">
                           <StatusChip label="Delayed vs ETA" tone="warning" icon="alert" size="sm" />
                         </span>
                       ) : null}
-                    </td>
-                    <td className="py-3">
+                    </Td>
+                    <Td>
                       {m.evidence_ref ? (
                         <span className="text-xs text-[var(--color-text-secondary)]">Uploaded</span>
                       ) : (
                         <MilestoneEvidenceUpload dealId={dealId} milestoneId={m.id} />
                       )}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 );
               })}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         </div>
       </section>
     </div>

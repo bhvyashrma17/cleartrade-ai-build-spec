@@ -12,7 +12,7 @@ import { UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
 import { DisputeActions } from '@/components/ops-disputes/DisputeActions';
 import { DISPUTE_SEVERITY_DISPLAY, DISPUTE_STATUS_DISPLAY, DISPUTE_TYPE_LABELS, supportChip } from '@/components/support/statusDisplay';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -64,24 +64,21 @@ export default async function OpsDisputeDetailPage({ params }: { params: Promise
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <p className="text-sm font-medium text-primary">
+      <p className="text-sm font-normal text-primary">
         <Link href="/ops/disputes" className="underline underline-offset-2">Dispute oversight</Link> · Case {dispute.id.slice(-6)}
       </p>
 
-      <header className="mt-2 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary">
-            {DISPUTE_TYPE_LABELS[dispute.type] ?? dispute.type} case
-          </h1>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-            {dispute.deal?.exporter_org.display_name ?? '—'} · {dispute.deal?.buyer.display_name ?? '—'}
-          </p>
-        </div>
-        <div className="flex gap-1.5">
-          <StatusChip {...severityChip} />
-          <StatusChip {...statusChip} />
-        </div>
-      </header>
+      <PageHeader
+        className="mt-2"
+        title={`${DISPUTE_TYPE_LABELS[dispute.type] ?? dispute.type} case`}
+        description={`${dispute.deal?.exporter_org.display_name ?? '—'} · ${dispute.deal?.buyer.display_name ?? '—'}`}
+        actions={
+          <div className="flex gap-1.5">
+            <StatusChip {...severityChip} />
+            <StatusChip {...statusChip} />
+          </div>
+        }
+      />
 
       <section className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Facts</h2>

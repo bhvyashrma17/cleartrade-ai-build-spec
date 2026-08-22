@@ -218,6 +218,10 @@ export interface JobsPolicy {
  * (an upgraded key, a provider change), not a redeploy.
  */
 export interface ComtradePolicy {
+  /** Hard timeout for each physical provider call. */
+  request_timeout_ms?: number;
+  /** Reuse only complete evidence newer than this threshold. */
+  evidence_cache_ttl_hours?: number;
   /** Pause between successive requests within one ingest run, staying under the free-tier rate cap. */
   request_delay_ms: number;
   /** How many times a single request retries a 429/5xx before the run records it as a failure. */
@@ -413,6 +417,8 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     client_poll_interval_ms: 1500,
   },
   'comtrade.policy': {
+    request_timeout_ms: 20_000,
+    evidence_cache_ttl_hours: 168,
     request_delay_ms: 2000,
     max_retries: 3,
     retry_backoff_ms: 2000,

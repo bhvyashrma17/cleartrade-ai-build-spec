@@ -1,6 +1,57 @@
 # ClearTrade AI — UI Audit
 
-Inventory and observation only. No opinions, no recommendations, no fixes. All counts were produced by exact grep/read against the repository at the time of writing; occurrence counts are className-string occurrences (a value used twice in one file counts twice), not deduplicated by file.
+Inventory and observation only. No opinions or recommendations.
+
+**Audit status (reconciled 21 Aug 2026):** Sections 1–8 below are a historical, point-in-time baseline. Their embedded source files, line numbers, route totals, string totals, and class occurrence counts were exact when captured, but have **not** been regenerated after the subsequent Settings, account-menu, support, and 12-document work. They must not be read as current repository totals. The reconciliation immediately below is authoritative for the surfaces changed since that baseline; unchanged baseline observations remain useful as historical evidence.
+
+Occurrence counts in the baseline are `className`-string occurrences (a value used twice in one file counts twice), not values deduplicated by file.
+
+---
+
+## Current-status reconciliation — 21 Aug 2026
+
+This section records source-visible implementation status in the current worktree. It does not claim that staging deployment or manual UAT has occurred.
+
+### Personal Settings and authenticated profile control
+
+| Surface | Current implementation |
+|---|---|
+| Personal Settings | `/app/settings` exists and reads the authenticated database user through `loadUserSettings`; callers cannot select a user ID or email. `/agent/settings` reuses the same personal page. `/ops/account` is the staff personal-settings route and remains distinct from `/ops/settings`. |
+| Account data | Name, email, and friendly role label are read-only. Exporter users additionally see their tenant workspace and canonical organization tier. Staff principals do not enter an exporter-organization query when `exporter_org_id` is null. |
+| Subscription | Exporter plan labels come from canonical `ExporterOrg.tier`. Non-paid accounts link to `/app/billing`; no checkout behavior is implemented on the Settings page. |
+| Security and session | Recognized sign-in methods are shown without provider account IDs or credentials. Sign-out uses the existing Auth.js server action. Password hashes, OAuth tokens, and OAuth secrets are not returned to the page model. |
+| Profile menu | The authenticated shell renders a compact name/avatar menu with name, email, friendly role, Workspace, personal Settings, and Sign out. Exporter Workspace points to `/app/overview`, Agent to `/agent`, and Ops to `/ops`. Administrators see separately named **Personal settings** (`/ops/account`) and **Admin settings** (`/ops/settings`). |
+| Menu accessibility | The trigger exposes `aria-haspopup`, `aria-expanded`, and `aria-controls`; the menu closes on Escape and outside pointer interaction, returns focus to the trigger after Escape, uses menu/menuitem roles, and uses the shared focus-visible treatment. |
+| About/support | The About card currently contains a working **Report a bug** row. Role-scoped report routes and the authenticated bug-report API exist. **Privacy policy** and **Terms of service** rows/routes are not currently present; the UI does not fabricate legal content or dead destinations. |
+
+### Agent Document Data and Document Center
+
+The Agent document UI now represents 12 capabilities through the existing canonical document system:
+
+| Group | Capabilities shown |
+|---|---|
+| Commercial | Proforma Invoice; Commercial Invoice; Bill of Exchange |
+| Shipping | Packing List; Shipping Bill Draft; Shipping Instructions; Carrier Instructions; VGM Declaration |
+| Certificates & declarations | Certificate of Origin Draft; Declaration / Undertaking; Insurance Declaration |
+| Banking | Bank Document Presentation / Collection Cover Letter |
+
+The Document Center shows friendly document names, version, applicability, readiness, generation, review, approval, and available artifacts. Not-applicable documents are described as not required rather than blocked and do not expose an active generation action. Carrier Instructions resolve to **Bill of Lading Instructions** or **Air Waybill Instructions** from canonical shipment-mode applicability; internal `DocType` identifiers are not used as user-facing names.
+
+The Document Data page groups canonical inputs by party, commercial, shipment instructions, container/VGM, payment/draft, bank presentation, certificates, and invoice-numbering concerns. Readiness blockers link to the owning section. VGM readiness remains container-specific and does not treat unverified package mass as verified gross mass.
+
+### Rendering, lifecycle, and UAT preparation
+
+The five added types (`shipping_instructions`, `vgm_declaration`, `bill_of_exchange`, `carrier_instructions`, and `bank_collection_letter`) use the existing snapshot → typed adapter → `DocumentModel` → `LegacyDocumentEngine` → PDF/DOCX/HTML → artifact path. They participate in the existing immutable-version, review, approval, amendment, checksum, and content-addressed artifact lifecycle rather than a parallel engine or lifecycle.
+
+The deterministic staging pilot and its manual checklist are documented in [`docs/staging-12-document-uat.md`](./staging-12-document-uat.md). Alpha is the ready sea/containerized workflow; Bravo contains intentional, document-specific blockers plus a separate air/Advance not-applicable control; Charlie's isolation fixture is unchanged. The fixture does not pre-generate, review, or approve the UAT documents. Deployment and the 18-step manual staging UAT remain operator actions, not completed status asserted by this audit.
+
+### Baseline references affected by later work
+
+- The baseline `AppShell.tsx` source dump and its 213-line label predate the profile menu integration; the current file is 215 lines.
+- The baseline `globals.css` 165-line label is historical; the current file is 164 lines.
+- The baseline page inventory omits `/app/settings`, `/agent/settings`, `/ops/account`, and the role-scoped report-a-bug pages.
+- The baseline component inventory omits `ProfileMenu` and the Settings/support components.
+- Baseline document-page descriptions, component-use counts, microcopy counts, line references, and totals predate the 12-document UI and should be regenerated before using them as quantitative current-state evidence.
 
 ---
 

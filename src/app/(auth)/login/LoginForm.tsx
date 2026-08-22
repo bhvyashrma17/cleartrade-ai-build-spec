@@ -22,7 +22,7 @@ export function LoginForm({ callbackUrl, oauthErrorMessage, socialProviders }: L
 
   return (
     <div className="space-y-5">
-      {formError ? <div id="login-error" role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-red-50 px-3 py-2 text-sm text-critical">{formError}</div> : null}
+      {formError ? <div id="login-error" role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-[color-mix(in_srgb,var(--crit-fill)_8%,var(--card))] px-3 py-2 text-sm text-critical">{formError}</div> : null}
       <SocialSignInButtons callbackUrl={callbackUrl} providers={socialProviders} />
       <div className="relative text-center text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">
         <span className="relative z-10 bg-surface px-2">or</span>

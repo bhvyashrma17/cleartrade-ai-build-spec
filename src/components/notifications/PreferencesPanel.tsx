@@ -86,7 +86,7 @@ export function PreferencesPanel() {
             <li key={r.category} className="rounded-md border border-[var(--color-border)] p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium text-primary">{r.label}</p>
+                  <p className="text-sm font-normal text-primary">{r.label}</p>
                   <p className="text-xs text-[var(--color-text-secondary)]">{r.description}</p>
                 </div>
                 {!r.disableable ? (

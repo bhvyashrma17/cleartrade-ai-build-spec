@@ -53,7 +53,7 @@ export function PayoutActions({ payoutId, state }: { payoutId: string; state: st
           id={`ref-${payoutId}`}
           value={reference}
           onChange={(e) => setReference(e.target.value)}
-          className="mt-1 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-xs text-primary focus-visible-ring"
+          className="record mt-1 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring"
         />
         {error ? <p className="mt-1 text-xs text-[var(--color-critical-text)]">{error}</p> : null}
         <div className="mt-1.5 flex gap-1.5">

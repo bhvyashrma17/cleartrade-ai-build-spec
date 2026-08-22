@@ -49,7 +49,7 @@ function LinkRow({ item }: { item: MenuLink }) {
       className="focus-visible-ring flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-surface px-4 py-3 hover:bg-surface-muted"
     >
       <div>
-        <p className="font-medium text-primary">{item.label}</p>
+        <p className="font-normal text-primary">{item.label}</p>
         <p className="text-sm text-[var(--color-text-secondary)]">{item.description}</p>
       </div>
       <ChevronRight />
@@ -61,7 +61,7 @@ function LockedRow({ label, description }: { label: string; description: string 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface px-4 py-3">
       <div>
-        <p className="font-medium text-primary">{label}</p>
+        <p className="font-normal text-primary">{label}</p>
         <p className="text-sm text-[var(--color-text-secondary)]">{description}</p>
       </div>
       <UpgradeNotice title="Paid plan" requiredTier="paid" variant="inline" />
@@ -73,7 +73,7 @@ function ComingSoonRow({ label, description }: { label: string; description: str
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-[var(--color-border)] bg-surface-muted px-4 py-3 opacity-80">
       <div>
-        <p className="font-medium text-primary">{label}</p>
+        <p className="font-normal text-primary">{label}</p>
         <p className="text-sm text-[var(--color-text-secondary)]">{description}</p>
       </div>
       <span className="shrink-0 rounded-full bg-surface px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
@@ -109,8 +109,8 @@ export default async function MorePage() {
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-6">
       <header className="mb-6">
-        <p className="text-sm font-medium text-primary">More</p>
-        <h1 className="text-2xl font-semibold text-primary">Everything else</h1>
+        <p className="text-sm font-normal text-primary">More</p>
+        <h1 className="font-serif text-title-page text-primary">Everything else</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Secondary destinations not on the primary tab bar.</p>
       </header>
 

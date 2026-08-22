@@ -74,7 +74,7 @@ export function RegisterForm({
   return (
     <form noValidate onSubmit={submit} className="space-y-5">
       {formError ? (
-        <div role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-red-50 px-3 py-2 text-sm text-critical">
+        <div role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-[color-mix(in_srgb,var(--crit-fill)_8%,var(--card))] px-3 py-2 text-sm text-critical">
           {formError}
           {/* An email collision is the common case here, and "sign in instead" is the fix. */}
           <Link href="/login" className="ml-1 font-semibold underline underline-offset-2">

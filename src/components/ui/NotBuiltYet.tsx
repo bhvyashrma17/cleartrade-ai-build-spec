@@ -8,7 +8,7 @@ import Link from 'next/link';
 export function NotBuiltYet({ tabLabel, backHref }: { tabLabel: string; backHref: string }) {
   return (
     <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface p-8 text-center">
-      <p className="text-sm font-medium text-primary">{tabLabel} isn&apos;t built yet.</p>
+      <p className="text-sm font-normal text-primary">{tabLabel} isn&apos;t built yet.</p>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
         This tab has a real route so a deep link never 404s, but there is no {tabLabel.toLowerCase()} content
         behind it yet.

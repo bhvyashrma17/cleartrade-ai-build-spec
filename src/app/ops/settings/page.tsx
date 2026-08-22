@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { AccessDenied } from '@/components/access-denied';
 import { AgentCapacityForm } from '@/components/ops/AgentCapacityForm';
 import { FeePolicyForm } from '@/components/ops/FeePolicyForm';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { adminIntegrationStatuses } from '@/lib/admin-settings';
 import { BUYER_FIT_POLICY, BUYER_FIT_POLICY_HASH } from '@/lib/buyer-intelligence';
@@ -27,7 +27,7 @@ export default async function OpsSettingsPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
-      <header><p className="text-sm font-medium text-primary">Administration</p><h1 className="text-2xl font-semibold text-primary">Settings</h1><p className="mt-1 text-sm text-[var(--color-text-secondary)]">Current operational configuration. Historical actors and changes remain in Audit.</p></header>
+      <PageHeader eyebrow="Administration" title="Settings" description="Current operational configuration. Historical actors and changes remain in Audit." />
 
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <h2 className="text-lg font-semibold text-primary">Configuration status</h2>
@@ -58,7 +58,7 @@ export default async function OpsSettingsPage() {
 
       <section id="notifications" className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card"><h2 className="text-lg font-semibold text-primary">Notifications</h2>{integrations.filter((item) => item.name === 'Email').map((item) => <dl key={item.name} className="mt-3 grid gap-3 text-sm sm:grid-cols-3"><div><dt className="text-xs text-[var(--color-text-secondary)]">Provider</dt><dd className="font-medium">{item.provider}</dd></div><div><dt className="text-xs text-[var(--color-text-secondary)]">Environment</dt><dd className="font-medium">{item.mode}</dd></div><div><dt className="text-xs text-[var(--color-text-secondary)]">Provider configured</dt><dd className="font-medium">{item.status}</dd></div><div><dt className="text-xs text-[var(--color-text-secondary)]">Sender identity</dt><dd className="font-medium">{item.detail}</dd></div></dl>)}</section>
 
-      <section id="integrations" className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card"><h2 className="text-lg font-semibold text-primary">Integrations / System Status</h2><div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--color-border)]"><th className="px-3 py-2">Integration</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Provider / mode</th><th className="px-3 py-2">Safe detail</th></tr></thead><tbody>{integrations.map((item) => <tr key={item.name} className="border-b border-[var(--color-border)]"><td className="px-3 py-3 font-medium">{item.name}</td><td className="px-3 py-3"><StatusChip label={item.status} tone={tone(item.status)} icon={item.status === 'Ready' || item.status === 'Configured' ? 'check' : 'alert'} size="sm" /></td><td className="px-3 py-3 text-[var(--color-text-secondary)]">{[item.provider, item.mode].filter(Boolean).join(' · ') || '—'}</td><td className="px-3 py-3 text-[var(--color-text-secondary)]">{item.lastSuccessfulRefresh ? `Last successful refresh ${fmt(new Date(item.lastSuccessfulRefresh))}` : item.detail ?? '—'}</td></tr>)}</tbody></table></div></section>
+      <section id="integrations" className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card"><h2 className="text-lg font-semibold text-primary">Integrations / System Status</h2><div className="mt-3 overflow-x-auto"><Table><Thead><Tr className="border-b border-[var(--color-border)]"><Th>Integration</Th><Th>Status</Th><Th>Provider / mode</Th><Th>Safe detail</Th></Tr></Thead><Tbody>{integrations.map((item) => <Tr key={item.name} className="border-b border-[var(--color-border)]"><Td className="font-medium">{item.name}</Td><Td><StatusChip label={item.status} tone={tone(item.status)} icon={item.status === 'Ready' || item.status === 'Configured' ? 'check' : 'alert'} size="sm" /></Td><Td className="text-[var(--color-text-secondary)]">{[item.provider, item.mode].filter(Boolean).join(' · ') || '—'}</Td><Td className="text-[var(--color-text-secondary)]">{item.lastSuccessfulRefresh ? `Last successful refresh ${fmt(new Date(item.lastSuccessfulRefresh))}` : item.detail ?? '—'}</Td></Tr>)}</Tbody></Table></div></section>
 
       <section id="policy" className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card"><h2 className="text-lg font-semibold text-primary">Read-only code-owned policy</h2><p className="mt-2 text-sm text-[var(--color-text-secondary)]">BuyerFit policy v{BUYER_FIT_POLICY.version} · model {BUYER_FIT_POLICY.model_version} · hash <code>{BUYER_FIT_POLICY_HASH.slice(0, 16)}…</code>. It is not operator-editable. The deprecated buyers.fit_score_weights setting is not exposed.</p></section>
 

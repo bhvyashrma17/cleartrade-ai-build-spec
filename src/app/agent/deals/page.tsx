@@ -17,7 +17,7 @@
 
 import Link from 'next/link';
 import { DealStage, RiskState } from '@prisma/client';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { tenantScope } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -96,13 +96,12 @@ export default async function AgentDealsPage({
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-4">
-        <p className="text-sm font-medium text-primary">Agent workspace</p>
-        <h1 className="text-2xl font-semibold text-primary">Deals</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Every deal across your assigned exporters. At-risk first, then most recently updated.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-4"
+        eyebrow="Agent workspace"
+        title="Deals"
+        description="Every deal across your assigned exporters. At-risk first, then most recently updated."
+      />
 
       <nav aria-label="Deal filters" className="mb-3 flex flex-wrap gap-1">
         {FILTERS.map((f) => (
@@ -127,25 +126,25 @@ export default async function AgentDealsPage({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
-          <table className="w-full min-w-[60rem] border-collapse text-sm">
-            <thead>
-              <tr className="bg-primary text-[var(--color-text-inverse)]">
-                <th scope="col" className="px-3 py-2 text-left font-medium">Exporter / buyer</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Product</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Stage</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">Value</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Next action</th>
-                <th scope="col" className="px-3 py-2 text-left font-medium">Risk</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">Age</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-[60rem]">
+            <Thead>
+              <Tr className="bg-primary text-[var(--color-text-inverse)]">
+                <Th className="font-medium">Exporter / buyer</Th>
+                <Th className="font-medium">Product</Th>
+                <Th className="font-medium">Stage</Th>
+                <Th align="right" className="font-medium">Value</Th>
+                <Th className="font-medium">Next action</Th>
+                <Th className="font-medium">Risk</Th>
+                <Th align="right" className="font-medium">Age</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {deals.map((deal) => {
                 const next = deal.tasks[0] ?? null;
                 const atRisk = deal.risk_state === RiskState.at_risk || deal.risk_state === RiskState.blocked;
                 return (
-                  <tr key={deal.id} className="border-t border-[var(--color-border)] align-top hover:bg-surface-muted">
-                    <td className="px-3 py-3">
+                  <Tr key={deal.id} className="align-top hover:bg-surface-muted">
+                    <Td>
                       {/* Into the EXISTING deal workspace — this page never duplicates it. */}
                       <Link href={`/agent/deals/${deal.id}`} className="focus-visible-ring rounded font-medium text-primary underline underline-offset-2">
                         {deal.exporter_org.display_name}
@@ -153,14 +152,14 @@ export default async function AgentDealsPage({
                       <div className="text-xs text-[var(--color-text-muted)]">
                         {deal.buyer.display_name} · {deal.buyer.country_code}
                       </div>
-                    </td>
-                    <td className="px-3 py-3 text-[var(--color-text-secondary)]">{deal.product?.name ?? '—'}</td>
-                    <td className="px-3 py-3 text-primary">{DEAL_STAGE_LABELS[deal.stage] ?? deal.stage}</td>
-                    <td className="px-3 py-3 text-right text-primary">
+                    </Td>
+                    <Td className="text-[var(--color-text-secondary)]">{deal.product?.name ?? '—'}</Td>
+                    <Td className="text-primary">{DEAL_STAGE_LABELS[deal.stage] ?? deal.stage}</Td>
+                    <Td align="right" className="text-primary">
                       {money(deal.total_amount ?? deal.value_amount, deal.total_currency ?? deal.value_currency)}
                       {deal.incoterm ? <div className="text-xs text-[var(--color-text-muted)]">{deal.incoterm}</div> : null}
-                    </td>
-                    <td className="px-3 py-3">
+                    </Td>
+                    <Td>
                       {next ? (
                         <>
                           <div className="text-xs text-primary">{next.title}</div>
@@ -171,8 +170,8 @@ export default async function AgentDealsPage({
                       ) : (
                         <span className="text-xs text-[var(--color-text-muted)]">No open task</span>
                       )}
-                    </td>
-                    <td className="px-3 py-3">
+                    </Td>
+                    <Td>
                       {atRisk ? (
                         <StatusChip
                           label={deal.risk_state}
@@ -187,16 +186,16 @@ export default async function AgentDealsPage({
                       {deal.risk_reason && atRisk ? (
                         <div className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{deal.risk_reason}</div>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-3 text-right text-[var(--color-text-secondary)]">
+                    </Td>
+                    <Td align="right" className="text-[var(--color-text-secondary)]">
                       {ageDays(deal.created_at)}d
                       <div className="text-xs text-[var(--color-text-muted)]">upd {fmtDate(deal.updated_at)}</div>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 );
               })}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         </div>
       )}
 

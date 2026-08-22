@@ -87,7 +87,7 @@ export function GenerateDocumentPanel({
           </Button>
         ))}
       </div>
-      {error ? <p role="alert" className="max-w-xs text-right text-xs text-[var(--color-danger)]">{error}</p> : null}
+      {error ? <p role="alert" className="max-w-xs text-right text-xs text-[var(--crit-text)]">{error}</p> : null}
     </div>
   );
 }

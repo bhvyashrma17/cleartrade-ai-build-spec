@@ -70,7 +70,7 @@ export function RecordFilingForm({ dealId, documentId, allowedTargets }: { dealI
       {target !== 'rejected' ? (
         <label className="mt-1.5 block text-xs font-medium text-primary">
           Authority reference
-          <input value={reference} onChange={(e) => setReference(e.target.value)} className="mt-0.5 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-xs text-primary focus-visible-ring" />
+          <input value={reference} onChange={(e) => setReference(e.target.value)} className="record mt-0.5 w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
         </label>
       ) : (
         <label className="mt-1.5 block text-xs font-medium text-primary">

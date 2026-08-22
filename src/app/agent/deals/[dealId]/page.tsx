@@ -33,7 +33,7 @@ import {
 } from '@/components/documents/statusDisplay';
 import { PAYMENT_STATUS_DISPLAY, paymentChip } from '@/components/payment/statusDisplay';
 import { SHIPMENT_STATUS_DISPLAY, shipmentChip } from '@/components/shipment/statusDisplay';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { isActionAllowed, type ExecutionGate } from '@/lib/execution-plan';
 import { loadExecutionView, type SharedTask } from '@/lib/execution-view';
 import { prisma } from '@/lib/prisma';
@@ -95,7 +95,7 @@ function TaskColumn({ title, tasks, emptyNote }: { title: string; tasks: SharedT
         <ul className="mt-2 space-y-3">
           {tasks.map((t) => (
             <li key={t.id} className="border-t border-[var(--color-border)] pt-2 first:border-0 first:pt-0">
-              <p className="text-sm font-medium text-primary">{t.title}</p>
+              <p className="text-sm font-normal text-primary">{t.title}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <StatusChip label={t.state.replace(/_/g, ' ')} tone="neutral" icon="dot" size="sm" />
                 <StatusChip {...chip(SLA_DISPLAY, t.sla_state)} size="sm" />
@@ -135,41 +135,41 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
       {/* --- Execution header (persistent) --- */}
-      <header className="mb-6">
-        <p className="text-sm font-medium text-primary">
-          <Link href="/agent" className="underline underline-offset-2">
-            Agent workspace
-          </Link>{' '}
-          · Execution
-        </p>
-        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-primary">{deal.buyer.display_name}</h1>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-              {deal.exporter_org.display_name} · {deal.product?.name ?? 'No product'} · {deal.buyer.country_code}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusChip label={DEAL_STAGE_LABELS[deal.stage]} tone="info" icon="dot" size="sm" />
-            <StatusChip {...chip(RISK_DISPLAY, deal.risk_state)} size="sm" />
-            <span className="text-sm font-medium text-primary">{money(deal.value_amount, deal.value_currency)}</span>
-            <Link href={`/agent/deals/${dealId}/commercial`} className="text-sm font-medium text-primary underline underline-offset-2">
-              Commercial
-            </Link>
-            <Link href={`/agent/deals/${dealId}/document-data`} className="text-sm font-medium text-primary underline underline-offset-2">
-              Document data
-            </Link>
-            <Link href={`/agent/deals/${dealId}/documents`} className="text-sm font-medium text-primary underline underline-offset-2">
-              Documents
-            </Link>
-          </div>
-        </div>
+      <div className="mb-6">
+        <PageHeader
+          eyebrow={
+            <>
+              <Link href="/agent" className="underline underline-offset-2">
+                Agent workspace
+              </Link>{' '}
+              · Execution
+            </>
+          }
+          title={deal.buyer.display_name}
+          description={`${deal.exporter_org.display_name} · ${deal.product?.name ?? 'No product'} · ${deal.buyer.country_code}`}
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusChip label={DEAL_STAGE_LABELS[deal.stage]} tone="info" icon="dot" size="sm" />
+              <StatusChip {...chip(RISK_DISPLAY, deal.risk_state)} size="sm" />
+              <span className="text-sm font-medium text-primary">{money(deal.value_amount, deal.value_currency)}</span>
+              <Link href={`/agent/deals/${dealId}/commercial`} className="text-sm font-medium text-primary underline underline-offset-2">
+                Commercial
+              </Link>
+              <Link href={`/agent/deals/${dealId}/document-data`} className="text-sm font-medium text-primary underline underline-offset-2">
+                Document data
+              </Link>
+              <Link href={`/agent/deals/${dealId}/documents`} className="text-sm font-medium text-primary underline underline-offset-2">
+                Documents
+              </Link>
+            </div>
+          }
+        />
         {deal.risk_reason ? (
           <div role="alert" className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-3">
-            <p className="text-sm font-medium text-primary">{deal.risk_reason}</p>
+            <p className="text-sm font-normal text-primary">{deal.risk_reason}</p>
           </div>
         ) : null}
-      </header>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
         {/* --- Dependency checklist (server-driven prerequisites) --- */}
@@ -223,34 +223,34 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
               The same document records the exporter sees. Approval is theirs — you prepare and file.
             </p>
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-                  <tr>
-                    <th className="pb-2">Document</th>
-                    <th className="pb-2">Generation</th>
-                    <th className="pb-2">Exporter approval</th>
-                    <th className="pb-2">Filing</th>
-                    <th className="pb-2">Controls</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[720px]">
+                <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+                  <Tr>
+                    <Th>Document</Th>
+                    <Th>Generation</Th>
+                    <Th>Exporter approval</Th>
+                    <Th>Filing</Th>
+                    <Th>Controls</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
                   {view.documents.map((doc) => (
-                    <tr key={doc.id} className="border-t border-[var(--color-border)] align-top">
-                      <td className="py-3">
+                    <Tr key={doc.id} className="align-top">
+                      <Td>
                         <span className="font-medium text-primary">{doc.doc_type.replace(/_/g, ' ')}</span>
                         <span className="ml-1 text-xs text-[var(--color-text-secondary)]">v{doc.version}</span>
-                      </td>
-                      <td className="py-3">
+                      </Td>
+                      <Td>
                         <StatusChip {...docChip(GENERATION_STATUS_DISPLAY, doc.generation_status)} size="sm" />
-                      </td>
+                      </Td>
                       {/* AC03: the exporter-facing status, read-only for the agent. */}
-                      <td className="py-3">
+                      <Td>
                         <StatusChip {...docChip(APPROVAL_STATUS_DISPLAY, doc.approval_status)} size="sm" />
-                      </td>
-                      <td className="py-3">
+                      </Td>
+                      <Td>
                         <StatusChip {...docChip(FILING_STATUS_DISPLAY, doc.filing_status)} size="sm" />
                         {doc.filing_reference ? (
-                          <p className="mt-1 select-all font-mono text-xs text-[var(--color-text-secondary)]">{doc.filing_reference}</p>
+                          <p className="record mt-1 select-all text-[var(--color-text-secondary)]">{doc.filing_reference}</p>
                         ) : null}
                         {doc.filed_at ? (
                           <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
@@ -258,8 +258,8 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
                             {doc.filed_by?.name ? ` by ${doc.filed_by.name}` : ''}
                           </p>
                         ) : null}
-                      </td>
-                      <td className="py-3 space-y-2">
+                      </Td>
+                      <Td className="space-y-2">
                         {doc.generation_status !== 'generated' || doc.approval_status === 'rejected' ? (
                           <GatedAction verdict={verdict('document.generate')} label={doc.generation_status === 'failed' ? 'Retry' : 'Generate'}>
                             <GenerateButton dealId={dealId} documentId={doc.id} label={doc.generation_status === 'failed' ? 'Retry' : 'Generate'} compact />
@@ -279,11 +279,11 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
                             />
                           </GatedAction>
                         ) : null}
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   ))}
-                </tbody>
-              </table>
+                </Tbody>
+              </Table>
             </div>
           </section>
 
@@ -344,7 +344,7 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
                       {h.acknowledged_at ? ` · Acknowledged ${fmt(h.acknowledged_at)}` : ''}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-                      Reference: {h.reference ? <span className="select-all font-mono text-primary">{h.reference}</span> : 'not yet issued'}
+                      Reference: {h.reference ? <span className="record select-all text-primary">{h.reference}</span> : 'not yet issued'}
                     </p>
                     {h.notes ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{h.notes}</p> : null}
                     <HandoffStatusForm dealId={dealId} handoffId={h.id} status={h.status} reference={h.reference} />
@@ -376,8 +376,9 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
             {view.shipment ? (
               <>
                 <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                  {view.shipment.mode ?? 'Mode not set'} · Booking {view.shipment.booking_ref ?? '—'} · SB{' '}
-                  {view.shipment.shipping_bill_no ?? '—'}
+                  {view.shipment.mode ?? 'Mode not set'} · Booking{' '}
+                  <span className="record">{view.shipment.booking_ref ?? '—'}</span> · SB{' '}
+                  <span className="record">{view.shipment.shipping_bill_no ?? '—'}</span>
                 </p>
                 {view.shipment.exception_state !== 'none' ? (
                   <p className="mt-2 rounded-md border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_6%,transparent)] p-2 text-xs text-primary">
@@ -464,7 +465,7 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
                 <ul className="mt-1.5 space-y-2">
                   {view.internal.tasks.map((t) => (
                     <li key={t.id}>
-                      <p className="text-sm font-medium text-primary">{t.title}</p>
+                      <p className="text-sm font-normal text-primary">{t.title}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <StatusChip label="Internal" tone="neutral" icon="block" size="sm" />
                         <StatusChip label={t.state.replace(/_/g, ' ')} tone="neutral" icon="dot" size="sm" />

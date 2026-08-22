@@ -41,7 +41,7 @@ export function GatedAction({
         {label}
       </button>
       <div className="mt-1.5 rounded-md border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_6%,transparent)] p-2 text-xs">
-        <p className="font-medium text-primary">
+        <p className="font-normal text-primary">
           Blocked by “{gate.label}”
           {gate.state === 'waiting' ? ' — not this step’s turn yet.' : ':'}
         </p>

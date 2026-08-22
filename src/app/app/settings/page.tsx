@@ -38,7 +38,7 @@ export default async function SettingsPage() {
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6 lg:p-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Settings</h1>
+        <h1 className="font-serif text-title-page text-primary">Settings</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Manage your account, preferences, and support options.</p>
       </header>
 
@@ -90,7 +90,7 @@ export default async function SettingsPage() {
 
           <Card title="Session">
             <p className="text-sm text-[var(--color-text-secondary)]">Signed in as</p>
-            <p className="mt-1 font-medium text-primary">{settings.account.email}</p>
+            <p className="mt-1 font-normal text-primary">{settings.account.email}</p>
             <form action={signOutFromSettings} className="mt-5">
               <button type="submit" className="focus-visible-ring min-h-10 rounded border border-[var(--color-border-strong)] bg-surface px-4 text-sm font-semibold text-primary hover:bg-surface-muted">Sign out</button>
             </form>

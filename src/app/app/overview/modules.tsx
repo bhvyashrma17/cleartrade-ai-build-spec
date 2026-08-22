@@ -128,7 +128,7 @@ export async function NextActionsModule({ orgId }: { orgId: string }) {
           // docs/04 "New account" state: welcome + a real next step, not a fake empty
           // dashboard.
           <div className="rounded border border-dashed border-[var(--color-border-strong)] p-4 text-center">
-            <p className="text-sm font-medium text-primary">Nothing waiting on you right now.</p>
+            <p className="text-sm font-normal text-primary">Nothing waiting on you right now.</p>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               Start by finding export markets for what you make.
             </p>
@@ -374,7 +374,7 @@ export async function AssignedAgentModule({ orgId, tier }: { orgId: string; tier
               {assignment.agent.name.slice(0, 1).toUpperCase()}
             </span>
             <div>
-              <p className="text-sm font-medium text-primary">{assignment.agent.name}</p>
+              <p className="text-sm font-normal text-primary">{assignment.agent.name}</p>
               <p className="text-xs text-[var(--color-text-secondary)]">{assignment.agent.email}</p>
             </div>
           </div>

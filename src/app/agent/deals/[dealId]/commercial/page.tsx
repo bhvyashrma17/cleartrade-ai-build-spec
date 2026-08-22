@@ -7,7 +7,7 @@
 
 import { DealStage } from '@prisma/client';
 import Link from 'next/link';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip } from '@/components/ui';
 import { ProposalDiff } from '@/components/commercial/ProposalDiff';
 import { AGENT_STATUS_DISPLAY, ProposalHistory } from '@/components/commercial/ProposalHistory';
 import { buildDealLockContext, NEGOTIABLE_STAGES } from '@/lib/commercial';
@@ -72,24 +72,26 @@ export default async function AgentDealCommercialPage({ params }: { params: Prom
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
-      <header className="mb-6">
-        <p className="text-sm font-medium text-primary">
-          <Link href="/agent" className="underline underline-offset-2">
-            Agent workspace
-          </Link>{' '}
-          · Commercial
-        </p>
-        <h1 className="text-2xl font-semibold text-primary">{deal.buyer.display_name}</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          {deal.exporter_org.display_name} · {deal.product?.name ?? 'No product'} · {deal.buyer.country_code}
-        </p>
+      <div className="mb-6">
+        <PageHeader
+          eyebrow={
+            <>
+              <Link href="/agent" className="underline underline-offset-2">
+                Agent workspace
+              </Link>{' '}
+              · Commercial
+            </>
+          }
+          title={deal.buyer.display_name}
+          description={`${deal.exporter_org.display_name} · ${deal.product?.name ?? 'No product'} · ${deal.buyer.country_code}`}
+        />
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <StatusChip label={DEAL_STAGE_LABELS[deal.stage]} tone="info" icon="dot" size="sm" />
           <span className="text-sm text-[var(--color-text-secondary)]">
             {money(deal.value_amount, deal.value_currency)}
           </span>
         </div>
-      </header>
+      </div>
 
       {/* Risk — AGT-05 "Warnings before propose/lock". */}
       {riskFlags.length > 0 || deal.buyer.verification_status !== 'verified' ? (
@@ -173,7 +175,7 @@ export default async function AgentDealCommercialPage({ params }: { params: Prom
             <h2 className="text-lg font-semibold text-primary">Buyer status</h2>
             {view.latest?.buyerStatus ? (
               <>
-                <p className="mt-2 text-sm font-medium text-primary">
+                <p className="mt-2 text-sm font-normal text-primary">
                   {BUYER_STATUS_LABELS[view.latest.buyerStatus] ?? view.latest.buyerStatus}
                 </p>
                 {view.latest.buyerStatusNote ? (

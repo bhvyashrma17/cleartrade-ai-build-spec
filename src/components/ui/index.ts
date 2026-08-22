@@ -31,3 +31,20 @@ export { JourneyProgress } from './JourneyProgress';
 export type { JourneyProgressProps, JourneyStageValue } from './JourneyProgress';
 
 export { NotBuiltYet } from './NotBuiltYet';
+
+export { Stack } from './Stack';
+export type { StackGap, StackProps } from './Stack';
+
+export { Inset } from './Inset';
+export type { InsetSize, InsetProps } from './Inset';
+
+export { Card } from './Card';
+export type { CardProps } from './Card';
+
+export { EmptyState } from './EmptyState';
+export type { EmptyStateProps } from './EmptyState';
+
+export { PageHeader } from './PageHeader';
+export type { PageHeaderProps } from './PageHeader';
+
+export { Table, Thead, Tbody, Tr, Th, Td } from './Table';

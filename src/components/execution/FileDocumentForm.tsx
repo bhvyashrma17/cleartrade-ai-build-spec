@@ -68,7 +68,7 @@ export function FileDocumentForm({
           onChange={(e) => setRef(e.target.value)}
           placeholder="Authority reference"
           aria-label="Filing reference"
-          className="mb-1.5 block w-full max-w-[180px] rounded-md border border-[var(--color-border)] bg-surface px-2 py-1 text-xs text-primary focus-visible-ring"
+          className="record mb-1.5 block w-full max-w-[180px] rounded-md border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring"
         />
       ) : null}
       <div className="flex flex-wrap gap-1.5">

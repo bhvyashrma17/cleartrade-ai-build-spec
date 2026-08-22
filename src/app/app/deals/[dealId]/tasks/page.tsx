@@ -72,7 +72,7 @@ export default async function DealTasksPage({ params }: { params: Promise<{ deal
       <li className="rounded-md border border-[var(--color-border)] p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-sm font-medium text-primary">{task.title}</p>
+            <p className="text-sm font-normal text-primary">{task.title}</p>
             {task.description ? <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">{task.description}</p> : null}
           </div>
           <StatusChip label={slaChip.label} tone={slaChip.tone} icon={slaChip.tone === 'info' ? 'clock' : 'alert'} size="sm" />
@@ -152,7 +152,7 @@ export default async function DealTasksPage({ params }: { params: Promise<{ deal
           <ul className="mt-4 space-y-3">
             {completed.map((t) => (
               <li key={t.id} className="rounded-md border border-[var(--color-border)] p-3">
-                <p className="text-sm font-medium text-primary">{t.title}</p>
+                <p className="text-sm font-normal text-primary">{t.title}</p>
                 <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
                   Completed {t.completed_at ? fmt(t.completed_at) : '—'} · Owner: {t.owner?.name ?? 'ClearTrade'}
                 </p>
@@ -164,7 +164,7 @@ export default async function DealTasksPage({ params }: { params: Promise<{ deal
 
       {tasks.length === 0 ? (
         <section className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface p-8 text-center">
-          <p className="text-sm font-medium text-primary">No tasks on this deal yet</p>
+          <p className="text-sm font-normal text-primary">No tasks on this deal yet</p>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Tasks appear here as the deal moves forward.</p>
         </section>
       ) : null}

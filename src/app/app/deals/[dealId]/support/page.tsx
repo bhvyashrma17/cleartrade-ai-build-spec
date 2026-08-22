@@ -134,7 +134,7 @@ export default async function DealSupportPage({ params }: { params: Promise<{ de
 
                   {d.status === 'proposed_resolution' && d.resolution ? (
                     <div className="mt-2 rounded-md border border-[color-mix(in_srgb,var(--color-info)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-info)_6%,transparent)] p-2.5">
-                      <p className="text-xs font-medium text-primary">Proposed resolution</p>
+                      <p className="text-xs font-normal text-primary">Proposed resolution</p>
                       <p className="mt-1 text-sm text-primary">{d.resolution}</p>
                       <div className="mt-2">
                         <AcceptResolutionButton dealId={dealId} disputeId={d.id} />

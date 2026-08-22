@@ -12,7 +12,7 @@
  */
 
 import Link from 'next/link';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip } from '@/components/ui';
 import { documentWorkspace } from '@/lib/document-lifecycle';
 import { DOCUMENT_FORMAT_SUPPORT, getDocumentGenerationEngine } from '@/lib/document-generation';
 import {
@@ -82,20 +82,25 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
-      <header className="mb-4">
-        <p className="text-sm font-medium text-primary">
-          <Link href={`/agent/deals/${dealId}`} className="focus-visible-ring rounded underline underline-offset-2">
-            {deal.exporter_org.display_name}
-          </Link>{' '}
-          · {deal.buyer.display_name}
-        </p>
-        <h1 className="text-2xl font-semibold text-primary">Documents</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Every version renders from a frozen snapshot and stays reproducible. Correcting
-          canonical data never changes a version that already exists — it becomes the basis for
-          the next one. Renderer: <span className="font-mono text-xs">{engine.name}@{engine.version}</span>.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-4"
+        eyebrow={
+          <>
+            <Link href={`/agent/deals/${dealId}`} className="focus-visible-ring rounded underline underline-offset-2">
+              {deal.exporter_org.display_name}
+            </Link>{' '}
+            · {deal.buyer.display_name}
+          </>
+        }
+        title="Documents"
+        description={
+          <>
+            Every version renders from a frozen snapshot and stays reproducible. Correcting
+            canonical data never changes a version that already exists — it becomes the basis for
+            the next one. Renderer: <span className="record">{engine.name}@{engine.version}</span>.
+          </>
+        }
+      />
 
       {/* The invoice-number state, stated plainly. A preview is never presented as issued. */}
       <section className="mb-4 rounded-lg border border-[var(--color-border)] bg-surface p-3 text-sm shadow-card">
@@ -111,7 +116,7 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
             <span className="font-semibold">Draft invoice</span>
             <span className="ml-2 text-xs text-[var(--color-text-secondary)]">
               No official invoice number issued. Next in the series would be{' '}
-              <span className="font-mono">{preview.preview_number}</span>, which is an estimate
+              <span className="record">{preview.preview_number}</span>, which is an estimate
               until issued on the{' '}
               <Link href={`/agent/deals/${dealId}/document-data#invoice-numbering`} className="focus-visible-ring rounded underline underline-offset-2">
                 document data
@@ -194,7 +199,7 @@ export default async function AgentDocumentsPage({ params }: { params: Promise<{
                         <StatusChip label={`Filing: ${current ? lifecycleLabel(current.filing_status) : 'not started'}`} tone="neutral" icon="dot" size="sm" />
                       ) : null}
                       {current?.content_hash ? (
-                        <span className="font-mono text-[11px] text-[var(--color-text-muted)]" title="Frozen input hash">
+                        <span className="record text-[var(--color-text-muted)]" title="Frozen input hash">
                           snap {current.content_hash.slice(0, 8)}
                         </span>
                       ) : null}

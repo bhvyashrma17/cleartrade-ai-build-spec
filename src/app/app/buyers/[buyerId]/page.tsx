@@ -72,11 +72,11 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
       {/* Global buyer facts — never mixed with exporter-specific state below. */}
-      {!isRealWorkflowEnvironment()&&unsafeOrigins.length?<p className="rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-medium text-primary">Test evidence · Non-real evidence: {unsafeOrigins.join(', ')}</p>:null}
+      {!isRealWorkflowEnvironment()&&unsafeOrigins.length?<p className="rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · Non-real evidence: {unsafeOrigins.join(', ')}</p>:null}
       <header className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-primary">{buyer.display_name}</h1>
+            <h1 className="font-serif text-title-page text-primary">{buyer.display_name}</h1>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{buyer.legal_name}</p>
             <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
               {buyer.country_code} · <span className="capitalize">{buyer.buyer_type.replace(/_/g, ' ')}</span>
@@ -179,7 +179,7 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
             {buyer.contacts.map((c) => (
               <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-border)] p-2.5">
                 <div>
-                  <p className="text-sm font-medium text-primary">{c.name}</p>
+                  <p className="text-sm font-normal text-primary">{c.name}</p>
                   <p className="text-xs text-[var(--color-text-secondary)]">
                     {c.role_title ?? 'No title'} {c.email ? `· ${c.email}` : ''}
                   </p>

@@ -18,7 +18,7 @@ export default async function NotFound() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-muted p-6">
       <section className="w-full max-w-md rounded-lg bg-surface p-8 text-center shadow-card">
-        <h1 className="text-xl font-semibold text-primary">Not found</h1>
+        <h1 className="font-serif text-title-page text-primary">Not found</h1>
         <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
           This page is not available. It may have moved, or the link may be out of date.
         </p>

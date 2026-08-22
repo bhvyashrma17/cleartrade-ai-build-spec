@@ -97,7 +97,7 @@ export function TeamPanel({
         {members.map((m) => (
           <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-border)] p-2.5">
             <div>
-              <p className="text-sm font-medium text-primary">{m.name}</p>
+              <p className="text-sm font-normal text-primary">{m.name}</p>
               <p className="text-xs text-[var(--color-text-secondary)]">{m.email} · {m.role === 'exporter_owner' ? 'Owner' : 'Member'}</p>
             </div>
             {isOwner ? (
@@ -121,7 +121,7 @@ export function TeamPanel({
             {invitations.map((inv) => (
               <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-[var(--color-border-strong)] p-2.5">
                 <div>
-                  <p className="text-sm font-medium text-primary">{inv.email}</p>
+                  <p className="text-sm font-normal text-primary">{inv.email}</p>
                   <div className="mt-1 flex items-center gap-2">
                     <StatusChip label="Invite pending" tone="warning" icon="clock" size="sm" />
                     <span className="text-xs text-[var(--color-text-secondary)]">Expires {fmt(inv.expires_at)}</span>
@@ -155,7 +155,7 @@ export function TeamPanel({
 
       {isOwner ? (
         <div className="mt-5 max-w-sm rounded-md border border-[var(--color-border)] bg-surface-muted p-3">
-          <p className="text-xs font-medium text-primary">Invite a team member</p>
+          <p className="text-xs font-normal text-primary">Invite a team member</p>
           <div className="mt-2 space-y-2">
             <Input type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             <select

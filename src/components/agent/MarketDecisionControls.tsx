@@ -111,14 +111,15 @@ export function MarketDecisionControls({
     return (
       <div className="flex flex-wrap gap-1">
         {ACTIONS.map((a) => (
-          <button
+          <Button
             key={a.action}
             type="button"
+            variant="secondary"
             onClick={() => { setOpen(a.action); setError(null); }}
-            className="focus-visible-ring rounded border border-[var(--color-border-strong)] px-2 py-1 text-xs font-medium text-primary hover:bg-surface-muted"
+            className="min-h-0 rounded px-2 py-1 text-xs font-medium"
           >
             {a.label}
-          </button>
+          </Button>
         ))}
       </div>
     );
@@ -173,7 +174,7 @@ export function MarketDecisionControls({
       ) : null}
 
       {error ? (
-        <p role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-red-50 px-2 py-1 text-xs text-critical">
+        <p role="alert" className="rounded border border-[color-mix(in_srgb,var(--color-critical)_30%,transparent)] bg-[color-mix(in_srgb,var(--crit-fill)_8%,var(--card))] px-2 py-1 text-xs text-critical">
           {error}
         </p>
       ) : null}

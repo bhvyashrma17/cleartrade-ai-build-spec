@@ -101,7 +101,7 @@ export function AuditSearch() {
     { key: 'action', header: 'Action', render: (r) => r.action.replace(/_/g, ' ') },
     { key: 'object', header: 'Object', render: (r) => <div>{r.object_type}<div className="text-xs text-[var(--color-text-secondary)]">{r.object_id.slice(-8)}</div></div> },
     { key: 'source', header: 'Source', hideOnMobile: true, render: (r) => r.source },
-    { key: 'correlation_id', header: 'Correlation', hideOnMobile: true, render: (r) => <span className="font-mono text-xs">{r.correlation_id.slice(-10)}</span> },
+    { key: 'correlation_id', header: 'Correlation', hideOnMobile: true, render: (r) => <span className="record">{r.correlation_id.slice(-10)}</span> },
   ];
 
   return (
@@ -148,7 +148,7 @@ export function AuditSearch() {
 
       {loadError ? (
         <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-4 text-sm text-critical">
-          <p className="font-medium">{loadError}</p>
+          <p className="font-normal">{loadError}</p>
           <button type="button" onClick={fetchRows} className="mt-2 font-medium underline underline-offset-2">Retry</button>
         </div>
       ) : (
@@ -179,7 +179,7 @@ export function AuditSearch() {
                 <div><dt className="uppercase text-[var(--color-text-muted)]">Actor</dt><dd className="text-primary">{row.actor_name ?? 'ClearTrade'} ({row.role ?? '—'})</dd></div>
                 <div><dt className="uppercase text-[var(--color-text-muted)]">Source</dt><dd className="text-primary">{row.source}</dd></div>
                 <div><dt className="uppercase text-[var(--color-text-muted)]">Timestamp</dt><dd className="text-primary">{format(new Date(row.timestamp), 'dd MMM yyyy, HH:mm:ss')}</dd></div>
-                <div><dt className="uppercase text-[var(--color-text-muted)]">Correlation ID</dt><dd className="font-mono text-primary">{row.correlation_id}</dd></div>
+                <div><dt className="uppercase text-[var(--color-text-muted)]">Correlation ID</dt><dd className="record text-primary">{row.correlation_id}</dd></div>
               </dl>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>

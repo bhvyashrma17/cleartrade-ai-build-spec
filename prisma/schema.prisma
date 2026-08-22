@@ -3285,8 +3285,9 @@ model TradeFlowAcquisition {
   source_dataset_version String?
   created_at             DateTime           @default(now())
 
-  trade_flow TradeFlow @relation(fields: [trade_flow_id], references: [id], onDelete: Restrict)
-  ingest_run IngestRun @relation(fields: [ingest_run_id], references: [id], onDelete: Restrict)
+  trade_flow             TradeFlow                   @relation(fields: [trade_flow_id], references: [id], onDelete: Restrict)
+  ingest_run             IngestRun                   @relation(fields: [ingest_run_id], references: [id], onDelete: Restrict)
+  normalized_observation NormalizedTradeObservation?
 
   @@unique([ingest_run_id, reporter, partner, hs_code, year, flow_direction, source])
   @@index([trade_flow_id, retrieved_at])
@@ -3334,10 +3335,110 @@ model IngestRun {
 
   trade_flows             TradeFlow[]
   trade_flow_acquisitions TradeFlowAcquisition[]
+  source_evidence         SourceEvidence[]
   import_records          ImportRecord[]
 
   @@index([source, started_at])
   @@index([provider, client_mode, started_at])
+}
+
+/// Immutable provider response. Exact response text is retained in PostgreSQL because Country
+/// Truth requests are deliberately bounded HS6 batches; the checksum makes later object-storage
+/// migration content-addressable without changing evidence identity.
+model SourceEvidence {
+  id                    String                     @id @default(cuid())
+  ingest_run_id         String?
+  provider              String
+  dataset               String
+  dataset_version       String?
+  source_origin         EvidenceOrigin
+  environment           String
+  request_fingerprint   String
+  request_parameters    Json
+  redacted_request      String
+  http_status           Int
+  response_checksum     String
+  raw_response_text     String
+  retrieved_at          DateTime
+  provider_row_count    Int?
+  returned_row_count    Int
+  completeness          EvidenceCompletenessStatus
+  completeness_metadata Json?
+  quota_metadata        Json?
+  parser_version        String
+  status                String
+  error_metadata        Json?
+  created_at            DateTime                   @default(now())
+
+  ingest_run   IngestRun?                   @relation(fields: [ingest_run_id], references: [id], onDelete: Restrict)
+  observations NormalizedTradeObservation[]
+
+  @@index([request_fingerprint, source_origin, retrieved_at])
+  @@index([response_checksum])
+}
+
+/// Provider facts normalized without collapsing missing, suppressed, invalid, and observed-zero.
+model NormalizedTradeObservation {
+  id                        String             @id @default(cuid())
+  source_evidence_id        String
+  trade_flow_acquisition_id String?            @unique
+  observation_key           String             @unique
+  reporter_code             String
+  reporter_iso2             String?            @db.VarChar(2)
+  partner_code              String
+  partner_iso2              String?            @db.VarChar(2)
+  partner_is_world          Boolean            @default(false)
+  partner2_code             String?
+  flow_direction            TradeFlowDirection
+  frequency                 String
+  period                    String
+  ref_year                  Int
+  hs_code                   String
+  hs_level                  Int
+  hs_revision               String
+  customs_code              String?
+  mode_of_supply            String?
+  trade_value               Decimal?           @db.Decimal(20, 3)
+  trade_value_status        String
+  quantity                  Decimal?           @db.Decimal(18, 3)
+  quantity_status           String
+  quantity_unit             String?
+  alternate_quantity        Decimal?           @db.Decimal(18, 3)
+  alternate_quantity_unit   String?
+  net_weight                Decimal?           @db.Decimal(18, 3)
+  gross_weight              Decimal?           @db.Decimal(18, 3)
+  estimate_flag             Boolean?
+  suppression_flag          Boolean?
+  confidentiality_flag      Boolean?
+  normalization_version     String
+  retrieved_at              DateTime
+  source_origin             EvidenceOrigin
+  incompatibility_reason    String?
+  created_at                DateTime           @default(now())
+
+  source_evidence        SourceEvidence        @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
+  trade_flow_acquisition TradeFlowAcquisition? @relation(fields: [trade_flow_acquisition_id], references: [id], onDelete: Restrict)
+
+  @@index([reporter_code, partner_code, hs_code, ref_year, flow_direction])
+  @@index([source_evidence_id])
+}
+
+/// Immutable cached classification reference used to prove the HS edition behind a request.
+model HsReferenceSnapshot {
+  id                String   @id @default(cuid())
+  provider          String
+  nomenclature      String
+  revision          String
+  source_url        String
+  response_checksum String
+  raw_response_text String
+  retrieved_at      DateTime
+  dataset_version   String?
+  parser_version    String
+  created_at        DateTime @default(now())
+
+  @@unique([provider, revision, response_checksum])
+  @@index([provider, revision, retrieved_at])
 }
 
 /// Shared provider quota ledger. A conditional database update reserves each request, so the

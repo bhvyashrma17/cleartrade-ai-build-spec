@@ -41,7 +41,7 @@ export function AcceptResolutionButton({ dealId, disputeId }: { dealId: string; 
 
   return (
     <div className="rounded-md border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_6%,transparent)] p-2.5 text-xs">
-      <p className="font-medium text-primary">Accepting closes this case. This cannot be undone.</p>
+      <p className="font-normal text-primary">Accepting closes this case. This cannot be undone.</p>
       {error ? <p className="mt-1 text-[var(--color-critical-text)]">{error}</p> : null}
       <div className="mt-2 flex gap-1.5">
         <Button disabled={busy} onClick={() => void accept()} className="min-h-8 px-2.5 text-xs">

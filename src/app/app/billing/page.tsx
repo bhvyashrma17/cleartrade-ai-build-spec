@@ -30,7 +30,7 @@ export default async function BillingPage() {
   return (
     <div className="mx-auto max-w-2xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Commitment fee</h1>
+        <h1 className="font-serif text-title-page text-primary">Commitment fee</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           A one-time fee that unlocks full ranked Demand Discovery, Buyer Discovery contacts, and
           the agent-assisted workflow.

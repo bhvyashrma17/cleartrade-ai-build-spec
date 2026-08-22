@@ -13,7 +13,7 @@ describe('authenticated Comtrade response transformation',()=>{
     const fetchMock=vi.fn().mockResolvedValue(response([base],200,{etag:'dataset-v1'}));vi.stubGlobal('fetch',fetchMock);
     const client=new ComtradeApiClient('test-key-never-logged',policy);
     const result=await client.fetchChapter(params);
-    expect(result.rows).toEqual([{reporter:'842',partner:'0',hs_code:'090111',year:2024,period:'2024',value:123.456,quantity:10,unit:'kg'}]);
+    expect(result.rows).toHaveLength(1);expect(result.rows[0]).toMatchObject({reporter:'842',partner:'0',hs_code:'090111',year:2024,period:'2024',value:123.456,value_status:'observed',quantity:10,unit:'kg'});
     expect(result.source_dataset_version).toBe('dataset-v1');
     const request=fetchMock.mock.calls[0];expect(String(request[0])).toContain('cmdCode=090111');expect(request[1].headers).toHaveProperty('Ocp-Apim-Subscription-Key','test-key-never-logged');
   });

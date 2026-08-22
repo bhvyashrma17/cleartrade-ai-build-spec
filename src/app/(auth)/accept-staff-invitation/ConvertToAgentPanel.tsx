@@ -40,7 +40,7 @@ export function ConvertToAgentPanel({ token, currentEmail }: { token: string; cu
   return (
     <div>
       <p className="mt-2 text-sm text-[var(--color-text-secondary)]">You are signed in as:</p>
-      <p className="mt-1 text-sm font-medium text-primary">{currentEmail}</p>
+      <p className="mt-1 text-sm font-normal text-primary">{currentEmail}</p>
 
       <div className="mt-4 rounded border border-[var(--color-border)] bg-surface-muted px-3 py-2">
         <p className="text-sm text-primary">

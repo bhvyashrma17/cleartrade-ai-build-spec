@@ -15,7 +15,7 @@
 
 import Link from 'next/link';
 import { DealStage, RiskState, SlaState, TaskState } from '@prisma/client';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { assignedOrgIds } from '@/lib/permissions';
 import { isOps } from '@/lib/permissions';
@@ -142,15 +142,16 @@ export default async function AgentExportersPage() {
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-6">
-        <p className="text-sm font-medium text-primary">Agent workspace</p>
-        <h1 className="text-2xl font-semibold text-primary">Exporters</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          {isOps(principal)
+      <PageHeader
+        className="mb-6"
+        eyebrow="Agent workspace"
+        title="Exporters"
+        description={
+          isOps(principal)
             ? 'All exporter accounts. Ops sees every account by role.'
-            : `${orgs.length} exporter${orgs.length === 1 ? '' : 's'} assigned to you. Needing attention first.`}
-        </p>
-      </header>
+            : `${orgs.length} exporter${orgs.length === 1 ? '' : 's'} assigned to you. Needing attention first.`
+        }
+      />
 
       {orgs.length === 0 ? (
         <p className="rounded-lg border border-dashed border-[var(--color-border)] bg-surface-muted px-4 py-10 text-center text-sm text-[var(--color-text-secondary)]">
@@ -158,37 +159,37 @@ export default async function AgentExportersPage() {
         </p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-primary text-[var(--color-text-inverse)]">
-                <th scope="col" className="px-4 py-3 text-left font-medium">Exporter</th>
-                <th scope="col" className="px-4 py-3 text-left font-medium">Journey</th>
-                <th scope="col" className="px-4 py-3 text-left font-medium">Readiness</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">Active deals</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">Open tasks</th>
-                <th scope="col" className="px-4 py-3 text-left font-medium">Needs you next</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <Thead>
+              <Tr className="bg-primary text-[var(--color-text-inverse)]">
+                <Th className="font-medium">Exporter</Th>
+                <Th className="font-medium">Journey</Th>
+                <Th className="font-medium">Readiness</Th>
+                <Th align="right" className="font-medium">Active deals</Th>
+                <Th align="right" className="font-medium">Open tasks</Th>
+                <Th className="font-medium">Needs you next</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {ordered.map(({ org, stats, action }) => (
-                <tr key={org.id} className="border-t border-[var(--color-border)] hover:bg-surface-muted">
-                  <td className="px-4 py-3">
+                <Tr key={org.id} className="hover:bg-surface-muted">
+                  <Td>
                     <Link href={`/agent/exporters/${org.id}`} className="focus-visible-ring rounded font-medium text-primary underline underline-offset-2">
                       {org.display_name}
                     </Link>
                     <div className="text-xs text-[var(--color-text-muted)]">
                       {org.legal_name ?? '—'} · {org.tier} · updated {fmt(org.updated_at)}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-primary">{JOURNEY_LABELS[stats.journey] ?? stats.journey}</td>
-                  <td className="px-4 py-3 text-primary">{org.readiness_status}</td>
-                  <td className="px-4 py-3 text-right text-primary">{stats.activeDeals}</td>
-                  <td className="px-4 py-3 text-right text-primary">
+                  </Td>
+                  <Td className="text-primary">{JOURNEY_LABELS[stats.journey] ?? stats.journey}</Td>
+                  <Td className="text-primary">{org.readiness_status}</Td>
+                  <Td align="right" className="text-primary">{stats.activeDeals}</Td>
+                  <Td align="right" className="text-primary">
                     {stats.escalated + stats.overdue > 0 ? (
                       <span className="text-critical">{stats.escalated + stats.overdue}</span>
                     ) : '—'}
-                  </td>
-                  <td className="px-4 py-3">
+                  </Td>
+                  <Td>
                     {action ? (
                       <StatusChip
                         label={action.label}
@@ -201,11 +202,11 @@ export default async function AgentExportersPage() {
                       // blank reads as missing data, not as "nothing needed".
                       <span className="text-xs text-[var(--color-text-muted)]">Nothing outstanding</span>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         </div>
       )}
     </div>

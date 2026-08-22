@@ -15,7 +15,7 @@ import { docChip, FILING_STATUS_DISPLAY, GENERATION_STATUS_DISPLAY, APPROVAL_STA
 import { AssignPartnerForm } from '@/components/execution/AssignPartnerForm';
 import { OverrideRequirementForm } from '@/components/ops/OverrideRequirementForm';
 import { RecordFilingForm } from '@/components/ops/RecordFilingForm';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
@@ -86,13 +86,12 @@ export default async function OpsExecutionPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
-      <header className="mb-2">
-        <p className="text-sm font-medium text-primary">Operations</p>
-        <h1 className="text-2xl font-semibold text-primary">CHA, compliance &amp; document oversight</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          ClearTrade coordinates filing with CHAs — it does not file directly with ICEGATE.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-2"
+        eyebrow="Operations"
+        title="CHA, compliance & document oversight"
+        description="ClearTrade coordinates filing with CHAs — it does not file directly with ICEGATE."
+      />
 
       {/* Ready-to-file queue */}
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
@@ -172,7 +171,7 @@ export default async function OpsExecutionPage() {
           <ul className="mt-4 space-y-4">
             {shipments.map((s) => (
               <li key={s.id} className="rounded-md border border-[var(--color-border)] p-3">
-                <p className="text-sm font-medium text-primary">
+                <p className="text-sm font-normal text-primary">
                   {s.deal.exporter_org.display_name} · {s.deal.buyer.display_name}{' '}
                   <Link href={`/agent/deals/${s.deal.id}`} className="focus-visible-ring text-xs font-normal text-[var(--color-text-secondary)] underline underline-offset-2">
                     open deal
@@ -196,25 +195,25 @@ export default async function OpsExecutionPage() {
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">No handoffs recorded yet.</p>
         ) : (
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-                <tr><th className="pb-2">Partner</th><th className="pb-2">Exporter</th><th className="pb-2">Status</th><th className="pb-2">Reference</th><th className="pb-2">Sent</th></tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[720px]">
+              <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+                <Tr><Th>Partner</Th><Th>Exporter</Th><Th>Status</Th><Th>Reference</Th><Th>Sent</Th></Tr>
+              </Thead>
+              <Tbody>
                 {recentHandoffs.map((h) => {
                   const chip = HANDOFF_STATUS_DISPLAY[h.status] ?? HANDOFF_STATUS_DISPLAY.pending;
                   return (
-                    <tr key={h.id} className="border-t border-[var(--color-border)]">
-                      <td className="py-2">{h.partner.display_name} <span className="text-xs text-[var(--color-text-secondary)]">({h.lane})</span></td>
-                      <td className="py-2 text-[var(--color-text-secondary)]">{h.deal.exporter_org.display_name}</td>
-                      <td className="py-2"><StatusChip label={chip.label} tone={chip.tone} icon={chip.tone === 'critical' ? 'alert' : chip.tone === 'positive' ? 'check' : 'dot'} size="sm" /></td>
-                      <td className="py-2 text-[var(--color-text-secondary)]">{h.reference ?? '—'}</td>
-                      <td className="py-2 text-[var(--color-text-secondary)]">{fmt(h.sent_at)}</td>
-                    </tr>
+                    <Tr key={h.id}>
+                      <Td>{h.partner.display_name} <span className="text-xs text-[var(--color-text-secondary)]">({h.lane})</span></Td>
+                      <Td className="text-[var(--color-text-secondary)]">{h.deal.exporter_org.display_name}</Td>
+                      <Td><StatusChip label={chip.label} tone={chip.tone} icon={chip.tone === 'critical' ? 'alert' : chip.tone === 'positive' ? 'check' : 'dot'} size="sm" /></Td>
+                      <Td className="record text-[var(--color-text-secondary)]">{h.reference ?? '—'}</Td>
+                      <Td className="text-[var(--color-text-secondary)]">{fmt(h.sent_at)}</Td>
+                    </Tr>
                   );
                 })}
-              </tbody>
-            </table>
+              </Tbody>
+            </Table>
           </div>
         )}
       </section>
@@ -224,33 +223,33 @@ export default async function OpsExecutionPage() {
         <h2 className="text-lg font-semibold text-primary">Partner performance</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Handoff counts by outcome — no composite score.</p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-              <tr><th className="pb-2">Partner</th><th className="pb-2">Status</th><th className="pb-2">Sent</th><th className="pb-2">Acknowledged</th><th className="pb-2">Completed</th><th className="pb-2">Rejected</th></tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-[640px]">
+            <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+              <Tr><Th>Partner</Th><Th>Status</Th><Th>Sent</Th><Th>Acknowledged</Th><Th>Completed</Th><Th>Rejected</Th></Tr>
+            </Thead>
+            <Tbody>
               {partners.map((p) => {
                 const counts = countsByPartner.get(p.id) ?? {};
                 return (
-                  <tr key={p.id} className="border-t border-[var(--color-border)]">
-                    <td className="py-2 text-primary">{p.display_name} <span className="text-xs text-[var(--color-text-secondary)]">({p.type})</span></td>
-                    <td className="py-2">
+                  <Tr key={p.id}>
+                    <Td className="text-primary">{p.display_name} <span className="text-xs text-[var(--color-text-secondary)]">({p.type})</span></Td>
+                    <Td>
                       <StatusChip
                         label={p.partner_status}
                         tone={p.partner_status === 'active' ? 'positive' : p.partner_status === 'suspended' ? 'warning' : 'neutral'}
                         icon={p.partner_status === 'active' ? 'check' : 'block'}
                         size="sm"
                       />
-                    </td>
-                    <td className="py-2 text-[var(--color-text-secondary)]">{counts.sent ?? 0}</td>
-                    <td className="py-2 text-[var(--color-text-secondary)]">{counts.acknowledged ?? 0}</td>
-                    <td className="py-2 text-[var(--color-text-secondary)]">{counts.completed ?? 0}</td>
-                    <td className="py-2 text-[var(--color-text-secondary)]">{counts.rejected ?? 0}</td>
-                  </tr>
+                    </Td>
+                    <Td className="text-[var(--color-text-secondary)]">{counts.sent ?? 0}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{counts.acknowledged ?? 0}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{counts.completed ?? 0}</Td>
+                    <Td className="text-[var(--color-text-secondary)]">{counts.rejected ?? 0}</Td>
+                  </Tr>
                 );
               })}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         </div>
         <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
           Manage the partner directory (onboarding, status changes) in{' '}

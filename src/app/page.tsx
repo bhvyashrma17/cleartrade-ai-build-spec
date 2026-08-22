@@ -50,7 +50,7 @@ function LandingPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-8 sm:py-24">
-        <h1 className="text-3xl font-bold text-primary sm:text-4xl">
+        <h1 className="font-serif text-title-page text-primary sm:text-display">
           Find buyers for what you export — before you sign up for anything
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-base text-[var(--color-text-secondary)]">

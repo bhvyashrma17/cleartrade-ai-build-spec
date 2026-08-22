@@ -19,7 +19,7 @@
 import Link from 'next/link';
 import { PayoutState } from '@prisma/client';
 import { RaisePayoutQueryButton } from '@/components/agent/RaisePayoutQueryButton';
-import { MetricCard, StatusChip } from '@/components/ui';
+import { MetricCard, PageHeader, StatusChip } from '@/components/ui';
 import { computeAgentMetrics, MIN_SAMPLE, type AgentMetric } from '@/lib/agent-metrics';
 import { requirePortalAccess } from '@/lib/auth';
 import { netPayable } from '@/lib/payouts';
@@ -84,14 +84,11 @@ export default async function AgentPerformancePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
-      <header>
-        <p className="text-sm font-medium text-primary">Agent workspace</p>
-        <h1 className="text-2xl font-semibold text-primary">Performance &amp; payout</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Your workload, outcome quality and commission records. Every metric states the period it
-          covers and what it is measured against — there is no single overall score.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="Agent workspace"
+        title="Performance & payout"
+        description="Your workload, outcome quality and commission records. Every metric states the period it covers and what it is measured against — there is no single overall score."
+      />
 
       {/* Workload — operational first, per the anatomy table. */}
       <section aria-label="Workload" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -138,7 +135,7 @@ export default async function AgentPerformancePage() {
 
         {payouts.length === 0 ? (
           <div className="mt-4 rounded border border-dashed border-[var(--color-border)] bg-surface-muted px-4 py-6 text-sm text-[var(--color-text-secondary)]">
-            <p className="font-medium text-primary">No payout records yet</p>
+            <p className="font-normal text-primary">No payout records yet</p>
             <p className="mt-1">
               A commission record is created once one of your deals is locked. It becomes eligible
               when the buyer payment realizes and no dispute is open on the deal.
@@ -156,7 +153,7 @@ export default async function AgentPerformancePage() {
                 <li key={p.id} className="rounded-md border border-[var(--color-border)] p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-medium text-primary">
+                      <p className="text-sm font-normal text-primary">
                         {p.deal.exporter_org.display_name} · {p.deal.buyer.display_name}
                       </p>
                       <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">Deal {p.deal_id.slice(-6)}</p>
@@ -206,7 +203,7 @@ export default async function AgentPerformancePage() {
                           it — the visible half of OPS-05-AC03. */}
                       {hasAdjustments ? (
                         <div className="mt-2 rounded-md bg-surface-muted p-2">
-                          <p className="text-xs font-medium text-primary">Adjustments</p>
+                          <p className="text-xs font-normal text-primary">Adjustments</p>
                           <ul className="mt-1 space-y-1">
                             {p.adjustments.map((a) => (
                               <li key={a.id} className="text-xs text-[var(--color-text-secondary)]">
@@ -224,7 +221,7 @@ export default async function AgentPerformancePage() {
 
                       {p.state === PayoutState.paid ? (
                         <p className="mt-1.5 text-xs text-[var(--color-text-secondary)]">
-                          Paid {fmt(p.paid_at)}{p.payment_reference ? ` · reference ${p.payment_reference}` : ''}
+                          Paid {fmt(p.paid_at)}{p.payment_reference ? <> · reference <span className="record">{p.payment_reference}</span></> : ''}
                         </p>
                       ) : null}
 

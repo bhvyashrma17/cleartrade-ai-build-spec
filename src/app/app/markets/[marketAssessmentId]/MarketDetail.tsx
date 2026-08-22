@@ -71,7 +71,7 @@ export function MarketDetail({
 
       <DecisionHeader tier={tier} assessment={assessment} />
 
-      {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-medium text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
+      {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
 
       {assessment.rationale ? (
         <p className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm text-[var(--color-text-secondary)]">
@@ -155,7 +155,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function DataGap({ label }: { label: string }) {
   return (
     <div className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-surface p-3">
-      <p className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</p>
+      <p className="text-xs font-normal text-[var(--color-text-secondary)]">{label}</p>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">Data unavailable</p>
     </div>
   );
@@ -166,7 +166,7 @@ function DecisionHeader({ tier, assessment }: { tier: Tier; assessment: Assessme
     <header className="mt-3 flex flex-wrap items-start justify-between gap-4 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
       <div>
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold text-primary">{countryName(assessment.country_code)}</h1>
+          <h1 className="font-serif text-title-page text-primary">{countryName(assessment.country_code)}</h1>
           <span className="text-sm text-[var(--color-text-secondary)]">{assessment.country_code}</span>
           {assessment.is_selected ? <StatusChip label="Selected target" tone="positive" icon="check" size="sm" /> : null}
         </div>
@@ -287,7 +287,7 @@ function RequirementsSection({ assessment }: { assessment: AssessmentDetail }) {
     <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-surface p-4">
       {tariff ? (
         <div>
-          <p className="text-xs font-medium text-[var(--color-text-secondary)]">Tariff</p>
+          <p className="text-xs font-normal text-[var(--color-text-secondary)]">Tariff</p>
           <p className="mt-0.5 text-sm text-primary">
             {typeof tariff.note === 'string' ? tariff.note : JSON.stringify(tariff)}
           </p>
@@ -304,7 +304,7 @@ function RequirementsSection({ assessment }: { assessment: AssessmentDetail }) {
       ) : null}
       {certs && certs.length > 0 ? (
         <div>
-          <p className="text-xs font-medium text-[var(--color-text-secondary)]">Certifications likely required</p>
+          <p className="text-xs font-normal text-[var(--color-text-secondary)]">Certifications likely required</p>
           <ul className="mt-1 list-inside list-disc text-sm text-primary">
             {certs.map((c, i) => (
               <li key={i}>{String(c)}</li>
@@ -324,7 +324,7 @@ function CommercialSection({ assessment }: { assessment: AssessmentDetail }) {
 
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-surface p-4">
-      <p className="text-xs font-medium text-[var(--color-text-secondary)]">Typical price band</p>
+      <p className="text-xs font-normal text-[var(--color-text-secondary)]">Typical price band</p>
       <p className="mt-0.5 text-lg font-semibold text-primary">
         {assessment.price_band.currency} {assessment.price_band.min}
         {assessment.price_band.max ? ` – ${assessment.price_band.max}` : ''}

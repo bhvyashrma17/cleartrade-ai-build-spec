@@ -16,7 +16,7 @@
 import Link from 'next/link';
 import { SlaState, TaskState } from '@prisma/client';
 import { TaskEscalationActions } from '@/components/agent/TaskEscalationActions';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { TaskActions } from '@/components/execution/TaskActions';
 import { requirePortalAccess } from '@/lib/auth';
 import { assignedOrgIds } from '@/lib/permissions';
@@ -93,18 +93,18 @@ export default async function AgentTasksPage({
 
   return (
     <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <header className="mb-6">
-        <p className="text-sm font-medium text-primary">Agent workspace</p>
-        <h1 className="text-2xl font-semibold text-primary">Tasks, SLAs &amp; escalations</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Every task you own across every assigned exporter, in one queue — not memory or WhatsApp.
-        </p>
+      <div className="mb-6">
+        <PageHeader
+          eyebrow="Agent workspace"
+          title="Tasks, SLAs & escalations"
+          description="Every task you own across every assigned exporter, in one queue — not memory or WhatsApp."
+        />
         {unownedActiveCount > 0 ? (
           <p className="mt-2 rounded-md border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_8%,transparent)] px-3 py-2 text-sm text-primary">
             {unownedActiveCount} active task{unownedActiveCount === 1 ? '' : 's'} across your book have no named owner yet — claim them below.
           </p>
         ) : null}
-      </header>
+      </div>
 
       <nav aria-label="Task views" className="mb-5 flex flex-wrap gap-2">
         {VIEWS.map((v) => {
@@ -137,29 +137,29 @@ export default async function AgentTasksPage({
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[960px] text-left text-sm">
-              <thead className="text-xs uppercase text-[var(--color-text-muted)]">
-                <tr>
-                  <th className="pb-2">Task</th>
-                  <th className="pb-2">Exporter / deal</th>
-                  <th className="pb-2">Type</th>
-                  <th className="pb-2">Owner</th>
-                  <th className="pb-2">State</th>
-                  <th className="pb-2">Priority</th>
-                  <th className="pb-2">Due</th>
-                  <th className="pb-2">SLA</th>
-                  <th className="pb-2">Blocker</th>
-                  <th className="pb-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[960px]">
+              <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
+                <Tr>
+                  <Th>Task</Th>
+                  <Th>Exporter / deal</Th>
+                  <Th>Type</Th>
+                  <Th>Owner</Th>
+                  <Th>State</Th>
+                  <Th>Priority</Th>
+                  <Th>Due</Th>
+                  <Th>SLA</Th>
+                  <Th>Blocker</Th>
+                  <Th>Actions</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
                 {tasks.map((task) => {
                   const slaChip = SLA_DISPLAY[task.sla_state];
                   const priorityChip = PRIORITY_DISPLAY[task.priority] ?? PRIORITY_DISPLAY.normal;
                   return (
-                    <tr key={task.id} className="border-t border-[var(--color-border)] align-top">
-                      <td className="py-3 pr-3 font-medium text-primary">{task.title}</td>
-                      <td className="py-3 pr-3 text-[var(--color-text-secondary)]">
+                    <Tr key={task.id} className="align-top">
+                      <Td className="font-medium text-primary">{task.title}</Td>
+                      <Td className="text-[var(--color-text-secondary)]">
                         {task.deal_id ? (
                           <Link href={`/agent/deals/${task.deal_id}`} className="focus-visible-ring underline underline-offset-2">
                             {task.deal?.buyer.display_name ?? task.exporter_org?.display_name ?? 'Deal'}
@@ -167,21 +167,21 @@ export default async function AgentTasksPage({
                         ) : (
                           task.exporter_org?.display_name ?? '—'
                         )}
-                      </td>
-                      <td className="py-3 pr-3 text-[var(--color-text-secondary)]">{task.task_type ?? '—'}</td>
-                      <td className="py-3 pr-3 text-[var(--color-text-secondary)]">
+                      </Td>
+                      <Td className="text-[var(--color-text-secondary)]">{task.task_type ?? '—'}</Td>
+                      <Td className="text-[var(--color-text-secondary)]">
                         {task.owner?.name ?? <span className="text-[var(--color-critical-text)]">Unassigned</span>}
-                      </td>
-                      <td className="py-3 pr-3 text-[var(--color-text-secondary)]">{task.state.replace('_', ' ')}</td>
-                      <td className="py-3 pr-3">
+                      </Td>
+                      <Td className="text-[var(--color-text-secondary)]">{task.state.replace('_', ' ')}</Td>
+                      <Td>
                         <StatusChip label={priorityChip.label} tone={priorityChip.tone} icon="dot" size="sm" />
-                      </td>
-                      <td className="py-3 pr-3 text-[var(--color-text-secondary)]">{fmtDue(task.due_at)}</td>
-                      <td className="py-3 pr-3">
+                      </Td>
+                      <Td className="text-[var(--color-text-secondary)]">{fmtDue(task.due_at)}</Td>
+                      <Td>
                         <StatusChip label={slaChip.label} tone={slaChip.tone} icon={slaChip.tone === 'info' ? 'clock' : 'alert'} size="sm" />
-                      </td>
-                      <td className="py-3 pr-3 text-[var(--color-text-secondary)]">{task.blocked_reason ?? '—'}</td>
-                      <td className="py-3">
+                      </Td>
+                      <Td className="text-[var(--color-text-secondary)]">{task.blocked_reason ?? '—'}</Td>
+                      <Td>
                         <div className="space-y-1.5">
                           <TaskActions taskId={task.id} state={task.state} />
                           <TaskEscalationActions
@@ -190,12 +190,12 @@ export default async function AgentTasksPage({
                             isEscalated={task.sla_state === SlaState.escalated}
                           />
                         </div>
-                      </td>
-                    </tr>
+                      </Td>
+                    </Tr>
                   );
                 })}
-              </tbody>
-            </table>
+              </Tbody>
+            </Table>
           </div>
         )}
       </section>

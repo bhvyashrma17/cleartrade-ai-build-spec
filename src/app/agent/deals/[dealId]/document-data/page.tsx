@@ -13,7 +13,7 @@
 
 import Link from 'next/link';
 import { DocType } from '@prisma/client';
-import { StatusChip } from '@/components/ui';
+import { PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { allDocumentReadiness, buildDocumentContext, type CanonicalOwner } from '@/lib/document-data';
 import { documentDisplayName, notApplicableMessage } from '@/lib/document-ui';
 import { issuedInvoiceNumberForDeal, previewNextInvoiceNumber } from '@/lib/invoice-numbering';
@@ -69,19 +69,19 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <header className="mb-4">
-        <p className="text-sm font-medium text-primary">
-          <Link href={`/agent/deals/${dealId}`} className="focus-visible-ring rounded underline underline-offset-2">
-            {deal.exporter_org.display_name}
-          </Link>{' '}
-          · {deal.buyer.display_name}
-        </p>
-        <h1 className="text-2xl font-semibold text-primary">Document readiness</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Every field below is corrected on the record that owns it. Nothing is stored against a
-          document, so fixing it once fixes it for every document that needs it.
-        </p>
-      </header>
+      <PageHeader
+        className="mb-4"
+        eyebrow={
+          <>
+            <Link href={`/agent/deals/${dealId}`} className="focus-visible-ring rounded underline underline-offset-2">
+              {deal.exporter_org.display_name}
+            </Link>{' '}
+            · {deal.buyer.display_name}
+          </>
+        }
+        title="Document readiness"
+        description="Every field below is corrected on the record that owns it. Nothing is stored against a document, so fixing it once fixes it for every document that needs it."
+      />
 
       <nav aria-label="Document data sections" className="mb-4 flex flex-wrap gap-2 rounded-lg border border-[var(--color-border)] bg-surface p-3 shadow-card">
         {[
@@ -98,27 +98,27 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
       </nav>
 
       <section className="mb-6 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
-        <table className="w-full min-w-[36rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-[var(--color-text-inverse)]">
-              <th scope="col" className="px-3 py-2 text-left font-medium">Document</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Status</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">What is missing</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="min-w-[36rem]">
+          <Thead>
+            <Tr className="bg-primary text-[var(--color-text-inverse)]">
+              <Th className="font-medium">Document</Th>
+              <Th className="font-medium">Status</Th>
+              <Th className="font-medium">What is missing</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
             {readiness.map((r) => (
-              <tr key={r.documentType} className="border-t border-[var(--color-border)] align-top">
-                <td className="px-3 py-3 font-medium text-primary">{documentDisplayName(r.documentType, r.applicability)}</td>
-                <td className="px-3 py-3">
+              <Tr key={r.documentType} className="align-top">
+                <Td className="font-medium text-primary">{documentDisplayName(r.documentType, r.applicability)}</Td>
+                <Td>
                   <StatusChip
                     label={r.status === 'ready' ? 'Ready' : r.status === 'not_applicable' ? 'Not applicable' : r.status === 'blocked' ? 'Blocked' : `Missing ${r.missing.length}`}
                     tone={r.status === 'ready' ? 'positive' : r.status === 'blocked' ? 'critical' : 'neutral'}
                     icon={r.status === 'ready' ? 'check' : 'alert'}
                     size="sm"
                   />
-                </td>
-                <td className="px-3 py-3 text-[var(--color-text-secondary)]">
+                </Td>
+                <Td className="text-[var(--color-text-secondary)]">
                   {r.status === 'not_applicable' ? (
                     <span className="text-[var(--color-text-muted)]">{notApplicableMessage(r.documentType, r.applicability)}</span>
                   ) : r.status === 'ready' ? (
@@ -138,11 +138,11 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
                       ))}
                     </ul>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
+          </Tbody>
+        </Table>
       </section>
 
       {gaps.length > 0 ? (

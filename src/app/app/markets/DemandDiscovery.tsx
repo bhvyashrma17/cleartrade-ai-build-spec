@@ -127,7 +127,7 @@ export function DemandDiscovery({
   return (
     <div className="mx-auto max-w-4xl p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Find your best export markets</h1>
+        <h1 className="font-serif text-title-page text-primary">Find your best export markets</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           Tell us what you make. We rank destination countries by demand, tariffs, competition and
           logistics — with the reasoning shown, not just a score.
@@ -136,7 +136,7 @@ export function DemandDiscovery({
 
       {isGuest ? (
         <div className="mb-5 rounded-lg border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 p-4 text-sm">
-          <p className="font-medium text-primary">
+          <p className="font-normal text-primary">
             You&rsquo;re browsing as a guest — no account needed.
           </p>
           <p className="mt-1 text-[var(--color-text-secondary)]">
@@ -394,7 +394,7 @@ function RunProgress({
             {job?.error?.message ?? 'We could not complete this search.'}
           </p>
           {job?.correlation_id ? (
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">Reference: {job.correlation_id}</p>
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">Reference: <span className="record">{job.correlation_id}</span></p>
           ) : null}
           <Button onClick={onRetry} className="mt-3">
             Try again
@@ -447,7 +447,7 @@ function RunProgress({
                       {row.rationale ? (
                         <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">{row.rationale}</p>
                       ) : null}
-                      {row.evidence_warning ? <p className="mt-2 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-2 py-1 text-xs font-medium text-primary">Test evidence · {row.evidence_warning}</p> : null}
+                      {row.evidence_warning ? <p className="mt-2 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-2 py-1 text-xs font-normal text-primary">Test evidence · {row.evidence_warning}</p> : null}
                       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-[var(--color-text-secondary)]">
                         {row.demand_score != null ? (
                           <div>

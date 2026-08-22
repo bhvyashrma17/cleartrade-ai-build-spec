@@ -162,7 +162,7 @@ export function NotificationsList() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     {isUnread ? <span className="h-2 w-2 shrink-0 rounded-full bg-action" aria-hidden="true" /> : null}
-                    <p className={isUnread ? 'font-semibold text-primary' : 'font-medium text-primary'}>{n.title}</p>
+                    <p className={isUnread ? 'font-semibold text-primary' : 'font-normal text-primary'}>{n.title}</p>
                   </div>
                   <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">{n.body}</p>
                   <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{formatWhen(n.created_at)}</p>

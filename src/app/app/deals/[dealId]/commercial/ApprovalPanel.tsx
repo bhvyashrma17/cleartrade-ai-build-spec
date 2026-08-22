@@ -63,7 +63,7 @@ export function ApprovalPanel({
           role="alert"
           className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--color-critical)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-critical)_5%,transparent)] p-3 text-sm text-[var(--color-critical-text)]"
         >
-          <p className="font-medium">{error}</p>
+          <p className="font-normal">{error}</p>
           {staleConflict ? (
             <button
               type="button"

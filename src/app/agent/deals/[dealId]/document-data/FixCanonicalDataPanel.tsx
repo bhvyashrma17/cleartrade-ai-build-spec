@@ -39,7 +39,7 @@ function Section({
   title: string;
   note: string;
   usedBy?: string;
-  fields: { key: string; label: string; placeholder?: string }[];
+  fields: { key: string; label: string; placeholder?: string; mono?: boolean }[];
   original: Fields;
   onSave: (changed: Record<string, string | null>) => Promise<unknown>;
 }) {
@@ -69,7 +69,7 @@ function Section({
     <section id={id} className="scroll-mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
       <h2 className="text-sm font-semibold text-primary">{title}</h2>
       <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{note}</p>
-      {usedBy ? <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">Used by: {usedBy}</p> : null}
+      {usedBy ? <p className="mt-1 text-xs font-normal text-[var(--color-text-muted)]">Used by: {usedBy}</p> : null}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {fields.map((f) => (
           <Input
@@ -79,10 +79,11 @@ function Section({
             placeholder={f.placeholder}
             value={values[f.key] ?? ''}
             onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            className={f.mono ? 'record' : undefined}
           />
         ))}
       </div>
-      {error ? <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{error}</p> : null}
+      {error ? <p role="alert" className="mt-2 text-sm text-[var(--crit-text)]">{error}</p> : null}
       {saved && !dirty ? <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Saved.</p> : null}
       <Button type="button" className="mt-3" onClick={submit} disabled={busy || !dirty}>
         {busy ? 'Saving…' : 'Save'}
@@ -104,7 +105,7 @@ function SummarySection({
     <section id={id} className="scroll-mt-4 rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
       <h2 className="text-sm font-semibold text-primary">{title}</h2>
       <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{note}</p>
-      <p className="mt-1 text-xs font-medium text-[var(--color-text-muted)]">Used by: {usedBy}</p>
+      <p className="mt-1 text-xs font-normal text-[var(--color-text-muted)]">Used by: {usedBy}</p>
       <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
         {rows.map((row) => (
           <div key={row.label} className="rounded border border-[var(--color-border)] bg-surface-muted px-3 py-2">
@@ -220,12 +221,12 @@ export function FixCanonicalDataPanel(props: {
           original={props.shipment}
           fields={[
             { key: 'port_of_loading_name', label: 'Port of loading' },
-            { key: 'port_of_loading_unlocode', label: 'Loading UN/LOCODE', placeholder: 'INNSA' },
+            { key: 'port_of_loading_unlocode', label: 'Loading UN/LOCODE', placeholder: 'INNSA', mono: true },
             { key: 'port_of_discharge_name', label: 'Port of discharge' },
-            { key: 'port_of_discharge_unlocode', label: 'Discharge UN/LOCODE', placeholder: 'AEDXB' },
+            { key: 'port_of_discharge_unlocode', label: 'Discharge UN/LOCODE', placeholder: 'AEDXB', mono: true },
             { key: 'marks_and_numbers', label: 'Marks and numbers' },
             { key: 'vessel_or_flight_no', label: 'Vessel / flight' },
-            { key: 'container_no', label: 'Container number' },
+            { key: 'container_no', label: 'Container number', mono: true },
             { key: 'freight_amount', label: 'Freight amount' },
             { key: 'freight_currency', label: 'Freight currency', placeholder: 'USD' },
           ]}
@@ -314,12 +315,12 @@ export function FixCanonicalDataPanel(props: {
               </select>
             </label>
             <Input id="fx-ref" label="Citation" placeholder="Notification / quote reference"
-              value={rate.source_reference}
+              value={rate.source_reference} className="record"
               onChange={(e) => setRate((r) => ({ ...r, source_reference: e.target.value }))} />
             <Input id="fx-date" label="Rate date" type="date" value={rate.rate_date}
               onChange={(e) => setRate((r) => ({ ...r, rate_date: e.target.value }))} />
           </div>
-          {rateError ? <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{rateError}</p> : null}
+          {rateError ? <p role="alert" className="mt-2 text-sm text-[var(--crit-text)]">{rateError}</p> : null}
           <Button type="button" className="mt-3" onClick={recordRate} disabled={!rate.rate.trim()}>
             Record rate
           </Button>
@@ -333,7 +334,7 @@ export function FixCanonicalDataPanel(props: {
             <dt className="text-[var(--color-text-secondary)]">Status</dt>
             <dd className="font-medium text-primary">Official invoice number issued</dd>
             <dt className="text-[var(--color-text-secondary)]">Official invoice number</dt>
-            <dd className="font-mono text-primary">{props.issuedInvoiceNumber}</dd>
+            <dd className="record text-primary">{props.issuedInvoiceNumber}</dd>
             <dt className="text-[var(--color-text-secondary)]">Issued at</dt>
             <dd className="text-primary">{props.issuedAt ?? 'Not recorded'}</dd>
             <dt className="text-[var(--color-text-secondary)]">Issued by</dt>
@@ -341,7 +342,7 @@ export function FixCanonicalDataPanel(props: {
           </dl>
         ) : (
           <>
-            <p className="mt-1 text-sm font-medium text-primary">No official invoice number issued</p>
+            <p className="mt-1 text-sm font-normal text-primary">No official invoice number issued</p>
             <p className="mt-1 max-w-2xl text-xs text-[var(--color-text-secondary)]">
               Commercial Invoice cannot be finalized until a number is issued. Previewing or
               rendering a draft never consumes a number.

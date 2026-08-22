@@ -43,7 +43,7 @@ export default function GlobalError({
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-muted p-6">
       <section className="w-full max-w-lg rounded-lg bg-surface p-8 text-center shadow-card">
-        <h1 className="text-2xl font-bold text-primary">Something went wrong</h1>
+        <h1 className="font-serif text-title-page text-primary">Something went wrong</h1>
         <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
           We could not complete that request. Please try again. If this continues, share the
           reference ID below with ClearTrade support.
