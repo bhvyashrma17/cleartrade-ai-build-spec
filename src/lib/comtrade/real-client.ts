@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import type { ComtradePolicy } from '@/lib/config';
 import type { ComtradeClient, ComtradeFetchParams, ComtradeFetchResult, ComtradeFlowRow } from './client';
-import { ComtradeRateLimitError } from './client';
+import { ComtradeProviderRequestError, ComtradeRateLimitError } from './client';
 
 const AUTH_BASE_URL = 'https://comtradeapi.un.org/data/v1/get/C/A/HS';
 const PREVIEW_BASE_URL = 'https://comtradeapi.un.org/public/v1/preview/C/A/HS';
@@ -14,7 +14,7 @@ interface ComtradeApiRow {
   cmdCode: string; refYear: number; period: number|string; flowCode?: string|null; freqCode?: string|null;
   primaryValue: unknown; qty?: unknown; qtyUnitCode?: number|null; qtyUnitAbbr?: string|null;
   altQty?: unknown; altQtyUnitAbbr?: string|null; netWgt?: unknown; grossWgt?: unknown;
-  customsCode?: string|null; mosCode?: string|null; isQtyEstimated?: boolean|null; isNetWgtEstimated?: boolean|null;
+  customsCode?: string|null; mosCode?: string|null; clCode?: string|null; isQtyEstimated?: boolean|null; isNetWgtEstimated?: boolean|null;
 }
 const QUANTITY_UNITS: Record<number, string|null> = { 1:null, 2:'m²', 3:'1000 kWh', 4:'m', 5:'u', 6:'2u', 7:'l', 8:'kg', 9:'1000u', 10:'packages', 11:'12u', 12:'m³', 13:'carat' };
 const sleep = (ms:number) => new Promise((resolve)=>setTimeout(resolve,ms));
@@ -26,7 +26,8 @@ export function parseOptionalProviderNumber(value:unknown):{value:number|null;st
   if(typeof value==='string'){
     const trimmed=value.trim();
     if(!trimmed)return {value:null,status:'missing'};
-    if(/suppressed|confidential|unavailable|n\/a|\.\./i.test(trimmed))return {value:null,status:'suppressed'};
+    if(/suppressed|confidential|\.\./i.test(trimmed))return {value:null,status:'suppressed'};
+    if(/unavailable|n\/a/i.test(trimmed))return {value:null,status:'unavailable'};
   }
   const parsed=typeof value==='number'?value:Number(value);
   if(!Number.isFinite(parsed)||parsed<0)return {value:null,status:'invalid'};
@@ -70,16 +71,18 @@ export class ComtradeApiClient implements ComtradeClient {
       const requested=new Set(params.hs_codes),seen=new Set<string>(),rows:ComtradeFlowRow[]=[];let rejected=0;
       for(const row of data){
         const expectedFlow=params.flow_direction==='export'?'X':'M';
-        const mismatch=String(row.reporterCode)!==params.reporter||String(row.partnerCode)!==params.partner||String(row.partner2Code??'0')!==partner2||Number(row.refYear)!==params.year||String(row.period)!==String(params.year)||!requested.has(row.cmdCode)||(row.flowCode!=null&&row.flowCode!==expectedFlow)||(row.freqCode!=null&&row.freqCode!==frequency)||(row.customsCode!=null&&row.customsCode!==customs)||(row.mosCode!=null&&row.mosCode!==mos);
+        const mismatch=String(row.reporterCode)!==params.reporter||String(row.partnerCode)!==params.partner||String(row.partner2Code??'0')!==partner2||Number(row.refYear)!==params.year||String(row.period)!==String(params.year)||!requested.has(row.cmdCode)||(row.flowCode!=null&&row.flowCode!==expectedFlow)||(row.freqCode!=null&&row.freqCode!==frequency)||(row.customsCode!=null&&row.customsCode!==customs)||(row.mosCode!=null&&row.mosCode!==mos)||(row.clCode!=null&&row.clCode!==revisionCode(revision));
         if(mismatch){rejected++;continue;}
         const key=`${row.reporterCode}:${row.partnerCode}:${row.partner2Code??0}:${row.cmdCode}:${row.refYear}:${expectedFlow}:${frequency}:${customs}:${mos}`;if(seen.has(key)){rejected++;continue;}seen.add(key);
         const trade=parseOptionalProviderNumber(row.primaryValue),qty=parseOptionalProviderNumber(row.qty),alt=parseOptionalProviderNumber(row.altQty),net=parseOptionalProviderNumber(row.netWgt),gross=parseOptionalProviderNumber(row.grossWgt);
-        const quantity=qty.value!=null&&qty.value>0?qty.value:null;
-        rows.push({reporter:String(row.reporterCode),partner:String(row.partnerCode),partner2:String(row.partner2Code??'0'),hs_code:row.cmdCode,year:Number(row.refYear),period:String(row.period),flow_code:row.flowCode??expectedFlow,frequency:row.freqCode??frequency,customs_code:row.customsCode??customs,mode_of_supply:row.mosCode??mos,value:trade.value,value_status:trade.status,quantity,unit:quantity==null?null:(row.qtyUnitAbbr?.trim()||(row.qtyUnitCode?QUANTITY_UNITS[row.qtyUnitCode]:null)||null),alternate_quantity:alt.value,alternate_quantity_unit:row.altQtyUnitAbbr??null,net_weight:net.value,gross_weight:gross.value,estimate_flag:Boolean(row.isQtyEstimated||row.isNetWgtEstimated),suppression_flag:trade.status==='suppressed',confidentiality_flag:trade.status==='suppressed'});
+        const quantity=qty.value;
+        rows.push({reporter:String(row.reporterCode),partner:String(row.partnerCode),partner2:String(row.partner2Code??'0'),hs_code:row.cmdCode,year:Number(row.refYear),period:String(row.period),flow_code:row.flowCode??expectedFlow,frequency:row.freqCode??frequency,customs_code:row.customsCode??customs,mode_of_supply:row.mosCode??mos,value:trade.value,value_status:trade.status,quantity,quantity_status:qty.status,unit:quantity==null?null:(row.qtyUnitAbbr?.trim()||(row.qtyUnitCode?QUANTITY_UNITS[row.qtyUnitCode]:null)||null),alternate_quantity:alt.value,alternate_quantity_unit:row.altQtyUnitAbbr??null,net_weight:net.value,gross_weight:gross.value,estimate_flag:Boolean(row.isQtyEstimated||row.isNetWgtEstimated),suppression_flag:trade.status==='suppressed',confidentiality_flag:trade.status==='suppressed'});
       }
       const truncated=providerCount!=null&&providerCount>data.length,complete=providerCount!=null&&!truncated&&rejected===0;
       return {rows,request_count:physicalCalls,retrieved_at:retrievedAt,source_dataset_version:response.headers.get('last-modified')??response.headers.get('etag'),evidence_pages:[{http_status:response.status,raw_response_text:raw,response_checksum:checksum(raw),redacted_request:url.toString(),provider_row_count:providerCount,returned_row_count:data.length,completeness:complete?'COMPLETE':'PARTIAL',completeness_metadata:{provider_count:providerCount,response_rows:data.length,accepted_rows:rows.length,rejected_rows:rejected,truncated,pagination_supported:false,parser_version:PARSER_VERSION},quota_metadata:quotaMetadata(response.headers),retrieved_at:retrievedAt}]};
     }
-    throw lastError instanceof Error?lastError:new Error('Comtrade request failed after retries.');
+    if(lastError instanceof ComtradeRateLimitError)throw lastError;
+    const message=lastError instanceof Error?lastError.message:'Comtrade request failed after retries.';
+    throw new ComtradeProviderRequestError(message,physicalCalls,{cause:lastError});
   }
 }

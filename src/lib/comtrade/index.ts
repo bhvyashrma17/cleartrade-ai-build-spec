@@ -23,7 +23,7 @@ export type {
   ComtradeFlowRow,
   FlowDirection,
 } from './client';
-export { ComtradeRateLimitError } from './client';
+export { ComtradeProviderRequestError, ComtradeRateLimitError } from './client';
 export { MockComtradeClient } from './mock-client';
 
 let cached: ComtradeClient | null = null;

@@ -47,6 +47,7 @@ export interface ComtradeFlowRow {
   value: number | null;
   value_status?: 'observed' | 'observed_zero' | 'missing' | 'suppressed' | 'invalid' | 'unavailable';
   quantity: number | null;
+  quantity_status?: 'observed' | 'observed_zero' | 'missing' | 'suppressed' | 'invalid' | 'unavailable';
   unit: string | null;
   partner2?: string | null;
   flow_code?: string | null;
@@ -98,6 +99,14 @@ export class ComtradeRateLimitError extends Error {
   constructor(message = 'Comtrade rate limit exceeded.', readonly retryAfterMs: number | null = null, readonly physicalRequestCount = 1) {
     super(message);
     this.name = 'ComtradeRateLimitError';
+  }
+}
+
+/** A terminal network/5xx failure carrying the exact number of physical calls attempted. */
+export class ComtradeProviderRequestError extends Error {
+  constructor(message: string, readonly physicalRequestCount: number, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ComtradeProviderRequestError';
   }
 }
 

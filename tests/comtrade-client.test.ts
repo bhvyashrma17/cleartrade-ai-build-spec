@@ -18,10 +18,10 @@ describe('authenticated Comtrade response transformation',()=>{
     const request=fetchMock.mock.calls[0];expect(String(request[0])).toContain('cmdCode=090111');expect(request[1].headers).toHaveProperty('Ocp-Apim-Subscription-Key','test-key-never-logged');
   });
 
-  test.each([null,0,-2,'not-a-number'])(`quantity %s becomes null`,async(qty)=>{
+  test.each([[null,null],[-2,null],['not-a-number',null],[0,0]])(`quantity %s preserves semantic value %s`,async(qty,expected)=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([{...base,qty}])));
     const result=await new ComtradeApiClient('key',policy).fetchChapter(params);
-    expect(result.rows[0]).toMatchObject({quantity:null,unit:null});
+    expect(result.rows[0]).toMatchObject({quantity:expected,unit:expected==null?null:'kg',...(qty===0?{quantity_status:'observed_zero'}:{})});
   });
 
   test('filters non-total partner2, customs, mode-of-supply, duplicate, and unrequested rows',async()=>{
