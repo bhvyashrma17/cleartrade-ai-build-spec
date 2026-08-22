@@ -14,7 +14,8 @@ async function confirmedClassification(revision='HS2022'){
   const org=await prisma.exporterOrg.create({data:{display_name:marker,tier:OrgTier.paid}});
   const user=await prisma.user.create({data:{email:`${marker}@example.test`,name:'Planner',role:UserRole.exporter_owner,exporter_org_id:org.id}});
   const product=await prisma.product.create({data:{exporter_org_id:org.id,name:'Coffee',evidence_origin:EvidenceOrigin.fixture}});
-  return prisma.productClassification.create({data:{product_id:product.id,revision:1,hs6_code:'090111',nomenclature:'HS',nomenclature_version:revision,method:ProductClassificationMethod.exporter_supplied,evidence:{source:'test'},confidence:.99,status:ProductClassificationStatus.confirmed,proposed_by_id:user.id,confirmed_by_id:user.id,confirmed_at:new Date()}});
+  const now=new Date();await prisma.product.update({where:{id:product.id},data:{hs_code:'090111',hs_code_source:'exporter_supplied',hs_nomenclature:'HS',hs_nomenclature_version:revision,hs_classification_method:ProductClassificationMethod.exporter_supplied,hs_classification_status:ProductClassificationStatus.confirmed,hs_classification_confidence:.99,hs_classification_evidence:{source:'test'},hs_confirmed_by_id:user.id,hs_confirmed_at:now,hs_classification_revision:1}});
+  return prisma.productClassification.create({data:{product_id:product.id,revision:1,hs6_code:'090111',nomenclature:'HS',nomenclature_version:revision,method:ProductClassificationMethod.exporter_supplied,product_facts_snapshot:{schema_version:'test'},evidence:{source:'test'},rationale:'Test classification',source_references:[],confidence:.99,status:ProductClassificationStatus.confirmed,proposed_by_id:user.id,confirmed_by_id:user.id,confirmed_at:now}});
 }
 
 function fixtureClient(options:{omitIndia?:boolean}={}){
@@ -88,15 +89,13 @@ describe('Country Evidence persisted plan and manifest',()=>{
     expect(fixture.calls).not.toHaveBeenCalled();
   });
 
-  test('marks wrong-revision evidence incompatible and never admits fixture evidence to an authenticated plan',async()=>{
+  test('refuses unsupported revisions and never admits fixture evidence to an authenticated plan',async()=>{
     const fixture=fixtureClient();setComtradeClient(fixture.client);
     const oldClassification=await confirmedClassification('HS2017');
-    const oldPlan=await createCountryEvidencePlan({product_classification_id:oldClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.fixture});
-    await executeCountryEvidencePlan(oldPlan.id);
+    await expect(createCountryEvidencePlan({product_classification_id:oldClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.fixture})).rejects.toThrow(/unsupported/);
     const currentClassification=await confirmedClassification('HS2022');
     const fixturePlan=await createCountryEvidencePlan({product_classification_id:currentClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.fixture});
-    const incompatible=await resolveCountryEvidencePlan(fixturePlan.id);
-    expect(incompatible.items.every(item=>item.resolution_state==='incompatible')).toBe(true);
+    await executeCountryEvidencePlan(fixturePlan.id);
     const authenticatedPlan=await createCountryEvidencePlan({product_classification_id:currentClassification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['124'],source_mode:TradeSourceMode.authenticated});
     const isolated=await resolveCountryEvidencePlan(authenticatedPlan.id);
     expect(isolated.items.every(item=>item.resolution_state==='fetch_required'&&item.source_evidence_id===null)).toBe(true);

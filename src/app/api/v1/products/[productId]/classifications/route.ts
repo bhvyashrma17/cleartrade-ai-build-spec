@@ -8,8 +8,9 @@ import {prisma} from '@/lib/prisma';
 import {confirmClassification,proposeClassification} from '@/lib/product-classification';
 import {zodFieldErrors} from '@/lib/validators';
 
-const proposal=z.object({action:z.literal('propose'),itc_hs_code:z.string().regex(/^\d{8}$/).nullish(),hs6_code:z.string().regex(/^\d{6}$/).nullish(),nomenclature:z.enum(['HS','ITC-HS']),nomenclature_version:z.literal('2022'),method:z.nativeEnum(ProductClassificationMethod),evidence:z.record(z.unknown()),confidence:z.number().min(0).max(1),ambiguous:z.boolean().optional()});
-const confirmation=z.object({action:z.literal('confirm'),classification_id:z.string().min(1)});
+const sourceReference=z.object({label:z.string().trim().min(1).max(120),reference:z.string().trim().min(1).max(500)});
+const proposal=z.object({action:z.literal('propose'),itc_hs_code:z.string().regex(/^\d{8}$/).nullish(),hs6_code:z.string().regex(/^\d{6}$/).nullish(),nomenclature:z.enum(['HS','ITC-HS']),nomenclature_version:z.literal('2022'),method:z.nativeEnum(ProductClassificationMethod),evidence:z.record(z.unknown()),rationale:z.string().trim().min(1).max(2000),source_references:z.array(sourceReference).max(20),confidence:z.number().min(0).max(1),ambiguous:z.boolean().optional()});
+const confirmation=z.object({action:z.literal('confirm'),classification_id:z.string().min(1),human_confirmation:z.literal(true)});
 const inputSchema=z.discriminatedUnion('action',[proposal,confirmation]);
 
 async function context(productId:string){const principal=await requirePrincipal(),product=await prisma.product.findUnique({where:{id:productId}});if(!product)throw notFound('That product is not available.');await assertOrgAccess(principal,product.exporter_org_id);assertCan(principal,'exporter_master_data.edit');return {principal};}

@@ -1,10 +1,11 @@
-import { Prisma, ProductClassificationStatus, TradeSourceMode } from '@prisma/client';
+import { Prisma, TradeSourceMode } from '@prisma/client';
 import { getComtradeClient } from '@/lib/comtrade';
 import { canonicalComtradeRequest, comtradeRequestFingerprint } from '@/lib/comtrade/request';
 import { getConfig, getConfigWithVersion } from '@/lib/config';
 import { isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { prisma } from '@/lib/prisma';
+import { requireCountryTruthClassification } from '@/lib/product-classification';
 import { providerDailyWindow } from '@/lib/provider-quota';
 import { buildCountryEvidencePlan, canonicalHash, type CountryEvidencePlanInput } from './planner';
 
@@ -16,8 +17,7 @@ function requestFor(item: { reporter_code:string;partner_code:string;period:numb
 
 export async function createCountryEvidencePlan(input: Omit<CountryEvidencePlanInput, 'policy'|'policy_config_version'|'hs_code'|'hs_revision'>) {
   if(isRealWorkflowEnvironment()&&input.source_mode!==TradeSourceMode.authenticated)throw new Error('Staging/production Country Evidence plans require authenticated source mode.');
-  const classification = await prisma.productClassification.findUnique({ where:{id:input.product_classification_id} });
-  if (!classification || classification.status !== ProductClassificationStatus.confirmed || !classification.confirmed_at) throw new Error('Country Evidence requires a confirmed ProductClassification.');
+  const classification = await requireCountryTruthClassification(input.product_classification_id);
   const configured = await getConfigWithVersion('country_evidence.policy');
   const built = buildCountryEvidencePlan({...input,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,policy:configured.value,policy_config_version:configured.version});
   const existing = await prisma.countryEvidencePlan.findUnique({where:{plan_key:built.plan_key},include:{items:true,manifests:true}});

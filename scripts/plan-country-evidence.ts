@@ -1,10 +1,10 @@
 /** Guarded, one-product Country Evidence planner. Dry-run is the default. */
-import { ProductClassificationStatus } from '@prisma/client';
 import { getConfigWithVersion } from '../src/lib/config';
 import { appEnvironment } from '../src/lib/evidence-environment';
 import { buildCountryEvidencePlan } from '../src/lib/country-evidence/planner';
 import { createCountryEvidencePlan, executeCountryEvidencePlan } from '../src/lib/country-evidence/service';
 import { prisma } from '../src/lib/prisma';
+import { requireCountryTruthClassification } from '../src/lib/product-classification';
 
 function arg(name:string){return process.argv.find(value=>value.startsWith(`--${name}=`))?.slice(name.length+3);}
 function flag(name:string){return process.argv.includes(`--${name}`);}
@@ -15,8 +15,7 @@ async function main(){
   const candidates=candidateText.split(',').map(value=>value.trim()).filter(Boolean);
   if(candidates.length<1||candidates.length>10)throw new Error('The guarded planner accepts 1–10 explicit candidate reporters.');
   const asOf=new Date(`${asOfText}T00:00:00.000Z`);if(Number.isNaN(asOf.getTime()))throw new Error('--as-of must be YYYY-MM-DD.');
-  const classification=await prisma.productClassification.findUnique({where:{id:classificationId}});
-  if(!classification||classification.status!==ProductClassificationStatus.confirmed||!classification.confirmed_at)throw new Error('Classification must exist and be confirmed.');
+  const classification=await requireCountryTruthClassification(classificationId);
   const configured=await getConfigWithVersion('country_evidence.policy');
   const mode=(process.env.COMTRADE_CLIENT==='real'?'authenticated':process.env.COMTRADE_CLIENT==='preview'?'preview':process.env.COMTRADE_CLIENT==='fixture'?'fixture':'mock') as 'authenticated'|'preview'|'fixture'|'mock';
   const planned=buildCountryEvidencePlan({product_classification_id:classification.id,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,as_of_date:asOf,candidate_reporters:candidates,source_mode:mode,policy:configured.value,policy_config_version:configured.version});

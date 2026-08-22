@@ -943,7 +943,13 @@ model ProductClassification {
   nomenclature           String
   nomenclature_version   String
   method                 ProductClassificationMethod
+  /// Canonical product facts frozen by the server when this classification is proposed.
+  /// Later product edits must not rewrite the basis on which the code was reviewed.
+  product_facts_snapshot Json
   evidence               Json
+  rationale              String
+  /// Structured public/source references supporting the human classification decision.
+  source_references      Json
   confidence             Decimal                     @db.Decimal(5, 4)
   status                 ProductClassificationStatus
   proposed_by_id         String
