@@ -37,7 +37,7 @@ export default async function SettingsPage() {
   const reportBugHref = principal.role === 'agent' ? '/agent/support/report-bug' : principal.exporter_org_id ? '/app/support/report-bug' : '/ops/support/report-bug';
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6 lg:p-8">
+    <div className="py-4 md:py-6 lg:py-8">
       <header className="mb-6">
         <h1 className="font-serif text-title-page text-primary">Settings</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Manage your account, preferences, and support options.</p>

@@ -26,8 +26,8 @@ import { SignOutAndReturn } from './SignOutAndReturn';
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-card p-6 sm:p-8">
-      <h1 className="masthead text-title-page text-ink-900">{title}</h1>
+    <section className="rounded-xl border border-line-strong bg-surface p-6 sm:p-8">
+      <h1 className="display text-title-page text-bone">{title}</h1>
       {children}
     </section>
   );

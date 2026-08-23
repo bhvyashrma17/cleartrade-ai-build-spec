@@ -94,7 +94,7 @@ export default async function DocumentDetailPage({
   const isSuperseded = !document.is_current_version;
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <p className="text-sm font-normal text-primary">
         <Link href={`/app/deals/${dealId}/documents`} className="underline underline-offset-2">
           Document checklist

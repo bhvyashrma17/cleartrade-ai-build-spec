@@ -65,7 +65,7 @@ export function MarketDetail({
     : `/app/buyers?country=${buyerDiscoveryHref.countryCode}`;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl py-6">
       <Link href="/app/markets" className="text-sm text-primary underline underline-offset-2">
         &larr; Back to markets
       </Link>

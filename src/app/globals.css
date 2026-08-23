@@ -3,297 +3,232 @@
 @tailwind utilities;
 
 /* =============================================================================
-   ClearTrade — design tokens.  See docs/ui-design.md for the reasoning behind
-   every value here; this file is the implementation, that file is the argument.
+   ClearTrade — dark command deck.
+
+   The brand is bone-on-dark. `brand-logo.svg` is drawn light on a dark ground, the
+   mark has no curves in it, and the wordmark is a high-contrast Didone. The product
+   now lives where the brand already lived instead of translating it onto white.
+
+   docs/ui-design.md carries the reasoning; this file is the implementation.
    ============================================================================= */
 
 :root {
-  /* --- Faces.  Supplied by next/font (src/app/fonts.ts), which sets the three
-         --font-* variables on <html>.  The fallback stacks matter: they are what
-         renders during the swap period, so they are metric-near, not `serif`. --- */
-  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-display: 'Newsreader', ui-serif, Georgia, 'Times New Roman', serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* --- Faces. next/font sets these three on <html> (src/app/fonts.ts). --- */
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Playfair Display', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* === Brand — verbatim from the mark.  Do not adjust. === */
-  --bone:            #EFE9E9;   /* text and marks on dark surfaces */
-  --slate:           #9B9EA7;   /* the neutral the light ramp descends from */
+  /* === Ground stack. Four steps, not one flat black: depth is what stops a dark UI
+         reading as a void, and it is how a panel, a hovered row and a menu tell
+         themselves apart without a single border. === */
+  --ground:     #0C0E11;   /* the page */
+  --surface:    #14171C;   /* panels, cards */
+  --surface-2:  #1B1F26;   /* raised: hover, active row, inputs */
+  --surface-3:  #242932;   /* overlay: menus, dialogs, the palette */
 
-  /* === Ink — near-black, faintly cool so bone reads warm against it === */
-  --ink-900:         #15171B;
-  --ink-700:         #24272E;
-  --ink-500:         #4A4E58;
-  --ink-300:         #666B78;
-  --ink-200:         #9B9EA7;   /* = slate.  Border/decorative only — never body text. */
+  /* === Brand ink, verbatim from the logo === */
+  --bone:   #EFE9E9;   /* primary text, the mark */
+  --slate:  #9B9EA7;   /* secondary text — 6.7:1 on --surface */
+  --muted:  #838A98;   /* tertiary text. The floor for body copy — 5.2:1 on --surface and
+                          4.8:1 on --surface-2, because plenty of muted text sits inside a
+                          raised panel and the darker value cleared AA on only one of them. */
+  --faint:  #4E545F;   /* rules, dividers and decorative glyphs. NEVER text — 2.4:1, and
+                          that includes disabled labels: a control being inert is carried by
+                          its flat fill, its cursor and its `disabled` attribute, not by
+                          making its text unreadable. */
 
-  /* === Paper — cool light ramp === */
-  --paper:           #F4F5F7;
-  --paper-sunk:      #EBEDF1;
-  --card:            #FFFFFF;
-  --line:            #E2E5EA;
-  --line-strong:     #CBD0D8;
+  /* Hairlines are bone at low alpha, so they sit on any ground in the stack. */
+  --line:        rgba(239, 233, 233, 0.09);
+  --line-strong: rgba(239, 233, 233, 0.17);
 
-  /* === Seal — the one accent.  The ink of official documents; the product makes
-         documents.  ~2% of any screen, and never a status. === */
-  --seal-600:        #4B3FAE;
-  --seal-500:        #5C51C4;
-  --seal-tint:       color-mix(in srgb, var(--seal-600) 7%, var(--card));
+  /* === Accent. One colour, and it is never a status. Links, focus, the segment of the
+         journey frame in flight, the active nav marker. ~2% of any screen. === */
+  --accent:      #9A8CFF;   /* 7.0:1 on --ground, 5.0:1 on its own tint */
+  --accent-dim:  #7D6DF0;
+  --accent-tint: color-mix(in srgb, var(--accent) 16%, var(--surface));
 
-  /* === Status — the only other colour.  `fill` = icons/tints/borders,
-         `text` = AA on both --card and --paper. === */
-  --ok-fill:   #12805A;  --ok-text:   #0B6344;
-  --info-fill: #0E7490;  --info-text: #0A5A70;
-  --warn-fill: #B45309;  --warn-text: #8A4008;
-  --crit-fill: #C0271D;  --crit-text: #9B1F17;
+  /* === Status. Tuned for a dark ground — the light-mode hues go muddy here. Each
+         clears AA as text on --surface (10.3 / 8.9 / 9.9 / 7.1). === */
+  --ok:   #4ADE80;
+  --info: #56CCF2;
+  --warn: #FBBF24;
+  --crit: #FF7A70;
 
-  /* Tints via color-mix, never a Tailwind alpha modifier on a bare var() colour —
-     that silent-failure combination is what left every StatusChip tint transparent. */
-  --ok-tint:   color-mix(in srgb, var(--ok-fill) 9%, var(--card));
-  --info-tint: color-mix(in srgb, var(--info-fill) 9%, var(--card));
-  --warn-tint: color-mix(in srgb, var(--warn-fill) 9%, var(--card));
-  --crit-tint: color-mix(in srgb, var(--crit-fill) 9%, var(--card));
+  --ok-tint:   color-mix(in srgb, var(--ok) 14%, var(--surface));
+  --info-tint: color-mix(in srgb, var(--info) 14%, var(--surface));
+  --warn-tint: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  --crit-tint: color-mix(in srgb, var(--crit) 14%, var(--surface));
 
-  /* === Legacy aliases.  ~1,100 call sites still name the pre-redesign tokens; each
-         one points at its §3 equivalent so the retune above reaches them untouched.
-         `--color-action` stays SEAL (accent: rails, dots, active markers) — it is
-         deliberately NOT the primary-button fill.  Primary actions are ink, so that
-         colour in this product always carries meaning and buttons never compete with
-         warnings.  See docs/ui-design.md §3.2. === */
-  --color-primary: var(--ink-900);
-  --color-action: var(--seal-600);
-  --color-info: var(--info-fill);
-  --color-warning: var(--warn-fill);
-  --color-critical: var(--crit-fill);
-  --color-surface-raised: var(--ink-700);
-  --color-surface-muted: var(--paper);
-  --color-surface: var(--card);
+  /* === Legacy aliases. ~1,100 call sites still name the pre-redesign tokens. Each is
+         re-pointed at its dark equivalent, which is what carries the whole product across
+         to the dark ground in one move rather than 1,100 edits.
+
+         Note `--color-primary` is bone: it is used both as `text-primary` (872 sites, the
+         default body colour) and as `bg-primary` (the active filter pill). On a dark
+         ground both readings want bone — the pill becomes an inverted chip, which is
+         exactly right — so the one token still serves both. `--color-text-inverse`
+         becomes the ground for the same reason. === */
+  --color-primary: var(--bone);
+  --color-action: var(--accent);
+  --color-info: var(--info);
+  --color-warning: var(--warn);
+  --color-critical: var(--crit);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--ground);
+  --color-surface-raised: var(--surface-2);
 
   --color-border: var(--line);
   --color-border-strong: var(--line-strong);
-  --color-text-primary: var(--ink-900);
-  --color-text-secondary: var(--ink-500);
-  --color-text-muted: var(--ink-300);
-  --color-text-inverse: var(--bone);
+  --color-text-primary: var(--bone);
+  --color-text-secondary: var(--slate);
+  --color-text-muted: var(--muted);
+  --color-text-inverse: var(--ground);
 
-  --color-action-text: var(--ok-text);       /* "positive" tone in legacy components */
-  --color-info-text: var(--info-text);
-  --color-warning-text: var(--warn-text);
-  --color-critical-text: var(--crit-text);
-  --color-seal-text: var(--seal-600);
+  --color-action-text: var(--ok);
+  --color-info-text: var(--info);
+  --color-warning-text: var(--warn);
+  --color-critical-text: var(--crit);
 
-  /* === Radius.  The mark has hard corners; the UI needs a little softness. === */
-  --radius-sm: 4px;    /* inputs, chips */
-  --radius-md: 6px;
-  --radius-lg: 8px;    /* cards, buttons */
-  --radius-xl: 12px;   /* panels, dialogs */
+  /* === Radius. The mark is orthogonal; the UI needs just enough softness to feel
+         built rather than wireframed. === */
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
   --radius-full: 9999px;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-  --space-16: 64px;
-  --space-20: 80px;
-  --space-24: 96px;
+  --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+  --space-12: 48px; --space-16: 64px; --space-20: 80px; --space-24: 96px;
 
-  /* === Type scale.  `text-sm` (694 sites) and `text-xs` (740) are 90% of the type in
-         this product, so the ladder is installed BY RETUNING THEM rather than by
-         rewriting 1,434 class names: sm becomes the 15px body, xs becomes the 13px
-         dense body.  Everything above them is spaced to leave a real gap.  === */
-  --text-xs: 0.8125rem;             /* 13px — was 12px */
-  --text-sm: 0.9375rem;             /* 15px — was 14px.  The default paragraph. */
-  --text-base: 1rem;                /* 16px */
-  --text-lg: 1.0625rem;             /* 17px — card h3 */
-  --text-xl: 1.3125rem;             /* 21px — section h2 */
-  --text-2xl: 1.75rem;              /* 28px — metric values */
-  --text-3xl: 2rem;                 /* 32px */
-  --text-4xl: 2.5rem;               /* 40px */
+  /* === Type. `text-sm` (694 sites) and `text-xs` (740) carry ~90% of the type in this
+         product, so the ladder is installed by re-pointing them rather than by rewriting
+         1,434 class names. === */
+  --text-xs:   0.8125rem;   /* 13px */
+  --text-sm:   0.875rem;    /* 14px — the default paragraph */
+  --text-base: 0.9375rem;   /* 15px */
+  --text-lg:   1.0625rem;   /* 17px — card h3 */
+  --text-xl:   1.375rem;    /* 22px — section h2 */
+  --text-2xl:  1.75rem;     /* 28px */
+  --text-3xl:  2.5rem;      /* 40px — page h1, serif */
+  --text-4xl:  3.25rem;     /* 52px */
 
-  --text-display: 3.25rem;          /* 52px, serif, landing hero only */
-  --text-title-page: 2rem;          /* 32px, serif, page h1 */
-  --text-title-section: 1.3125rem;  /* 21px, sans, section h2 */
-  --text-subtitle: 1.0625rem;       /* 17px, sans, card h3 */
-  --text-body: 0.9375rem;           /* 15px */
-  --text-body-sm: 0.8125rem;        /* 13px */
-  --text-label: 0.6875rem;          /* 11px, uppercase, tracked */
-  --text-record: 0.8125rem;         /* 13px, mono */
+  --text-display:       4rem;        /* 64px, serif, landing hero only */
+  --text-title-page:    2.5rem;      /* 40px, serif, page h1 */
+  --text-title-section: 1.375rem;    /* 22px, sans */
+  --text-subtitle:      1.0625rem;   /* 17px, sans */
+  --text-body:          0.875rem;    /* 14px */
+  --text-body-sm:       0.8125rem;   /* 13px */
+  --text-label:         0.6875rem;   /* 11px, uppercase, tracked */
+  --text-record:        0.8125rem;   /* 13px, mono */
+  --text-figure:        clamp(1.625rem, 2.2vw, 2.75rem);  /* the headline number — scales so a
+                                                             4-up row survives a narrow rail */
 
-  --leading-tight: 1.25;
-  --leading-snug: 1.375;
-  --leading-normal: 1.55;
-  --leading-relaxed: 1.7;
-  --leading-display: 1.02;
-  --leading-title-page: 1.12;
-  --leading-title-section: 1.3;
-  --leading-subtitle: 1.4;
-  --leading-body: 1.6;
-  --leading-body-sm: 1.5;
-  --leading-label: 1.3;
-  --leading-record: 1.5;
+  --leading-tight: 1.2;    --leading-snug: 1.35;   --leading-normal: 1.5;
+  --leading-relaxed: 1.7;  --leading-display: 1.0; --leading-title-page: 1.1;
+  --leading-title-section: 1.25; --leading-subtitle: 1.4;
+  --leading-body: 1.6; --leading-body-sm: 1.5; --leading-label: 1.3;
+  --leading-record: 1.5; --leading-figure: 1.0;
 
-  /* === Elevation — three levels, used honestly.  `shadow-card` sits on 182 elements,
-         which is why nothing in the product appeared to float.  It is retuned here to a
-         near-hairline so those 182 sites de-escalate without being edited; real
-         elevation lives in `raised` and `overlay`. === */
-  --shadow-card:    0 1px 2px rgba(21, 23, 27, 0.04);
-  --shadow-raised:  0 1px 2px rgba(21, 23, 27, 0.06), 0 6px 16px -4px rgba(21, 23, 27, 0.10);
-  --shadow-overlay: 0 12px 32px rgba(21, 23, 27, 0.16), 0 2px 6px rgba(21, 23, 27, 0.08);
+  /* === Elevation. On a dark ground, light does the lifting a shadow does on white:
+         a raised surface is *lighter*, not shadowed. Shadows exist only to detach true
+         overlays from the page. === */
+  --shadow-card: none;
+  --shadow-raised: 0 1px 0 0 rgba(239, 233, 233, 0.05) inset;
+  --shadow-overlay: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(239, 233, 233, 0.09);
+  --glow-accent: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+                 0 8px 28px -10px color-mix(in srgb, var(--accent) 60%, transparent);
 
-  --duration-fast: 130ms;
+  --duration-fast: 120ms;
   --duration-normal: 200ms;
-  --duration-slow: 320ms;
+  --duration-slow: 340ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   --topbar-height: 60px;
-  --leftnav-width: 248px;
+  --shell-max: 1440px;
 
-  /* === Density.  A shell property, not a component variant — the exporter portal is
-         comfortable, agent/ops are compact.  Components read these; they never hard-code
-         a padding.  Defaults = comfortable. === */
-  --inset-sm: 12px;
-  --inset-md: 16px;
-  --inset-lg: 24px;
-  --stack-xs: 4px;
-  --stack-sm: 12px;
-  --stack-md: 16px;
-  --stack-lg: 24px;
-  --stack-xl: 32px;
-  --row-h: 52px;
-  --cell-y: 12px;
-  --control-h: 38px;
+  /* === Density is a shell property, not a component variant. === */
+  --inset-sm: 12px;  --inset-md: 16px;  --inset-lg: 24px;
+  --stack-xs: 4px;   --stack-sm: 12px;  --stack-md: 16px;
+  --stack-lg: 24px;  --stack-xl: 32px;
+  --row-h: 52px;     --cell-y: 14px;    --control-h: 38px;
 }
 
-/* Agent and Ops: same system, genuinely denser. Retuning the two type tokens here is
-   what keeps queue tables at 13px while the exporter portal reads at 15px. */
+/* Agent and Ops work these screens as queues and need thirty rows without scrolling. */
 [data-density='compact'] {
   --text-sm: 0.8125rem;   /* 13px */
   --text-xs: 0.75rem;     /* 12px */
   --text-body: 0.8125rem;
-  --inset-sm: 8px;
-  --inset-md: 12px;
-  --inset-lg: 16px;
-  --stack-sm: 8px;
-  --stack-md: 12px;
-  --stack-lg: 16px;
-  --stack-xl: 24px;
-  --row-h: 36px;
-  --cell-y: 8px;
-  --control-h: 32px;
+  --text-title-page: 2rem;
+  --text-figure: clamp(1.375rem, 1.8vw, 2rem);
+  --inset-sm: 8px;  --inset-md: 12px;  --inset-lg: 16px;
+  --stack-sm: 8px;  --stack-md: 12px;  --stack-lg: 16px;  --stack-xl: 24px;
+  --row-h: 36px;    --cell-y: 9px;     --control-h: 32px;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
+* { box-sizing: border-box; padding: 0; margin: 0; }
 
-/* `font-size` is deliberately NOT set here. Every token in this file is expressed in
-   `rem`, so putting a rem-relative size on the root re-defines the very unit those tokens
-   are measured in: `html { font-size: 0.9375rem }` makes 1rem = 15px, and every token
-   then resolves 6.25% small — a 15px body renders at 14.06px, a 32px page title at 30px.
-   The root stays at the browser default (which is also what a reader's own font-size
-   preference sets), and the body size is applied one level down. */
-html {
-  -webkit-text-size-adjust: 100%;
-}
+/* `font-size` is deliberately NOT set on :root. Every token here is in `rem`, so a
+   rem-relative size on the root re-defines the unit those tokens are measured in and
+   every one of them silently resolves small. Body size is applied one level down. */
+html { -webkit-text-size-adjust: 100%; color-scheme: dark; }
 
-html,
-body {
+html, body {
   max-width: 100vw;
   overflow-x: hidden;
   font-family: var(--font-sans);
   font-weight: 400;
   line-height: var(--leading-body);
-  color: var(--ink-900);
-  background-color: var(--paper);
+  color: var(--bone);
+  background-color: var(--ground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1, 'ss03' 1;
 }
 
-body {
-  font-size: var(--text-body);
-}
+body { font-size: var(--text-body); }
 
-/* Figures line up in every column of every table without a per-call-site opt-in.
-   In a product whose content is quantities, values and reference numbers, proportional
-   figures are a legibility bug, not a style preference. */
-table,
-[data-tabular] {
-  font-variant-numeric: tabular-nums;
-}
+/* In a product whose content is quantities, values and reference numbers, proportional
+   figures are a legibility bug rather than a style preference. */
+table, [data-tabular] { font-variant-numeric: tabular-nums; }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; font-size: inherit; color: inherit; }
+input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
 
-button {
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
-}
+::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--bone); }
 
-input,
-textarea,
-select {
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid var(--ground);
+  border-radius: var(--radius-full);
 }
-
-::selection {
-  background: color-mix(in srgb, var(--seal-600) 20%, transparent);
-  color: var(--ink-900);
-}
+::-webkit-scrollbar-thumb:hover { background: var(--faint); }
 
 .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
 }
 
 /* -----------------------------------------------------------------------------
-   Focus.
-   This rule previously read `outline: none; ring: 2px; ring-color: ...`.  `ring` is a
-   Tailwind utility, NOT a CSS property — inside a plain stylesheet those three
-   declarations are discarded and only `outline: none` survives.  The class is on ~400
-   interactive elements, so the product shipped with keyboard focus suppressed app-wide
-   and nothing drawn in its place.  Written as real CSS here.
+   Focus. This rule previously read `outline: none; ring: 2px; ring-color: …`.
+   `ring` is a Tailwind utility, not a CSS property, so inside a plain stylesheet
+   those declarations are discarded and only `outline: none` survived — the class is
+   on ~400 interactive elements, so the product shipped with keyboard focus removed
+   and nothing drawn in its place. Real CSS now.
    -------------------------------------------------------------------------- */
 .focus-visible-ring:focus-visible,
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid var(--seal-600);
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
-/* On ink chrome the seal ring goes muddy; bone is the only thing that reads there. */
-.on-ink :focus-visible,
-.on-ink.focus-visible-ring:focus-visible {
-  outline-color: var(--bone);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -302,65 +237,67 @@ textarea:focus-visible,
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-  .text-pretty {
-    text-wrap: pretty;
-  }
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
 }
 
 @layer components {
-  /* --- The record face.  Every reference number in the product goes through this one
+  /* --- The masthead face. Appears once per page, at the top, and nowhere else. That
+         restraint is what makes it read as a masthead rather than as a theme. --- */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+  }
+
+  /* --- The record face. Every reference number in the product goes through this one
          class: HS codes, B/L and AWB numbers, shipping bill and container numbers,
-         invoice numbers, LC and filing refs, snapshot hashes, payout transfer refs,
-         correlation IDs, UN/LOCODEs.  Mono here is a product decision, not a style: in a
-         trade product the reference number IS the content, and it has to be readable
-         off a screen, character by character, by someone reading it aloud. --- */
+         invoice numbers, LC and filing refs, hashes, payout refs, correlation IDs,
+         UN/LOCODEs. Mono here is a product decision, not a style — in a trade product
+         the reference number IS the content, and someone reads it down a phone. --- */
   .record {
     font-family: var(--font-mono);
     font-size: var(--text-record);
     line-height: var(--leading-record);
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.01em;
+    letter-spacing: -0.01em;
   }
 
-  /* --- The masthead.  The serif appears once per page, at the top, and nowhere else.
-         That restraint is what makes it read as a masthead rather than a theme. --- */
-  .masthead {
-    font-family: var(--font-display);
-    font-weight: 500;
-    font-optical-sizing: auto;
-    letter-spacing: -0.015em;
-  }
-
-  /* --- Eyebrow / table header / dt.  Small, tracked, and never a heading on its own. --- */
+  /* --- Eyebrow / table header / dt. Small, tracked, never a heading on its own. --- */
   .eyebrow {
     font-size: var(--text-label);
     line-height: var(--leading-label);
-    font-weight: 600;
-    letter-spacing: 0.09em;
+    font-weight: 500;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--ink-300);
+    color: var(--muted);
   }
 
-  /* --- The registration tick.  The mark's cardinal ticks, reused as the section
-         divider: a hairline with a short heavy tick at the left edge.  Section headers
-         only — the motif dies the moment it is everywhere. --- */
-  .tick-rule {
-    position: relative;
-    border-top: 1px solid var(--line);
+  /* --- The headline number. In this product the figure IS the content; it gets to be
+         the largest thing in its panel. --- */
+  .figure {
+    font-size: var(--text-figure);
+    line-height: var(--leading-figure);
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
   }
-  .tick-rule::before {
+
+  /* --- The corner ticks from the mark, as a panel treatment. The layout borrows the
+         logo's idea: a record inside a frame. Used on the one panel per screen that is
+         the point of the screen — never more, or it stops meaning anything. --- */
+  .ticked {
+    position: relative;
+  }
+  .ticked::before,
+  .ticked::after {
     content: '';
     position: absolute;
-    top: -1px;
-    left: 0;
-    width: 22px;
-    height: 2px;
-    background: var(--ink-900);
+    width: 9px;
+    height: 9px;
+    border-color: var(--accent);
+    pointer-events: none;
   }
-  .tick-rule[data-tone='seal']::before {
-    background: var(--seal-600);
-  }
+  .ticked::before { top: -1px; left: -1px; border-top: 1.5px solid; border-left: 1.5px solid; }
+  .ticked::after { bottom: -1px; right: -1px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 }

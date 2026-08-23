@@ -42,11 +42,11 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-paper p-6">
-      <section className="w-full max-w-lg rounded-xl border border-line bg-card p-8 text-center">
-        <BrandMark size={30} className="mx-auto text-ink-300" />
-        <h1 className="masthead mt-5 text-title-page text-ink-900">Something went wrong</h1>
-        <p className="mt-3 text-sm text-ink-500">
+    <main className="flex min-h-screen items-center justify-center bg-ground p-6">
+      <section className="w-full max-w-lg rounded-xl border border-line bg-surface p-8 text-center">
+        <BrandMark size={30} className="mx-auto text-muted" />
+        <h1 className="display mt-5 text-title-page text-bone">Something went wrong</h1>
+        <p className="mt-3 text-sm text-slate">
           We could not complete that request. Please try again. If this continues, share the
           reference ID below with ClearTrade support.
         </p>
@@ -54,8 +54,8 @@ export default function GlobalError({
             the phone to support — so it is set in the `record` face like every other
             reference in the product, not in body sans where digits blur together. */}
         {error.digest ? (
-          <p className="mt-4 text-xs text-ink-300">
-            Reference ID <span className="record ml-1 text-ink-900">{error.digest}</span>
+          <p className="mt-4 text-xs text-muted">
+            Reference ID <span className="record ml-1 text-bone">{error.digest}</span>
           </p>
         ) : null}
         <div className="mt-6 flex justify-center gap-3">

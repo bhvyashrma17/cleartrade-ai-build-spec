@@ -70,7 +70,7 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
   const unsafeOrigins=unsafeEvidenceOrigins([...new Set(buyer.import_records.map(row=>row.evidence_origin))]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
+    <div className="space-y-4 py-4 md:py-6">
       {/* Global buyer facts — never mixed with exporter-specific state below. */}
       {!isRealWorkflowEnvironment()&&unsafeOrigins.length?<p className="rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · Non-real evidence: {unsafeOrigins.join(', ')}</p>:null}
       <header className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">

@@ -183,7 +183,7 @@ export function OutreachPipeline({ initialExporterOrgId = null }: { initialExpor
   ];
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="py-6">
       <PageHeader
         className="mb-6"
         title="Outreach pipeline"

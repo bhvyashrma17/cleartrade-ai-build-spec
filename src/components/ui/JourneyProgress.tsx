@@ -69,94 +69,64 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
   const currentIndex = segmentIndexFor(currentStage);
 
   return (
-    <div className={clsx('flex items-center gap-4', className)}>
-      {/* The signature device, carrying the same number the rail spells out. Redundant on
+    <div className={clsx('flex items-center gap-5', className)}>
+      {/* The signature device, carrying the same count the rail spells out. Redundant on
           purpose: the glyph is what a person recognises across a table of thirty deals,
           the rail is what they read once they have stopped on one. */}
       <JourneyFrame
         value={currentIndex + 1}
         total={SEGMENTS.length}
-        size={26}
+        size={30}
         label={`Stage ${currentIndex + 1} of ${SEGMENTS.length}: ${SEGMENTS[currentIndex]!.label}`}
-        className="hidden shrink-0 sm:block"
+        className="hidden shrink-0 text-bone sm:block"
       />
-      <ol className="flex flex-1 items-center" aria-label="Export journey progress">
-      {SEGMENTS.map((segment, index) => {
-        const completed = index < currentIndex;
-        const isCurrent = index === currentIndex;
-        const reached = completed || isCurrent;
-        const href = reached ? (getHref?.(segment.key, index) ?? null) : null;
 
-        // Square markers, not circles. The mark is built from hard corners and
-        // registration ticks; a row of soft dots is the one shape in the system that
-        // belongs to somebody else's product. The current stage is a seal square inside a
-        // ring — never a checkmark, which would claim a stage in progress is done, the
-        // same "never collapse two states into one" rule docs/03 §2 applies to chips.
-        //
-        // Colours are ink and seal only. The previous rail painted completed segments in
-        // `--color-action`, which is the brand accent — so a half-finished journey read
-        // as five brand-coloured beads, and the accent meant "done" here and "current"
-        // everywhere else.
-        const dot = (
-          <span
-            className={clsx(
-              'flex size-3.5 items-center justify-center rounded-[2px] border transition-colors duration-fast',
-              completed
-                ? 'border-ink-900 bg-ink-900'
-                : isCurrent
-                  ? 'border-seal-600 bg-seal-600 ring-2 ring-[color-mix(in_srgb,var(--seal-600)_22%,transparent)]'
-                  : 'border-line-strong bg-card',
-            )}
-          >
-            {completed ? (
-              <svg viewBox="0 0 10 10" className="size-2.5 text-bone" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M2 5.2 4.1 7.4 8 2.9" />
-              </svg>
-            ) : null}
-          </span>
-        );
+      {/* Segmented bars rather than dots joined by connectors.
+          The dot rail could not be made to behave: each connector had to be centred
+          against a column that also held the label, so the line ran through the text, and
+          a centred label on the final stage clipped at the container edge. A segment per
+          stage has neither problem, survives any width, and reads as a progress track at
+          a glance instead of as a row of checkboxes. */}
+      <ol className="flex min-w-0 flex-1 gap-1.5" aria-label="Export journey progress">
+        {SEGMENTS.map((segment, index) => {
+          const completed = index < currentIndex;
+          const isCurrent = index === currentIndex;
+          const reached = completed || isCurrent;
+          // Future stages stay non-actionable — docs/00 §4. `getHref` is only ever
+          // consulted for a segment that has been reached.
+          const href = reached ? (getHref?.(segment.key, index) ?? null) : null;
 
-        const label = (
-          <span
-            className={clsx(
-              'mt-2 whitespace-nowrap text-xs',
-              isCurrent ? 'font-semibold text-ink-900' : reached ? 'font-medium text-ink-500' : 'text-ink-300',
-            )}
-          >
-            {segment.label}
-          </span>
-        );
-
-        return (
-          <li key={segment.key} className="flex flex-1 items-center last:flex-none">
-            <div className="flex flex-col items-center">
-              {href ? (
-                <Link
-                  href={href}
-                  className="focus-visible-ring flex flex-col items-center rounded"
-                  aria-current={isCurrent ? 'step' : undefined}
-                >
-                  {dot}
-                  {label}
-                </Link>
-              ) : (
-                <div aria-current={isCurrent ? 'step' : undefined}>
-                  {dot}
-                  {label}
-                </div>
-              )}
-            </div>
-            {index < SEGMENTS.length - 1 ? (
+          const content = (
+            <>
+              <span
+                aria-hidden="true"
+                className={clsx(
+                  'block h-1 rounded-sm transition-colors duration-fast',
+                  completed ? 'bg-bone' : isCurrent ? 'bg-accent' : 'bg-line-strong',
+                )}
+              />
               <span
                 className={clsx(
-                  'mx-2 h-px flex-1 transition-colors duration-fast',
-                  index < currentIndex ? 'bg-ink-900' : 'bg-line-strong',
+                  'mt-2.5 block truncate text-xs transition-colors duration-fast',
+                  isCurrent ? 'font-medium text-bone' : reached ? 'text-slate' : 'text-muted',
                 )}
-                aria-hidden="true"
-              />
-            ) : null}
-          </li>
-        );
+              >
+                {segment.label}
+              </span>
+            </>
+          );
+
+          return (
+            <li key={segment.key} className="min-w-0 flex-1">
+              {href ? (
+                <Link href={href} aria-current={isCurrent ? 'step' : undefined} className="focus-visible-ring block rounded-sm">
+                  {content}
+                </Link>
+              ) : (
+                <div aria-current={isCurrent ? 'step' : undefined}>{content}</div>
+              )}
+            </li>
+          );
         })}
       </ol>
     </div>

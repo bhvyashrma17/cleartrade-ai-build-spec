@@ -30,7 +30,7 @@ export default async function NotificationsPage() {
 
   if (!principal || tier === OrgTier.guest) {
     return (
-      <div className="mx-auto max-w-3xl p-4 md:p-6">
+      <div className="mx-auto max-w-3xl py-4 md:py-6">
         <UpgradeNotice
           title="Notifications & account settings need a free account"
           requiredTier="free"
@@ -61,7 +61,7 @@ export default async function NotificationsPage() {
   const isOwner = principal.role === 'exporter_owner';
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
+    <div className="space-y-4 py-4 md:py-6">
       <header>
         <h1 className="font-serif text-title-page text-primary">Notifications & Account</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">

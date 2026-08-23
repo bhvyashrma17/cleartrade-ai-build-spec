@@ -2,54 +2,44 @@ import clsx from 'clsx';
 import { BrandMark } from './BrandMark';
 
 /**
- * The lockup: mark + wordmark.
+ * The lockup: mark + wordmark, optionally + tagline.
  *
- * The wordmark is set in the display serif — the same face as every page masthead — which
- * is the point. Before this, the top-left of every screen in the product was the string
- * "ClearTrade AI" in bold interface sans: the strongest brand asset in the product,
- * rendered as a UI label. The "AI" rides behind it as a tracked slate label rather than
- * matching the wordmark, so the name reads as ClearTrade and the qualifier stays a
- * qualifier.
+ * The wordmark is set in the display Didone rather than traced from the logo's outlines,
+ * so it stays selectable text, scales with the viewer's font settings, and matches every
+ * page display — the name and the page titles are deliberately one voice.
+ *
+ * The tagline is the brand's own line and is the best sentence anyone has written for this
+ * product. It appears on signed-out surfaces where there is room for it, never in app
+ * chrome.
  */
+
+const SIZES = {
+  sm: { mark: 20, word: 'text-[1.0625rem]', gap: 'gap-2' },
+  md: { mark: 26, word: 'text-[1.375rem]', gap: 'gap-2.5' },
+  lg: { mark: 40, word: 'text-[2.125rem]', gap: 'gap-3.5' },
+} as const;
 
 export function Wordmark({
   size = 'md',
-  tone = 'ink',
   showMark = true,
+  tagline = false,
   className,
 }: {
-  size?: 'sm' | 'md' | 'lg';
-  /** `bone` on ink chrome, `ink` on paper. */
-  tone?: 'ink' | 'bone';
+  size?: keyof typeof SIZES;
   showMark?: boolean;
+  tagline?: boolean;
   className?: string;
 }) {
-  const markSize = size === 'lg' ? 34 : size === 'md' ? 24 : 20;
-  const wordSize = size === 'lg' ? 'text-[1.75rem]' : size === 'md' ? 'text-[1.25rem]' : 'text-[1.0625rem]';
+  const s = SIZES[size];
 
   return (
-    <span className={clsx('inline-flex items-center', size === 'lg' ? 'gap-3' : 'gap-2.5', className)}>
-      {showMark ? (
-        <BrandMark size={markSize} className={tone === 'bone' ? 'text-bone' : 'text-ink-900'} />
-      ) : null}
-      <span className="inline-flex items-baseline gap-1.5">
-        <span
-          className={clsx(
-            'masthead leading-none',
-            wordSize,
-            tone === 'bone' ? 'text-bone' : 'text-ink-900',
-          )}
-        >
-          ClearTrade
-        </span>
-        <span
-          className={clsx(
-            'text-label leading-none',
-            tone === 'bone' ? 'text-slate' : 'text-ink-300',
-          )}
-        >
-          AI
-        </span>
+    <span className={clsx('inline-flex items-center', s.gap, className)}>
+      {showMark ? <BrandMark size={s.mark} /> : null}
+      <span className="inline-flex flex-col">
+        <span className={clsx('display leading-none tracking-[-0.01em]', s.word)}>ClearTrade</span>
+        {tagline ? (
+          <span className="mt-1.5 text-label text-muted">Structured exports. Zero chaos.</span>
+        ) : null}
       </span>
     </span>
   );

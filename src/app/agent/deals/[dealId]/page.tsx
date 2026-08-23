@@ -133,7 +133,7 @@ export default async function AgentDealExecutionPage({ params }: { params: Promi
   const liveGate: ExecutionGate | undefined = view.checklist.find((g) => g.state === 'blocked' || g.state === 'ready');
 
   return (
-    <div className="mx-auto max-w-7xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       {/* --- Execution header (persistent) --- */}
       <div className="mb-6">
         <PageHeader

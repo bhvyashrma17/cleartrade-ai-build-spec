@@ -1,33 +1,52 @@
 import clsx from 'clsx';
 
 /**
- * The ClearTrade mark.
+ * The ClearTrade mark — geometry taken verbatim from `brand-logo.svg`.
  *
- * A square registration frame — four corner brackets and four cardinal ticks — enclosing
- * an open "C". It reads as a customs stamp, a die, a seal: an instrument of record, not a
- * tech logo. The frame's geometry is shared with `JourneyFrame`, where the same eight
- * strokes close one at a time as a deal progresses, so a completed deal literally draws
- * the logo.
+ * A solid square frame, notched at all four cardinal points, enclosing a nested square
+ * bracket that opens to the right. Every stroke is a rectangle: there is not one curve in
+ * the mark, which is the whole character of it — this is a drawing instrument, a register,
+ * a frame around a record. The product's layout borrows the same idea (§ docs/ui-design).
  *
- * Drawn in `currentColor` and never given a colour of its own, so one component serves
- * bone-on-ink chrome, ink-on-paper page furniture, and inherited-colour inline use.
+ * Do not redraw this by eye. An earlier pass invented a round-cornered "C" from a written
+ * description of the logo and it was wrong in the way that matters: the real mark is
+ * orthogonal, and the roundness read as a generic app icon.
+ *
+ * Everything is `currentColor`, so one component serves bone-on-ink chrome, ink-on-paper
+ * print, and inherited-colour inline use.
  */
 
-/** The eight strokes of the frame, clockwise from the top-left corner. Shared with
- *  JourneyFrame — change the geometry in one place or the two marks drift apart. */
-export const FRAME_STROKES = [
-  'M3 11V3h8',        // corner, top-left
-  'M14.2 3h3.6',      // tick, top
-  'M21 3h8v8',        // corner, top-right
-  'M29 14.2v3.6',     // tick, right
-  'M29 21v8h-8',      // corner, bottom-right
-  'M17.8 29h-3.6',    // tick, bottom
-  'M11 29H3v-8',      // corner, bottom-left
-  'M3 17.8v-3.6',     // tick, left
+/** Outer frame, as 8 fillable segments running clockwise from the top-left. Split at each
+ *  cardinal notch so `JourneyFrame` can close them one at a time. */
+export const FRAME_SEGMENTS = [
+  { x: 0, y: 0, width: 47.71, height: 9 },           // top, left half
+  { x: 47.71, y: 0, width: 47.71, height: 9 },      // top, right half
+  { x: 86.42, y: 0, width: 9, height: 47.55 },      // right, top half
+  { x: 86.42, y: 47.55, width: 9, height: 47.54 },  // right, bottom half
+  { x: 47.71, y: 86.09, width: 47.71, height: 9 },  // bottom, right half
+  { x: 0, y: 86.09, width: 47.71, height: 9 },      // bottom, left half
+  { x: 0, y: 47.55, width: 9, height: 47.54 },      // left, bottom half
+  { x: 0, y: 0, width: 9, height: 47.55 },          // left, top half
 ] as const;
 
-/** The nested open "C". Radius 7 about the centre, open to the right through 90°. */
-export const APERTURE = 'M20.95 11.05A7 7 0 1 0 20.95 20.95';
+/** The cardinal notches that break the frame. Three, not four: the right edge has
+ *  none, because that is where the bracket opens. */
+export const NOTCHES = [
+  { x: 9, y: 45.2625, width: 13.287, height: 4.56741 },        // left
+  { x: 45.4261, y: 9, width: 4.56741, height: 13.287 },        // top
+  { x: 45.4261, y: 72.8053, width: 4.56741, height: 13.287 },  // bottom
+] as const;
+
+/** The nested bracket — the "C". Open to the right between y 37.7 and y 57.6. */
+export const APERTURE = [
+  { x: 22.287, y: 21.5745, width: 47.1193, height: 4.2856 },   // top arm
+  { x: 22.287, y: 68.5197, width: 47.1193, height: 4.2856 },   // bottom arm
+  { x: 22.287, y: 25.8601, width: 3.59573, height: 42.5824 },  // spine
+  { x: 69.4063, y: 21.5745, width: 3.59573, height: 16.1257 }, // top return
+  { x: 69.4063, y: 57.5917, width: 3.59573, height: 15.2136 }, // bottom return
+] as const;
+
+export const MARK_VIEWBOX = '0 0 95.42 95.09';
 
 export function BrandMark({
   size = 24,
@@ -36,28 +55,31 @@ export function BrandMark({
 }: {
   size?: number;
   className?: string;
-  /** Give the mark an accessible name only where it stands alone. Beside a visible
-   *  wordmark it is decorative, and a second announcement is noise for a screen reader. */
+  /** Name it only where it stands alone. Beside a visible wordmark it is decorative, and
+   *  a second announcement is noise for a screen reader. */
   title?: string;
 }) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.4}
-      strokeLinecap="square"
-      strokeLinejoin="miter"
+      viewBox={MARK_VIEWBOX}
+      fill="currentColor"
       role={title ? 'img' : undefined}
       aria-hidden={title ? undefined : true}
       focusable="false"
       className={clsx('shrink-0', className)}
     >
       {title ? <title>{title}</title> : null}
-      <path d={FRAME_STROKES.join(' ')} />
-      <path d={APERTURE} strokeWidth={2.7} strokeLinecap="round" />
+      {FRAME_SEGMENTS.map((r, i) => (
+        <rect key={`f${i}`} {...r} />
+      ))}
+      {NOTCHES.map((r, i) => (
+        <rect key={`n${i}`} {...r} />
+      ))}
+      {APERTURE.map((r, i) => (
+        <rect key={`a${i}`} {...r} />
+      ))}
     </svg>
   );
 }

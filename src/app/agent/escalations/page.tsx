@@ -54,7 +54,7 @@ export default async function AgentEscalationsPage({
   const counts = escalationCounts(activeSource === 'all' ? rows : await agentEscalations(principal));
 
   return (
-    <div className="mx-auto max-w-7xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <PageHeader
         className="mb-4"
         eyebrow="Agent workspace"

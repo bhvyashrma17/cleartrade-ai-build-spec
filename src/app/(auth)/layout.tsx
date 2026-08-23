@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BrandMark } from '@/components/brand/BrandMark';
 import { Wordmark } from '@/components/brand/Wordmark';
 
 /**
@@ -15,13 +16,14 @@ import { Wordmark } from '@/components/brand/Wordmark';
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-paper px-4 py-12">
-      <div className="w-full max-w-md">
-        <Link href="/" className="focus-visible-ring -m-1 mb-6 inline-block p-1" aria-label="ClearTrade AI — home">
+    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-ground px-4 py-12">
+      <BrandMark size={620} className="pointer-events-none absolute -bottom-40 -left-44 text-bone opacity-[0.03]" />
+      <div className="animate-fade-rise relative w-full max-w-md">
+        <Link href="/" className="focus-visible-ring -m-1 mb-8 inline-block p-1" aria-label="ClearTrade — home">
           <Wordmark />
         </Link>
         {children}
-        <p className="mt-6 text-center text-xs text-ink-300">Structured exports. Zero chaos.</p>
+        <p className="mt-8 text-center text-xs text-muted">Structured exports. Zero chaos.</p>
       </div>
     </main>
   );

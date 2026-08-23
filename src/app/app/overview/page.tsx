@@ -23,7 +23,7 @@ import { Suspense } from 'react';
 import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import { getPrincipal } from '@/lib/auth';
-import { Skeleton } from '@/components/ui';
+import { PageHeader, Skeleton } from '@/components/ui';
 import {
   AssignedAgentModule,
   DealPipelineModule,
@@ -35,7 +35,7 @@ import {
 
 function ModuleSkeleton({ height = 'h-32' }: { height?: string }) {
   return (
-    <div className={`rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card ${height}`}>
+    <div className={`rounded-lg border border-line bg-surface p-4 ${height}`}>
       <Skeleton variant="text" lines={3} />
     </div>
   );
@@ -50,40 +50,49 @@ export default async function OverviewPage() {
   const tier = principal.tier as 'free' | 'paid';
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <header>
-        <h1 className="font-serif text-title-page text-primary">Overview</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Where you are, what needs you next, and who to ask for help.
-        </p>
-      </header>
+    <div className="pb-16">
+      <PageHeader
+        eyebrow="Your workspace"
+        title="Overview"
+        description="Where you are, what needs you next, and who to ask for help."
+      />
 
-      {/* Risk banner: renders nothing when there's nothing wrong (docs/04 "only
-          material blockers"), so it sits outside the module grid rather than reserving
-          space it usually won't use. */}
+      {/* Renders nothing when nothing is wrong (docs/04, "only material blockers"), so it
+          sits outside the grid rather than reserving space it usually will not use. */}
       <Suspense fallback={null}>
         <RiskBannerModule orgId={orgId} />
       </Suspense>
 
-      <Suspense fallback={<ModuleSkeleton height="h-20" />}>
-        <JourneyModule orgId={orgId} />
-      </Suspense>
-
-      <Suspense fallback={<ModuleSkeleton height="h-48" />}>
-        <NextActionsModule orgId={orgId} />
-      </Suspense>
-
-      <Suspense fallback={<ModuleSkeleton />}>
-        <HealthSummaryModule orgId={orgId} tier={tier} />
-      </Suspense>
-
-      <div className="grid gap-6 sm:grid-cols-2">
-        <Suspense fallback={<ModuleSkeleton />}>
-          <DealPipelineModule orgId={orgId} tier={tier} />
+      <div className="mt-6">
+        <Suspense fallback={<ModuleSkeleton height="h-24" />}>
+          <JourneyModule orgId={orgId} />
         </Suspense>
-        <Suspense fallback={<ModuleSkeleton />}>
-          <AssignedAgentModule orgId={orgId} tier={tier} />
-        </Suspense>
+      </div>
+
+      {/* Work on the left, context on the right.
+          The page used to be one narrow column of stacked cards, which gave the thing you
+          have to DO the same weight as the thing you might like to know. Next actions now
+          take two thirds of the width and lead; health, pipeline and your agent become a
+          rail beside them. Below lg it collapses back to one column in the same order, so
+          the priority survives on a phone. */}
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="space-y-6">
+          <Suspense fallback={<ModuleSkeleton height="h-64" />}>
+            <NextActionsModule orgId={orgId} />
+          </Suspense>
+          <Suspense fallback={<ModuleSkeleton />}>
+            <DealPipelineModule orgId={orgId} tier={tier} />
+          </Suspense>
+        </div>
+
+        <aside className="space-y-6 lg:sticky lg:top-[calc(var(--topbar-height)+24px)]">
+          <Suspense fallback={<ModuleSkeleton />}>
+            <HealthSummaryModule orgId={orgId} tier={tier} />
+          </Suspense>
+          <Suspense fallback={<ModuleSkeleton />}>
+            <AssignedAgentModule orgId={orgId} tier={tier} />
+          </Suspense>
+        </aside>
       </div>
     </div>
   );

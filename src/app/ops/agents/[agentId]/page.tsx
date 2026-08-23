@@ -43,7 +43,7 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
   ]);
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <Link href="/ops/agents" className="focus-visible-ring rounded text-xs font-medium text-primary underline underline-offset-2">
         ← All agents
       </Link>

@@ -50,7 +50,7 @@ export default async function OpsAuditPage() {
   const activeFeePolicy = feePolicyVersions.find((v) => v.is_active) ?? feePolicyVersions[0];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
+    <div className="space-y-4 py-4 md:py-6">
       <PageHeader
         eyebrow="Operations"
         title="Audit log & configuration history"

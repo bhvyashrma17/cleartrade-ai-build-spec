@@ -227,7 +227,7 @@ export async function HealthSummaryModule({ orgId, tier }: { orgId: string; tier
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
           Health summary
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3">
           <MetricCard
             label="Readiness"
             value={currentAssessment?.score != null ? `${currentAssessment.score}/100` : READINESS_LABEL[org?.readiness_status ?? 'not_started']}

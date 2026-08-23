@@ -35,7 +35,7 @@ export default async function DealWorkspaceLayout({
 
   if (tierBlocked || !deal) {
     return (
-      <div className="mx-auto max-w-3xl p-4 md:p-6">
+      <div className="mx-auto max-w-3xl py-4 md:py-6">
         <UpgradeNotice
           title="Deal Workspace is on the agent-assisted plan"
           requiredTier="paid"
@@ -50,7 +50,7 @@ export default async function DealWorkspaceLayout({
   const railStage = dealStageForRail(deal.stage);
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       {/* Deal header — buyer, product, country, stage, value, agent, risk (docs/04 EXP-09). */}
       <header className="mb-4 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card md:sticky md:top-16 md:z-10">
         <div className="flex flex-wrap items-start justify-between gap-3">

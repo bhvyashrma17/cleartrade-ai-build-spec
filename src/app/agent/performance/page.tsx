@@ -83,7 +83,7 @@ export default async function AgentPerformancePage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
+    <div className="space-y-4 py-4 md:py-6">
       <PageHeader
         eyebrow="Agent workspace"
         title="Performance & payout"

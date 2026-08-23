@@ -71,7 +71,7 @@ export default async function AgentDealCommercialPage({ params }: { params: Prom
   const previousVersion = view.latest && view.latest.version > 1 ? view.latest.version - 1 : null;
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <div className="mb-6">
         <PageHeader
           eyebrow={

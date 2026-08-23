@@ -19,9 +19,9 @@ export default async function LoginPage({
   const oauthErrorMessage = loginErrorMessage(params.error, params.provider);
 
   return (
-    <section className="rounded-xl border border-line bg-card p-6 sm:p-8">
-      <h1 className="masthead text-title-page text-ink-900">Sign in to your workspace</h1>
-      <p className="mt-2 text-sm text-ink-500">Use Google, Apple, or your ClearTrade email and password.</p>
+    <section className="rounded-xl border border-line-strong bg-surface p-6 sm:p-8">
+      <h1 className="display text-title-page text-bone">Sign in to your workspace</h1>
+      <p className="mt-3 text-sm text-muted">Use Google, Apple, or your ClearTrade email and password.</p>
       <div className="mt-7">
         <LoginForm
           callbackUrl={callbackUrl}

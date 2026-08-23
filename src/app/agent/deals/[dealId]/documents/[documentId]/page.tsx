@@ -52,7 +52,7 @@ export default async function AgentDocumentDetailPage({
   const approvable = detail.approvalBlockers.length === 0;
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <div className="mb-4">
         <PageHeader
           eyebrow={

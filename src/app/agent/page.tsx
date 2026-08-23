@@ -33,7 +33,7 @@ export default async function AgentMyDayPage() {
     prisma.deal.findMany({ where: { exporter_org_id: { in: orgIds }, risk_state: { in: [RiskState.at_risk, RiskState.blocked] } }, orderBy: { updated_at: 'asc' }, take: 5, include: { exporter_org: true } }),
   ]);
 
-  return <div className="mx-auto max-w-7xl p-4 md:p-6">
+  return <div className="py-4 md:py-6">
     <PageHeader className="mb-6" eyebrow="Agent workspace" title="My Day" description="Prioritized by escalation, SLA and risk." />
     <section aria-label="Portfolio summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Assigned exporters" value={assignedExporters} /><MetricCard label="Due today / overdue" value={urgentTasks.length} secondaryText="Your active urgent queue" /><MetricCard label="Active deals" value={activeDeals} /><MetricCard label="At risk" value={blockedDeals} secondaryText="Blocked or at risk" /></section>
     <div className="mt-6 grid gap-6 xl:grid-cols-5">

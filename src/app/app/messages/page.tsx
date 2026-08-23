@@ -13,7 +13,7 @@ export default async function MessagesPage() {
 
   if (!can(principal, 'message.view')) {
     return (
-      <div className="mx-auto max-w-3xl p-4 md:p-6">
+      <div className="mx-auto max-w-3xl py-4 md:py-6">
         <UpgradeNotice
           title="Messaging is on the agent-assisted plan"
           requiredTier="paid"

@@ -16,7 +16,7 @@ export default async function DealsPage({
 
   if (!can(principal, 'deal.view')) {
     return (
-      <div className="mx-auto max-w-3xl p-4 md:p-6">
+      <div className="mx-auto max-w-3xl py-4 md:py-6">
         <UpgradeNotice
           title="Deal tracking is on the agent-assisted plan"
           requiredTier="paid"

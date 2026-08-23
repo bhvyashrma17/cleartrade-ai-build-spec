@@ -58,7 +58,7 @@ export default async function OpsAssignmentsPage() {
   const assignCandidates = agents.map((agent) => ({ id: agent.id, name: agent.name, assignedCount: agent._count.agent_assignments }));
 
   return (
-    <div className="mx-auto max-w-7xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <PageHeader
         className="mb-6"
         eyebrow="Operations"

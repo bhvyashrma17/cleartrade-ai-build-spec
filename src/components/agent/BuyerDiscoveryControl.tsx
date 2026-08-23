@@ -303,19 +303,19 @@ export function BuyerDiscoveryControl({
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <table className="w-full min-w-[64rem] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-line bg-paper-sunk">
-              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Buyer</th>
+            <tr className="border-b border-line bg-surface-2">
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-slate">Buyer</th>
               {/* Group A */}
-              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">AI score</th>
-              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">Confidence</th>
-              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">AI position</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-slate">AI score</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-slate">Confidence</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-slate">AI position</th>
               {/* Ordering */}
-              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Operational order</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-slate">Operational order</th>
               {/* Group B */}
-              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Canonical state</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-slate">Canonical state</th>
               {/* Group C */}
-              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Agent decision</th>
-              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Actions</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-slate">Agent decision</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-slate">Actions</th>
             </tr>
           </thead>
           <tbody>

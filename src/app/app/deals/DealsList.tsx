@@ -244,7 +244,7 @@ export function DealsList({ initialFilters = {} }: { initialFilters?: DealsListI
   ];
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <header className="mb-6">
         <p className="text-sm font-normal text-primary">Your pipeline</p>
         <h1 className="font-serif text-title-page text-primary">Deals</h1>

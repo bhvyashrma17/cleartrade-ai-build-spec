@@ -63,7 +63,7 @@ export default async function OpsDisputeDetailPage({ params }: { params: Promise
   const severityChip = supportChip(DISPUTE_SEVERITY_DISPLAY, dispute.severity);
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <p className="text-sm font-normal text-primary">
         <Link href="/ops/disputes" className="underline underline-offset-2">Dispute oversight</Link> · Case {dispute.id.slice(-6)}
       </p>

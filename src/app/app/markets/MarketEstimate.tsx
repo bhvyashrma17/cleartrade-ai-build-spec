@@ -90,7 +90,7 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="py-6">
       <header className="mb-6">
         <h1 className="font-serif text-title-page text-primary">See where your product is already selling</h1>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">

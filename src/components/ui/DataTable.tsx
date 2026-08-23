@@ -119,12 +119,12 @@ export function DataTable<T>({
   const skeletonRowCount = Math.min(page.per_page || 5, 8);
 
   return (
-    <div className={clsx('overflow-hidden rounded-lg border border-line bg-card', className)}>
+    <div className={clsx('overflow-hidden rounded-lg border border-line bg-surface', className)}>
       {/* Desktop / tablet table */}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-line bg-paper-sunk">
+            <tr className="border-b border-line-strong">
               {columns.map((col) => {
                 const key = col.sortKey ?? col.key;
                 const isSorted = sort?.key === key;
@@ -133,7 +133,7 @@ export function DataTable<T>({
                     key={col.key}
                     scope="col"
                     className={clsx(
-                      'eyebrow whitespace-nowrap px-4 py-3 text-ink-500',
+                      'eyebrow whitespace-nowrap px-4 pb-2.5 pt-3.5',
                       ALIGN_CLASSES[col.align ?? 'left'],
                       col.className,
                     )}
@@ -158,7 +158,7 @@ export function DataTable<T>({
                 );
               })}
               {rowActions ? (
-                <th scope="col" className="eyebrow px-4 py-3 text-right">
+                <th scope="col" className="eyebrow px-4 pb-2.5 pt-3.5 text-right">
                   <span className="sr-only">Actions</span>
                 </th>
               ) : null}
@@ -167,7 +167,7 @@ export function DataTable<T>({
           <tbody>
             {loading
               ? Array.from({ length: skeletonRowCount }).map((_, i) => (
-                  <tr key={i} className="border-t border-[var(--color-border)]">
+                  <tr key={i} className="border-t border-line">
                     {columns.map((col) => (
                       <td key={col.key} className="px-4 py-3">
                         <Skeleton height="0.9rem" width="80%" />
@@ -194,13 +194,13 @@ export function DataTable<T>({
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
                       className={clsx(
                         'border-t border-line transition-colors duration-fast',
-                        onRowClick && 'cursor-pointer hover:bg-paper',
+                        onRowClick && 'cursor-pointer hover:bg-surface-2',
                       )}
                     >
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={clsx('px-4 py-[var(--cell-y)] align-middle text-ink-900', ALIGN_CLASSES[col.align ?? 'left'], col.className)}
+                          className={clsx('px-4 py-[var(--cell-y)] align-middle text-bone', ALIGN_CLASSES[col.align ?? 'left'], col.className)}
                         >
                           {col.render(row)}
                         </td>
@@ -217,7 +217,7 @@ export function DataTable<T>({
       </div>
 
       {/* Mobile card fallback (docs/10 §3: tables become cards on small screens) */}
-      <div className="divide-y divide-[var(--color-border)] md:hidden">
+      <div className="divide-y divide-line md:hidden">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="p-4">
@@ -236,15 +236,15 @@ export function DataTable<T>({
             <div
               key={rowKey(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={clsx('p-4', onRowClick && 'cursor-pointer active:bg-surface-muted')}
+              className={clsx('p-4', onRowClick && 'cursor-pointer active:bg-surface-2')}
             >
               <dl className="space-y-1.5">
                 {columns
                   .filter((col) => !col.hideOnMobile)
                   .map((col) => (
                     <div key={col.key} className="flex items-baseline justify-between gap-3 text-sm">
-                      <dt className="text-ink-500">{col.header}</dt>
-                      <dd className="text-right text-ink-900">{col.render(row)}</dd>
+                      <dt className="text-muted">{col.header}</dt>
+                      <dd className="text-right text-bone">{col.render(row)}</dd>
                     </div>
                   ))}
               </dl>
@@ -282,7 +282,7 @@ function Pagination({
   const disableNext = loading || page.page >= page.total_pages;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-paper-sunk px-4 py-2.5 text-xs text-ink-500">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-xs text-muted">
       <span>
         {page.total > 0 ? `Showing ${from}–${to} of ${page.total}` : 'No rows'}
       </span>
@@ -294,7 +294,7 @@ function Pagination({
         <PageButton label="Previous page" disabled={disablePrev} onClick={() => onPageChange(page.page - 1)}>
           <ChevronIcon direction="left" />
         </PageButton>
-        <span className="px-2 text-primary">
+        <span className="px-2 text-bone">
           Page {page.page} of {page.total_pages}
         </span>
         <PageButton label="Next page" disabled={disableNext} onClick={() => onPageChange(page.page + 1)}>
@@ -326,7 +326,7 @@ function PageButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="focus-visible-ring inline-flex items-center rounded-md border border-[var(--color-border)] p-1.5 text-primary disabled:cursor-not-allowed disabled:opacity-40 hover:enabled:bg-surface-muted"
+      className="focus-visible-ring inline-flex items-center rounded-md border border-line p-1.5 text-slate disabled:cursor-not-allowed disabled:opacity-40 hover:enabled:bg-surface-2 hover:enabled:text-bone"
     >
       {children}
     </button>

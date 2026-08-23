@@ -80,7 +80,7 @@ export default async function LeadWorkspacePage({ params }: { params: Promise<{ 
   const verificationChip = VERIFICATION_DISPLAY[full.buyer.verification_status] ?? VERIFICATION_DISPLAY.unverified;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
+    <div className="space-y-4 py-4 md:py-6">
       {/* Lead header — persistent identity for the workspace. */}
       <Card as="header" elevated>
         <PageHeader

@@ -52,7 +52,7 @@ export function SocialSignInButtons({ callbackUrl, providers }: SocialSignInButt
 
 function GoogleIcon() {
   return (
-    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18">
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none">
       <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.26-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.72-1.58 2.68-3.92 2.68-6.62z" />
       <path fill="#34A853" d="M9 18c2.43 0 4.46-.8 5.94-2.18l-2.92-2.26c-.8.54-1.82.86-3.02.86-2.32 0-4.3-1.56-5-3.66H1v2.32A9 9 0 0 0 9 18z" />
       <path fill="#FBBC05" d="M4 10.76a5.4 5.4 0 0 1 0-3.52V4.92H1a9 9 0 0 0 0 8.16l3-2.32z" />

@@ -1,31 +1,31 @@
 # ClearTrade — UI design system
 
-What the interface is, why each decision was made, and what changed in the pass that
-built it. `docs/27-ui-redesign.md` is the argument that preceded this work; this file is
-the system as it now ships. Behavioural rules in `docs/03-global-ux-contract.md` are
-unchanged — this is a visual layer, and where the two conflict the workflow rule wins.
+What the interface is, why each decision was made, and what changed. `docs/27-ui-redesign.md`
+is the argument that preceded this work; this file is the system as it ships. Behavioural
+rules in `docs/03-global-ux-contract.md` are unchanged — this is a visual layer, and where
+the two conflict the workflow rule wins.
 
-Implementation lives in `src/app/globals.css` (tokens), `tailwind.config.ts` (the token
-surface), `src/components/brand/` (the mark) and `src/components/ui/` (the primitives).
+Implementation: `src/app/globals.css` (tokens), `tailwind.config.ts` (token surface),
+`src/components/brand/` (the mark), `src/components/shell/` (chrome), `src/components/ui/`.
 
 ---
 
-## 0. The problem this pass was fixing
+## 0. Why this was redone twice
 
-The product read as bland and machine-made, and the reasons were specific and measurable
-rather than a matter of taste:
+The first pass polished a light admin dashboard: it fixed the type ladder, the contrast and
+the token bugs, and it was still the wrong product. The verdict was that the *structure* was
+generic — and it was, for two reasons that no amount of restyling reaches:
 
-| Symptom | Measurement | Why it read as "AI-generated" |
-|---|---|---|
-| No typographic hierarchy | `text-sm` on 694 elements, `text-xs` on 740 — 90% of all type in the product | Every page was a uniform field of 12–14px text. Nothing led the eye. |
-| No brand present anywhere | `public/` contained one file: `.gitkeep` | The strongest position on every screen — the top-left — held the string "ClearTrade AI" set in bold interface sans. |
-| No elevation | `shadow-card` on 182 elements, `shadow-raised` on 2 | Everything sat on one plane, all of it faintly shadowed, so nothing floated. |
-| The palette was unused | `bg-action` on 18 elements against `text-primary` on 872 | Monochrome in practice. |
-| The default AI landing page | Centred serif headline over a centred column | Precisely the house style `docs/27` §3.1 warned against — and the product was wearing it. |
+1. **The layout was the default admin skeleton.** A fixed dark top bar plus a 256px sidebar
+   spent roughly a fifth of a laptop screen on furniture before any content, on every page,
+   and left every page a narrow column of stacked cards.
+2. **The brand was invented rather than read.** `brand-logo.svg` was not in the repo, so the
+   mark had been *reconstructed from a written description* — as a round "C" in a ticked
+   frame, set in Inter and Instrument Serif. The real logo turned out to be orthogonal (not
+   one curve in it), set in a high-contrast Didone, and drawn **bone on a dark ground**.
 
-Underneath those, a half-finished token migration had left four **live defects** that no
-amount of restyling would have hidden. They are documented in §7 because each one is a
-category of mistake worth recognising again, not just a bug that got fixed.
+The product was translating a dark brand onto white. It now lives where the brand already
+lived.
 
 ---
 
@@ -33,224 +33,209 @@ category of mistake worth recognising again, not just a bug that got fixed.
 
 ### 1.1 The mark
 
-`src/components/brand/BrandMark.tsx` · `public/brand/mark.svg`
+`src/components/brand/BrandMark.tsx` · geometry verbatim from `public/brand/logo-full.svg`.
 
-A square registration frame — four corner brackets and four cardinal ticks — enclosing an
-open "C". It reads as a customs stamp, a die, a seal: **an instrument of record, not a tech
-logo.** That is what the product is. It generates the documents that clear customs.
+A solid square frame, notched at three cardinal points, enclosing a nested square bracket
+that opens to the right. Every stroke is a rectangle. It is a register, a frame around a
+record — which is what the product produces.
 
-The mark is drawn in `currentColor` and never given a colour of its own, so one component
-serves bone-on-ink chrome, ink-on-paper page furniture and inherited-colour inline use.
+The frame is exported as eight fillable segments so `JourneyFrame` can close them one at a
+time (§4). **Do not redraw it by eye**; that is exactly how the first version went wrong.
 
-Its eight frame strokes are exported as `FRAME_STROKES` and shared with `JourneyFrame`
-(§4). Change the geometry in one place or the two marks drift apart.
+Assets are the real files from the logo package: `public/brand/` (full lockup, 192/512 PNG,
+apple-touch, favicons) and `src/app/favicon.ico`.
 
 ### 1.2 The lockup
 
-`src/components/brand/Wordmark.tsx`
-
-Mark + "ClearTrade" in the display serif + "AI" as a tracked slate label. The wordmark is
-set in the same face as every page masthead, which is the point: the name and the page
-titles are one voice. The "AI" rides behind rather than matching, so the name reads as
-ClearTrade and the qualifier stays a qualifier.
-
-Assets: `public/brand/mark.svg` (favicon, bone on ink so it reads on any tab colour),
-`mark-app.svg` (touch icon), `lockup.svg` (email, README, OG — carries a fallback font
-stack; the product UI always uses the React component so the wordmark renders in the real
-webfont).
+Mark + "ClearTrade" in the display Didone. The wordmark is live text in the same face as
+every page masthead, not traced outlines — so it scales with the reader's font settings and
+the name and the page titles are visibly one voice.
 
 ---
 
 ## 2. Type
 
-### 2.1 Three faces, three jobs
-
 | Role | Face | Used for |
 |---|---|---|
-| **Masthead** | **Newsreader** | Page `h1`, the landing hero, the wordmark. Nothing else. |
-| **Interface** | **IBM Plex Sans** | Everything else. |
-| **Record** | **IBM Plex Mono**, tabular | Every instrument of record — see §2.3. |
+| **Masthead** | **Playfair Display** | Page `h1`, the landing hero, the wordmark. Nothing else. |
+| **Interface** | **Space Grotesk** | Everything else. |
+| **Record** | **JetBrains Mono** | Every instrument of record — §2.2. |
 
-Two deliberate rejections:
+Chosen against the logo file rather than a description of it. The wordmark is a
+high-contrast Didone with vertical stress and ball terminals, and Playfair is the closest
+web-licensed match. The tagline is set in a geometric sans; Space Grotesk is the version of
+that idea that survives 13px in a dense queue table, and is emphatically not the Inter that
+every other product defaults to.
 
-- **Not Inter.** It is the most legible typeface in the world and also the single most
-  common signal that nobody chose a typeface. IBM Plex Sans is an institutional grotesque
-  — engineered, slightly flared, designed for dense enterprise UI in IBM Carbon — and it
-  is the sibling of the mono below, so the interface and the record set share one
-  skeleton.
-- **Not Instrument Serif.** `docs/27` §3.1 warns that warm cream plus a high-contrast
-  display serif is the house style of every AI-generated site — and then specified
-  Instrument Serif, which *is* that face. Newsreader is a newspaper-of-record serif with
-  optical sizing: editorial and institutional rather than fashionable, and far less worn.
+Loaded via `next/font/google` — self-hosted, hashed, preloaded.
 
-Loaded through `next/font/google` (`src/app/fonts.ts`), not a `<link>` to
-fonts.googleapis.com. The files are self-hosted from our own origin, hashed by the build
-and preloaded. The old `<link>` cost two DNS handshakes on every cold load and shipped a
-render-blocking third-party stylesheet — visible as a flash of Times New Roman on the
-masthead, which is the most brand-critical glyph run on the page.
+### 2.1 Scale
 
-### 2.2 Scale
-
-| Token | Size / line / weight | Face | Use |
+| Token | Size / weight | Face | Use |
 |---|---|---|---|
-| `display` | 52 / 1.02 / 500 | Serif | Landing hero only |
-| `title-page` | 32 / 1.12 / 500 | Serif | Page `h1` |
-| `title-section` | 21 / 1.3 / 600 | Sans | Section `h2` |
-| `subtitle` | 17 / 1.4 / 600 | Sans | Card `h3` |
-| `body` (`text-sm`) | 15 / 1.6 / 400 | Sans | Default paragraph |
-| `body-sm` (`text-xs`) | 13 / 1.5 / 400 | Sans | Dense tables, agent/ops |
-| `label` / `.eyebrow` | 11 / 1.3 / 600, `0.09em`, uppercase | Sans | Eyebrows, table headers, `dt` |
-| `record` | 13 / 1.5 / 400, tabular | Mono | §2.3 |
+| `display` | 64 / 500 | Serif | Landing hero only |
+| `title-page` | 40 / 500 | Serif | Page `h1` |
+| `figure` | clamp(26→44) / 500, tabular | Sans | The headline number |
+| `title-section` | 22 / 500 | Sans | Section `h2` |
+| `subtitle` | 17 / 500 | Sans | Card `h3` |
+| `body` (`text-sm`) | 14 / 400 | Sans | Default paragraph |
+| `body-sm` (`text-xs`) | 13 / 400 | Sans | Dense tables, agent/ops |
+| `label` / `.eyebrow` | 11 / 500, `0.14em`, upper | Sans | Eyebrows, table headers, `dt` |
+| `record` | 13 / 400, tabular | Mono | §2.2 |
 
-**The ladder was installed by retuning `text-sm` and `text-xs`, not by rewriting 1,434
-class names.** Those two utilities carry 90% of the type in the product, so they were
-re-pointed at the 15px body and the 13px dense body. Every existing call site inherited
-the new scale without an edit, and the sizes above them were spread to leave a real gap.
+**The ladder is installed by re-pointing `text-sm` and `text-xs`**, which carry ~90% of the
+type in this product (694 and 740 call sites), rather than by rewriting 1,434 class names.
 
-### 2.3 Mono is a product decision, not a style
+`figure` is a `clamp()` rather than a fixed size: a fixed 44px overflowed the context rail
+on the dashboard, clipping "USD 56,4…".
 
-In a trade product, reference numbers *are* the content. Every one of these is set through
-the single `.record` class (60 call sites): HS/ITC-HS codes · bill of lading and AWB
-numbers · shipping bill numbers · container numbers · invoice numbers · LC references ·
-customs and filing references · snapshot hashes · partner handoff references · payout
-transfer references · correlation IDs · UN/LOCODEs.
+### 2.2 Mono is a product decision
 
-It does more for "purpose-built" than any amount of colour, and it is a real usability
-gain: a filing reference read off a screen character by character, down a phone line, is a
-thing that actually happens in this product.
+In a trade product the reference number *is* the content. Every one of these goes through
+the single `.record` class: HS codes · B/L and AWB numbers · shipping bill numbers ·
+container numbers · invoice numbers · LC references · customs and filing references ·
+hashes · payout transfer references · correlation IDs · UN/LOCODEs. Somebody reads these
+down a phone line, character by character.
 
 ---
 
-## 3. Colour
+## 3. Colour — a dark system
 
-### 3.1 The inversion
+The logo is bone on dark. So is the product.
 
-**Cool light surfaces, warm dark chrome.** Bone is reserved for where the mark lives — the
-top bar, dark panels, the logo. The light surfaces take their cast from slate. This is
-what makes the dark chrome feel deliberate instead of like a default navy header, and it
-is the opposite of the warm-cream-plus-serif reflex.
+### 3.1 The ground stack
+
+Four steps, not one flat black. On a dark ground **elevation is light, not shadow**: a
+raised surface is lighter than the one beneath it. Shadows are reserved for true overlays.
 
 ```
-Brand      bone #EFE9E9 · slate #9B9EA7
-Ink        900 #15171B · 700 #24272E · 500 #4A4E58 · 300 #666B78 · 200 #9B9EA7
-Paper      paper #F4F5F7 · sunk #EBEDF1 · card #FFFFFF · line #E2E5EA · strong #CBD0D8
-Seal       600 #4B3FAE · 500 #5C51C4
-Status     ok #12805A · info #0E7490 · warn #B45309 · crit #C0271D  (each + a -text and -tint)
+--ground     #0C0E11   the page
+--surface    #14171C   panels, cards
+--surface-2  #1B1F26   raised: hover, active row, inputs
+--surface-3  #242932   overlay: menus, dialogs, the palette
 ```
 
-`--ink-200` is **decorative and border-only** — 2.45:1 as text. That is written into the
-token's own documentation because this pass violated it once (§7.4) and the sweep caught
-it.
+### 3.2 Ink
 
-### 3.2 Primary actions are ink
+```
+--bone   #EFE9E9   primary text, the mark      15.0:1 on --surface
+--slate  #9B9EA7   secondary text               6.7:1
+--muted  #838A98   tertiary — the floor for body copy   5.2:1 / 4.8:1 on --surface-2
+--faint  #4E545F   rules and decorative glyphs. NEVER text (2.4:1).
+```
 
-Not seal, not a status hue. This is the rule the rest of the colour system hangs off: if
-buttons were the accent, colour would mean "clickable" in one place and "at risk" in
-another, and a violet CTA would compete with every warning on screen. **Ink primary keeps
-colour meaningful everywhere else.**
+`--muted` was raised once during this pass: the darker value cleared AA on `--surface` but
+not on `--surface-2`, and plenty of muted text sits inside a raised panel.
 
-Seal is the one accent — links, focus ring, the active nav bar, the in-progress segment of
-the journey frame. Roughly 2% of any screen, and never a status.
+**`--faint` is never text — and that includes disabled labels.** A control being inert is
+carried by its flat fill, its cursor and its `disabled` attribute; making its text
+unreadable is not an accessibility trade worth taking.
 
-### 3.3 Tints
+### 3.3 Accent, and why primary is not it
 
-Always via the pre-mixed `--*-tint` tokens or an explicit `color-mix()`. **Never a Tailwind
-alpha modifier on a bare `var()` colour** (`bg-seal/10`) — see §7.1.
+`--accent #9A8CFF`. One colour, never a status: links, focus, the active nav marker, the
+journey segment in flight. ~2% of any screen.
+
+**Primary actions are bone, not the accent.** On a dark ground the highest-contrast object
+available is light, so primary inverts to a bone fill with ground text. That is what keeps
+colour meaningful everywhere else — a violet CTA would compete with every warning on screen.
+
+### 3.4 Status
+
+Tuned for a dark ground; the light-mode hues go muddy here. Each clears AA as text on
+`--surface`.
+
+```
+--ok #4ADE80 (10.3:1) · --info #56CCF2 (8.9) · --warn #FBBF24 (9.9) · --crit #FF7A70 (7.1)
+```
+
+Tints via `color-mix`, **never** a Tailwind alpha modifier on a bare `var()` colour — see §7.1.
 
 ---
 
-## 4. The signature: the frame closes
+## 4. Structure — the change that mattered
+
+### 4.1 One bar, not two
+
+The sidebar is gone. Navigation is horizontal in a single 60px command bar, and the content
+gets the full deck back (`max-w-shell`, 1440px). Below `lg` the nav becomes a scrolling rail
+rather than collapsing into a hamburger — a queue worker on a tablet should not have to open
+a menu to change surface.
+
+### 4.2 ⌘K
+
+Removing a sidebar has to *add* something. A sidebar's real job is "show me everything I can
+reach", and the palette does that job better: every destination the current role and tier can
+actually reach, reachable without leaving the keyboard, at zero pixels until asked for.
+`⌘K` / `Ctrl+K` / `/`, arrow keys, Enter, Esc. The trigger stays visible and shows its own
+shortcut, because a keyboard feature nobody can see is a keyboard feature nobody uses.
+
+### 4.3 Focus and context, not a stack of equal cards
+
+Pages open with a masthead, then split: the work on the left at two-thirds, context in a
+sticky rail at one-third. The dashboard used to give the thing you have to *do* the same
+weight as the thing you might like to *know*. Below `lg` it collapses to one column in the
+same order, so the priority survives on a phone.
+
+48 page wrappers were unwound as part of this — each carried its own `mx-auto max-w-* p-*`
+from the era when every page built its own container, which now double-padded the gutters and
+re-constrained a width the shell had already set.
+
+### 4.4 Density is a shell property
+
+Set once as `data-density` on the shell root; components read the variables it re-points and
+never opt in.
+
+```
+Exporter (comfortable)   body 14px · inset 24 · row 52 · control 38
+Agent / Ops (compact)    body 13px · inset 16 · row 36 · control 32
+```
+
+---
+
+## 5. The signature: the frame closes
 
 `src/components/ui/JourneyFrame.tsx`
 
-Every design needs one memorable element, and this one was already in the logo. The mark
-is **a square frame that closes.** The product's core object — a deal — is a sequence that
-progresses toward completion. So:
+The logo is a square frame around a bracket. A deal is a sequence that closes. So the eight
+frame segments fill clockwise as stages complete, and **a finished deal has drawn the logo
+exactly**. The bracket is always present — it is the record being framed; the frame is how
+far along it is.
 
-> **The deal's progress closes the frame.** Eight strokes, filling clockwise from the
-> top-left. A deal that completes has drawn the logo exactly.
+Done segments are bone, the segment in flight is accent, the future sits at 18% opacity.
+This is the one place the accent appears at size, which is what makes it read as the brand.
 
-Complete strokes are ink, the stroke in progress is seal, future strokes are
-`--line-strong`; the aperture in the centre stays grey until the frame closes. This is the
-only place seal appears at any size, which is what makes it read as the brand rather than
-as decoration.
-
-It passes the test that a structural device must encode something true: it is not an
-ornament, it is the completion state.
-
-Progress maps onto eight strokes for any stage count, so a 7-stage rail, an 8-state
-lifecycle and a percentage all render on the same geometry — the glyph means the same
+Progress maps onto eight segments for any stage count, so a 7-stage rail, an 8-state
+lifecycle and a bare percentage render on identical geometry — the glyph means the same
 thing in a deal table, an agent queue and the deal header.
 
-**Supporting motif:** the mark's registration ticks become the section divider — a hairline
-rule with a short heavy tick at the left edge (`.tick-rule`, used by `SectionHeading`).
-Section headers only. A motif that is everywhere is wallpaper.
-
----
-
-## 5. Rhythm, density and elevation
-
-### 5.1 Density is a shell property
-
-Set once by `AppShell` as `data-density` on the shell root; components read the CSS
-variables it re-points and never opt in.
-
-```
-Exporter (comfortable)   body 15px · card inset 24 · row 52px · stack 24 · control 38px
-Agent / Ops (compact)    body 13px · card inset 16 · row 36px · stack 16 · control 32px
-```
-
-This is what keeps the three portals one product at two densities instead of two designs.
-Verified in the browser: `/app/overview` renders body at 15px, `/agent` at 13px, both with
-a 32px masthead.
-
-### 5.2 Spacing
-
-Six steps — 4 · 8 · 12 · 16 · 24 · 32 · 48 · 64 — routed through two primitives rather
-than applied per element, because the fix for 38 distinct padding values is removing the
-opportunity, not discipline:
-
-- `<Stack gap>` — vertical rhythm, replacing sibling `mt-*`
-- `<Inset size>` — padding, replacing per-element `p-*`
-
-### 5.3 Elevation — three levels, used honestly
-
-| Level | Treatment | For |
-|---|---|---|
-| flat | 1px `--line`, no shadow | Most cards. White on cool paper already reads as raised. |
-| `raised` | soft 6/16px | Active nav item, hovered rows, sticky headers |
-| `overlay` | 12/32px | Drawers, dialogs, menus |
-
-`--shadow-card` was retuned to a near-hairline rather than removed from 182 call sites, so
-they all de-escalate without being edited.
-
-### 5.4 Radius
-
-4 inputs and chips · 8 cards and buttons · 12 panels and dialogs · full **avatars only —
-and not even those**. The monogram plate is square. The mark is built from hard corners;
-`rounded-full` was the one shape in the system that belonged to somebody else's product.
+**The rail beside it is segmented bars, not dots on a connector.** The dot rail could not be
+made to behave: each connector had to be centred against a column that also held its label,
+so the line ran through the text, and a centred label on the final stage clipped at the
+container edge. Bars have neither problem and read as a progress track rather than as a row
+of checkboxes.
 
 ---
 
 ## 6. Components
 
-| Component | What it now is |
+| Component | What it is |
 |---|---|
-| `Button` / `buttonClass()` | One recipe. `primary` ink+bone, `secondary` card+strong border, `ghost`, `danger` (crit tint + border, never a solid red fill), `inverse` for ink chrome. `buttonClass()` is exported because a third of the product's "buttons" are `<Link>`s. |
-| `Input` | 15px field text, `label`-token label, seal focus ring, error below the field **with an icon** so failure is never carried by colour alone. |
-| `Card` | Flat by default. `tone`: default / sunk / ink. |
-| `PageHeader` | The masthead — serif `h1`, tracked eyebrow, one-line description, optional `meta` row. The serif appears here and nowhere else. |
-| `SectionHeading` | `h2`/`h3` under the registration-tick rule. |
-| `StatusChip` | Square, not a pill. Icon in `*-fill`, label in `*-text`, `*-tint` ground, border at 30% fill. Label + icon always. |
-| `MetricCard` | Tracked label, 28px/600 tabular value. Numbers are the content. |
-| `EmptyState` | Centred with the mark at low contrast, or `bordered` for an in-section notice. An empty page is the one moment with room for the brand. |
-| `Table` / `DataTable` | Header is the `label` token on `--paper-sunk`. Rows hover to `--paper`, 1px lines, no zebra, density-driven cell padding. |
-| `JourneyProgress` | Square markers, ink/seal only, led by the `JourneyFrame` glyph. |
-| `AppShell` | Ink top bar with the lockup; nav on `--paper-sunk` so the active white card actually contrasts, with a 2px seal bar at its left edge; portal eyebrow; density attribute. |
+| `Button` / `buttonClass()` | One recipe. `primary` bone-on-ground, `secondary`, `ghost`, `danger` (crit tint + border, never a solid red fill), `accent` for a single hero CTA. Exported as a class because a third of this product's "buttons" are `<Link>`s. |
+| `Input` | Field one step lighter than its panel, `eyebrow` label, accent focus, error **with an icon** so failure is never colour alone. |
+| `Card` | `tone`: default / raised / bare. No shadow — elevation on dark is tone. `ticked` adds the mark's corner registration ticks; one panel per screen. |
+| `PageHeader` | The masthead. The Didone appears here and nowhere else. |
+| `SectionHeading` | Hairline above the title, accent tick for the one section that is the point of the page. |
+| `StatusChip` | Square, not a pill. Icon at full hue, label at full hue, tint ground, 28% border. Label + icon always. |
+| `MetricCard` | Tracked label, `figure`-size tabular value. The number is the content. |
+| `EmptyState` | Centred with the mark, or `bordered` for an in-section notice. |
+| `Table` / `DataTable` | Header is a tracked label over a rule — not a filled band. Rows hover to `--surface-2`. |
+| `CommandPalette` | §4.2. |
+| `AppShell` | §4.1, §4.4. |
 
 ---
 
-## 7. The four live defects this pass fixed
+## 7. Live defects fixed, as categories
 
 Each is a category worth recognising again.
 
@@ -291,11 +276,18 @@ an accent change again.
 
 ### 7.4 A rem-relative font-size on `:root` re-defines the unit the tokens are measured in
 
-Introduced *during* this pass and caught by measuring rather than by looking:
-`html, body { font-size: var(--text-body) }` where `--text-body: 0.9375rem` makes
-`1rem = 15px`, so every token then resolved 6.25% small — a 15px body rendering at
-14.06px, a 32px title at 30px. The root now stays at the browser default (which is also
-what a reader's own font-size preference sets) and the body size is applied one level down.
+Introduced during this work and caught by measuring rather than by looking:
+`html, body { font-size: var(--text-body) }` where `--text-body` is in `rem` makes
+`1rem = 14px`, so every token then resolves ~6% small. The root stays at the browser default
+— which is also what a reader's own font-size preference sets — and the body size is applied
+one level down.
+
+### 7.5 `w` and `h` are not SVG rect attributes
+
+The rebuilt mark stored its geometry as `{x, y, w, h}` and spread it onto `<rect>`. React
+passes unknown attributes straight through and the browser ignores them, so every rectangle
+had zero size and **the mark rendered nothing at all** — silently, with no error, on every
+surface in the product. Caught by looking at a screenshot, not at the code.
 
 ---
 
@@ -305,28 +297,27 @@ Everything below was measured, not asserted.
 
 | Check | Result |
 |---|---|
-| `scripts/verify-contrast.ts` — full-app WCAG AA sweep, 41 surfaces | **0 failing text nodes of 3,857**, **0 failing icons of 456** |
-| Same sweep on the pre-change code | **259 failing text nodes** |
+| `scripts/verify-contrast.ts` — full-app WCAG AA sweep, 41 surfaces | **0 failing text nodes of 3,880**, **0 failing icons of 481** |
 | `npm test` | 979 passing / 47 files |
 | `npm run lint`, `npx tsc --noEmit` | clean |
 | `npm run build` | succeeds; `next/font` resolves at build time |
-| Density, in-browser | `/app/overview` body 15px, `/agent` body 13px, masthead 32px both |
+| Density, in-browser | `/app/overview` body 14px, `/agent` 13px |
 
 **Three pre-existing failures are not from this work.** `/agent/deals/:id`, `/ops/execution`
-and `/ops/audit` under-sample because the local dev database is missing
+and `/ops/audit` under-sample because the dev database is missing
 `Shipment.final_destination_name` from migration `20260821150000_document_capability_foundation`.
-The same three surfaces fail identically on the unmodified code — verified by stashing.
-`npx prisma migrate deploy` against the dev database clears it.
-
----
+The same three fail identically on unmodified code — verified by stashing.
+`npx prisma migrate deploy` clears it.
 
 ## 9. Rules worth keeping
 
-1. **Colour always carries meaning.** Primary actions are ink so that it can.
+1. **Colour always carries meaning.** Primary actions are bone so that it can.
 2. **The serif appears once per page.** Restraint is what makes it a masthead and not a theme.
 3. **Never an alpha modifier on a `var()` colour.** Use a `*-tint` token or `color-mix()`.
-4. **`--ink-200` is never text.**
+4. **`--faint` is never text**, disabled labels included.
 5. **Status is never colour alone** — always a label, and an icon where there is room.
 6. **Density belongs to the shell**, never to a component variant.
 7. **A structural device must encode something true.** The frame is the completion state.
-8. **Measure the rendered pixel.** Every defect in §7 passed code review and failed a browser.
+8. **Read the brand file, do not infer it.** The mark was reconstructed from prose once and
+   was wrong in every particular that mattered.
+9. **Measure the rendered pixel.** Every defect in §7 passed code review and failed a browser.

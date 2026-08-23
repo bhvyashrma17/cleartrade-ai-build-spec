@@ -46,9 +46,9 @@ export default async function RegisterPage({
   const snapshot = lastAdHoc?.input_snapshot as { description?: string | null } | null;
 
   return (
-    <section className="rounded-xl border border-line bg-card p-6 sm:p-8">
-      <h1 className="masthead text-title-page text-ink-900">Create your free account</h1>
-      <p className="mt-2 text-sm text-ink-500">
+    <section className="rounded-xl border border-line-strong bg-surface p-6 sm:p-8">
+      <h1 className="display text-title-page text-bone">Create your free account</h1>
+      <p className="mt-3 text-sm text-muted">
         Save your searches, see buyer contacts, and track leads.
       </p>
 

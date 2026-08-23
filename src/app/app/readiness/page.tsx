@@ -7,7 +7,7 @@ import { ReadinessForm } from './ReadinessForm';
 
 export default async function ReadinessPage() {
   const viewer = await getPrincipal();
-  if (viewer?.tier === OrgTier.guest) return <div className="mx-auto max-w-3xl p-6"><UpgradeNotice title="Export readiness is available with a free account" requiredTier="free" description="Create a free account to save your readiness answers, receive an assessment and track enablement tasks." /></div>;
+  if (viewer?.tier === OrgTier.guest) return <div className="mx-auto max-w-3xl py-6"><UpgradeNotice title="Export readiness is available with a free account" requiredTier="free" description="Create a free account to save your readiness answers, receive an assessment and track enablement tasks." /></div>;
   const principal = await requireExporterPrincipal();
   assertCan(principal, 'readiness.run');
   const [current, history, tasks, product] = await Promise.all([

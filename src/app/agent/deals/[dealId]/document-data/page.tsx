@@ -68,7 +68,7 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
   const gaps = [...byField.entries()];
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <div className="py-4 md:py-6">
       <PageHeader
         className="mb-4"
         eyebrow={

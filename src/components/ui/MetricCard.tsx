@@ -3,23 +3,20 @@ import type { StatusTone } from '@/types';
 import { Skeleton } from './Skeleton';
 
 /**
- * A single number, given room to be the content.
+ * A single number, given the room to be the content.
  *
- * The card previously set its caption at 12px and its value at 24px, both `font-medium` —
- * a two-step difference in a product where 89% of all type was already one of two sizes.
- * The value now carries real weight against a tracked label, and is set in tabular
- * figures so a row of metric cards aligns digit-for-digit instead of shimmering as the
- * numbers change.
+ * In this product the figure IS the content — open value, deals at risk, days overdue —
+ * so it is set at the `figure` size in tabular numerals rather than at the 24px that made
+ * every dashboard here read as a row of identical grey boxes. The label above it is small
+ * and tracked, so the eye lands on the number first and reads what it is second.
  */
 
-/** Comparison text uses the AA-safe `*-text` tokens — the raw hues measure 2.15-3.76:1
- *  as small text on white and fail WCAG AA. */
 const COMPARISON_TONE_CLASSES: Record<StatusTone, string> = {
-  positive: 'text-[var(--ok-text)]',
-  info: 'text-[var(--info-text)]',
-  warning: 'text-[var(--warn-text)]',
-  critical: 'text-[var(--crit-text)]',
-  neutral: 'text-ink-300',
+  positive: 'text-[var(--ok)]',
+  info: 'text-[var(--info)]',
+  warning: 'text-[var(--warn)]',
+  critical: 'text-[var(--crit)]',
+  neutral: 'text-muted',
 };
 
 export interface MetricCardComparison {
@@ -46,21 +43,21 @@ export function MetricCard({
   className,
 }: MetricCardProps) {
   return (
-    <div className={clsx('rounded-lg border border-line bg-card p-inset-md', className)}>
+    <div className={clsx('rounded-lg border border-line bg-surface p-inset-md', className)}>
       <div className="eyebrow">{label}</div>
       {loading ? (
-        <div className="mt-2">
-          <Skeleton height="1.75rem" width="60%" />
+        <div className="mt-3">
+          <Skeleton height="2.25rem" width="60%" />
         </div>
       ) : (
-        <div className="mt-1.5 text-2xl font-semibold text-ink-900" data-tabular>
+        <div className="figure mt-2 text-bone" data-tabular>
           {value}
         </div>
       )}
       {(secondaryText || comparison) && !loading ? (
-        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-ink-300">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted">
           {comparison ? (
-            <span className={clsx('font-semibold', COMPARISON_TONE_CLASSES[comparison.tone ?? 'neutral'])}>
+            <span className={clsx('font-medium', COMPARISON_TONE_CLASSES[comparison.tone ?? 'neutral'])}>
               {comparison.label}
             </span>
           ) : null}

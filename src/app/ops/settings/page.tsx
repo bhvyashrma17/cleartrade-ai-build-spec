@@ -26,7 +26,7 @@ export default async function OpsSettingsPage() {
   const active = feePolicies.find((policy) => policy.is_active) ?? null;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
+    <div className="space-y-4 py-4 md:py-6">
       <PageHeader eyebrow="Administration" title="Settings" description="Current operational configuration. Historical actors and changes remain in Audit." />
 
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">

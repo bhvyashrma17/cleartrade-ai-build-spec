@@ -18,11 +18,11 @@ export default async function NotFound() {
   const safeHref = principal ? homeRouteForRole(principal.role) : '/login';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-paper p-6">
-      <section className="w-full max-w-md rounded-xl border border-line bg-card p-8 text-center">
-        <BrandMark size={30} className="mx-auto text-ink-300" />
-        <h1 className="masthead mt-5 text-title-page text-ink-900">Not found</h1>
-        <p className="mt-2 text-sm text-ink-500">
+    <main className="flex min-h-screen items-center justify-center bg-ground p-6">
+      <section className="w-full max-w-md rounded-xl border border-line bg-surface p-8 text-center">
+        <BrandMark size={30} className="mx-auto text-muted" />
+        <h1 className="display mt-5 text-title-page text-bone">Not found</h1>
+        <p className="mt-2 text-sm text-slate">
           This page is not available. It may have moved, or the link may be out of date.
         </p>
         <Link
