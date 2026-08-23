@@ -1,5 +1,5 @@
-export { Button } from './Button';
-export type { ButtonProps } from './Button';
+export { Button, buttonClass } from './Button';
+export type { ButtonProps, ButtonSize, ButtonVariant } from './Button';
 
 export { Input } from './Input';
 export type { InputProps } from './Input';
@@ -30,6 +30,9 @@ export type { UpgradeNoticeProps, UpgradeTier } from './UpgradeNotice';
 export { JourneyProgress } from './JourneyProgress';
 export type { JourneyProgressProps, JourneyStageValue } from './JourneyProgress';
 
+export { JourneyFrame } from './JourneyFrame';
+export type { JourneyFrameProps } from './JourneyFrame';
+
 export { NotBuiltYet } from './NotBuiltYet';
 
 export { Stack } from './Stack';
@@ -39,7 +42,10 @@ export { Inset } from './Inset';
 export type { InsetSize, InsetProps } from './Inset';
 
 export { Card } from './Card';
-export type { CardProps } from './Card';
+export type { CardProps, CardTone } from './Card';
+
+export { SectionHeading } from './SectionHeading';
+export type { SectionHeadingProps } from './SectionHeading';
 
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';

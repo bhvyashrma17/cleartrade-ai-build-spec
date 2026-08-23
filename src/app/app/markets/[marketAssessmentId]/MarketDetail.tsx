@@ -10,6 +10,7 @@
  */
 
 import Link from 'next/link';
+import { buttonClass } from '@/components/ui/Button';
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { Button, MetricCard, StatusChip, UpgradeNotice } from '@/components/ui';
@@ -134,7 +135,7 @@ export function MarketDetail({
         </p>
         <Link
           href={buyersUrl}
-          className="mt-4 inline-flex min-h-10 items-center justify-center rounded bg-action px-4 text-sm font-semibold text-primary transition duration-fast hover:brightness-95"
+          className={buttonClass('primary', 'md', 'mt-4')}
         >
           Find buyers in {countryName(assessment.country_code)}
         </Link>

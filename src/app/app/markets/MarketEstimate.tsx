@@ -100,7 +100,7 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
       </header>
 
       {isGuest ? (
-        <div className="mb-5 rounded-lg border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 p-4 text-sm">
+        <div className="mb-5 rounded-lg border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] p-4 text-sm">
           <p className="font-normal text-primary">You&rsquo;re browsing as a guest — no account needed.</p>
           <p className="mt-1 text-[var(--color-text-secondary)]">
             You get {guestRunLimit} free estimates.{' '}
@@ -224,7 +224,7 @@ function EstimateResults({ result }: { result: EstimateResult }) {
       {result.hs_scope_widened ? (
         <p className="mb-3 rounded border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/5 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
           No recorded history at HS {result.hs_scope_requested} specifically — shown for the broader
-          HS {result.hs_scope} group.
+          HS <span className="record">{result.hs_scope}</span> group.
         </p>
       ) : null}
 
@@ -248,7 +248,7 @@ function EstimateResults({ result }: { result: EstimateResult }) {
       </ol>
 
       {/* Verbatim from the API — never rewritten by this component. */}
-      <p className="mt-4 rounded border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+      <p className="mt-4 rounded border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
         {result.disclaimer}
       </p>
     </section>

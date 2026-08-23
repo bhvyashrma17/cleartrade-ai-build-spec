@@ -75,13 +75,13 @@ export default async function OpsAgentDetailPage({ params }: { params: Promise<{
       <section className="rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <Table>
           <Thead>
-            <Tr className="bg-primary text-[var(--color-text-inverse)]">
-              <Th className="font-medium">Exporter</Th>
-              <Th className="font-medium">Status</Th>
-              <Th className="font-medium">Started</Th>
-              <Th className="font-medium">Ended</Th>
-              <Th className="font-medium">Assigned by</Th>
-              <Th align="right" className="font-medium">Action</Th>
+            <Tr>
+              <Th>Exporter</Th>
+              <Th>Status</Th>
+              <Th>Started</Th>
+              <Th>Ended</Th>
+              <Th>Assigned by</Th>
+              <Th align="right">Action</Th>
             </Tr>
           </Thead>
           <Tbody>

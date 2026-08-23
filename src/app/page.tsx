@@ -17,6 +17,9 @@
 import Link from 'next/link';
 import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
+import { Wordmark } from '@/components/brand/Wordmark';
+import { JourneyFrame } from '@/components/ui/JourneyFrame';
+import { buttonClass } from '@/components/ui/Button';
 import { getPrincipal, homeRouteForRole } from '@/lib/auth';
 
 export default async function HomePage() {
@@ -30,84 +33,189 @@ export default async function HomePage() {
 }
 
 /**
- * There is no spec for this screen — docs/12's 32-screen registry has no public
- * homepage, since the product was designed assuming every visitor already had an
- * account. Visual decisions follow docs/00 (tokens, one primary CTA per section, plain
- * language before technical terms); the content itself is scoped to exactly what the
- * brief asked for and no more.
+ * The eight stages of a ClearTrade deal — the same eight the `JourneyFrame` device draws.
+ * Shown here as the product's actual shape rather than as a feature list, because the
+ * thing being sold is that someone else works the stages you have not reached yet.
  */
+const STAGES = [
+  'Readiness',
+  'Market',
+  'Buyers',
+  'Deal',
+  'Documents',
+  'Customs',
+  'Shipment',
+  'Payment',
+] as const;
+
+/** How far the illustrated deal has closed. Mid-flight on purpose: a full frame would
+ *  say "done", an empty one would say "nothing happens here". */
+const ILLUSTRATED_PROGRESS = 5;
+
 function LandingPage() {
   return (
-    <div className="min-h-screen bg-surface-muted">
-      <header className="flex items-center justify-between bg-primary px-4 py-4 text-white sm:px-8">
-        <span className="text-base font-bold tracking-tight">ClearTrade AI</span>
-        <Link
-          href="/login"
-          className="focus-visible-ring rounded px-3 py-1.5 text-sm font-medium hover:bg-white/10"
-        >
-          Sign in
-        </Link>
+    <div className="min-h-screen bg-paper">
+      <header className="on-ink bg-ink-900">
+        <div className="mx-auto flex h-topbar max-w-6xl items-center justify-between px-4 sm:px-8">
+          <Wordmark tone="bone" />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/login"
+              className="focus-visible-ring rounded-sm px-3 py-1.5 text-sm font-medium text-slate transition-colors duration-fast hover:bg-[color-mix(in_srgb,var(--bone)_10%,transparent)] hover:text-bone"
+            >
+              Sign in
+            </Link>
+          </div>
+        </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-8 sm:py-24">
-        <h1 className="font-serif text-title-page text-primary sm:text-display">
-          Find buyers for what you export — before you sign up for anything
-        </h1>
-        <p className="mx-auto mt-4 max-w-xl text-base text-[var(--color-text-secondary)]">
-          ClearTrade helps Indian manufacturers find export markets and buyers, then pairs
-          you with a human agent to handle the deal, paperwork, shipping and payment.
-        </p>
+      <main>
+        {/* The hero is left-aligned and asymmetric. A centred column under a serif
+            headline is the house style of every generated landing page on the web; the
+            asymmetry, the docket panel and the mark are what make this one ours. */}
+        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-8 sm:py-24">
+          <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_26rem] lg:gap-16">
+            <div className="animate-fade-rise">
+              <p className="eyebrow">Export operating system · India</p>
+              {/* The tagline on the mark itself, which was already the best line anyone
+                  had written for this product and appeared nowhere in it. */}
+              <h1 className="masthead mt-4 text-[2.5rem] leading-[1.05] text-ink-900 sm:text-display text-balance">
+                Structured exports.
+                <br />
+                Zero chaos.
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-500 text-pretty">
+                Find your markets and buyers free. When you&rsquo;re ready to ship, a ClearTrade
+                agent handles the paperwork, customs, freight and payment with you.
+              </p>
 
-        {/* One primary CTA (docs/00 §6): everything else on this page is secondary to it. */}
-        <div className="mt-8">
-          <Link
-            href="/app/markets"
-            className="focus-visible-ring inline-flex min-h-11 items-center justify-center rounded bg-action px-6 text-sm font-semibold text-primary transition duration-fast hover:brightness-95"
-          >
-            Find your export markets — free, no account needed
-          </Link>
-        </div>
-        <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
-          Already have an account?{' '}
-          <Link href="/login" className="font-semibold text-primary underline underline-offset-2">
-            Sign in
-          </Link>{' '}
-          ·{' '}
-          <Link href="/register" className="font-semibold text-primary underline underline-offset-2">
-            Create a free account
-          </Link>
-        </p>
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                {/* One primary CTA (docs/00 §6): everything else here is secondary to it. */}
+                <Link href="/app/markets" className={buttonClass('primary', 'md', 'min-h-11 px-5')}>
+                  Find your export markets
+                </Link>
+                <span className="text-xs text-ink-300">Free · no account needed</span>
+              </div>
 
-        {/* Honest about the tier boundary — say what's free and what isn't, not just what's free. */}
-        <div className="mt-16 grid gap-4 text-left sm:grid-cols-3">
-          <TierCard
-            name="Try it free"
-            description="Search markets and buyers with no account. A couple of searches, on us — enough to see if there's real demand for what you make."
-          />
-          <TierCard
-            name="Free account"
-            description="Save your searches, see buyer contact details, and build a list of leads you own."
-          />
-          <TierCard
-            name="Paid plan"
-            description="A ClearTrade agent works your deals: negotiation, documents, shipping coordination and payment tracking, start to finish."
-            accent
-          />
-        </div>
+              <p className="mt-6 text-sm text-ink-500">
+                Already have an account?{' '}
+                <Link
+                  href="/login"
+                  className="focus-visible-ring font-medium text-ink-900 underline decoration-line-strong underline-offset-4 transition-colors hover:decoration-ink-900"
+                >
+                  Sign in
+                </Link>{' '}
+                <span aria-hidden="true" className="text-ink-300">·</span>{' '}
+                <Link
+                  href="/register"
+                  className="focus-visible-ring font-medium text-ink-900 underline decoration-line-strong underline-offset-4 transition-colors hover:decoration-ink-900"
+                >
+                  Create a free account
+                </Link>
+              </p>
+            </div>
+
+            {/* The docket. Dark chrome, bone text, and the frame device carrying the one
+                idea the product is built on: a deal is eight stages, and the frame closes
+                as they complete. */}
+            <aside className="on-ink rounded-xl border border-ink-900 bg-ink-900 p-6 text-bone shadow-overlay sm:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="eyebrow text-slate">A ClearTrade deal</p>
+                  <p className="masthead mt-1.5 text-[1.375rem] leading-tight text-bone">
+                    {ILLUSTRATED_PROGRESS} of {STAGES.length} stages closed
+                  </p>
+                </div>
+                <JourneyFrame
+                  value={ILLUSTRATED_PROGRESS}
+                  total={STAGES.length}
+                  size={52}
+                  tone="inverse"
+                  label={`${ILLUSTRATED_PROGRESS} of ${STAGES.length} stages complete`}
+                />
+              </div>
+
+              <ol className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2.5">
+                {STAGES.map((stage, index) => {
+                  const done = index < ILLUSTRATED_PROGRESS;
+                  return (
+                    <li key={stage} className="flex items-center gap-2.5 text-sm">
+                      <span
+                        aria-hidden="true"
+                        className={
+                          done
+                            ? 'size-1.5 shrink-0 bg-bone'
+                            : 'size-1.5 shrink-0 border border-[color-mix(in_srgb,var(--bone)_35%,transparent)]'
+                        }
+                      />
+                      <span className={done ? 'text-bone' : 'text-slate'}>{stage}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <p className="mt-6 border-t border-[color-mix(in_srgb,var(--bone)_15%,transparent)] pt-4 text-xs leading-relaxed text-slate">
+                Your agent works the open stages. You approve the decisions that are yours
+                to make — price, terms, and who you ship to.
+              </p>
+            </aside>
+          </div>
+        </section>
+
+        {/* Honest about the tier boundary — say what's free and what isn't, not just
+            what's free. */}
+        <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-8">
+          <h2 className="eyebrow">What you get, and when you pay</h2>
+          <div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-3">
+            <TierCard
+              name="Try it free"
+              price="No account"
+              description="Search markets and buyers with no sign-up. A couple of searches, on us — enough to see if there's real demand for what you make."
+            />
+            <TierCard
+              name="Free account"
+              price="₹0"
+              description="Save your searches, see buyer contact details, and build a list of leads you own."
+            />
+            <TierCard
+              name="Paid plan"
+              price="One-time commitment fee"
+              description="A ClearTrade agent works your deals: negotiation, documents, shipping coordination and payment tracking, start to finish."
+              accent
+            />
+          </div>
+        </section>
       </main>
+
+      <footer className="border-t border-line bg-paper-sunk">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-8 sm:px-8">
+          <Wordmark size="sm" />
+          <p className="text-xs text-ink-300">Structured exports. Zero chaos.</p>
+        </div>
+      </footer>
     </div>
   );
 }
 
-function TierCard({ name, description, accent }: { name: string; description: string; accent?: boolean }) {
+function TierCard({
+  name,
+  price,
+  description,
+  accent,
+}: {
+  name: string;
+  price: string;
+  description: string;
+  accent?: boolean;
+}) {
   return (
-    <div
-      className={`rounded-lg border p-4 shadow-card ${
-        accent ? 'border-[var(--color-action)]/40 bg-surface' : 'border-[var(--color-border)] bg-surface'
-      }`}
-    >
-      <h2 className="text-sm font-semibold text-primary">{name}</h2>
-      <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">{description}</p>
+    <div className="relative bg-card p-6">
+      {/* The registration tick, marking the one tier that is the actual product. Colour
+          is doing one job on this page and this is it. */}
+      {accent ? <span aria-hidden="true" className="absolute left-6 top-0 h-[2px] w-6 bg-seal-600" /> : null}
+      <h3 className="text-subtitle text-ink-900">{name}</h3>
+      <p className="eyebrow mt-1">{price}</p>
+      <p className="mt-3 text-sm text-ink-500 text-pretty">{description}</p>
     </div>
   );
 }

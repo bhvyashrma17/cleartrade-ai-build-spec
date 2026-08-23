@@ -100,10 +100,10 @@ export default async function AgentDocumentDataPage({ params }: { params: Promis
       <section className="mb-6 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <Table className="min-w-[36rem]">
           <Thead>
-            <Tr className="bg-primary text-[var(--color-text-inverse)]">
-              <Th className="font-medium">Document</Th>
-              <Th className="font-medium">Status</Th>
-              <Th className="font-medium">What is missing</Th>
+            <Tr>
+              <Th>Document</Th>
+              <Th>Status</Th>
+              <Th>What is missing</Th>
             </Tr>
           </Thead>
           <Tbody>

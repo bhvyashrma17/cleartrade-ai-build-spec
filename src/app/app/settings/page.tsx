@@ -1,3 +1,4 @@
+import { buttonClass } from '@/components/ui/Button';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ApiError } from '@/lib/errors';
@@ -69,7 +70,7 @@ export default async function SettingsPage() {
                     <p className="text-sm text-[var(--color-text-secondary)]">Current plan</p>
                     <p className="mt-1 text-lg font-semibold text-primary">{settings.workspace.planLabel}</p>
                   </div>
-                  {settings.workspace.tier !== 'paid' ? <Link href="/app/billing" className="focus-visible-ring rounded bg-action px-4 py-2 text-sm font-semibold text-primary hover:brightness-95">Upgrade</Link> : null}
+                  {settings.workspace.tier !== 'paid' ? <Link href="/app/billing" className={buttonClass('primary', 'sm')}>Upgrade</Link> : null}
                 </div>
               </Card>
               <Card title="Workspace">

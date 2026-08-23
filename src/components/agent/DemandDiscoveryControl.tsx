@@ -225,16 +225,16 @@ export function DemandDiscoveryControl({
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <table className="w-full min-w-[52rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-primary text-[var(--color-text-inverse)]">
-              <th scope="col" className="px-3 py-2 text-left font-medium">Market</th>
+            <tr className="border-b border-line bg-paper-sunk">
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Market</th>
               {/* The two concepts are visually grouped and separately headed, so a reader can
                   never mistake one column's number for the other's. */}
-              <th scope="col" className="px-3 py-2 text-right font-medium">AI rank</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">AI score</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Confidence</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Operational order</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Agent decision</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Actions</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">AI rank</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">AI score</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">Confidence</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Operational order</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Agent decision</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Actions</th>
             </tr>
           </thead>
           <tbody>

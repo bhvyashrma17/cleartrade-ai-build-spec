@@ -9,6 +9,8 @@
  */
 
 import Link from 'next/link';
+import { BrandMark } from '@/components/brand/BrandMark';
+import { buttonClass } from '@/components/ui/Button';
 import { getPrincipal, homeRouteForRole } from '@/lib/auth';
 
 export default async function NotFound() {
@@ -16,15 +18,16 @@ export default async function NotFound() {
   const safeHref = principal ? homeRouteForRole(principal.role) : '/login';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-muted p-6">
-      <section className="w-full max-w-md rounded-lg bg-surface p-8 text-center shadow-card">
-        <h1 className="font-serif text-title-page text-primary">Not found</h1>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+    <main className="flex min-h-screen items-center justify-center bg-paper p-6">
+      <section className="w-full max-w-md rounded-xl border border-line bg-card p-8 text-center">
+        <BrandMark size={30} className="mx-auto text-ink-300" />
+        <h1 className="masthead mt-5 text-title-page text-ink-900">Not found</h1>
+        <p className="mt-2 text-sm text-ink-500">
           This page is not available. It may have moved, or the link may be out of date.
         </p>
         <Link
           href={safeHref}
-          className="mt-6 inline-flex min-h-10 items-center justify-center rounded bg-action px-4 text-sm font-semibold text-primary transition duration-fast hover:brightness-95"
+          className={buttonClass('primary', 'md', 'mt-6')}
         >
           {principal ? 'Back to your workspace' : 'Go to sign in'}
         </Link>

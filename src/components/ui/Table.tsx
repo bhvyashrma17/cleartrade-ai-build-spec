@@ -1,37 +1,31 @@
 import clsx from 'clsx';
 
 /**
- * docs/27-ui-redesign.md §7.1 — the audit's premise here doesn't hold against the current
- * codebase: it claimed `DataTable` was imported by zero pages, but it's actually the live,
- * correctly-architected component behind six real client-side paginated flows (Buyers,
- * Tasks, Deals, Messages, Outreach, Audit — all fetch a page of rows from the server and
- * own sort/page state). Forcing those into something else, or forcing the ~17 server-
- * rendered, unpaginated Ops/Agent queue tables into `DataTable`'s client/pagination
- * contract, would be a architecture change, not a consolidation.
+ * Bare structural primitives for a server-rendered table.
  *
- * So: `DataTable` stays for paginated data. This is the other half — bare structural
- * primitives for a plain server-rendered table, so the ~17 hand-rolled tables (which the
- * audit found using four different cell paddings) share one padding and border treatment
- * instead of restating it per file.
+ * `DataTable` stays for the six client-paginated flows that own sort and page state
+ * (Buyers, Tasks, Deals, Messages, Outreach, Audit). This is the other half: the ~17
+ * hand-rolled Ops/Agent queue tables, which the audit found using four different cell
+ * paddings, now share one padding, one border treatment and one header look instead of
+ * restating each per file.
+ *
+ * The header is the change worth naming. Roughly half those tables shipped a solid ink
+ * header row, which put a heavy black band across every queue in the product and made a
+ * page of three tables read as three separate applications. The header is now the `label`
+ * token on `--paper-sunk`: quieter than the data it introduces, which is the correct
+ * relationship — the header is furniture, the rows are the content.
  */
 
 export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
-  return <table className={clsx('w-full text-left text-sm', className)} {...props} />;
+  return <table className={clsx('w-full border-collapse text-left text-sm', className)} {...props} />;
 }
 
-/**
- * No default styling — the 17 hand-rolled tables this replaces split roughly evenly
- * between a dark `bg-primary` header row and a plain uppercase-muted one, and neither
- * is the bug the audit named (that was cell padding). Forcing one here would be a
- * visual change this pass isn't making; the header look stays whatever the caller's
- * `Tr`/`Th` classes already say.
- */
 export function Thead({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={className} {...props} />;
+  return <thead className={clsx('border-b border-line bg-paper-sunk', className)} {...props} />;
 }
 
 export function Tbody({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={clsx('divide-y divide-[var(--color-border)]', className)} {...props} />;
+  return <tbody className={clsx('divide-y divide-line', className)} {...props} />;
 }
 
 export function Tr({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
@@ -45,9 +39,20 @@ export interface CellProps {
 }
 
 export function Th({ className, align, ...props }: React.ThHTMLAttributes<HTMLTableCellElement> & CellProps) {
-  return <th scope="col" className={clsx('px-4 py-3 font-normal', align && ALIGN_CLASS[align], className)} {...props} />;
+  return (
+    <th
+      scope="col"
+      className={clsx('eyebrow whitespace-nowrap px-4 py-2.5 text-ink-500', align && ALIGN_CLASS[align], className)}
+      {...props}
+    />
+  );
 }
 
 export function Td({ className, align, ...props }: React.TdHTMLAttributes<HTMLTableCellElement> & CellProps) {
-  return <td className={clsx('px-4 py-3', align && ALIGN_CLASS[align], className)} {...props} />;
+  return (
+    <td
+      className={clsx('px-4 py-[var(--cell-y)] align-middle', align && ALIGN_CLASS[align], className)}
+      {...props}
+    />
+  );
 }

@@ -26,13 +26,10 @@ import { SignOutAndReturn } from './SignOutAndReturn';
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-muted px-4 py-10">
-      <section className="w-full max-w-md rounded-lg bg-surface p-6 shadow-card sm:p-8">
-        <p className="text-sm font-semibold text-primary">ClearTrade AI</p>
-        <h1 className="mt-2 font-serif text-title-page text-primary">{title}</h1>
-        {children}
-      </section>
-    </main>
+    <section className="rounded-xl border border-line bg-card p-6 sm:p-8">
+      <h1 className="masthead text-title-page text-ink-900">{title}</h1>
+      {children}
+    </section>
   );
 }
 

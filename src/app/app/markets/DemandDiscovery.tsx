@@ -135,7 +135,7 @@ export function DemandDiscovery({
       </header>
 
       {isGuest ? (
-        <div className="mb-5 rounded-lg border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 p-4 text-sm">
+        <div className="mb-5 rounded-lg border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] p-4 text-sm">
           <p className="font-normal text-primary">
             You&rsquo;re browsing as a guest — no account needed.
           </p>
@@ -475,7 +475,7 @@ function RunProgress({
               {/* docs/00 §6: AI output is always labelled as generated, never presented
                   as researched fact. */}
               {result?.provenance?.note ? (
-                <p className="mt-4 rounded border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                <p className="mt-4 rounded border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
                   {result.provenance.note}
                 </p>
               ) : null}

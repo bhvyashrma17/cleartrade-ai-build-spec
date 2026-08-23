@@ -303,19 +303,19 @@ export function BuyerDiscoveryControl({
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <table className="w-full min-w-[64rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-primary text-[var(--color-text-inverse)]">
-              <th scope="col" className="px-3 py-2 text-left font-medium">Buyer</th>
+            <tr className="border-b border-line bg-paper-sunk">
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Buyer</th>
               {/* Group A */}
-              <th scope="col" className="px-3 py-2 text-right font-medium">AI score</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Confidence</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">AI position</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">AI score</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">Confidence</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-right text-ink-500">AI position</th>
               {/* Ordering */}
-              <th scope="col" className="px-3 py-2 text-left font-medium">Operational order</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Operational order</th>
               {/* Group B */}
-              <th scope="col" className="px-3 py-2 text-left font-medium">Canonical state</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Canonical state</th>
               {/* Group C */}
-              <th scope="col" className="px-3 py-2 text-left font-medium">Agent decision</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Actions</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Agent decision</th>
+              <th scope="col" className="eyebrow px-3 py-2 text-left text-ink-500">Actions</th>
             </tr>
           </thead>
           <tbody>

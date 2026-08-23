@@ -128,14 +128,14 @@ export default async function AgentDealsPage({
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
           <Table className="min-w-[60rem]">
             <Thead>
-              <Tr className="bg-primary text-[var(--color-text-inverse)]">
-                <Th className="font-medium">Exporter / buyer</Th>
-                <Th className="font-medium">Product</Th>
-                <Th className="font-medium">Stage</Th>
-                <Th align="right" className="font-medium">Value</Th>
-                <Th className="font-medium">Next action</Th>
-                <Th className="font-medium">Risk</Th>
-                <Th align="right" className="font-medium">Age</Th>
+              <Tr>
+                <Th>Exporter / buyer</Th>
+                <Th>Product</Th>
+                <Th>Stage</Th>
+                <Th align="right">Value</Th>
+                <Th>Next action</Th>
+                <Th>Risk</Th>
+                <Th align="right">Age</Th>
               </Tr>
             </Thead>
             <Tbody>

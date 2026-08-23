@@ -27,6 +27,7 @@
  */
 
 import { useEffect } from 'react';
+import { BrandMark } from '@/components/brand/BrandMark';
 import { Button } from '@/components/ui';
 
 export default function GlobalError({
@@ -41,15 +42,21 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-muted p-6">
-      <section className="w-full max-w-lg rounded-lg bg-surface p-8 text-center shadow-card">
-        <h1 className="font-serif text-title-page text-primary">Something went wrong</h1>
-        <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+    <main className="flex min-h-screen items-center justify-center bg-paper p-6">
+      <section className="w-full max-w-lg rounded-xl border border-line bg-card p-8 text-center">
+        <BrandMark size={30} className="mx-auto text-ink-300" />
+        <h1 className="masthead mt-5 text-title-page text-ink-900">Something went wrong</h1>
+        <p className="mt-3 text-sm text-ink-500">
           We could not complete that request. Please try again. If this continues, share the
           reference ID below with ClearTrade support.
         </p>
+        {/* The reference ID is an instrument of record — the number a person reads down
+            the phone to support — so it is set in the `record` face like every other
+            reference in the product, not in body sans where digits blur together. */}
         {error.digest ? (
-          <p className="mt-3 text-xs text-[var(--color-text-muted)]">Reference ID: {error.digest}</p>
+          <p className="mt-4 text-xs text-ink-300">
+            Reference ID <span className="record ml-1 text-ink-900">{error.digest}</span>
+          </p>
         ) : null}
         <div className="mt-6 flex justify-center gap-3">
           <Button onClick={reset}>Try again</Button>

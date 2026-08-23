@@ -46,28 +46,25 @@ export default async function RegisterPage({
   const snapshot = lastAdHoc?.input_snapshot as { description?: string | null } | null;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-muted px-4 py-10">
-      <section className="w-full max-w-md rounded-lg bg-surface p-6 shadow-card sm:p-8">
-        <p className="text-sm font-semibold text-primary">ClearTrade AI</p>
-        <h1 className="mt-2 font-serif text-title-page text-primary">Create your free account</h1>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-          Save your searches, see buyer contacts, and track leads.
+    <section className="rounded-xl border border-line bg-card p-6 sm:p-8">
+      <h1 className="masthead text-title-page text-ink-900">Create your free account</h1>
+      <p className="mt-2 text-sm text-ink-500">
+        Save your searches, see buyer contacts, and track leads.
+      </p>
+
+      {isGuestUpgrade && runCount > 0 ? (
+        <p className="mt-4 rounded-sm border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-2 text-sm text-[var(--info-text)]">
+          Your {runCount} search{runCount === 1 ? '' : 'es'} from this session will be kept and
+          become your saved history.
         </p>
+      ) : null}
 
-        {isGuestUpgrade && runCount > 0 ? (
-          <p className="mt-4 rounded border border-[var(--color-info)]/30 bg-[var(--color-info)]/5 px-3 py-2 text-sm text-primary">
-            Your {runCount} search{runCount === 1 ? '' : 'es'} from this session will be kept and
-            become your saved history.
-          </p>
-        ) : null}
-
-        <div className="mt-6">
-          <RegisterForm
-            adHocProductLabel={isGuestUpgrade ? (snapshot?.description ?? null) : null}
-            callbackUrl={safeCallbackUrl}
-          />
-        </div>
-      </section>
-    </main>
+      <div className="mt-6">
+        <RegisterForm
+          adHocProductLabel={isGuestUpgrade ? (snapshot?.description ?? null) : null}
+          callbackUrl={safeCallbackUrl}
+        />
+      </div>
+    </section>
   );
 }

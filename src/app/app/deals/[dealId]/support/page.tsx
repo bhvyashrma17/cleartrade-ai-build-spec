@@ -67,7 +67,7 @@ export default async function DealSupportPage({ params }: { params: Promise<{ de
                 <div key={m.id} className={mine ? 'text-right' : 'text-left'}>
                   <div
                     className={`inline-block max-w-[80%] rounded-lg px-3 py-2 text-left text-sm ${
-                      mine ? 'bg-action text-primary' : 'bg-surface-muted text-primary'
+                      mine ? 'bg-ink-900 text-bone' : 'bg-paper-sunk text-ink-900'
                     }`}
                   >
                     <p>{m.body}</p>

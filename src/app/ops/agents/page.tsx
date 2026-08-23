@@ -123,11 +123,11 @@ export default async function OpsAgentsPage() {
       <section className="rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
         <Table>
           <Thead>
-            <Tr className="bg-primary text-[var(--color-text-inverse)]">
-              <Th className="font-medium">Agent</Th>
-              <Th className="font-medium">Status</Th>
-              <Th align="right" className="font-medium">Assigned</Th>
-              <Th className="font-medium">Exporters</Th>
+            <Tr>
+              <Th>Agent</Th>
+              <Th>Status</Th>
+              <Th align="right">Assigned</Th>
+              <Th>Exporters</Th>
             </Tr>
           </Thead>
           <Tbody>

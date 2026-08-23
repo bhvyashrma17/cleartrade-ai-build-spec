@@ -1,16 +1,18 @@
 import clsx from 'clsx';
+import { BrandMark } from '@/components/brand/BrandMark';
 
 /**
- * docs/27-ui-redesign.md §7.1 — the audit found two parallel empty-state treatments.
- * They turned out to be two genuinely different shapes, not just a missing/present
- * border on the same one, so `bordered` switches the whole recipe rather than adding
- * a border on top of the other layout:
+ * The one empty state.
  *
- *   - `bordered={false}` (default) — centered title + description, for "no results"
- *     surfaces (the shape `DataTable`'s own internal empty block already used).
- *   - `bordered={true}` — left-aligned, dashed panel, for a single-sentence "nothing in
- *     this queue" notice inside an already-visible section (the `EmptyQueue` helper
- *     that 5 Ops pages each hand-rolled identically).
+ * Two genuinely different shapes, not one shape with an optional border, so `bordered`
+ * switches the whole recipe:
+ *
+ *   - default — centred, with the mark at low contrast above the title. For a surface
+ *     that is empty as a whole ("no results", "nothing here yet"). The mark earns its
+ *     place here: an empty page is the one moment with room for the brand, and it is
+ *     otherwise the most characterless screen in any product.
+ *   - `bordered` — left-aligned, dashed, one line. For "nothing in this queue" inside a
+ *     section that already has its own heading, where a centred mark would be shouting.
  */
 
 export interface EmptyStateProps {
@@ -24,19 +26,27 @@ export interface EmptyStateProps {
 export function EmptyState({ title, description, action, bordered = false, className }: EmptyStateProps) {
   if (bordered) {
     return (
-      <div className={clsx('rounded border border-dashed border-[var(--color-border)] bg-surface-muted px-4 py-6 text-sm text-[var(--color-text-secondary)]', className)}>
-        <p>{title}</p>
+      <div
+        className={clsx(
+          'rounded-lg border border-dashed border-line-strong bg-paper-sunk px-4 py-5 text-sm text-ink-500',
+          className,
+        )}
+      >
+        <p className="font-medium text-ink-900">{title}</p>
         {description ? <p className="mt-1">{description}</p> : null}
-        {action ? <div className="mt-2">{action}</div> : null}
+        {action ? <div className="mt-3">{action}</div> : null}
       </div>
     );
   }
 
   return (
-    <div className={clsx('flex flex-col items-center gap-1 text-center', className)}>
-      <p className="text-sm font-normal text-primary">{title}</p>
-      {description ? <p className="text-sm text-[var(--color-text-secondary)]">{description}</p> : null}
-      {action ? <div className="mt-2">{action}</div> : null}
+    <div className={clsx('flex flex-col items-center px-4 py-10 text-center', className)}>
+      <BrandMark size={28} className="text-ink-300" />
+      <p className="mt-4 text-subtitle text-ink-900">{title}</p>
+      {description ? (
+        <p className="mt-1.5 max-w-sm text-sm text-ink-500 text-pretty">{description}</p>
+      ) : null}
+      {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );
 }

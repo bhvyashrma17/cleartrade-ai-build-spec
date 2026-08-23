@@ -1,5 +1,18 @@
 import type { Config } from 'tailwindcss';
 
+/**
+ * Token surface for the design system in src/app/globals.css.
+ *
+ * Two rules this file exists to enforce:
+ *
+ * 1. **Every colour is a `var()`.** No hex values live here. That is what makes the
+ *    density and theme switches in globals.css reach every call site.
+ * 2. **Never use a Tailwind alpha modifier on one of these colours** (`bg-seal/10`).
+ *    Tailwind cannot re-compose a bare `var()` into `rgb(... / alpha)`, so the modifier
+ *    silently yields `transparent` — that is precisely how every StatusChip tint in this
+ *    product rendered invisible for months. Use the pre-mixed `*-tint` tokens, or an
+ *    explicit `color-mix()` arbitrary value.
+ */
 const config: Config = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -9,20 +22,46 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // --- Brand ---
+        bone: 'var(--bone)',
+        slate: 'var(--slate)',
+        ink: {
+          900: 'var(--ink-900)',
+          700: 'var(--ink-700)',
+          500: 'var(--ink-500)',
+          300: 'var(--ink-300)',
+          // Decorative and border only — 3.1:1 on white. Never body text.
+          200: 'var(--ink-200)',
+          DEFAULT: 'var(--ink-900)',
+        },
+        paper: {
+          DEFAULT: 'var(--paper)',
+          sunk: 'var(--paper-sunk)',
+        },
+        card: 'var(--card)',
+        line: {
+          DEFAULT: 'var(--line)',
+          strong: 'var(--line-strong)',
+        },
+
+        // --- Seal: the one accent. Never a status. ---
+        seal: {
+          600: 'var(--seal-600)',
+          500: 'var(--seal-500)',
+          tint: 'var(--seal-tint)',
+          DEFAULT: 'var(--seal-600)',
+        },
+
+        // --- Status. `fill` for icons/borders, `text` for labels, `tint` for grounds. ---
+        ok: { DEFAULT: 'var(--ok-fill)', text: 'var(--ok-text)', tint: 'var(--ok-tint)' },
+        caution: { DEFAULT: 'var(--warn-fill)', text: 'var(--warn-text)', tint: 'var(--warn-tint)' },
+
+        // --- Legacy names. Still on ~1,100 call sites; each resolves to its new
+        //     equivalent so the retune reaches them without an edit. `info`/`critical`
+        //     map to the AA-safe `-text` blend because both are used as BARE text
+        //     classes (`text-info`, `text-critical`) where the raw hue fails AA. ---
         primary: 'var(--color-primary)',
         action: 'var(--color-action)',
-        // `info`/`critical` map to their AA-safe `-text` blends, not the raw brand hue.
-        // `text-info`/`text-critical`/`border-critical` are used ~11 places across the
-        // app (form errors, blocker reasons, job-status text) as a BARE class — no
-        // `[var(--color-x-text)]` arbitrary value in sight — so whatever this token
-        // resolves to is exactly what ships as body text. The raw hues fail WCAG AA at
-        // small sizes on a light background (`--color-critical` #EF4444 measured at
-        // 3.54:1 against a 5%-tint card, needs 4.5:1) — the same "class name looks
-        // right but silently fails" shape as the `bg-x/N` opacity bug elsewhere in this
-        // file's history, just on the text-color axis instead of alpha. `warning` stays
-        // on its raw hue: nothing in the app uses a bare `text-warning`/`border-warning`
-        // today, so there is no live bug to fix, and changing it preemptively would be
-        // guessing at a future default rather than fixing a measured failure.
         info: 'var(--color-info-text)',
         warning: 'var(--color-warning)',
         critical: 'var(--color-critical-text)',
@@ -31,12 +70,15 @@ const config: Config = {
         surface: 'var(--color-surface)',
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
-        serif: ['var(--font-serif)', 'Georgia', 'serif'],
-        mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        sans: ['var(--font-sans)'],
+        serif: ['var(--font-display)'],
+        display: ['var(--font-display)'],
+        mono: ['var(--font-mono)'],
       },
       borderRadius: {
+        sm: 'var(--radius-sm)',
         DEFAULT: 'var(--radius-md)',
+        md: 'var(--radius-md)',
         lg: 'var(--radius-lg)',
         xl: 'var(--radius-xl)',
       },
@@ -53,35 +95,69 @@ const config: Config = {
         '16': 'var(--space-16)',
         '20': 'var(--space-20)',
         '24': 'var(--space-24)',
+        // Density-aware. `p-inset` / `gap-stack` follow the shell's data-density.
+        'inset-sm': 'var(--inset-sm)',
+        'inset-md': 'var(--inset-md)',
+        'inset-lg': 'var(--inset-lg)',
+        'stack-xs': 'var(--stack-xs)',
+        'stack-sm': 'var(--stack-sm)',
+        'stack-md': 'var(--stack-md)',
+        'stack-lg': 'var(--stack-lg)',
+        'stack-xl': 'var(--stack-xl)',
+        topbar: 'var(--topbar-height)',
+        leftnav: 'var(--leftnav-width)',
       },
       fontSize: {
-        xs: ['var(--text-xs)', { lineHeight: 'var(--leading-tight)' }],
-        sm: ['var(--text-sm)', { lineHeight: 'var(--leading-normal)' }],
+        xs: ['var(--text-xs)', { lineHeight: 'var(--leading-body-sm)' }],
+        sm: ['var(--text-sm)', { lineHeight: 'var(--leading-body)' }],
         base: ['var(--text-base)', { lineHeight: 'var(--leading-normal)' }],
-        lg: ['var(--text-lg)', { lineHeight: 'var(--leading-normal)' }],
-        xl: ['var(--text-xl)', { lineHeight: 'var(--leading-snug)' }],
-        '2xl': ['var(--text-2xl)', { lineHeight: 'var(--leading-snug)' }],
-        '3xl': ['var(--text-3xl)', { lineHeight: 'var(--leading-tight)' }],
-        '4xl': ['var(--text-4xl)', { lineHeight: 'var(--leading-tight)' }],
-        // docs/27-ui-redesign.md §4.2 scale. `record` is deliberately not here — it
-        // needs a font-family switch too, so it ships as the `.record` component
-        // class in globals.css instead of a bare text- utility.
-        display: ['var(--text-display)', { lineHeight: 'var(--leading-display)', letterSpacing: '-0.02em', fontWeight: '600' }],
-        'title-page': ['var(--text-title-page)', { lineHeight: 'var(--leading-title-page)', letterSpacing: '-0.015em', fontWeight: '600' }],
-        'title-section': ['var(--text-title-section)', { lineHeight: 'var(--leading-title-section)', fontWeight: '600' }],
+        lg: ['var(--text-lg)', { lineHeight: 'var(--leading-subtitle)' }],
+        xl: ['var(--text-xl)', { lineHeight: 'var(--leading-title-section)' }],
+        '2xl': ['var(--text-2xl)', { lineHeight: 'var(--leading-snug)', letterSpacing: '-0.015em' }],
+        '3xl': ['var(--text-3xl)', { lineHeight: 'var(--leading-title-page)', letterSpacing: '-0.02em' }],
+        '4xl': ['var(--text-4xl)', { lineHeight: 'var(--leading-tight)', letterSpacing: '-0.02em' }],
+        // Named scale. `record` is deliberately absent — it needs a font-family switch
+        // too, so it ships as the `.record` component class in globals.css.
+        display: ['var(--text-display)', { lineHeight: 'var(--leading-display)', letterSpacing: '-0.025em', fontWeight: '500' }],
+        'title-page': ['var(--text-title-page)', { lineHeight: 'var(--leading-title-page)', letterSpacing: '-0.02em', fontWeight: '500' }],
+        'title-section': ['var(--text-title-section)', { lineHeight: 'var(--leading-title-section)', letterSpacing: '-0.01em', fontWeight: '600' }],
         subtitle: ['var(--text-subtitle)', { lineHeight: 'var(--leading-subtitle)', fontWeight: '600' }],
         body: ['var(--text-body)', { lineHeight: 'var(--leading-body)', fontWeight: '400' }],
         'body-sm': ['var(--text-body-sm)', { lineHeight: 'var(--leading-body-sm)', fontWeight: '400' }],
-        label: ['var(--text-label)', { lineHeight: 'var(--leading-label)', letterSpacing: '0.06em', fontWeight: '600' }],
+        label: ['var(--text-label)', { lineHeight: 'var(--leading-label)', letterSpacing: '0.09em', fontWeight: '600' }],
       },
       boxShadow: {
         card: 'var(--shadow-card)',
         raised: 'var(--shadow-raised)',
+        overlay: 'var(--shadow-overlay)',
+      },
+      height: {
+        topbar: 'var(--topbar-height)',
+        control: 'var(--control-h)',
+        row: 'var(--row-h)',
+      },
+      minHeight: {
+        control: 'var(--control-h)',
+      },
+      width: {
+        leftnav: 'var(--leftnav-width)',
       },
       transitionDuration: {
         fast: 'var(--duration-fast)',
         normal: 'var(--duration-normal)',
         slow: 'var(--duration-slow)',
+      },
+      transitionTimingFunction: {
+        out: 'var(--ease-out)',
+      },
+      keyframes: {
+        'fade-rise': {
+          from: { opacity: '0', transform: 'translateY(4px)' },
+          to: { opacity: '1', transform: 'none' },
+        },
+      },
+      animation: {
+        'fade-rise': 'fade-rise var(--duration-slow) var(--ease-out) both',
       },
     },
   },

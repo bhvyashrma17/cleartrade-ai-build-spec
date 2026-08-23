@@ -161,13 +161,13 @@ export default async function AgentExportersPage() {
         <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
           <Table>
             <Thead>
-              <Tr className="bg-primary text-[var(--color-text-inverse)]">
-                <Th className="font-medium">Exporter</Th>
-                <Th className="font-medium">Journey</Th>
-                <Th className="font-medium">Readiness</Th>
-                <Th align="right" className="font-medium">Active deals</Th>
-                <Th align="right" className="font-medium">Open tasks</Th>
-                <Th className="font-medium">Needs you next</Th>
+              <Tr>
+                <Th>Exporter</Th>
+                <Th>Journey</Th>
+                <Th>Readiness</Th>
+                <Th align="right">Active deals</Th>
+                <Th align="right">Open tasks</Th>
+                <Th>Needs you next</Th>
               </Tr>
             </Thead>
             <Tbody>

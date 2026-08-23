@@ -1,17 +1,20 @@
 import clsx from 'clsx';
 
 /**
- * docs/27-ui-redesign.md §5.1 — padding, off the six-step scale, replacing per-element
- * `p-*`. Not migrated everywhere yet; this establishes the primitive and the pattern
- * for the components that adopt it now.
+ * Padding, off the one spacing scale.
+ *
+ * The audit found 38 distinct padding values in the product. The fix for that is not
+ * discipline, it is removing the opportunity — so these three sizes resolve to CSS
+ * variables the shell re-points per density, which means a card is comfortable in the
+ * exporter portal and compact in Ops without a single call site knowing about it.
  */
 
 export type InsetSize = 'sm' | 'md' | 'lg';
 
 const SIZE_CLASS: Record<InsetSize, string> = {
-  sm: 'p-3',  // 12px — compact density
-  md: 'p-4',  // 16px
-  lg: 'p-6',  // 24px — comfortable density
+  sm: 'p-inset-sm',
+  md: 'p-inset-md',
+  lg: 'p-inset-lg',
 };
 
 export interface InsetProps extends React.HTMLAttributes<HTMLElement> {

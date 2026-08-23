@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { buttonClass } from './Button';
 
 /**
  * The standard way a tier boundary is shown to the user.
@@ -58,7 +59,7 @@ export function UpgradeNotice(props: UpgradeNoticeProps) {
       <p className="mx-auto mt-1 max-w-md text-sm text-[var(--color-text-secondary)]">{props.description}</p>
       <Link
         href={copy.href}
-        className="mt-4 inline-flex min-h-10 items-center justify-center rounded bg-action px-4 text-sm font-semibold text-primary transition duration-fast hover:brightness-95"
+        className={buttonClass('primary', 'md', 'mt-4')}
       >
         {copy.cta}
       </Link>

@@ -87,14 +87,14 @@ export default async function AgentEscalationsPage({
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-surface shadow-card">
           <Table className="min-w-[58rem]">
             <Thead>
-              <Tr className="bg-primary text-[var(--color-text-inverse)]">
-                <Th className="font-medium">What happened</Th>
-                <Th className="font-medium">Exporter</Th>
-                <Th className="font-medium">Source</Th>
-                <Th className="font-medium">Severity</Th>
-                <Th className="font-medium">Owner</Th>
-                <Th className="font-medium">Due</Th>
-                <Th align="right" className="font-medium">Age</Th>
+              <Tr>
+                <Th>What happened</Th>
+                <Th>Exporter</Th>
+                <Th>Source</Th>
+                <Th>Severity</Th>
+                <Th>Owner</Th>
+                <Th>Due</Th>
+                <Th align="right">Age</Th>
               </Tr>
             </Thead>
             <Tbody>

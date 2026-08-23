@@ -19,19 +19,16 @@ export default async function LoginPage({
   const oauthErrorMessage = loginErrorMessage(params.error, params.provider);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-muted px-4 py-10">
-      <section className="w-full max-w-md rounded-lg bg-surface p-6 shadow-card sm:p-8">
-        <p className="text-sm font-semibold text-primary">ClearTrade AI</p>
-        <h1 className="mt-2 font-serif text-title-page text-primary">Sign in to your workspace</h1>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Use Google, Apple, or your ClearTrade email and password.</p>
-        <div className="mt-7">
-          <LoginForm
-            callbackUrl={callbackUrl}
-            oauthErrorMessage={oauthErrorMessage}
-            socialProviders={socialProviderStates()}
-          />
-        </div>
-      </section>
-    </main>
+    <section className="rounded-xl border border-line bg-card p-6 sm:p-8">
+      <h1 className="masthead text-title-page text-ink-900">Sign in to your workspace</h1>
+      <p className="mt-2 text-sm text-ink-500">Use Google, Apple, or your ClearTrade email and password.</p>
+      <div className="mt-7">
+        <LoginForm
+          callbackUrl={callbackUrl}
+          oauthErrorMessage={oauthErrorMessage}
+          socialProviders={socialProviderStates()}
+        />
+      </div>
+    </section>
   );
 }

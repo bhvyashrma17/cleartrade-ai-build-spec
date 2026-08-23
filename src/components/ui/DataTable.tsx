@@ -119,12 +119,12 @@ export function DataTable<T>({
   const skeletonRowCount = Math.min(page.per_page || 5, 8);
 
   return (
-    <div className={clsx('rounded-lg border border-[var(--color-border)] bg-surface shadow-card', className)}>
+    <div className={clsx('overflow-hidden rounded-lg border border-line bg-card', className)}>
       {/* Desktop / tablet table */}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-primary text-[var(--color-text-inverse)]">
+            <tr className="border-b border-line bg-paper-sunk">
               {columns.map((col) => {
                 const key = col.sortKey ?? col.key;
                 const isSorted = sort?.key === key;
@@ -133,7 +133,7 @@ export function DataTable<T>({
                     key={col.key}
                     scope="col"
                     className={clsx(
-                      'whitespace-nowrap px-4 py-3 font-medium',
+                      'eyebrow whitespace-nowrap px-4 py-3 text-ink-500',
                       ALIGN_CLASSES[col.align ?? 'left'],
                       col.className,
                     )}
@@ -158,7 +158,7 @@ export function DataTable<T>({
                 );
               })}
               {rowActions ? (
-                <th scope="col" className="px-4 py-3 text-right font-medium">
+                <th scope="col" className="eyebrow px-4 py-3 text-right">
                   <span className="sr-only">Actions</span>
                 </th>
               ) : null}
@@ -193,20 +193,20 @@ export function DataTable<T>({
                       key={rowKey(row)}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
                       className={clsx(
-                        'border-t border-[var(--color-border)]',
-                        onRowClick && 'cursor-pointer hover:bg-surface-muted',
+                        'border-t border-line transition-colors duration-fast',
+                        onRowClick && 'cursor-pointer hover:bg-paper',
                       )}
                     >
                       {columns.map((col) => (
                         <td
                           key={col.key}
-                          className={clsx('px-4 py-3 text-primary', ALIGN_CLASSES[col.align ?? 'left'], col.className)}
+                          className={clsx('px-4 py-[var(--cell-y)] align-middle text-ink-900', ALIGN_CLASSES[col.align ?? 'left'], col.className)}
                         >
                           {col.render(row)}
                         </td>
                       ))}
                       {rowActions ? (
-                        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-[var(--cell-y)] text-right" onClick={(e) => e.stopPropagation()}>
                           {rowActions(row)}
                         </td>
                       ) : null}
@@ -243,8 +243,8 @@ export function DataTable<T>({
                   .filter((col) => !col.hideOnMobile)
                   .map((col) => (
                     <div key={col.key} className="flex items-baseline justify-between gap-3 text-sm">
-                      <dt className="text-[var(--color-text-secondary)]">{col.header}</dt>
-                      <dd className="text-right text-primary">{col.render(row)}</dd>
+                      <dt className="text-ink-500">{col.header}</dt>
+                      <dd className="text-right text-ink-900">{col.render(row)}</dd>
                     </div>
                   ))}
               </dl>
@@ -282,7 +282,7 @@ function Pagination({
   const disableNext = loading || page.page >= page.total_pages;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-text-secondary)]">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-paper-sunk px-4 py-2.5 text-xs text-ink-500">
       <span>
         {page.total > 0 ? `Showing ${from}–${to} of ${page.total}` : 'No rows'}
       </span>

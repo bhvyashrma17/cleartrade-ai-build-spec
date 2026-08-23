@@ -1,19 +1,18 @@
 import clsx from 'clsx';
 
 /**
- * docs/27-ui-redesign.md §5.1 — vertical rhythm, off the six-step scale, replacing
- * sibling `mt-*` on every child. Not migrated everywhere yet (367 sites); this
- * establishes the primitive and the pattern for the components that adopt it now.
+ * Vertical rhythm, off the one spacing scale — the replacement for `mt-1` on every
+ * sibling, which the audit counted 367 times. Density-aware like `Inset`.
  */
 
 export type StackGap = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 const GAP_CLASS: Record<StackGap, string> = {
-  xs: 'space-y-1', // 4px
-  sm: 'space-y-3', // 12px
-  md: 'space-y-4', // 16px
-  lg: 'space-y-6', // 24px
-  xl: 'space-y-8', // 32px
+  xs: 'gap-stack-xs',
+  sm: 'gap-stack-sm',
+  md: 'gap-stack-md',
+  lg: 'gap-stack-lg',
+  xl: 'gap-stack-xl',
 };
 
 export interface StackProps extends React.HTMLAttributes<HTMLElement> {
@@ -23,5 +22,5 @@ export interface StackProps extends React.HTMLAttributes<HTMLElement> {
 
 export function Stack({ gap = 'md', as: Tag = 'div', className, ...props }: StackProps) {
   const Component = Tag as 'div';
-  return <Component className={clsx(GAP_CLASS[gap], className)} {...props} />;
+  return <Component className={clsx('flex flex-col', GAP_CLASS[gap], className)} {...props} />;
 }

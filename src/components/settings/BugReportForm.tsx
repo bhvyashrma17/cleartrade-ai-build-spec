@@ -1,5 +1,6 @@
 'use client';
 
+import { buttonClass } from '@/components/ui/Button';
 import { useEffect, useState } from 'react';
 import { apiPost } from '@/lib/api-client';
 
@@ -16,7 +17,7 @@ export function BugReportForm() {
       <label className="block text-sm font-medium text-primary">What did you expect?<textarea required minLength={3} rows={4} value={expected} onChange={(e) => setExpected(e.target.value)} className="focus-visible-ring mt-1.5 w-full rounded border border-[var(--color-border-strong)] bg-surface px-3 py-2" /></label>
       <label className="block text-sm font-medium text-primary">Page / URL <span className="font-normal text-[var(--color-text-secondary)]">(optional)</span><input type="url" maxLength={2048} value={pageUrl} onChange={(e) => setPageUrl(e.target.value)} className="focus-visible-ring mt-1.5 min-h-10 w-full rounded border border-[var(--color-border-strong)] bg-surface px-3" /></label>
       {error ? <p role="alert" className="text-sm text-[var(--color-critical-text)]">{error}</p> : null}
-      <button disabled={busy} type="submit" className="focus-visible-ring min-h-10 rounded bg-action px-4 text-sm font-semibold text-primary hover:brightness-95 disabled:opacity-60">{busy ? 'Submitting…' : 'Submit report'}</button>
+      <button disabled={busy} type="submit" className={buttonClass('primary')}>{busy ? 'Submitting…' : 'Submit report'}</button>
     </form>
   );
 }

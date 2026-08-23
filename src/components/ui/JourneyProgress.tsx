@@ -19,6 +19,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
+import { JourneyFrame } from './JourneyFrame';
 
 export type JourneyStageValue =
   | 'onboarding'
@@ -68,42 +69,58 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
   const currentIndex = segmentIndexFor(currentStage);
 
   return (
-    <ol className={clsx('flex items-center', className)} aria-label="Export journey progress">
+    <div className={clsx('flex items-center gap-4', className)}>
+      {/* The signature device, carrying the same number the rail spells out. Redundant on
+          purpose: the glyph is what a person recognises across a table of thirty deals,
+          the rail is what they read once they have stopped on one. */}
+      <JourneyFrame
+        value={currentIndex + 1}
+        total={SEGMENTS.length}
+        size={26}
+        label={`Stage ${currentIndex + 1} of ${SEGMENTS.length}: ${SEGMENTS[currentIndex]!.label}`}
+        className="hidden shrink-0 sm:block"
+      />
+      <ol className="flex flex-1 items-center" aria-label="Export journey progress">
       {SEGMENTS.map((segment, index) => {
         const completed = index < currentIndex;
         const isCurrent = index === currentIndex;
         const reached = completed || isCurrent;
         const href = reached ? (getHref?.(segment.key, index) ?? null) : null;
 
-        // A checkmark on the CURRENT segment would claim it's done when it's in
-        // progress — the same "never collapse two states into one chip" rule docs/03 §2
-        // applies to journey vs. completion, not just to different status layers.
+        // Square markers, not circles. The mark is built from hard corners and
+        // registration ticks; a row of soft dots is the one shape in the system that
+        // belongs to somebody else's product. The current stage is a seal square inside a
+        // ring — never a checkmark, which would claim a stage in progress is done, the
+        // same "never collapse two states into one" rule docs/03 §2 applies to chips.
         //
-        // Colors here are deliberately never teal-on-white or white-on-teal: measured at
-        // 2.49:1, which fails WCAG AA for text (4.5:1) and even the 3:1 floor for a
-        // graphical UI component. Both marks use navy instead — navy-on-teal (7.05:1) for
-        // the completed check, navy-on-white for the current ring — the only two
-        // navy/teal pairings this codebase has verified as accessible.
+        // Colours are ink and seal only. The previous rail painted completed segments in
+        // `--color-action`, which is the brand accent — so a half-finished journey read
+        // as five brand-coloured beads, and the accent meant "done" here and "current"
+        // everywhere else.
         const dot = (
           <span
             className={clsx(
-              'flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-bold transition duration-fast',
+              'flex size-3.5 items-center justify-center rounded-[2px] border transition-colors duration-fast',
               completed
-                ? 'border-action bg-action text-primary'
+                ? 'border-ink-900 bg-ink-900'
                 : isCurrent
-                  ? 'border-primary bg-surface text-primary'
-                  : 'border-[var(--color-border-strong)] bg-surface text-transparent',
+                  ? 'border-seal-600 bg-seal-600 ring-2 ring-[color-mix(in_srgb,var(--seal-600)_22%,transparent)]'
+                  : 'border-line-strong bg-card',
             )}
           >
-            {completed ? '✓' : isCurrent ? '●' : ''}
+            {completed ? (
+              <svg viewBox="0 0 10 10" className="size-2.5 text-bone" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 5.2 4.1 7.4 8 2.9" />
+              </svg>
+            ) : null}
           </span>
         );
 
         const label = (
           <span
             className={clsx(
-              'mt-1.5 whitespace-nowrap text-xs font-medium',
-              isCurrent ? 'text-primary' : reached ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-muted)]',
+              'mt-2 whitespace-nowrap text-xs',
+              isCurrent ? 'font-semibold text-ink-900' : reached ? 'font-medium text-ink-500' : 'text-ink-300',
             )}
           >
             {segment.label}
@@ -132,15 +149,16 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
             {index < SEGMENTS.length - 1 ? (
               <span
                 className={clsx(
-                  'mx-1.5 h-0.5 flex-1 rounded transition duration-fast',
-                  index < currentIndex ? 'bg-action' : 'bg-[var(--color-border-strong)]',
+                  'mx-2 h-px flex-1 transition-colors duration-fast',
+                  index < currentIndex ? 'bg-ink-900' : 'bg-line-strong',
                 )}
                 aria-hidden="true"
               />
             ) : null}
           </li>
         );
-      })}
-    </ol>
+        })}
+      </ol>
+    </div>
   );
 }

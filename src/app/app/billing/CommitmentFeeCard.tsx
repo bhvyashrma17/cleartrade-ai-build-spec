@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button, StatusChip } from '@/components/ui';
+import { buttonClass } from '@/components/ui/Button';
 import { ApiClientError, apiPatch } from '@/lib/api-client';
 
 type Tier = 'guest' | 'free' | 'paid';
@@ -67,7 +68,7 @@ export function CommitmentFeeCard({
         </p>
         <Link
           href="/register"
-          className="mt-4 inline-flex min-h-10 items-center justify-center rounded bg-action px-4 text-sm font-semibold text-primary transition duration-fast hover:brightness-95"
+          className={buttonClass('primary', 'md', 'mt-4')}
         >
           Create free account
         </Link>

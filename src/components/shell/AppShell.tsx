@@ -1,9 +1,12 @@
 'use client';
 
+import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { UserRole } from '@prisma/client';
+import { Wordmark } from '@/components/brand/Wordmark';
+import { buttonClass } from '@/components/ui/Button';
 import { ProfileMenu } from './ProfileMenu';
 
 type Portal = 'exporter' | 'agent' | 'ops';
@@ -111,6 +114,32 @@ const UTILITY_LABEL: Record<Portal, string> = {
   ops: 'Exceptions',
 };
 
+/**
+ * The eyebrow over the nav list. A person with access to more than one portal has, until
+ * now, had nothing on screen telling them which one they are in — the three shells were
+ * pixel-identical apart from the nav labels.
+ */
+const PORTAL_LABEL: Record<Portal, string> = {
+  exporter: 'Exporter portal',
+  agent: 'Agent console',
+  ops: 'Operations',
+};
+
+/**
+ * Density is a shell property, not a component variant.
+ *
+ * The exporter portal is read by one person planning one export, so it gets air: 15px
+ * body, 24px card inset, 52px rows. Agent and Ops are worked as queues by people who need
+ * to see thirty rows without scrolling, so they get 13px body, 16px inset, 36px rows.
+ * Components never opt in — they read the CSS variables this attribute re-points, which
+ * is what keeps the three portals one product at two densities instead of two designs.
+ */
+const DENSITY: Record<Portal, 'comfortable' | 'compact'> = {
+  exporter: 'comfortable',
+  agent: 'compact',
+  ops: 'compact',
+};
+
 function isActive(pathname: string, href: string) {
   return href === '/agent' || href === '/ops'
     ? pathname === href
@@ -140,38 +169,50 @@ export function AppShell({
   const isGuest = tier === 'guest';
 
   return (
-    <div className="min-h-screen bg-surface-muted">
-      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between bg-primary px-4 text-white shadow-card md:px-6">
-        <Link href={navigation[0]?.href ?? '/'} className="focus-visible-ring rounded text-base font-bold tracking-tight">
-          ClearTrade AI
+    <div className="min-h-screen bg-paper" data-density={DENSITY[portal]}>
+      {/* The chrome is ink and the mark is bone — the inversion the brand is built on.
+          The top bar carries the lockup, not the string "ClearTrade AI" set in bold
+          interface sans, which is what sat in the strongest position on every screen in
+          the product until now. */}
+      <header className="on-ink fixed inset-x-0 top-0 z-30 flex h-topbar items-center justify-between border-b border-[color-mix(in_srgb,var(--bone)_12%,transparent)] bg-ink-900 px-4 md:px-6">
+        <Link href={navigation[0]?.href ?? '/'} className="focus-visible-ring -m-1 rounded p-1" aria-label="ClearTrade AI — home">
+          <Wordmark tone="bone" />
         </Link>
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex items-center gap-3">
           {isGuest ? (
             // The tier boundary has to be legible, not implied by absence: a guest should
             // always be able to see that they are browsing anonymously and what fixes it.
             <>
-              <span className="hidden rounded bg-white/10 px-2 py-1 text-xs sm:inline">Browsing as guest</span>
-              <Link
-                href="/register"
-                className="focus-visible-ring rounded bg-action px-3 py-1.5 text-xs font-semibold text-primary transition duration-fast hover:brightness-95"
-              >
+              <span className="hidden items-center gap-1.5 rounded-sm border border-[color-mix(in_srgb,var(--bone)_20%,transparent)] px-2 py-1 text-xs text-slate sm:inline-flex">
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-slate" />
+                Browsing as guest
+              </span>
+              <Link href="/register" className={buttonClass('inverse', 'sm')}>
                 Create free account
               </Link>
             </>
           ) : (
             <>
-              <button type="button" className="focus-visible-ring hidden rounded px-2 py-1 hover:bg-white/10 sm:block">{UTILITY_LABEL[portal]}</button>
+              <button
+                type="button"
+                className="focus-visible-ring hidden rounded-sm px-2.5 py-1.5 text-xs font-medium text-slate transition-colors duration-fast hover:bg-[color-mix(in_srgb,var(--bone)_10%,transparent)] hover:text-bone sm:block"
+              >
+                {UTILITY_LABEL[portal]}
+              </button>
               {userEmail ? <ProfileMenu name={userName} email={userEmail} portal={portal} role={role} /> : null}
             </>
           )}
         </div>
       </header>
 
-      {/* docs/00 §4: "left nav: light surface; active item rendered as a raised white
-          card" — the aside stays on the muted page background so the active link's
-          bg-surface + shadow-raised actually reads as a raised card, not a no-op. */}
-      <aside className="fixed bottom-0 left-0 top-14 z-20 hidden w-64 overflow-y-auto border-r border-[var(--color-border)] bg-surface-muted p-3 md:block">
-        <nav aria-label={`${portal} navigation`} className="space-y-1">
+      {/* The nav sits on `--paper-sunk` so the active item's white card actually reads as
+          raised. Previously the aside and the page were both `--color-surface-muted`, so
+          the "raised white card" active state specified in docs/00 §4 was a white card on
+          a white-ish ground — a no-op, and the reason the current page was hard to find.
+          The seal bar at the left edge is the accent's one job in the shell. */}
+      <aside className="fixed bottom-0 left-0 top-topbar z-20 hidden w-leftnav overflow-y-auto border-r border-line bg-paper-sunk px-3 py-4 md:block">
+        <p className="eyebrow px-3 pb-2">{PORTAL_LABEL[portal]}</p>
+        <nav aria-label={`${portal} navigation`} className="space-y-0.5">
           {navigation.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -179,8 +220,19 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
-                className={`focus-visible-ring block rounded px-3 py-2.5 text-sm font-medium transition duration-fast ${active ? 'bg-surface text-primary shadow-raised' : 'text-[var(--color-text-secondary)] hover:bg-surface-muted hover:text-primary'}`}
+                className={clsx(
+                  'focus-visible-ring relative block rounded-lg px-3 py-2 text-sm transition-colors duration-fast',
+                  active
+                    ? 'bg-card font-semibold text-ink-900 shadow-raised'
+                    : 'font-medium text-ink-300 hover:bg-[color-mix(in_srgb,var(--card)_60%,transparent)] hover:text-ink-900',
+                )}
               >
+                {active ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-2 left-0 w-[2px] rounded-full bg-seal-600"
+                  />
+                ) : null}
                 {item.label}
               </Link>
             );
@@ -188,7 +240,7 @@ export function AppShell({
         </nav>
       </aside>
 
-      <main className={`min-h-screen pt-14 ${portal === 'exporter' ? 'pb-16 md:ml-64 md:pb-0' : 'md:ml-64'}`}>
+      <main className={clsx('min-h-screen pt-topbar', portal === 'exporter' ? 'pb-16 md:ml-leftnav md:pb-0' : 'md:ml-leftnav')}>
         {children}
       </main>
 
@@ -198,12 +250,23 @@ export function AppShell({
           // Column count follows the filtered list — a fixed grid-cols-5 would leave dead
           // space for a guest, who only has two of the five destinations.
           style={{ gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))` }}
-          className="fixed inset-x-0 bottom-0 z-30 grid h-16 border-t border-[var(--color-border)] bg-surface md:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 grid h-16 border-t border-line bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
         >
           {mobileNav.map((item) => {
             const active = isActive(pathname, item.href);
             return (
-              <Link key={item.href} href={item.href} aria-current={active ? 'page' : undefined} className={`focus-visible-ring flex items-center justify-center px-1 text-center text-xs font-semibold ${active ? 'text-[var(--color-action-text)]' : 'text-[var(--color-text-secondary)]'}`}>
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                className={clsx(
+                  'focus-visible-ring relative flex items-center justify-center px-1 text-center text-xs font-semibold transition-colors duration-fast',
+                  active ? 'text-ink-900' : 'text-ink-300',
+                )}
+              >
+                {active ? (
+                  <span aria-hidden="true" className="absolute inset-x-4 top-0 h-[2px] rounded-full bg-seal-600" />
+                ) : null}
                 {item.label}
               </Link>
             );

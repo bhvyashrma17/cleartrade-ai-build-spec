@@ -131,13 +131,13 @@ export default async function OpsAssignmentsPage() {
           <div className="mt-4 overflow-x-auto">
             <Table className="min-w-[820px]">
               <Thead>
-                <Tr className="bg-primary text-[var(--color-text-inverse)]">
-                  <Th className="font-medium">Exporter</Th>
-                  <Th className="font-medium">Agent</Th>
-                  <Th className="font-medium">Started</Th>
-                  <Th className="font-medium">Assigned by</Th>
-                  <Th className="font-medium">Reason</Th>
-                  <Th align="right" className="font-medium">Actions</Th>
+                <Tr>
+                  <Th>Exporter</Th>
+                  <Th>Agent</Th>
+                  <Th>Started</Th>
+                  <Th>Assigned by</Th>
+                  <Th>Reason</Th>
+                  <Th align="right">Actions</Th>
                 </Tr>
               </Thead>
               <Tbody>
