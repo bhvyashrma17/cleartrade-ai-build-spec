@@ -48,7 +48,42 @@ function Mark({ availability }: { availability: FeatureAvailability }) {
 
 export function ComparisonTable() {
   return (
-    <div className="overflow-x-auto">
+    <>
+      {/* PHONE: one card per feature.
+          The table below needs 544px to keep three columns legible, which no phone
+          has — it was the single worst mobile defect in the product, because a
+          scroller that wide also expands the layout viewport and pushed the fixed
+          top bar's controls off-screen (see the `:has(> table)` rule in globals.css,
+          which now contains that damage everywhere else it occurs). Even with that
+          fixed, side-scrolling a comparison to find out what you get is the wrong
+          interaction for the page that asks someone to pay: the two answers belong
+          side by side within one thumb's view, which is what this layout gives. */}
+      <ul className="space-y-3 md:hidden">
+        {COMPARISON.map((feature) => {
+          const free = availabilityFor(feature, 'free');
+          const premium = availabilityFor(feature, 'premium_monthly');
+          return (
+            <li key={feature.capability} className="rounded-lg border border-line bg-surface p-4">
+              <p className="text-sm font-medium text-bone">{feature.label}</p>
+              <p className="mt-1 text-sm text-muted text-pretty">{feature.detail}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted">Free</dt>
+                  <dd className="mt-1 flex justify-start"><Mark availability={free} /></dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-accent">Premium</dt>
+                  <dd className="mt-1 flex justify-start"><Mark availability={premium} /></dd>
+                </div>
+              </dl>
+            </li>
+          );
+        })}
+      </ul>
+
+      <Legend className="md:hidden" />
+
+    <div className="hidden overflow-x-auto md:block">
       <table className="w-full min-w-[34rem] border-collapse text-left">
         <caption className="sr-only">
           Feature comparison between the Free and Premium plans
@@ -90,20 +125,28 @@ export function ComparisonTable() {
         </tbody>
       </table>
 
-      <dl className="mt-6 flex flex-wrap gap-x-8 gap-y-2 text-xs text-muted">
-        <div className="flex items-center gap-2">
-          <dt className="text-[var(--ok)]">Included</dt>
-          <dd>runs on your own product and your own data.</dd>
-        </div>
-        <div className="flex items-center gap-2">
-          <dt className="text-accent">Sample only</dt>
-          <dd>a labelled demo of the real thing, built from illustrative figures.</dd>
-        </div>
-        <div className="flex items-center gap-2">
-          <dt className="text-faint">Not included</dt>
-          <dd>needs Premium.</dd>
-        </div>
-      </dl>
+      <Legend />
     </div>
+    </>
+  );
+}
+
+/** Shared by both layouts so the three marks are explained in exactly one place. */
+function Legend({ className }: { className?: string }) {
+  return (
+    <dl className={clsx('mt-6 flex flex-wrap gap-x-8 gap-y-2 text-xs text-muted', className)}>
+      <div className="flex items-center gap-2">
+        <dt className="text-[var(--ok)]">Included</dt>
+        <dd>runs on your own product and your own data.</dd>
+      </div>
+      <div className="flex items-center gap-2">
+        <dt className="text-accent">Sample only</dt>
+        <dd>a labelled demo of the real thing, built from illustrative figures.</dd>
+      </div>
+      <div className="flex items-center gap-2">
+        <dt className="text-faint">Not included</dt>
+        <dd>needs Premium.</dd>
+      </div>
+    </dl>
   );
 }

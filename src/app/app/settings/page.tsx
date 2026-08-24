@@ -47,8 +47,8 @@ export default async function SettingsPage() {
         <aside className="self-start rounded-lg border border-[var(--color-border)] bg-surface p-3 shadow-card md:sticky md:top-20">
           <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Preferences</p>
           <nav aria-label="Settings sections" className="flex gap-1 md:flex-col">
-            <a href="#account" className="focus-visible-ring rounded bg-surface-muted px-3 py-2 text-sm font-medium text-primary">Account</a>
-            <a href="#about" className="focus-visible-ring rounded px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-surface-muted hover:text-primary">About</a>
+            <a href="#account" className="focus-visible-ring flex min-h-11 items-center rounded bg-surface-muted px-3 text-sm font-medium text-primary md:min-h-0 md:py-2">Account</a>
+            <a href="#about" className="focus-visible-ring flex min-h-11 items-center rounded px-3 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-surface-muted hover:text-primary md:min-h-0 md:py-2">About</a>
           </nav>
         </aside>
 

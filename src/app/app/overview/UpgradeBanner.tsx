@@ -42,7 +42,9 @@ export function UpgradeBanner({ priceDisplay }: { priceDisplay: string }) {
           </Link>
           <Link
             href="/app/plans"
-            className="focus-visible-ring rounded text-sm text-muted underline underline-offset-4 hover:text-bone"
+            // Paired with the button beside it, so it is a CTA rather than a link inside
+            // prose — the inline-link exception to the minimum target size does not apply.
+            className="focus-visible-ring inline-flex min-h-11 items-center rounded text-sm text-muted underline underline-offset-4 hover:text-bone md:min-h-0"
           >
             Compare plans
           </Link>

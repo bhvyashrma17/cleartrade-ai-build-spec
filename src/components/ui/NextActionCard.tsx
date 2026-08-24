@@ -91,7 +91,7 @@ export function NextActionCard({
       {/* One primary action per card (docs/00 §6). */}
       <Link
         href={href}
-        className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary underline underline-offset-2"
+        className="-mb-2 mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary underline underline-offset-2 md:mb-0 md:mt-3 md:min-h-0"
       >
         {ctaLabel}
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
