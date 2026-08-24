@@ -39,7 +39,16 @@ export function ProposalDiff({
           : 'This is the first proposed version, so there is nothing to compare it against yet.'}
       </p>
 
-      <div className="mt-4 overflow-x-auto">
+      {/* A scroll container that only a mouse or a finger can move is content a keyboard
+          user cannot reach at all. `tabIndex={0}` makes it focusable so arrow keys scroll
+          it, and the role + label mean it is announced as a region rather than as an
+          unexplained focus stop (axe: scrollable-region-focusable). */}
+      <div
+        className="focus-visible-ring mt-4 overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Proposal comparison, scrollable"
+      >
         <table className="w-full min-w-[560px] text-left text-sm">
           <thead className="text-xs uppercase text-[var(--color-text-muted)]">
             <tr>
