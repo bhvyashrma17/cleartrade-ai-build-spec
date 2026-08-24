@@ -49,6 +49,10 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Tasks', href: '/app/tasks', minTier: 'paid' },
     { label: 'Messages', href: '/app/messages', minTier: 'paid' },
     { label: 'Notifications', href: '/app/notifications', minTier: 'free' },
+    // `free`, not `paid`: this is the surface a non-member is meant to reach, and hiding
+    // it from exactly the people it is for would be the one nav omission that costs money.
+    // A paid member still sees it — it is where they manage or cancel their membership.
+    { label: 'Plans', href: '/app/plans', minTier: 'free' },
   ],
   agent: [
     { label: 'My Day', href: '/agent', minTier: 'paid' },

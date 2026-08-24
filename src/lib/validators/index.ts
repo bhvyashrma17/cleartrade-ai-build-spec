@@ -65,6 +65,29 @@ export const payCommitmentFeeSchema = z.object({
 });
 export type PayCommitmentFeeInput = z.infer<typeof payCommitmentFeeSchema>;
 
+/**
+ * `POST /api/v1/billing/subscription`.
+ *
+ * Only the plan code is accepted. The PRICE is read server-side from `billing.plans` and
+ * snapshotted onto the row — a client-supplied amount would let anyone subscribe to
+ * premium for a rupee, which is the single most obvious way to break a checkout endpoint.
+ */
+export const startSubscriptionSchema = z.object({
+  plan_code: z.enum(['premium_monthly', 'premium_annual']),
+});
+export type StartSubscriptionInput = z.infer<typeof startSubscriptionSchema>;
+
+/** `POST /api/v1/billing/subscription/cancel`. */
+export const cancelSubscriptionSchema = z.object({
+  /**
+   * Default false — a member who cancels keeps the period they already paid for. Immediate
+   * revocation of paid-for access is a refund decision, and this route is not a refund.
+   */
+  immediate: z.boolean().optional(),
+  reason: z.string().trim().max(500).nullish(),
+});
+export type CancelSubscriptionInput = z.infer<typeof cancelSubscriptionSchema>;
+
 export const createDiscoveryRunSchema = z
   .object({
     product_id: z.string().min(1).optional(),

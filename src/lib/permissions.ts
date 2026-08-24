@@ -97,6 +97,12 @@ export type Capability =
   // Recording the commitment fee as paid. Distinct from `demand_discovery.run`/
   // `market_assessment.save` (which this fee is the gate FOR) — paying is its own action.
   | 'commitment_fee.pay'
+  // Starting, changing or cancelling a RECURRING membership (docs/14 §3a as extended by
+  // the subscription model). Distinct from `commitment_fee.pay`: that records a one-time,
+  // non-expiring fee, this authorizes a repeating charge. Same reason they are separate
+  // capabilities rather than one "billing" capability — they are separate money events
+  // with different reversal semantics.
+  | 'membership.manage'
   | 'buyer_discovery.run'
   | 'buyer_lead.create'
   | 'outreach.send'
@@ -228,6 +234,17 @@ const MATRIX: Record<Capability, Record<UserRole, Grant>> = {
   // same as `commercial_terms.approve` — a member never binds the org to a payment any
   // more than they approve deal terms; ops_finance reconciles, mirroring `payment.update`.
   'commitment_fee.pay': {
+    exporter_owner: 'own_org',
+    exporter_member: 'none',
+    agent: 'none',
+    ops_supervisor: 'none',
+    ops_finance: 'all',
+    admin: 'none',
+  },
+  // Same shape as `commitment_fee.pay`, and for the same reason: committing the org to a
+  // recurring charge is financial-commitment shaped, so a member cannot do it. ops_finance
+  // gets 'all' to grant/revoke a comped membership during reconciliation.
+  'membership.manage': {
     exporter_owner: 'own_org',
     exporter_member: 'none',
     agent: 'none',
@@ -613,6 +630,9 @@ const CAPABILITY_MIN_TIER: Partial<Record<Capability, OrgTier>> = {
   'task_evidence.upload': OrgTier.free,
   'buyer_shortlist.create': OrgTier.free,
   'commitment_fee.pay': OrgTier.free,
+  // A guest cannot subscribe: there is no account to attach a membership to, and the
+  // upgrade path is register-then-subscribe. `free` is therefore the floor, not `guest`.
+  'membership.manage': OrgTier.free,
 
   // Paid — unlocked by the commitment fee (docs/01 §2), not by "everything else falls
   // through" alone. Named explicitly here (rather than left to the default) so a reader

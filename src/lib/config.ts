@@ -12,6 +12,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { DEFAULT_PLAN_PRICING, type PlanPricing } from '@/lib/billing/plans';
 import type { Money } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -116,6 +117,13 @@ export interface ConfigShape {
   'country_truth.scoring_v4': CountryTruthScoringV4Policy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
+  /**
+   * Membership prices. Here — not in `src/lib/billing/plans.ts` — because money is never a
+   * literal in application code (docs/01 §2), and because Ops must be able to reprice
+   * without a deploy. `Subscription.amount` snapshots the value at subscribe time, so a
+   * change here never reaches backward into an existing member's agreed price.
+   */
+  'billing.plans': PlanPricing;
 }
 
 /**
@@ -576,6 +584,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     volume_floor_usd: 250_000,
     quantity_band_breakpoints: [100, 1_000, 10_000],
   },
+  'billing.plans': DEFAULT_PLAN_PRICING,
 };
 
 // ---------------------------------------------------------------------------
@@ -790,4 +799,5 @@ export const OPS_TUNABLE_CONFIG_KEYS: readonly ConfigKey[] = ([
   'leads.outreach',
   'guest.policy',
   'jobs.policy',
+  'billing.plans',
 ] as const).filter((key) => !isDeprecatedConfigKey(key));

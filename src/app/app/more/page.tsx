@@ -24,6 +24,7 @@ const EXPLORE: MenuLink[] = [
 ];
 
 const MANAGE_FREE: MenuLink[] = [
+  { label: 'Plans & billing', href: '/app/plans', description: 'Compare Free and Premium, and manage your membership.' },
   { label: 'Readiness', href: '/app/readiness', description: 'Your export-readiness assessment and score.' },
   { label: 'Settings', href: '/app/settings', description: 'Your account, plan, session and support options.' },
   { label: 'Notifications & Account', href: '/app/notifications', description: 'Alerts, preferences, organization profile and team.' },

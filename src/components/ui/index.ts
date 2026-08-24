@@ -27,6 +27,9 @@ export type { SkeletonProps } from './Skeleton';
 export { UpgradeNotice } from './UpgradeNotice';
 export type { UpgradeNoticeProps, UpgradeTier } from './UpgradeNotice';
 
+export { SamplePanel } from './SamplePanel';
+export type { SamplePanelProps } from './SamplePanel';
+
 export { JourneyProgress } from './JourneyProgress';
 export type { JourneyProgressProps, JourneyStageValue } from './JourneyProgress';
 

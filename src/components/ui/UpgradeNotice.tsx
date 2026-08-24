@@ -17,7 +17,7 @@ export type UpgradeTier = 'free' | 'paid';
 
 const TIER_COPY: Record<UpgradeTier, { name: string; cta: string; href: string }> = {
   free: { name: 'a free account', cta: 'Create free account', href: '/register' },
-  paid: { name: 'a paid plan', cta: 'See plans', href: '/app/billing' },
+  paid: { name: 'Premium', cta: 'See plans', href: '/app/plans' },
 };
 
 interface UpgradeNoticeBase {

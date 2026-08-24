@@ -1,50 +1,20 @@
 /**
- * `/app/billing` — pay the commitment fee (docs/01 §2, docs/14 §3).
+ * `/app/billing` — kept as a permanent redirect target, not a page.
  *
- * This is the page `UpgradeNotice`'s `requiredTier="paid"` CTA has always pointed at
- * (`src/components/ui/UpgradeNotice.tsx`); it did not exist before this change, so every
- * paid-tier upsell in the product was previously a dead link. Paying here is what flips
- * `ExporterOrg.tier` to `paid`, unlocking full ranked Demand Discovery and the rest of the
- * `paid`-gated surface.
+ * This URL was the paid-tier CTA destination for the whole product before `/app/plans`
+ * existed, so it is in the wild: bookmarks, emails, and any link written before the
+ * membership work. Deleting the route would turn all of those into 404s, and a dead link
+ * to the billing page is the worst possible one to break — it reads as "you cannot give us
+ * money" (docs/03 §1: navigation must not point at pages that do not exist).
+ *
+ * Everything it used to render now lives on `/app/plans`, including the commitment-fee
+ * card, so nothing is lost by forwarding. `CommitmentFeeCard.tsx` remains beside this file
+ * because the self-report path it drives is still the only way to reach paid tier in a
+ * local environment with no gateway configured.
  */
 
-import { OrgTier } from '@prisma/client';
-import { requireExporterPrincipal } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { CommitmentFeeCard } from './CommitmentFeeCard';
+import { redirect } from 'next/navigation';
 
-export default async function BillingPage() {
-  const principal = await requireExporterPrincipal();
-
-  const org = await prisma.exporterOrg.findUniqueOrThrow({
-    where: { id: principal.exporter_org_id },
-    select: {
-      tier: true,
-      commitment_fee_status: true,
-      commitment_fee_amount: true,
-      commitment_fee_currency: true,
-      commitment_fee_paid_at: true,
-    },
-  });
-
-  return (
-    <div className="mx-auto max-w-2xl py-6">
-      <header className="mb-6">
-        <h1 className="font-serif text-title-page text-primary">Commitment fee</h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          A one-time fee that unlocks full ranked Demand Discovery, Buyer Discovery contacts, and
-          the agent-assisted workflow.
-        </p>
-      </header>
-
-      <CommitmentFeeCard
-        tier={org.tier}
-        status={org.commitment_fee_status}
-        amount={org.commitment_fee_amount?.toString() ?? null}
-        currency={org.commitment_fee_currency}
-        paidAt={org.commitment_fee_paid_at?.toISOString() ?? null}
-        canPay={org.tier !== OrgTier.guest}
-      />
-    </div>
-  );
+export default function BillingPage() {
+  redirect('/app/plans');
 }

@@ -24,6 +24,7 @@ import { errorResponse, newCorrelationId, single, validationError } from '@/lib/
 import { assertCan } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { assertCommitmentFeeTransition } from '@/lib/state-machines/commitment-fee';
+import { isRazorpayConfigured } from '@/lib/billing/razorpay';
 import { payCommitmentFeeSchema, zodFieldErrors } from '@/lib/validators';
 
 export async function PATCH(request: NextRequest) {
@@ -38,6 +39,31 @@ export async function PATCH(request: NextRequest) {
     const parsed = payCommitmentFeeSchema.safeParse(body);
     if (!parsed.success) throw validationError(zodFieldErrors(parsed.error));
     const input = parsed.data;
+
+    // SELF-REPORT IS A BYPASS ONCE A GATEWAY EXISTS.
+    //
+    // `source: 'exporter_update'` means "the exporter says they paid", which was the only
+    // available fact when this platform had no payment gateway (see the module comment
+    // above, and docs/14 §3a). With Razorpay wired, that same request is a button that
+    // grants a paid membership for free to anyone who sends it — the exporter is asserting
+    // a payment we can now actually verify, and choosing not to.
+    //
+    // So it is refused whenever the gateway is configured. It stays available when it is
+    // NOT configured, which is local development and test: removing it outright would make
+    // paid tier unreachable on a developer machine and push everyone towards seeding the
+    // tier by hand, which is a worse habit than a documented, environment-gated path.
+    // Ops-confirmed sources (`manual_ops`, `bank_partner`, `AA`) are unaffected — those are
+    // a human at ClearTrade reconciling a real receipt, not a self-assertion.
+    if (input.source === 'exporter_update' && isRazorpayConfigured()) {
+      throw validationError(
+        [{
+          field: 'source',
+          code: 'gateway_required',
+          message: 'Memberships are confirmed by the payment gateway, not self-reported.',
+        }],
+        'Start your membership from the plans page — access unlocks automatically once payment clears.',
+      );
+    }
 
     const org = await prisma.exporterOrg.findUniqueOrThrow({
       where: { id: orgId },

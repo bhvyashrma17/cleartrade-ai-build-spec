@@ -19,6 +19,7 @@ import { OrgTier } from '@prisma/client';
 import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { BuyersExplorer } from './BuyersExplorer';
+import { AgentWorkflowSample } from './AgentWorkflowSample';
 
 export default async function BuyersPage({
   searchParams,
@@ -58,12 +59,21 @@ export default async function BuyersPage({
   const snapshot = lastAdHoc?.input_snapshot as { description?: string | null } | null;
 
   return (
-    <BuyersExplorer
-      products={products}
-      tier={tier}
-      adHocContext={snapshot?.description ?? null}
-      initialCountry={params.country?.toUpperCase() ?? ''}
-      initialProductId={initialProductId ?? ''}
-    />
+    <>
+      <BuyersExplorer
+        products={products}
+        tier={tier}
+        adHocContext={snapshot?.description ?? null}
+        initialCountry={params.country?.toUpperCase() ?? ''}
+        initialProductId={initialProductId ?? ''}
+      />
+      {/* What Premium adds on top of the search this tier already has. Constants only —
+          no credit is spent rendering it (see `src/lib/billing/preview.ts`). */}
+      {tier === OrgTier.paid ? null : (
+        <div className="mt-10">
+          <AgentWorkflowSample />
+        </div>
+      )}
+    </>
   );
 }

@@ -20,6 +20,7 @@ import { getConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { DemandDiscovery } from './DemandDiscovery';
 import { MarketEstimate } from './MarketEstimate';
+import { RankedMarketsSample } from './RankedMarketsSample';
 
 export default async function MarketsPage() {
   const principal = await getPrincipal();
@@ -27,7 +28,17 @@ export default async function MarketsPage() {
   const policy = await getConfig('guest.policy');
 
   if (tier !== OrgTier.paid) {
-    return <MarketEstimate tier={tier} guestRunLimit={policy.discovery_runs_per_ip} />;
+    // The estimate is what this tier actually gets; the sample below it is what they are
+    // being sold. Neither costs a provider credit — the estimate is a warehouse read and
+    // the sample is a constant (see `src/lib/billing/preview.ts`).
+    return (
+      <>
+        <MarketEstimate tier={tier} guestRunLimit={policy.discovery_runs_per_ip} />
+        <div className="mt-10">
+          <RankedMarketsSample />
+        </div>
+      </>
+    );
   }
 
   // Saved products only exist for a tenant that has them; a guest supplies context ad hoc.

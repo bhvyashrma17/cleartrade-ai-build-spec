@@ -25,10 +25,11 @@
  *      after `stale_after_seconds` rather than being stuck forever.
  */
 
-import { JobStatus, JobType, Prisma } from '@prisma/client';
+import { JobStatus, JobType, OrgTier, Prisma } from '@prisma/client';
 import { getConfig } from '@/lib/config';
-import { jobAlreadyRunning, newCorrelationId } from '@/lib/errors';
+import { jobAlreadyRunning, newCorrelationId, upgradeRequired } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
+import { isCostedJobType, MIN_TIER_FOR_COSTED_WORK, tierMayCauseCostedWork } from '@/lib/billing/costed-work';
 
 /** Statuses from which no further work happens. */
 export const TERMINAL_STATUSES: JobStatus[] = [
@@ -73,6 +74,35 @@ export interface EnqueueArgs {
 }
 
 /**
+ * Refuse costed work for a tenant that has not paid for it.
+ *
+ * Reads the tier from the DATABASE, not from `args`, and not from a session claim. A JWT
+ * carries a tier that was true when it was minted; a membership that lapsed an hour ago
+ * still has valid sessions in flight, and those sessions must not be able to spend. This
+ * is one indexed primary-key read on a path that is already about to do several writes.
+ *
+ * A null `exporter_org_id` is platform-scheduled work with no tenant behind it and is
+ * allowed through — see the module comment.
+ */
+async function assertTenantMayCauseCostedWork(args: EnqueueArgs): Promise<void> {
+  if (!isCostedJobType(args.type)) return;
+  if (!args.exporter_org_id) return;
+
+  const org = await prisma.exporterOrg.findUnique({
+    where: { id: args.exporter_org_id },
+    select: { tier: true },
+  });
+  // A job for an org that no longer exists is refused rather than run: fail closed.
+  const tier = org?.tier ?? OrgTier.guest;
+  if (tierMayCauseCostedWork(tier)) return;
+
+  throw upgradeRequired(
+    MIN_TIER_FOR_COSTED_WORK,
+    'This runs on live trade data and is part of the Premium plan. Free accounts get the sample instead.',
+  );
+}
+
+/**
  * Create a job, or refuse if an equivalent one is already in flight.
  *
  * The dedupe check is not a read-then-write: it relies on the UNIQUE constraint, so two
@@ -83,6 +113,12 @@ export interface EnqueueArgs {
 export async function enqueueJob(args: EnqueueArgs) {
   const policy = await getConfig('jobs.policy');
   const correlationId = args.correlation_id ?? newCorrelationId();
+
+  // Last shared checkpoint before provider budget is committed. The route's `assertCan`
+  // should already have caught this; that it runs again here is the point — see
+  // `src/lib/billing/costed-work.ts` for why a per-route promise is not enough to protect
+  // a per-job cost.
+  await assertTenantMayCauseCostedWork(args);
 
   // An idempotency key means "if you already did this, hand me back the same job".
   if (args.idempotency_key) {

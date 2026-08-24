@@ -62,6 +62,37 @@ enum OrgTier {
   paid
 }
 
+/// Which membership a tenant is on. The plan CODE is the commercial product; `OrgTier`
+/// remains the enforcement axis (`CAPABILITY_MIN_TIER` reads tier, never a plan code), so
+/// adding a plan never touches a permission check. See `src/lib/billing/plans.ts`.
+enum SubscriptionPlanCode {
+  premium_monthly
+  premium_annual
+}
+
+/// Verbatim Razorpay subscription states, plus `none` for a tenant that never started one.
+///
+/// Taken from the provider rather than invented so a webhook payload can be mapped without
+/// a lossy translation table — a status we cannot represent is a status we would silently
+/// drop, and dropping `halted` is how a tenant keeps paid access after their card fails.
+enum SubscriptionStatus {
+  none
+  created
+  authenticated
+  active
+  pending
+  halted
+  cancelled
+  completed
+  expired
+}
+
+enum SubscriptionProvider {
+  razorpay
+  /// Ops-granted membership with no gateway behind it (pilot accounts, comped partners).
+  manual
+}
+
 enum IecStatus {
   unknown
   not_started
@@ -699,6 +730,22 @@ model ExporterOrg {
   commitment_fee_due_at         DateTime?
   commitment_fee_paid_at        DateTime?
 
+  /// The entitlement clock for a RECURRING membership, denormalised onto the org.
+  ///
+  /// `tier` stays the single axis every permission check reads (docs/14 §2) — this column
+  /// is what decides when `tier` should be moved back down. It is deliberately NOT derived
+  /// live from `Subscription.status` at read time: a lapsed subscription must revoke access
+  /// even if the provider never sends the webhook that would tell us, and a status read
+  /// alone cannot express "active, but only until the 14th". `syncTierFromSubscription()`
+  /// in `src/lib/billing/subscription-service.ts` is the only writer.
+  ///
+  /// Null means "no time-bounded membership": either never subscribed, or holding `paid`
+  /// via the one-time commitment fee / an Ops waiver, both of which do not expire.
+  paid_until    DateTime?
+  /// Set when a paid tenant is dropped back to `free` because `paid_until` lapsed. Kept so
+  /// a win-back surface can tell "never paid" from "lapsed", which the tier alone cannot.
+  downgraded_at DateTime?
+
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
@@ -722,11 +769,15 @@ model ExporterOrg {
   exchange_rate_quotes     ExchangeRateQuote[]
   document_input_snapshots DocumentInputSnapshot[]
   bank_accounts            ExporterBankAccount[]
+  subscriptions            Subscription[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
   @@index([tier])
   @@index([tier, guest_expires_at])
+  /// Drives the lapse sweep: "paid orgs whose clock has run out", the only query
+  /// `expireLapsedSubscriptions()` runs.
+  @@index([tier, paid_until])
 }
 
 model User {
@@ -3147,6 +3198,96 @@ model ConfigSetting {
 
 /// Versioned fee policy. A deal snapshots the version in force at lock time; later
 /// versions never rewrite historical deals.
+/// A recurring membership between one exporter tenant and the payment gateway.
+///
+/// WHY THIS IS A TABLE AND NOT THREE COLUMNS ON ExporterOrg: a membership has history.
+/// A tenant subscribes, lapses, and resubscribes on a different plan; ops needs to see
+/// that sequence, and a webhook that arrives late must be applied to the subscription it
+/// names rather than to "whatever the org is on now". Collapsing it onto the org would
+/// make a late `subscription.halted` for a CANCELLED subscription silently revoke a NEW,
+/// healthy one.
+///
+/// Money is amount + currency, like every other money value in this schema. There is no
+/// bare numeric column here and there must never be one.
+///
+/// This does NOT replace `ExporterOrg.commitment_fee_*` (docs/01 §2). Both can grant
+/// `paid`: the fee is a one-time, non-expiring grant (and the Ops waiver path), this is a
+/// time-bounded recurring one. `syncTierFromSubscription()` is the single place that
+/// resolves the two into one tier.
+model Subscription {
+  id              String      @id @default(cuid())
+  exporter_org_id String
+  exporter_org    ExporterOrg @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+
+  plan_code SubscriptionPlanCode
+  provider  SubscriptionProvider @default(razorpay)
+  status    SubscriptionStatus   @default(created)
+
+  /// Razorpay's `sub_...` id. Unique because a webhook is dispatched by this id and must
+  /// resolve to exactly one row — two rows sharing it would make delivery ambiguous.
+  /// Null only for `provider = manual`, which has no gateway object behind it.
+  provider_subscription_id String? @unique
+  provider_customer_id     String?
+  /// Razorpay's `plan_...` id, snapshotted so we can tell which provider-side plan this
+  /// subscription was actually created against even after the env var is repointed.
+  provider_plan_id         String?
+
+  /// Price AT THE MOMENT OF SUBSCRIBING — never re-read from the live catalogue. Same
+  /// "rule of record" the commitment fee and deal-quoted terms follow: repricing the
+  /// catalogue must never retroactively change what an existing member agreed to pay.
+  amount   Decimal @db.Decimal(18, 4)
+  currency String  @db.VarChar(3)
+
+  current_period_start DateTime?
+  /// Paid-through date. Copied onto `ExporterOrg.paid_until` — see the note there for why
+  /// entitlement is stored rather than derived from `status` at read time.
+  current_period_end   DateTime?
+
+  /// The member asked to stop but has already paid through `current_period_end`. Access
+  /// continues until then; this is why cancellation is not the same fact as expiry.
+  cancel_at_period_end Boolean   @default(false)
+  cancelled_at         DateTime?
+  ended_at             DateTime?
+
+  /// Razorpay's hosted authorization page. This is the URL the Upgrade button redirects
+  /// to; retained so an abandoned checkout can be resumed rather than restarted.
+  short_url String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  events SubscriptionEvent[]
+
+  @@index([exporter_org_id, created_at])
+  @@index([status])
+}
+
+/// Append-only log of every provider webhook applied to a subscription.
+///
+/// Two jobs, both load-bearing:
+///   - IDEMPOTENCY. Razorpay retries webhooks and does not guarantee once-only delivery.
+///     `provider_event_id` is unique, so a replayed event is rejected by the database
+///     rather than by application logic that could race with itself.
+///   - RECONSTRUCTION. When a member disputes what they were charged, the ordered event
+///     log is the record — the mutable `Subscription` row only shows the end state.
+model SubscriptionEvent {
+  id              String       @id @default(cuid())
+  subscription_id String
+  subscription    Subscription @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+
+  /// Razorpay's `x-razorpay-event-id` header. Unique — this IS the idempotency key.
+  provider_event_id String             @unique
+  event_type        String
+  /// Status the subscription moved to as a result, so the log is readable without
+  /// re-parsing the raw payload.
+  resulting_status  SubscriptionStatus
+  payload           Json
+
+  received_at DateTime @default(now())
+
+  @@index([subscription_id, received_at])
+}
+
 model FeePolicy {
   id      String @id @default(cuid())
   version Int    @unique

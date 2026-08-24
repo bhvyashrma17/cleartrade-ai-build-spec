@@ -70,7 +70,7 @@ export default async function SettingsPage() {
                     <p className="text-sm text-[var(--color-text-secondary)]">Current plan</p>
                     <p className="mt-1 text-lg font-semibold text-primary">{settings.workspace.planLabel}</p>
                   </div>
-                  {settings.workspace.tier !== 'paid' ? <Link href="/app/billing" className={buttonClass('primary', 'sm')}>Upgrade</Link> : null}
+                  {settings.workspace.tier !== 'paid' ? <Link href="/app/plans" className={buttonClass('primary', 'sm')}>Upgrade</Link> : null}
                 </div>
               </Card>
               <Card title="Workspace">

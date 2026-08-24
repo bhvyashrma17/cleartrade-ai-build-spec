@@ -107,19 +107,19 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
             <Link href="/register" className="font-semibold text-primary underline underline-offset-2">
               Create a free account
             </Link>{' '}
-            to save this search, then pay the one-time commitment fee to unlock full ranked Demand
-            Discovery — market scores, requirements, and buyer discovery.
+            to save this search, then upgrade to Premium for full ranked Demand Discovery —
+            market scores, requirements, and buyer discovery.
           </p>
         </div>
       ) : (
         <div className="mb-5 rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm">
           <p className="text-[var(--color-text-secondary)]">
             You&rsquo;re on the free plan.{' '}
-            <Link href="/app/billing" className="font-semibold text-primary underline underline-offset-2">
-              Pay the one-time commitment fee
+            <Link href="/app/plans" className="font-semibold text-primary underline underline-offset-2">
+              Upgrade to Premium
             </Link>{' '}
             to unlock full ranked Demand Discovery — market scores, requirements, and Buyer
-            Discovery.
+            Discovery. There&rsquo;s a sample of it below.
           </p>
         </div>
       )}
