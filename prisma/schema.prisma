@@ -557,6 +557,9 @@ enum JobStatus {
 enum JobType {
   readiness_assessment
   demand_discovery
+  /// Agent-requested Country Truth orchestration. Enqueue-only until its dedicated
+  /// acquisition/metrics/scoring handler is implemented.
+  country_truth_discovery
   buyer_discovery
   document_generation
   report_export
@@ -3110,6 +3113,10 @@ model Job {
   error_code      String?
   error_message   String?
   progress        Int       @default(0)
+  /// Durable orchestration stage for multi-step jobs. Numeric progress remains for generic UI.
+  progress_stage  String?
+  /// Internal resumability checkpoint. Never exposed as a result while work is in flight.
+  checkpoint      Json?
   target_type     String?
   target_id       String?
   attempts        Int       @default(0)

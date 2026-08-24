@@ -36,6 +36,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ job
         type: true,
         status: true,
         progress: true,
+        progress_stage: true,
         exporter_org_id: true,
         target_type: true,
         target_id: true,
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ job
           type: job.type,
           status: job.status,
           progress: job.progress,
+          progress_stage: job.progress_stage,
           target: job.target_type ? { type: job.target_type, id: job.target_id } : null,
           // Only a finished job has a meaningful result; exposing a partial one mid-flight
           // would invite the UI to render half a ranking as if it were final.
