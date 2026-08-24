@@ -103,7 +103,7 @@ function LandingPage() {
             <aside className="ticked animate-fade-rise rounded-lg border border-line-strong bg-surface p-6 sm:p-7">
               <div className="flex items-start justify-between gap-4 border-b border-line pb-5">
                 <div>
-                  <p className="eyebrow">Deal in flight</p>
+                  <p className="eyebrow">Example deal · In flight</p>
                   <p className="record mt-2 text-[13px] text-slate">CT-2026-0417</p>
                 </div>
                 <JourneyFrame value={PROGRESS} total={STAGES.length} size={44} className="text-bone" />
