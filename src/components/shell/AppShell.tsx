@@ -172,6 +172,17 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-ground" data-density={DENSITY[portal]}>
+      {/* WCAG 2.4.1 Bypass Blocks. Measured before this existed: the first Tab landed on
+          the wordmark, and a keyboard user then walked the whole nav — eight destinations
+          plus the rail, the palette, the profile menu — before reaching content, on every
+          single page. Visually hidden until focused, which is the only state it needs to
+          exist in. It is the first thing in the DOM so it is genuinely the first stop. */}
+      <a
+        href="#main"
+        className="focus-visible-ring sr-only z-50 focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-md focus:border focus:border-line-strong focus:bg-surface-2 focus:px-4 focus:text-sm focus:font-medium focus:text-bone"
+      >
+        Skip to content
+      </a>
       {/* One bar, not two.
           The product used to spend a 56px top bar AND a 256px sidebar on chrome before a
           single pixel of content — roughly a fifth of a laptop screen given over to
@@ -257,7 +268,17 @@ export function AppShell({
             would otherwise appear over the content on desktop-class touch devices. */}
         <nav
           aria-label={`${portal} navigation, compact`}
-          className="flex items-center gap-1 overflow-x-auto border-t border-line bg-ground px-4 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden"
+          className={clsx(
+            'flex items-center gap-1 overflow-x-auto border-t border-line bg-ground px-4 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden',
+            // On a phone the exporter already has the bottom tab bar, so this rail was a
+            // SECOND navigation for the same destinations — two rows of chrome, 57px of
+            // them, above every page, with four items scrolled off the edge. docs/00 §4
+            // makes the bottom bar the phone navigation and `More` the overflow, so the
+            // rail stands down below `md` and returns for tablets, which have no bottom
+            // bar. Agent and Ops keep it at every width: they have no bottom bar at all,
+            // so for them it is the only navigation there is.
+            portal === 'exporter' && 'hidden md:flex',
+          )}
           style={{
             maskImage: 'linear-gradient(to right, black calc(100% - 28px), transparent)',
             WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 28px), transparent)',
@@ -284,6 +305,9 @@ export function AppShell({
       </header>
 
       <main
+        id="main"
+        // -1 so the skip link can move focus here without adding a tab stop of its own.
+        tabIndex={-1}
         className={clsx(
           'mx-auto min-h-screen max-w-shell px-4 sm:px-6',
           // The compact nav rail is a second row INSIDE the fixed header, so the offset
@@ -292,7 +316,10 @@ export function AppShell({
           // it; measured at 375px the rail is now 57px, and 46px from `md` up where the
           // links go back to pointer size. Measured, not estimated — if either the rail's
           // padding or its font changes, re-measure rather than nudging these numbers.
-          'pt-[calc(var(--topbar-height)+58px)] md:pt-[calc(var(--topbar-height)+46px)] lg:pt-topbar',
+          portal === 'exporter'
+            ? // No rail below md any more, so the offset is just the bar.
+              'pt-topbar md:pt-[calc(var(--topbar-height)+46px)] lg:pt-topbar'
+            : 'pt-[calc(var(--topbar-height)+58px)] md:pt-[calc(var(--topbar-height)+46px)] lg:pt-topbar',
           portal === 'exporter' && 'pb-20 md:pb-0',
         )}
       >

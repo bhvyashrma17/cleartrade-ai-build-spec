@@ -114,7 +114,11 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
                   full, beneath the track. */}
               <span
                 className={clsx(
-                  'mt-2.5 hidden truncate text-xs transition-colors duration-fast md:block',
+                  // `sr-only`, not `hidden`: hiding it outright left these links with no
+                  // accessible name at all, which axe flags as a serious `link-name`
+                  // violation. The label stays in the accessibility tree on every
+                  // screen; only its rendering changes.
+                  'mt-2.5 sr-only truncate text-xs transition-colors duration-fast md:not-sr-only md:mt-2.5 md:block',
                   isCurrent ? 'font-medium text-bone' : reached ? 'text-slate' : 'text-muted',
                 )}
               >

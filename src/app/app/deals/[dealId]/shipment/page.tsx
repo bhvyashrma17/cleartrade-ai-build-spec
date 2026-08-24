@@ -127,7 +127,44 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           ETA and actual are tracked separately for every milestone.
         </p>
-        <div className="mt-4 overflow-x-auto">
+        {/* PHONE: one card per milestone. ETA and actual are deliberately separate facts
+            (docs/07), and a 720px table on a 375px screen puts them on opposite sides of a
+            horizontal scroll — you cannot compare the two numbers the row exists to
+            compare. */}
+        <ul className="mt-4 space-y-3 md:hidden">
+          {shipment.milestones.map((m) => {
+            const chip = shipmentChip(MILESTONE_STATE_DISPLAY, m.state);
+            const diverges = m.eta_at && m.actual_at && m.eta_at.getTime() !== m.actual_at.getTime();
+            return (
+              <li key={m.id} className="rounded-lg border border-[var(--color-border)] bg-surface-muted p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-medium text-primary">{MILESTONE_LABELS[m.code as keyof typeof MILESTONE_LABELS] ?? m.label}</p>
+                  <StatusChip {...chip} size="sm" />
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">ETA</dt>
+                    <dd className="mt-1 text-sm text-[var(--color-text-secondary)]">{fmt(m.eta_at)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">Actual</dt>
+                    <dd className="mt-1 text-sm text-[var(--color-text-secondary)]">{fmt(m.actual_at)}</dd>
+                  </div>
+                </dl>
+                {diverges ? <div className="mt-2"><StatusChip label="Delayed vs ETA" tone="warning" icon="alert" size="sm" /></div> : null}
+                <div className="mt-3">
+                  {m.evidence_ref ? (
+                    <span className="text-xs text-[var(--color-text-secondary)]">Evidence uploaded</span>
+                  ) : (
+                    <MilestoneEvidenceUpload dealId={dealId} milestoneId={m.id} />
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="mt-4 hidden overflow-x-auto md:block">
           <Table className="min-w-[720px]">
             <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
               <Tr>

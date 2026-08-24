@@ -84,7 +84,7 @@ export function SamplePanel({
       <div className="p-5">
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-subtitle text-bone">{title}</h3>
-          {subject ? <p className="text-xs text-faint">Example product: {subject}</p> : null}
+          {subject ? <p className="text-xs text-muted">Example product: {subject}</p> : null}
         </div>
 
         {children}

@@ -167,7 +167,7 @@ export function PlanChooser({
               >
                 {busy ? 'Opening secure checkout…' : 'Upgrade to Premium'}
               </Button>
-              <p className="mt-3 text-center text-xs text-faint">
+              <p className="mt-3 text-center text-xs text-muted">
                 {paymentsAvailable
                   ? 'You will be taken to Razorpay to pay. Your access unlocks automatically once the payment clears.'
                   : 'Card payments are not switched on in this environment yet.'}
