@@ -73,6 +73,7 @@ export function EvidenceUploadForm({ taskId, latestEvidence }: { taskId: string;
           <input
             ref={inputRef}
             type="file"
+            aria-label="Upload supporting evidence"
             disabled={busy}
             onChange={(e) => {
               const file = e.target.files?.[0];

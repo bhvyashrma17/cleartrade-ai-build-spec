@@ -103,6 +103,10 @@ function LandingPage() {
             <aside className="ticked animate-fade-rise rounded-lg border border-line-strong bg-surface p-6 sm:p-7">
               <div className="flex items-start justify-between gap-4 border-b border-line pb-5">
                 <div>
+                  {/* "Example" carries real weight here: the reference number, port
+                      pair, value and Incoterm below are deliberately realistic, which is
+                      what makes the card persuasive and also what makes it mistakable for
+                      a live customer shipment. */}
                   <p className="eyebrow">Example deal · In flight</p>
                   <p className="record mt-2 text-[13px] text-slate">CT-2026-0417</p>
                 </div>
@@ -110,7 +114,7 @@ function LandingPage() {
               </div>
 
               <dl className="mt-5 space-y-3 text-sm">
-                <Row label="Buyer" value="Gulf Foods General Trading" />
+                <Row label="Buyer" value="Sample Foods Trading LLC" />
                 <Row label="Route" value="INNSA → AEJEA" mono />
                 <Row label="Value" value="USD 42,000" mono />
                 <Row label="Incoterm" value="FOB" mono />

@@ -133,7 +133,7 @@ export default async function DealPaymentPage({ params }: { params: Promise<{ de
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <PaymentStatusForm dealId={dealId} paymentId={p.id} />
                   <BrcStatusControl dealId={dealId} paymentId={p.id} brcStatus={p.brc_status} />
-                  <PaymentEvidenceUpload dealId={dealId} paymentId={p.id} />
+                  <PaymentEvidenceUpload dealId={dealId} paymentId={p.id} label={p.label ?? `Milestone ${p.sequence}`} />
                   <OpenDisputeButton dealId={dealId} paymentId={p.id} />
                 </div>
               </div>

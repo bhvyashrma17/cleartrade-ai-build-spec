@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { ApiClientError } from '@/lib/api-client';
 
-export function MilestoneEvidenceUpload({ dealId, milestoneId }: { dealId: string; milestoneId: string }) {
+export function MilestoneEvidenceUpload({ dealId, milestoneId, label }: { dealId: string; milestoneId: string; label?: string }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -34,9 +34,14 @@ export function MilestoneEvidenceUpload({ dealId, milestoneId }: { dealId: strin
 
   return (
     <div>
+      {/* A bare file input announces as "file upload button" with nothing to
+          distinguish it. These render once PER ROW, so a screen reader user met
+          several identical controls with no way to tell which one they were on —
+          axe flags it critical, and rightly. */}
       <input
         ref={inputRef}
         type="file"
+        aria-label={label ? `Upload evidence for ${label}` : 'Upload evidence'}
         disabled={busy}
         onChange={(e) => {
           const file = e.target.files?.[0];

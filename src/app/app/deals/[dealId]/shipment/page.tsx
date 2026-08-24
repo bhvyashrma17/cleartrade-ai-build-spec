@@ -156,7 +156,7 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
                   {m.evidence_ref ? (
                     <span className="text-xs text-[var(--color-text-secondary)]">Evidence uploaded</span>
                   ) : (
-                    <MilestoneEvidenceUpload dealId={dealId} milestoneId={m.id} />
+                    <MilestoneEvidenceUpload dealId={dealId} milestoneId={m.id} label={MILESTONE_LABELS[m.code as keyof typeof MILESTONE_LABELS] ?? m.label} />
                   )}
                 </div>
               </li>
@@ -196,7 +196,7 @@ export default async function DealShipmentPage({ params }: { params: Promise<{ d
                       {m.evidence_ref ? (
                         <span className="text-xs text-[var(--color-text-secondary)]">Uploaded</span>
                       ) : (
-                        <MilestoneEvidenceUpload dealId={dealId} milestoneId={m.id} />
+                        <MilestoneEvidenceUpload dealId={dealId} milestoneId={m.id} label={MILESTONE_LABELS[m.code as keyof typeof MILESTONE_LABELS] ?? m.label} />
                       )}
                     </Td>
                   </Tr>
