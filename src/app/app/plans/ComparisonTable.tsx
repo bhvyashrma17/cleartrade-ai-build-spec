@@ -18,7 +18,9 @@ import { COMPARISON, availabilityFor, type FeatureAvailability } from '@/lib/bil
 const MARK: Record<FeatureAvailability, { label: string; className: string }> = {
   included: { label: 'Included', className: 'text-[var(--ok)]' },
   preview: { label: 'Sample only', className: 'text-accent' },
-  locked: { label: 'Not included', className: 'text-faint' },
+    // `--muted`, not `--faint`: globals.css documents --faint as "NEVER text — 2.4:1",
+  // and axe flagged this as a serious contrast violation on both phone and desktop.
+  locked: { label: 'Not included', className: 'text-muted' },
 };
 
 function Mark({ availability }: { availability: FeatureAvailability }) {
@@ -144,7 +146,7 @@ function Legend({ className }: { className?: string }) {
         <dd>a labelled demo of the real thing, built from illustrative figures.</dd>
       </div>
       <div className="flex items-center gap-2">
-        <dt className="text-faint">Not included</dt>
+        <dt className="text-muted">Not included</dt>
         <dd>needs Premium.</dd>
       </div>
     </dl>

@@ -27,6 +27,9 @@ const PORTAL_LABEL: Record<Portal, string> = {
 export function CommandPalette({ portal, navigation }: { portal: Portal; navigation: NavItem[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,7 +82,79 @@ export function CommandPalette({ portal, navigation }: { portal: Portal; navigat
       setCursor(0);
       return;
     }
+    // Remember what opened the palette so focus can be handed back on close. Losing focus
+    // to <body> strands a keyboard user at the top of the document.
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
     inputRef.current?.focus();
+  }, [open]);
+
+  /**
+   * Modal keyboard contract, at the document level.
+   *
+   * Escape was previously wired to `onKeyDown` on the INPUT alone, so it stopped working
+   * the moment focus moved into the results list — the dialog became uncloseable by
+   * keyboard. And nothing trapped Tab, so focus walked out of a dialog still marked
+   * `aria-modal="true"`, into content that attribute promises is not there.
+   *
+   * Both are handled here rather than on the container, because focus can legitimately
+   * sit on any descendant and a container handler only sees what bubbles to it.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const root = dialogRef.current;
+      if (!root) return;
+      // `tabIndex >= 0` is the real test, not the selector. The backdrop is a
+      // `<button tabIndex={-1}>` — a selector matching `button` alone counts it as the
+      // first focusable, so Shift+Tab from the input saw itself as "not first", was not
+      // intercepted, and walked straight out of the dialog past an element the browser
+      // then skipped.
+      const focusable = [...root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]',
+      )].filter((el) => el.tabIndex >= 0 && (el.offsetWidth > 0 || el.offsetHeight > 0));
+      if (focusable.length === 0) return;
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+
+      // Wrap at both ends, and pull focus back in if it has already escaped.
+      if (event.shiftKey && (active === first || !root.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !root.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open]);
+
+  // Hand focus back to whatever opened it, once the dialog is actually gone.
+  //
+  // Falls back to the trigger when the remembered element cannot take focus — the palette
+  // opens on ⌘K from anywhere, so the "opener" is often <body> or an element that has
+  // since unmounted, and calling focus() on those silently leaves the user at the top of
+  // the document with no idea where they are.
+  useEffect(() => {
+    if (open) return;
+    const remembered = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    const target =
+      remembered && document.contains(remembered) && remembered !== document.body
+        ? remembered
+        : triggerRef.current;
+    target?.focus();
   }, [open]);
 
   const go = useCallback(
@@ -91,10 +166,8 @@ export function CommandPalette({ portal, navigation }: { portal: Portal; navigat
   );
 
   function onInputKey(event: React.KeyboardEvent) {
-    if (event.key === 'Escape') {
-      setOpen(false);
-      return;
-    }
+    // Escape is handled by the document-level modal contract above, so it is deliberately
+    // absent here — two handlers for one key is how they drift apart.
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setCursor((c) => (results.length ? (c + 1) % results.length : 0));
@@ -115,6 +188,7 @@ export function CommandPalette({ portal, navigation }: { portal: Portal; navigat
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
@@ -132,6 +206,7 @@ export function CommandPalette({ portal, navigation }: { portal: Portal; navigat
 
       {open ? (
         <div
+          ref={dialogRef}
           className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]"
           role="dialog"
           aria-modal="true"

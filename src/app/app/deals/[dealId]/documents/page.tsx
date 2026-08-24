@@ -70,6 +70,18 @@ export default async function DealDocumentsPage({ params }: { params: Promise<{ 
   });
   const versionCountByType = new Map(versionCounts.map((v) => [v.doc_type, v._count._all]));
 
+  // Derived once and rendered twice — as an 8-column table from `md` up, and as cards on a
+  // phone. Computing it here rather than inside either view is what stops the two from
+  // drifting: a change to "does this need generating" cannot reach one and miss the other.
+  const rows = registry.map((entry) => {
+    const doc = byType.get(entry.doc_type as never);
+    const versionCount = versionCountByType.get(entry.doc_type as never) ?? 0;
+    const exception = doc ? exceptionReason(doc) : null;
+    const needsGenerate = doc ? doc.generation_status !== 'generated' || doc.approval_status === 'rejected' : false;
+    const isProcessing = doc?.generation_status === 'processing';
+    return { entry, doc, versionCount, exception, needsGenerate, isProcessing };
+  });
+
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
@@ -78,7 +90,66 @@ export default async function DealDocumentsPage({ params }: { params: Promise<{ 
           Generation, review, approval and filing are tracked independently for every document.
         </p>
 
-        <div className="mt-4 overflow-x-auto">
+        {/* PHONE: one card per document. The table needs 860px to hold four independent
+            status dimensions plus version, exception and action; side-scrolling that on a
+            phone means never seeing a document's statuses and its name at the same time,
+            which is the entire point of the checklist. */}
+        <ul className="mt-4 space-y-3 md:hidden">
+          {rows.map(({ entry, doc, versionCount, exception, needsGenerate, isProcessing }) => (
+            <li key={entry.doc_type} className="rounded-lg border border-[var(--color-border)] bg-surface-muted p-4">
+              {!doc ? (
+                <>
+                  <p className="font-medium text-primary">{entry.label}</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Not yet created for this deal.</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <Link href={`/app/deals/${dealId}/documents/${doc.id}`} className="focus-visible-ring font-medium text-primary underline-offset-2 hover:underline">
+                      {entry.label}
+                    </Link>
+                    <span className="text-xs text-[var(--color-text-secondary)]">
+                      v{doc.version}
+                      {versionCount > 1 ? ` · ${versionCount} versions` : ''}
+                    </span>
+                  </div>
+
+                  {/* The four dimensions stay four labelled facts. docs/02 is explicit that
+                      they are independent and must never be collapsed into one status. */}
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
+                    {([
+                      ['Generation', GENERATION_STATUS_DISPLAY, doc.generation_status],
+                      ['Review', REVIEW_STATUS_DISPLAY, doc.review_status],
+                      ['Approval', APPROVAL_STATUS_DISPLAY, doc.approval_status],
+                      ['Filing', FILING_STATUS_DISPLAY, doc.filing_status],
+                    ] as const).map(([label, display, value]) => (
+                      <div key={label}>
+                        <dt className="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">{label}</dt>
+                        <dd className="mt-1"><StatusChip {...docChip(display, value)} size="sm" /></dd>
+                      </div>
+                    ))}
+                  </dl>
+
+                  {exception ? (
+                    <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm text-[var(--color-text-secondary)]">{exception}</p>
+                  ) : null}
+
+                  <div className="mt-3">
+                    {needsGenerate && !isProcessing ? (
+                      <GenerateButton dealId={dealId} documentId={doc.id} label={doc.generation_status === 'failed' ? 'Retry' : 'Generate'} />
+                    ) : (
+                      <Link href={`/app/deals/${dealId}/documents/${doc.id}`} className="focus-visible-ring inline-flex min-h-11 items-center text-sm font-medium text-primary underline underline-offset-2">
+                        {doc.approval_status === 'pending' ? 'Review & approve' : 'Open'}
+                      </Link>
+                    )}
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-4 hidden overflow-x-auto md:block">
           <Table className="min-w-[860px]">
             <Thead className="text-xs uppercase text-[var(--color-text-muted)]">
               <Tr>
@@ -93,10 +164,7 @@ export default async function DealDocumentsPage({ params }: { params: Promise<{ 
               </Tr>
             </Thead>
             <Tbody>
-              {registry.map((entry) => {
-                const doc = byType.get(entry.doc_type as never);
-                const versionCount = versionCountByType.get(entry.doc_type as never) ?? 0;
-                const exception = doc ? exceptionReason(doc) : null;
+              {rows.map(({ entry, doc, versionCount, exception, needsGenerate, isProcessing }) => {
                 // Missing entirely: the lock didn't produce this row (shouldn't happen,
                 // but the checklist must never silently omit a registry document either).
                 if (!doc) {
@@ -109,9 +177,6 @@ export default async function DealDocumentsPage({ params }: { params: Promise<{ 
                     </Tr>
                   );
                 }
-
-                const needsGenerate = doc.generation_status !== 'generated' || doc.approval_status === 'rejected';
-                const isProcessing = doc.generation_status === 'processing';
 
                 return (
                   <Tr key={doc.id} className="align-top">
