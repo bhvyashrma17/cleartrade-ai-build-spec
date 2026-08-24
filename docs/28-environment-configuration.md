@@ -9,7 +9,12 @@ Three environments exist, and each has exactly one authoritative source of confi
 |---|---|---|
 | **local development** | `.env.local` on your machine (gitignored) | you |
 | **Railway staging** | Railway → service → Variables | ops |
-| **future production** | production secret manager (not yet provisioned) | ops |
+| **Railway production** (`www.cleartrade.in`, live) | Railway → production service → Variables | ops |
+
+**No file in this repository ever holds a production value.** Production configuration lives
+only in Railway Variables on the production service. `.env.local` is for your machine and is
+never a source for a deployed environment; `.env.example` and `.env.staging.example` are
+committed templates holding placeholders only.
 
 The failure this structure prevents is a local checkout quietly reading or writing a real
 staging database, bucket or email provider. That is not hypothetical: the same `AUTH_SECRET`
@@ -74,16 +79,22 @@ npm run env:check
   `DOCUMENT_MALWARE_SCANNER_TOKEN`; the **scanner** service holds `SCANNER_AUTH_TOKEN`. These
   two must hold the same value or every upload fails closed.
 
-### Future production
+### Railway production — `www.cleartrade.in` (live)
 
 Same shape as staging, with these differences:
 
 - `APP_ENV=production`, `DATABASE_ENVIRONMENT=production`, separate database and bucket.
+- `NEXT_PUBLIC_APP_URL=https://www.cleartrade.in` — the `www` host is canonical; the apex
+  does not serve the app. It is compiled into the client bundle and scopes cookies, so
+  changing it requires a rebuild, not just a restart.
 - Freshly generated secrets again — production never inherits staging's.
 - `NOTIFICATION_ALLOWED_RECIPIENTS`/`NOTIFICATION_REDIRECT_TO` are no longer required (this is
   the environment permitted to email real users), so removing them is a deliberate step.
 - Prefer workload identity over static `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`.
 - `DANGEROUS_ALLOW_PRODUCTION_FIXTURES` must never be set.
+- **Payments**: the five `RAZORPAY_*` variables hold **live-mode** credentials and exist only
+  here. See §3 *Payments* below — the web service refuses to boot without them unless
+  `PAYMENTS_DISABLED=true` is set deliberately.
 
 ---
 
@@ -184,6 +195,70 @@ Requirement key: **R** required · **r** recommended · **o** optional · **–*
 | `NOTIFICATION_REDIRECT_TO` | o | R\* | o | public | ClearTrade | unset | single catch-all inbox | `notification-delivery.ts` |
 
 \* One of the two is required outside production when `NOTIFICATION_PROVIDER=resend`.
+
+### Payments (Razorpay memberships)
+
+| Variable | Local | Stg | Prod | Class | Source | Local value | Staging value | Consumed by |
+|---|---|---|---|---|---|---|---|---|
+| `RAZORPAY_KEY_ID` | o | o | **R** | **secret** | Razorpay | unset, or `rzp_test_…` | `rzp_test_…` | `billing/razorpay.ts` |
+| `RAZORPAY_KEY_SECRET` | o | o | **R** | **secret** | Razorpay | unset | test-mode secret | `billing/razorpay.ts` |
+| `RAZORPAY_WEBHOOK_SECRET` | o | o | **R** | **secret** | Razorpay | unset | per-environment webhook secret | `api/v1/billing/razorpay/webhook` |
+| `RAZORPAY_PLAN_ID_MONTHLY` | o | o | **R** | public | Razorpay | unset | test-mode plan id | `api/v1/billing/subscription` |
+| `RAZORPAY_PLAN_ID_ANNUAL` | o | o | **R** | public | Razorpay | unset | test-mode plan id | `api/v1/billing/subscription` |
+| `PAYMENTS_DISABLED` | o | o | o | public | ClearTrade | unset | unset | `runtime-config.ts` |
+
+Rules the startup check enforces (`razorpayProblems()` in `runtime-config.ts`, web role only —
+the worker needs no gateway credentials):
+
+- **All five or none.** A partially configured gateway is the dangerous state: keys present
+  but no webhook secret means cards are charged and no confirmation can ever be verified, so
+  memberships never activate and the money must be refunded by hand.
+- **`rzp_live_…` outside production is refused**, because it charges real cards from a laptop.
+  **`rzp_test_…` in production is refused**, because no real payment can succeed.
+- **Production without payments is refused** unless `PAYMENTS_DISABLED=true` states it
+  deliberately — otherwise a mistyped variable becomes a silent revenue outage that no health
+  check would catch. Setting `PAYMENTS_DISABLED=true` *alongside* credentials is also refused
+  as ambiguous.
+- The monthly and annual plan ids must be **distinct** Razorpay plans.
+
+Test-mode and live-mode are separate universes in Razorpay: different keys, different plan
+objects, different webhook endpoints and secrets. Nothing is shared between them, and a
+live-mode key rotation re-authorizes every existing mandate — which is why these values live
+only in Railway Variables and never in a file.
+
+**Webhook endpoint**, registered in the Razorpay dashboard per environment:
+
+| Environment | Endpoint |
+|---|---|
+| production | `https://www.cleartrade.in/api/v1/billing/razorpay/webhook` |
+| local | a tunnel (`ngrok http 3000`) — Razorpay's servers must be able to reach it, so `localhost` alone receives nothing |
+
+**`www` is the canonical production host, not the apex.** `https://www.cleartrade.in` serves
+the app; `https://cleartrade.in` does not. This matters more for the webhook than for a
+browser: a redirect from apex to `www` would be followed by a browser but **not** reliably by
+a webhook POST, and a 301 on a POST drops the body — so a webhook registered on the apex would
+appear configured and never deliver, leaving paid memberships permanently unactivated.
+
+Subscribed events in production:
+
+`subscription.activated`, `subscription.charged`, `subscription.pending`,
+`subscription.paused`, `subscription.resumed`, `subscription.halted`,
+`subscription.cancelled`, `subscription.completed`.
+
+The route additionally tolerates `subscription.authenticated` and `subscription.updated` if
+they are ever enabled; neither is required. Without `authenticated`, a membership simply
+stays `created` (which grants nothing) until `activated`/`charged` arrives — access begins at
+the first successful charge, which is the conservative behaviour.
+
+`tests/membership.test.ts` asserts every event in this list appears in the route's
+`HANDLED_EVENTS` allowlist. The dashboard and the code are two systems edited by different
+people, and an event Razorpay sends that the route does not list is acknowledged and silently
+discarded.
+
+Membership **prices** are not environment variables. They live in the `billing.plans`
+`ConfigSetting` row (defaults in `src/lib/billing/plans.ts`) and are editable by Ops through
+the config registry — money is never a literal in application code, and never in a deploy
+variable that would need a redeploy to change.
 
 ### Workers, operations and sanctions
 

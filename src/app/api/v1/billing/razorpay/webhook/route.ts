@@ -69,6 +69,10 @@ const HANDLED_EVENTS = new Set([
   'subscription.activated',
   'subscription.charged',
   'subscription.pending',
+  // Billing suspended / resumed deliberately. `resumed` reports the entity as `active`
+  // again, so it needs no status of its own — only the edge back out of `paused`.
+  'subscription.paused',
+  'subscription.resumed',
   'subscription.halted',
   'subscription.cancelled',
   'subscription.completed',

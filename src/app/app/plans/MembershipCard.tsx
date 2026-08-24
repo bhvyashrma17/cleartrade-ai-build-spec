@@ -12,7 +12,7 @@
 import { useState } from 'react';
 import { Button, StatusChip } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
-import type { StatusTone } from '@/types';
+import type { StatusIconName, StatusTone } from '@/types';
 
 export interface MembershipView {
   planLabel: string;
@@ -26,7 +26,7 @@ export interface MembershipView {
   cancellable: boolean;
 }
 
-const STATUS_VIEW: Record<string, { label: string; tone: StatusTone; icon: 'check' | 'clock' | 'alert' }> = {
+const STATUS_VIEW: Record<string, { label: string; tone: StatusTone; icon: StatusIconName }> = {
   active: { label: 'Membership active', tone: 'positive', icon: 'check' },
   authenticated: { label: 'Payment authorized', tone: 'info', icon: 'clock' },
   created: { label: 'Awaiting payment', tone: 'warning', icon: 'clock' },
@@ -34,6 +34,9 @@ const STATUS_VIEW: Record<string, { label: string; tone: StatusTone; icon: 'chec
   // Deliberately not phrased as a failure to the member: their access is intact, and the
   // action they need to take is on their card, not on this product.
   halted: { label: 'Payment needs attention', tone: 'warning', icon: 'alert' },
+  // Not phrased as a payment problem: a pause is deliberate, and telling someone their
+  // card failed when it did not is the confusion this status exists to prevent.
+  paused: { label: 'Membership paused', tone: 'neutral', icon: 'pause' },
   cancelled: { label: 'Cancelled', tone: 'neutral', icon: 'clock' },
   completed: { label: 'Membership ended', tone: 'neutral', icon: 'check' },
   expired: { label: 'Membership ended', tone: 'neutral', icon: 'alert' },
@@ -45,7 +48,7 @@ export function MembershipCard({ membership }: { membership: MembershipView }) {
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
-  const view = STATUS_VIEW[state.status] ?? { label: state.status, tone: 'neutral' as StatusTone, icon: 'clock' as const };
+  const view = STATUS_VIEW[state.status] ?? { label: state.status, tone: 'neutral' as StatusTone, icon: 'clock' as StatusIconName };
 
   async function cancel() {
     setBusy(true);
@@ -98,6 +101,12 @@ export function MembershipCard({ membership }: { membership: MembershipView }) {
           Your membership will not renew. You keep full Premium access until{' '}
           <span className="font-medium text-bone">{state.accessUntil ?? 'the end of your paid period'}</span>,
           and nothing is charged after that.
+        </p>
+      ) : state.status === 'paused' ? (
+        <p className="mt-5 border-t border-line pt-5 text-sm text-slate">
+          Billing is paused, so you will not be charged again until it resumes. Your Premium
+          access continues until{' '}
+          <span className="font-medium text-bone">{state.accessUntil ?? 'the end of your paid period'}</span>.
         </p>
       ) : state.status === 'halted' ? (
         <p className="mt-5 border-t border-line pt-5 text-sm text-slate">

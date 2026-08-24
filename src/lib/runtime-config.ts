@@ -1,4 +1,4 @@
-import {appEnvironment,isRealWorkflowEnvironment} from '@/lib/evidence-environment';
+import {appEnvironment,isRealWorkflowEnvironment,type ClearTradeEnvironment} from '@/lib/evidence-environment';
 
 export type RuntimeRole='web'|'worker'|'migration'|'scheduler';
 const missing=(env:NodeJS.ProcessEnv,name:string)=>!env[name]?.trim();
@@ -70,6 +70,65 @@ function oauthProviderPairProblem(
   return `${providerLabel} OAuth requires both ${idKey} and ${secretKey} when enabled.`;
 }
 
+/**
+ * The payment gateway is all-or-nothing, and partial configuration must fail at BOOT.
+ *
+ * `isRazorpayConfigured()` already treats a missing variable as "payments are off", which is
+ * the right runtime behaviour but the wrong deployment behaviour: a production deploy that
+ * silently disables checkout because one of five variables was mistyped looks healthy on
+ * every health check while taking no money at all. Worse is the inverse — keys present,
+ * webhook secret absent — where checkouts start, cards are charged, and no confirmation can
+ * ever be verified, so memberships never activate and the money has to be refunded by hand.
+ *
+ * Returns one message per problem so the operator fixes everything in one pass.
+ */
+const RAZORPAY_VARS=['RAZORPAY_KEY_ID','RAZORPAY_KEY_SECRET','RAZORPAY_WEBHOOK_SECRET','RAZORPAY_PLAN_ID_MONTHLY','RAZORPAY_PLAN_ID_ANNUAL'] as const;
+
+function razorpayProblems(env:NodeJS.ProcessEnv,environment:ClearTradeEnvironment):string[]{
+  const problems:string[]=[];
+  const present=RAZORPAY_VARS.filter(name=>!missing(env,name));
+  if(present.length===0){
+    // Unconfigured is legal everywhere EXCEPT production. cleartrade.in with payments off
+    // is a storefront with no till: every Upgrade button renders disabled, which is a
+    // silent revenue outage rather than an error anyone would be paged for.
+    //
+    // BUT this must not become a deploy landmine on a site that is already serving. A
+    // production instance that boots today without payment credentials would start failing
+    // its healthcheck the moment this check shipped, taking the live site down over a
+    // feature that is not yet switched on. So the escape hatch is explicit and deliberate,
+    // following the `DANGEROUS_ALLOW_PRODUCTION_FIXTURES` precedent in this file: an
+    // operator states "we are not selling yet" in one variable, and the plans page renders
+    // its honest "card payments are not available" state instead of the app refusing to
+    // start. What is NOT possible is arriving in that state by forgetting something.
+    if(environment==='production'&&env.PAYMENTS_DISABLED?.trim()!=='true'){
+      problems.push(`Payments are not configured. ${RAZORPAY_VARS.join(', ')} are required in production — set them as Railway Variables, never in a file in the image. To run production deliberately without payments, set PAYMENTS_DISABLED=true.`);
+    }
+    return problems;
+  }
+
+  // Both at once is contradictory, and the ambiguity is dangerous in the direction that
+  // costs money: it is not knowable whether the operator meant "stop selling" or "start".
+  if(env.PAYMENTS_DISABLED?.trim()==='true')problems.push('PAYMENTS_DISABLED=true is set while Razorpay credentials are also configured. Remove one — leaving both is ambiguous about whether memberships should be on sale.');
+  const absent=RAZORPAY_VARS.filter(name=>missing(env,name));
+  if(absent.length>0)problems.push(`Razorpay is partially configured — ${absent.join(', ')} ${absent.length===1?'is':'are'} missing. All five are required together, or none.`);
+
+  const keyId=env.RAZORPAY_KEY_ID?.trim()??'';
+  // Test keys in production take no money; live keys outside production take REAL money
+  // from a real card. Both are caught here rather than discovered by a customer.
+  if(environment==='production'&&keyId.startsWith('rzp_test_'))problems.push('RAZORPAY_KEY_ID is a TEST key in production — no real payment can succeed. Use the live key from the Razorpay dashboard.');
+  if(environment!=='production'&&keyId.startsWith('rzp_live_'))problems.push(`RAZORPAY_KEY_ID is a LIVE key in ${environment} — this would charge real cards. Live keys belong only in the production Railway service.`);
+
+  for(const name of ['RAZORPAY_KEY_SECRET','RAZORPAY_WEBHOOK_SECRET'] as const){
+    const value=env[name]?.trim();
+    if(value&&FORBIDDEN_SECRET_VALUES.has(value))problems.push(`${name} is a known placeholder value.`);
+  }
+  // The two plans must be distinct objects; the same id on both means whichever the member
+  // picked, they are billed on one cadence — a billing bug that only surfaces on renewal.
+  const monthly=env.RAZORPAY_PLAN_ID_MONTHLY?.trim(),annual=env.RAZORPAY_PLAN_ID_ANNUAL?.trim();
+  if(monthly&&annual&&monthly===annual)problems.push('RAZORPAY_PLAN_ID_MONTHLY and RAZORPAY_PLAN_ID_ANNUAL are the same id; they must be two distinct Razorpay plans.');
+  return problems;
+}
+
 export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEnv=process.env){
   const environment=appEnvironment(env),errors:string[]=[];
   if(missing(env,'DATABASE_URL'))errors.push('DATABASE_URL is required.');
@@ -139,6 +198,12 @@ export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEn
       if(value && FORBIDDEN_SECRET_VALUES.has(value))errors.push(`${key} is a known placeholder value.`);
     }
   }
+  // Runs in EVERY environment, not just real ones: the check that matters most locally is
+  // "you have a live key on your laptop", which a real-environment-only guard would miss.
+  // The web role serves checkout and the webhook; the worker runs the lapse sweep, which
+  // needs no gateway credentials at all.
+  if(role==='web')errors.push(...razorpayProblems(env,environment));
+
   if(errors.length)throw new Error(`Invalid ${environment} ${role} configuration: ${errors.join(' ')}`);
   return {environment,role,storage_backend:env.STORAGE_BACKEND??'local'};
 }

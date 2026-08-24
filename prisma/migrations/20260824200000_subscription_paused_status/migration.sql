@@ -1,0 +1,11 @@
+-- `paused` — billing suspended deliberately, as opposed to `halted` (payment failed).
+--
+-- Added because the production Razorpay webhook subscribes to `subscription.paused` and
+-- `subscription.resumed`. Without this value those deliveries were acknowledged and
+-- discarded: access still expired correctly on `paid_until`, but the UI reported a paused
+-- membership as "active", and nothing recorded that a pause had ever happened.
+--
+-- Safe to add inside Prisma's migration transaction: PostgreSQL 12+ permits
+-- ALTER TYPE ... ADD VALUE in a transaction provided the new value is not USED in that
+-- same transaction, and nothing below references it.
+ALTER TYPE "SubscriptionStatus" ADD VALUE IF NOT EXISTS 'paused' AFTER 'pending';

@@ -44,7 +44,7 @@ const SHOW_VALUE = new Set([
   'DISCOVERY_ENGINE', 'RATIONALE_WRITER', 'STORAGE_BACKEND', 'STORAGE_REGION',
   'STORAGE_FORCE_PATH_STYLE', 'STORAGE_SERVER_SIDE_ENCRYPTION', 'DOCUMENT_MALWARE_SCANNER',
   'DOCUMENT_ENGINE', 'NOTIFICATION_PROVIDER', 'ERROR_REPORTING_PROVIDER', 'GUEST_TRUST_XFF',
-  'AUTH_TRUST_HOST', 'REQUIRE_WORKER_READY', 'IMPORT_BUYER_REF_KEY_VERSION',
+  'AUTH_TRUST_HOST', 'REQUIRE_WORKER_READY', 'IMPORT_BUYER_REF_KEY_VERSION', 'PAYMENTS_DISABLED',
   'IMPORT_RAW_IDENTITY_KEY_VERSION', 'SANCTIONS_REQUIRE_ARTIFACT_RETENTION',
 ]);
 
@@ -124,6 +124,16 @@ const INVENTORY: Entry[] = [
   { name: 'NOTIFICATION_FROM_EMAIL', cls: 'public', provider: 'Resend', note: 'Must be a verified sender' },
   { name: 'NOTIFICATION_ALLOWED_RECIPIENTS', cls: 'public', provider: 'ClearTrade', note: 'Outside production, this or NOTIFICATION_REDIRECT_TO is required' },
   { name: 'NOTIFICATION_REDIRECT_TO', cls: 'public', provider: 'ClearTrade', note: 'Funnels all staging mail to one inbox' },
+
+  // --- Payments (Razorpay) ---------------------------------------------------------------
+  // All five or none — `isRazorpayConfigured()` is all-or-nothing, and `runtime-config.ts`
+  // enforces that partial configuration fails at boot rather than at first checkout.
+  { name: 'RAZORPAY_KEY_ID', cls: 'secret', provider: 'Razorpay', production: 'required', note: 'LIVE key in production, TEST key locally. Never the same value in both.' },
+  { name: 'RAZORPAY_KEY_SECRET', cls: 'secret', provider: 'Razorpay', production: 'required', note: 'Paired with RAZORPAY_KEY_ID; all five payment variables are required together' },
+  { name: 'RAZORPAY_WEBHOOK_SECRET', cls: 'secret', provider: 'Razorpay', production: 'required', note: 'Per-environment; the only thing authenticating the webhook endpoint' },
+  { name: 'RAZORPAY_PLAN_ID_MONTHLY', cls: 'public', provider: 'Razorpay', production: 'required', note: 'Test-mode and live-mode plan ids are distinct objects' },
+  { name: 'RAZORPAY_PLAN_ID_ANNUAL', cls: 'public', provider: 'Razorpay', production: 'required', note: 'Test-mode and live-mode plan ids are distinct objects' },
+  { name: 'PAYMENTS_DISABLED', cls: 'public', provider: 'ClearTrade', note: 'Set to true to run production deliberately without payments; refused alongside Razorpay keys' },
 
   // --- Workers / operations -------------------------------------------------------------
   { name: 'REQUIRE_WORKER_READY', cls: 'public', provider: 'ClearTrade', staging: 'recommended', production: 'recommended', note: 'Readiness requires a live worker heartbeat' },
@@ -205,6 +215,8 @@ function main() {
     if (env.STORAGE_BACKEND === 's3') warnings.push('STORAGE_BACKEND=s3 outside a real environment writes to real object storage.');
     if (env.COMTRADE_CLIENT === 'real') warnings.push('COMTRADE_CLIENT=real spends the shared UN Comtrade quota from a dev machine. Use mock unless deliberately testing the live client.');
     if (env.NOTIFICATION_PROVIDER === 'resend') warnings.push('NOTIFICATION_PROVIDER=resend can send real email from a dev machine. Use sandbox locally.');
+    // The one payment misconfiguration that charges a real customer's card from a laptop.
+    if (env.RAZORPAY_KEY_ID?.startsWith('rzp_live_')) warnings.push('RAZORPAY_KEY_ID is a LIVE key outside a real environment — this takes real money. Live keys belong in Railway Variables only; use a rzp_test_ key locally.');
   }
 
   // Finally, the authoritative check: would the app actually boot with this configuration?

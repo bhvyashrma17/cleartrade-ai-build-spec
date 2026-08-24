@@ -81,6 +81,10 @@ enum SubscriptionStatus {
   authenticated
   active
   pending
+  /// Billing suspended by the merchant or the customer. Distinct from `halted`, which is
+  /// a payment FAILURE — conflating the two would tell a member their card was declined
+  /// when in fact someone deliberately paused their plan.
+  paused
   halted
   cancelled
   completed
@@ -736,8 +740,9 @@ model ExporterOrg {
   /// is what decides when `tier` should be moved back down. It is deliberately NOT derived
   /// live from `Subscription.status` at read time: a lapsed subscription must revoke access
   /// even if the provider never sends the webhook that would tell us, and a status read
-  /// alone cannot express "active, but only until the 14th". `syncTierFromSubscription()`
-  /// in `src/lib/billing/subscription-service.ts` is the only writer.
+  /// alone cannot express "active, but only until the 14th". `applyProviderState()` and
+  /// `expireLapsedMemberships()` in `src/lib/billing/subscription-service.ts` are the only
+  /// writers.
   ///
   /// Null means "no time-bounded membership": either never subscribed, or holding `paid`
   /// via the one-time commitment fee / an Ops waiver, both of which do not expire.
@@ -3212,8 +3217,8 @@ model ConfigSetting {
 ///
 /// This does NOT replace `ExporterOrg.commitment_fee_*` (docs/01 §2). Both can grant
 /// `paid`: the fee is a one-time, non-expiring grant (and the Ops waiver path), this is a
-/// time-bounded recurring one. `syncTierFromSubscription()` is the single place that
-/// resolves the two into one tier.
+/// time-bounded recurring one. `resolveTier()` is the single place that resolves the two
+/// into one tier.
 model Subscription {
   id              String      @id @default(cuid())
   exporter_org_id String

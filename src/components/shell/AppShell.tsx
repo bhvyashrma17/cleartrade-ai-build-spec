@@ -49,10 +49,11 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Tasks', href: '/app/tasks', minTier: 'paid' },
     { label: 'Messages', href: '/app/messages', minTier: 'paid' },
     { label: 'Notifications', href: '/app/notifications', minTier: 'free' },
-    // `free`, not `paid`: this is the surface a non-member is meant to reach, and hiding
-    // it from exactly the people it is for would be the one nav omission that costs money.
-    // A paid member still sees it — it is where they manage or cancel their membership.
-    { label: 'Plans', href: '/app/plans', minTier: 'free' },
+    // `paid`, because a MEMBER needs a way back here to see renewal or cancel. A free
+    // tenant reaches the same page through the topbar's Upgrade button (and the mobile
+    // bar's Upgrade tab), so listing it here too would put two links to one page side by
+    // side in the same bar — the redundancy reads as two different destinations.
+    { label: 'Plans', href: '/app/plans', minTier: 'paid' },
   ],
   agent: [
     { label: 'My Day', href: '/agent', minTier: 'paid' },
@@ -97,11 +98,15 @@ function exporterMobileNav(tier: Tier): NavItem[] {
   }
   if (tier === 'free') {
     // Deals/Tasks/Messages aren't reachable yet — Markets/Buyers back-fill so the bar
-    // isn't empty, and More surfaces the upgrade path plus everything else.
+    // isn't empty, and More surfaces everything else. `Upgrade` takes the fifth slot the
+    // paid bar spends on Messages: on mobile the top bar's Upgrade button competes with
+    // the wordmark for a very narrow row, so the bottom bar is where it stays reachable
+    // without the header becoming a scrum. Still five items, as docs/00 §4 specifies.
     return [
       { label: 'Home', href: '/app/overview', minTier: 'free' },
       { label: 'Markets', href: '/app/markets', minTier: 'guest' },
       { label: 'Buyers', href: '/app/buyers', minTier: 'guest' },
+      { label: 'Upgrade', href: '/app/plans', minTier: 'free' },
       { label: 'More', href: '/app/more', minTier: 'free' },
     ];
   }
@@ -161,6 +166,9 @@ export function AppShell({
   const navigation = NAVIGATION[portal].filter(visible);
   const mobileNav = portal === 'exporter' ? exporterMobileNav(tier) : [];
   const isGuest = tier === 'guest';
+  // Exporters only, and only below paid. Staff resolve to tier 'paid' so they would never
+  // match anyway, but scoping on the portal states the intent rather than relying on that.
+  const showUpgrade = portal === 'exporter' && tier === 'free';
 
   return (
     <div className="min-h-screen bg-ground" data-density={DENSITY[portal]}>
@@ -212,6 +220,20 @@ export function AppShell({
               </>
             ) : (
               <>
+                {/* The upgrade path, on every screen rather than only on the surfaces that
+                    happen to withhold something.
+                    `primary` (bone fill), NOT `accent`: the accent has exactly one job in
+                    this chrome — the active nav marker — and a second accent object in the
+                    same bar would make the marker stop reading as a marker. Bone is the
+                    highest-contrast treatment available on this ground anyway, which is
+                    what "prominent" means in a dark system; it is the same weight the
+                    guest bar already gives "Create free account". */}
+                {showUpgrade ? (
+                  <Link href="/app/plans" className={buttonClass('primary', 'sm')}>
+                    Upgrade
+                    <span className="sr-only"> to Premium</span>
+                  </Link>
+                ) : null}
                 <button
                   type="button"
                   className="focus-visible-ring hidden rounded-md px-2.5 py-1.5 text-xs text-muted transition-colors duration-fast hover:bg-surface-2 hover:text-bone sm:block"

@@ -25,9 +25,33 @@ import { prisma } from '../src/lib/prisma';
 import {hostname} from 'node:os';
 import {log,reportError} from '../src/lib/observability';
 import {validateRuntimeEnvironment} from '../src/lib/runtime-config';
+import {expireLapsedMemberships} from '../src/lib/billing/subscription-service';
 
 let shuttingDown = false;
 let activeJobId: string | null = null;
+
+/**
+ * Membership lapse sweep, run from the worker loop rather than left to an external cron.
+ *
+ * `subscription-service.ts` documents this as the control that makes a MISSED webhook
+ * safe: Razorpay does not guarantee delivery, so "we were never told they stopped paying"
+ * must not mean "they keep paid access forever". A correctness guarantee that depends on
+ * someone remembering to configure a scheduler is not a guarantee — the worker already
+ * runs continuously in every environment that processes jobs at all, so the sweep lives
+ * where it will actually run. `npm run memberships:expire` remains for one-off ops use.
+ *
+ * Hourly is ample: entitlement carries a multi-hour renewal grace window, so sweeping more
+ * often could not revoke access any sooner than the grace period allows.
+ */
+const MEMBERSHIP_SWEEP_INTERVAL_MS = Number(process.env.MEMBERSHIP_SWEEP_INTERVAL_MS ?? 3_600_000);
+let lastMembershipSweepAt = 0;
+
+async function sweepLapsedMemberships(): Promise<void> {
+  if (Date.now() - lastMembershipSweepAt < MEMBERSHIP_SWEEP_INTERVAL_MS) return;
+  lastMembershipSweepAt = Date.now();
+  const { downgraded } = await expireLapsedMemberships({ correlationId: `worker-membership-sweep:${instanceId}` });
+  if (downgraded.length > 0) log('info', 'memberships_expired', { count: downgraded.length });
+}
 const instanceId=process.env.WORKER_INSTANCE_ID??`${hostname()}-${process.pid}`,heartbeatId=`worker:${instanceId}`;
 let consecutiveFailures=0;
 async function heartbeat(status='ready',lastError?:string){await prisma.workerHeartbeat.upsert({where:{id:heartbeatId},create:{id:heartbeatId,instance_id:instanceId,status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():null,consecutive_failures:consecutiveFailures},update:{status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():undefined,consecutive_failures:consecutiveFailures}});}
@@ -35,6 +59,10 @@ async function heartbeat(status='ready',lastError?:string){await prisma.workerHe
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function tick(): Promise<boolean> {
+  // Before claiming work, not after: a tick that finds a job returns early below, so a
+  // busy worker would otherwise never reach the sweep at all.
+  await sweepLapsedMemberships();
+
   const reclaimed = await reclaimStaleJobs();
   if (reclaimed.requeued || reclaimed.failed) {
     log('warn','worker_stale_jobs_reclaimed',{requeued:reclaimed.requeued,failed:reclaimed.failed});

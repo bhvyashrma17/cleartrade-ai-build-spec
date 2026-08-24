@@ -46,6 +46,7 @@ const TRANSITIONS: Record<Stage, Stage[]> = {
   ],
   active: [
     SubscriptionStatus.pending,
+    SubscriptionStatus.paused,
     SubscriptionStatus.halted,
     SubscriptionStatus.cancelled,
     SubscriptionStatus.completed,
@@ -56,6 +57,17 @@ const TRANSITIONS: Record<Stage, Stage[]> = {
   // A charge failed and Razorpay is retrying.
   pending: [
     SubscriptionStatus.active,
+    SubscriptionStatus.paused,
+    SubscriptionStatus.halted,
+    SubscriptionStatus.cancelled,
+    SubscriptionStatus.expired,
+  ],
+  // Billing deliberately suspended. Recoverable by definition — `subscription.resumed`
+  // reports `active` again, which is why the edge back to `active` must exist or every
+  // resumed membership would be rejected as an illegal transition.
+  paused: [
+    SubscriptionStatus.active,
+    SubscriptionStatus.pending,
     SubscriptionStatus.halted,
     SubscriptionStatus.cancelled,
     SubscriptionStatus.expired,
@@ -63,6 +75,7 @@ const TRANSITIONS: Record<Stage, Stage[]> = {
   // Retries exhausted. Recoverable: the member can update their card and Razorpay resumes.
   halted: [
     SubscriptionStatus.active,
+    SubscriptionStatus.paused,
     SubscriptionStatus.cancelled,
     SubscriptionStatus.expired,
   ],
@@ -93,6 +106,10 @@ const ACCESS_GRANTING: readonly Stage[] = [
   SubscriptionStatus.active,
   SubscriptionStatus.pending,
   SubscriptionStatus.halted,
+  // Paused, like halted and cancelled, is bounded by `paid_until` rather than by the
+  // status: the member has already paid through a date and keeps it. Revoking on the
+  // pause event itself would confiscate time they bought.
+  SubscriptionStatus.paused,
   // Cancelled-but-not-yet-expired: the member paid through a date and keeps it. The date
   // check in `subscription-service.ts` is what ends it.
   SubscriptionStatus.cancelled,

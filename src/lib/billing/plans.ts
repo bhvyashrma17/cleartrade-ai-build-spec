@@ -217,8 +217,12 @@ export interface PlanPricing {
  * NOT a runtime source of truth. Ops repoints them through the config registry.
  */
 export const DEFAULT_PLAN_PRICING: PlanPricing = {
-  [SubscriptionPlanCode.premium_monthly]: { amount: '2999.0000', currency: 'INR' },
-  [SubscriptionPlanCode.premium_annual]: { amount: '29990.0000', currency: 'INR' },
+  [SubscriptionPlanCode.premium_monthly]: { amount: '2000.0000', currency: 'INR' },
+  // Ten months' price for twelve months — a ~16% saving, which is what makes the yearly
+  // card worth showing at all. Kept in step with the monthly price deliberately: if the
+  // two ever drift so that annual is not cheaper, `annualSavingPercent()` returns null and
+  // the "save X%" badge disappears rather than advertising a discount that is not one.
+  [SubscriptionPlanCode.premium_annual]: { amount: '20000.0000', currency: 'INR' },
 };
 
 /** Whole-rupee monthly equivalent of an annual price, for the "₹X/mo billed yearly" line. */

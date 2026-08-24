@@ -65,7 +65,8 @@ never "accidentally free".
 | `buyer_contact.view` | `free` | The paid asset; see §4 |
 | `buyer_lead.create` | `free` | Created with `assigned_agent_id = null` below `paid` |
 | `exporter_master_data.edit` | `free` | |
-| `commitment_fee.pay` | `free` | Records the fee paid and flips the org to `paid` — see §3a |
+| `commitment_fee.pay` | `free` | Records the fee paid and flips the org to `paid` — see §3a. Self-reported source refused once a gateway is configured |
+| `membership.manage` | `free` | Start/cancel a recurring membership — see §3b. A guest must register first |
 | `demand_discovery.run` | `paid` | **Changed.** Full ranked Demand Discovery — ranked markets, market detail, save/select — now requires the commitment fee paid. Was `guest`; guest/free get `market_estimate.run` instead |
 | `market_assessment.save` | `paid` | **Changed**, same reason — save/select is part of "full" Demand Discovery |
 | *everything else* | `paid` | Deals, documents, shipment, payment, outreach, disputes, payout, agent assignment, audit |
@@ -106,6 +107,56 @@ visitor → market_estimate.run (guest) → register → due → pay → paid ti
   never-a-bank rule applies here too).
 - Paying (or an Ops waiver) flips `tier: free → paid` in the same transaction as the
   status write — see `src/lib/state-machines/commitment-fee.ts`.
+
+### 3b. Recurring membership (supersedes the fee as the primary paid-tier grant)
+
+The commitment fee described above is **still real and still grants `paid` permanently**, but
+it is no longer how a new tenant buys access. `paid` tier is now sold as a **recurring
+membership** — `premium_monthly` or `premium_annual` — taken through Razorpay.
+
+```
+visitor → market_estimate.run (guest) → register → free
+                                                    │
+                                                    ├─ /app/plans → Razorpay → webhook → paid
+                                                    └─ (legacy) commitment fee paid → paid
+```
+
+**Tier remains the only enforcement axis.** `CAPABILITY_MIN_TIER` did not learn what a
+subscription is and must not. `Subscription` state is resolved into `ExporterOrg.tier` by
+`resolveTier()` / `applyProviderState()` in `src/lib/billing/subscription-service.ts`,
+which is the single writer. Everything in §2 and §3 above is unchanged.
+
+**Entitlement needs two keys, not one.** A tenant holds `paid` only when the subscription has
+an access-granting status **and** `ExporterOrg.paid_until` is still in the future (plus a
+72-hour renewal grace window). Status alone is insufficient because a webhook that never
+arrives would leave a row `active` forever; a date alone is insufficient because a cancelled
+or provider-expired mandate should not run to an arbitrary future date. The failure mode of a
+missed webhook is therefore "access lapses on the date we were actually paid through", which
+is correct rather than merely safe. `expireLapsedMemberships()` sweeps for it hourly from the
+worker.
+
+**Cancelled ≠ ended.** A member who cancels keeps full access to `current_period_end`;
+`cancel_at_period_end` records the intent and the lapse sweep performs the downgrade. Only
+`ops_finance` may end a membership immediately, because revoking access someone has paid for
+is a refund decision, not a cancellation.
+
+**Halted grants access.** A `halted` subscription is one whose renewal payment failed and
+which Razorpay is still retrying. Revoking on `halted` would cut off a paying member because
+their card expired; `paid_until` is what ends access.
+
+**Only a signature-verified webhook grants tier.** `POST /api/v1/billing/subscription` creates
+the gateway object and our row and grants nothing. The self-reported `source: 'exporter_update'`
+path on the commitment-fee route is **refused whenever Razorpay is configured** — with a
+gateway present it is a button that grants a free membership to anyone who sends the request.
+It remains available only when the gateway is unconfigured (local/test), so paid tier stays
+reachable on a developer machine.
+
+**Deny-by-default extends to spend.** `CAPABILITY_MIN_TIER` protects capabilities that exist;
+it cannot protect a route that forgets to check one. So the tier gate is asserted a second
+time at `enqueueJob()`, the last shared choke point before provider budget is committed — see
+`src/lib/billing/costed-work.ts`. Free tenants get a fixture-backed **sample** instead
+(`src/lib/billing/preview.ts`, tagged `EvidenceOrigin.preview`), which spends no credits and
+touches no warehouse row.
 
 Role limits still apply independently. A **paid** exporter still cannot `outreach.send` or
 `agent.assign` — those are agent/ops capabilities and no amount of money changes that.
@@ -154,8 +205,18 @@ enforced by tier, not by the absence of an assignment — a free org with an act
 from the moment of registration — free tier's next step is paying it, not running full
 Demand Discovery, which still requires `paid` (§3a).
 
-**Paid** — unlocked by paying the commitment fee (§3a): full ranked Demand Discovery
-(ranked markets, market detail, save/select) plus the full agent-assisted workflow.
+**Paid** — unlocked by a **recurring Premium membership** (§3b), or permanently by the legacy
+commitment fee (§3a): full ranked Demand Discovery (ranked markets, market detail,
+save/select) plus the full agent-assisted workflow.
+
+**What Free sees of Paid.** A withheld feature is *not* simply a padlock. Where a genuine
+sample exists, free tier gets a labelled, fixture-backed demo of the real surface — ranked
+markets with scores and reasoning, scored buyers, a generated document set — rendered through
+`SamplePanel` and built entirely from constants. No provider request, no warehouse query, no
+job, no `DiscoveryRun` row. A free signup therefore cannot cost provider budget, which matters
+most at exactly the moment acquisition starts working. Sample buyers use invented names and
+carry no contact details at all, because a plausible fake email someone tries to mail is worse
+than a locked state.
 
 ### Ad-hoc product context
 

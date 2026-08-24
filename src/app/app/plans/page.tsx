@@ -20,7 +20,7 @@
 import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { getPrincipal } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { PageHeader, SectionHeading, StatusChip } from '@/components/ui';
@@ -62,10 +62,23 @@ function date(value: Date | null): string | null {
 }
 
 export default async function PlansPage() {
-  const principal = await requireExporterPrincipal();
+  // `getPrincipal()`, NOT `requireExporterPrincipal()`.
+  //
+  // The guards in auth.ts THROW an ApiError rather than redirecting, which in a server
+  // component surfaces as a 500 — so `requireExporterPrincipal()` here turned every
+  // anonymous visit to the pricing page into an error page. That is the worst possible
+  // route to 500 on: it is the one URL that gets shared, linked and clicked by people who
+  // are not signed in yet, and `/app/billing` redirects here too.
+  //
+  // The exporter layout deliberately does not require a session (docs/14 — Markets and
+  // Buyers are open to visitors), so every page under /app owns its own requirement. This
+  // page's requirement is "a registered tenant", and the two ways of failing it have
+  // different answers: no session at all means sign in, a guest session means register.
+  const principal = await getPrincipal();
+  if (!principal?.exporter_org_id) redirect('/login?callbackUrl=/app/plans');
 
   const org = await prisma.exporterOrg.findUniqueOrThrow({
-    where: { id: principal.exporter_org_id as string },
+    where: { id: principal.exporter_org_id },
     select: {
       tier: true,
       paid_until: true,
@@ -83,7 +96,7 @@ export default async function PlansPage() {
 
   const [pricing, subscription] = await Promise.all([
     getConfig('billing.plans'),
-    governingSubscription(principal.exporter_org_id as string),
+    governingSubscription(principal.exporter_org_id),
   ]);
 
   const monthlyPrice = pricing.premium_monthly;

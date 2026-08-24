@@ -23,7 +23,9 @@ import { Suspense } from 'react';
 import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import { getPrincipal } from '@/lib/auth';
+import { getConfig } from '@/lib/config';
 import { PageHeader, Skeleton } from '@/components/ui';
+import { UpgradeBanner } from './UpgradeBanner';
 import {
   AssignedAgentModule,
   DealPipelineModule,
@@ -49,6 +51,16 @@ export default async function OverviewPage() {
   const orgId = principal.exporter_org_id!;
   const tier = principal.tier as 'free' | 'paid';
 
+  // Read, never hardcoded — `billing.plans` is the one source for what a membership costs.
+  const pricing = tier === 'free' ? await getConfig('billing.plans') : null;
+  const fromPrice = pricing
+    ? new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: pricing.premium_monthly.currency,
+        maximumFractionDigits: 0,
+      }).format(Number(pricing.premium_monthly.amount))
+    : null;
+
   return (
     <div className="pb-16">
       <PageHeader
@@ -62,6 +74,10 @@ export default async function OverviewPage() {
       <Suspense fallback={null}>
         <RiskBannerModule orgId={orgId} />
       </Suspense>
+
+      {/* Below the risk banner, deliberately: a real blocker on your account outranks an
+          upsell, and reversing them would put a sales prompt above a warning. */}
+      {fromPrice ? <UpgradeBanner priceDisplay={`${fromPrice}/month`} /> : null}
 
       <div className="mt-6">
         <Suspense fallback={<ModuleSkeleton height="h-24" />}>

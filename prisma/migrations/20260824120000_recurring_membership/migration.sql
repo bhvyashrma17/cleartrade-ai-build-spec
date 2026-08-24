@@ -1,7 +1,7 @@
 -- Recurring membership (Subscription) — the paid tier becomes time-bounded.
 --
 -- Backfill posture: existing `paid` orgs got there via the one-time commitment fee, which
--- does not expire. They are left with `paid_until = NULL`, which `syncTierFromSubscription`
+-- does not expire. They are left with `paid_until = NULL`, which `resolveTier()`
 -- reads as "non-expiring grant" — so this migration cannot revoke access from anyone who
 -- already has it. That is deliberate: a membership migration that silently downgrades
 -- paying tenants is the worst possible failure mode here.
