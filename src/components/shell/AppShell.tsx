@@ -277,6 +277,7 @@ export function AppShell({
               >
                 {active ? <span aria-hidden="true" className="absolute inset-x-5 top-0 h-[2px] bg-accent" /> : null}
                 {item.label}
+                {item.label === 'More' ? <span className="sr-only"> exporter options</span> : null}
               </Link>
             );
           })}
