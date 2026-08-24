@@ -249,9 +249,19 @@ export function AppShell({
         {/* Below lg the horizontal nav would overflow, so it becomes a scrolling rail
             rather than collapsing into a hamburger — a queue worker on a tablet should
             not have to open a menu to change surface. */}
+        {/* Measured at 375px: this rail's content is 444px wide, so four of the eight
+            exporter destinations sat off the right edge with nothing on screen saying
+            so — it read as a truncated list rather than a scrollable one. The mask
+            fades the last few pixels, which is the one affordance that survives having
+            no scrollbar on touch. `[scrollbar-width:none]` hides the bar where one
+            would otherwise appear over the content on desktop-class touch devices. */}
         <nav
           aria-label={`${portal} navigation, compact`}
-          className="flex items-center gap-1 overflow-x-auto border-t border-line bg-ground px-4 py-1.5 lg:hidden"
+          className="flex items-center gap-1 overflow-x-auto border-t border-line bg-ground px-4 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden"
+          style={{
+            maskImage: 'linear-gradient(to right, black calc(100% - 28px), transparent)',
+            WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 28px), transparent)',
+          }}
         >
           {navigation.map((item) => {
             const active = isActive(pathname, item.href);
@@ -261,7 +271,8 @@ export function AppShell({
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={clsx(
-                  'focus-visible-ring shrink-0 rounded-md px-2.5 py-1.5 text-xs transition-colors duration-fast',
+                  // 44px under a thumb, 32px from `md` up where a pointer is doing the work.
+                  'focus-visible-ring flex min-h-11 shrink-0 items-center rounded-md px-3 text-xs transition-colors duration-fast md:min-h-0 md:px-2.5 md:py-1.5',
                   active ? 'bg-surface-2 text-bone' : 'text-muted hover:text-bone',
                 )}
               >
@@ -275,8 +286,13 @@ export function AppShell({
       <main
         className={clsx(
           'mx-auto min-h-screen max-w-shell px-4 sm:px-6',
-          // The compact nav rail adds a second row under the bar below lg.
-          'pt-[calc(var(--topbar-height)+40px)] lg:pt-topbar',
+          // The compact nav rail is a second row INSIDE the fixed header, so the offset
+          // has to clear both. The old `+40px` was 5px short of the rail's real 45px even
+          // before the touch-target work, which left the top of every page tucked under
+          // it; measured at 375px the rail is now 57px, and 46px from `md` up where the
+          // links go back to pointer size. Measured, not estimated — if either the rail's
+          // padding or its font changes, re-measure rather than nudging these numbers.
+          'pt-[calc(var(--topbar-height)+58px)] md:pt-[calc(var(--topbar-height)+46px)] lg:pt-topbar',
           portal === 'exporter' && 'pb-20 md:pb-0',
         )}
       >

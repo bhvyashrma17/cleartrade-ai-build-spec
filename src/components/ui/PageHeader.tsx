@@ -35,8 +35,12 @@ export function PageHeader({
   actionsAlign = 'end',
   className,
 }: PageHeaderProps) {
+  // `pt-10 pb-6` plus a 40px Didone title spent over half of a 667px phone screen
+  // before any content appeared. The type size steps down through `--text-title-page`
+  // in globals.css; this is the matching padding step. Desktop keeps both, unchanged,
+  // from `md` up.
   return (
-    <header className={clsx('pb-6 pt-10', className)}>
+    <header className={clsx('pb-4 pt-6 md:pb-6 md:pt-10', className)}>
       <div
         className={clsx(
           actions && ['flex flex-wrap justify-between gap-4', actionsAlign === 'end' ? 'items-end' : 'items-start'],
@@ -46,12 +50,12 @@ export function PageHeader({
           {eyebrow ? <div className="eyebrow mb-3">{eyebrow}</div> : null}
           <h1 className="display text-title-page text-bone text-balance">{title}</h1>
           {description ? (
-            <p className="mt-3 max-w-2xl text-sm text-muted text-pretty">{description}</p>
+            <p className="mt-2 max-w-2xl text-sm text-muted text-pretty md:mt-3">{description}</p>
           ) : null}
         </div>
         {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      {meta ? <div className="mt-6">{meta}</div> : null}
+      {meta ? <div className="mt-4 md:mt-6">{meta}</div> : null}
     </header>
   );
 }

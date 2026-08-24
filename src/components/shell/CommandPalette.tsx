@@ -118,7 +118,7 @@ export function CommandPalette({ portal, navigation }: { portal: Portal; navigat
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        className="focus-visible-ring group flex h-8 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-xs text-muted transition-colors duration-fast hover:border-line-strong hover:text-bone"
+        className="focus-visible-ring group flex h-11 items-center gap-2 rounded-md border border-line bg-surface px-3 text-xs text-muted transition-colors duration-fast hover:border-line-strong hover:text-bone md:h-8 md:px-2.5"
       >
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} aria-hidden="true">
           <circle cx="7" cy="7" r="4.75" />

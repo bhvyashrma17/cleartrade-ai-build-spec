@@ -32,7 +32,10 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
 
 const SIZE_CLASS: Record<ButtonSize, string> = {
   md: 'min-h-control px-4 text-sm',
-  sm: 'min-h-8 px-3 text-xs',
+  // `sm` is a DENSITY choice, not a touch choice. On a pointer it can be 32px; under a
+  // thumb it cannot, and `min-h-8` is a literal so the mobile `--control-h` override in
+  // globals.css never reached it. 44px below `md`, unchanged from `md` up.
+  sm: 'min-h-11 px-3 text-xs md:min-h-8',
 };
 
 export function buttonClass(

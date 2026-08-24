@@ -87,7 +87,8 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
           a centred label on the final stage clipped at the container edge. A segment per
           stage has neither problem, survives any width, and reads as a progress track at
           a glance instead of as a row of checkboxes. */}
-      <ol className="flex min-w-0 flex-1 gap-1.5" aria-label="Export journey progress">
+      <div className="min-w-0 flex-1">
+      <ol className="flex min-w-0 gap-1.5" aria-label="Export journey progress">
         {SEGMENTS.map((segment, index) => {
           const completed = index < currentIndex;
           const isCurrent = index === currentIndex;
@@ -105,9 +106,15 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
                   completed ? 'bg-bone' : isCurrent ? 'bg-accent' : 'bg-line-strong',
                 )}
               />
+              {/* Seven labels across a phone gives each one ~39px, which turned
+                  "Readiness" into "Rea…" and "Buyers" into "Buy…" — measured at
+                  375px. A truncated label is worse than no label: it still costs
+                  the row height and reads as a rendering fault. Below `md` the bars
+                  carry the progress on their own and the stage is named once, in
+                  full, beneath the track. */}
               <span
                 className={clsx(
-                  'mt-2.5 block truncate text-xs transition-colors duration-fast',
+                  'mt-2.5 hidden truncate text-xs transition-colors duration-fast md:block',
                   isCurrent ? 'font-medium text-bone' : reached ? 'text-slate' : 'text-muted',
                 )}
               >
@@ -119,7 +126,15 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
           return (
             <li key={segment.key} className="min-w-0 flex-1">
               {href ? (
-                <Link href={href} aria-current={isCurrent ? 'step' : undefined} className="focus-visible-ring block rounded-sm">
+                // Hiding the label on mobile left this link 4px tall — a 1px bar plus
+                // margins — which is not a target anyone can hit. The padding is added
+                // and then pulled back out with a negative margin, so the tap area grows
+                // to 44px while the bar stays exactly where it was drawn.
+                <Link
+                  href={href}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  className="focus-visible-ring -my-5 block rounded-sm py-5 md:my-0 md:py-0"
+                >
                   {content}
                 </Link>
               ) : (
@@ -129,6 +144,17 @@ export function JourneyProgress({ currentStage, getHref, className }: JourneyPro
           );
         })}
       </ol>
+
+      {/* The phone's replacement for the seven labels above: one line that names the
+          stage in full and says where it sits in the sequence. `aria-hidden` because
+          the <ol> already exposes the same information to a screen reader through
+          `aria-current="step"` and the segment labels — announcing it twice would be
+          noise, not help. */}
+      <p aria-hidden="true" className="mt-2 text-xs text-slate md:hidden">
+        <span className="font-medium text-bone">{SEGMENTS[currentIndex]!.label}</span>
+        <span className="text-muted"> · stage {currentIndex + 1} of {SEGMENTS.length}</span>
+      </p>
+      </div>
     </div>
   );
 }

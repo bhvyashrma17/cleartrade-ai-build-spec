@@ -166,6 +166,70 @@
   --row-h: 36px;    --cell-y: 9px;     --control-h: 32px;
 }
 
+/* ===========================================================================
+   Phones. Everything in this block is scoped to `max-width: 767px`, which is one
+   pixel below Tailwind's `md`, so the desktop rendering is byte-identical to what
+   it was before — no token here exists outside the query.
+
+   Each rule below was written against a measurement taken in a real Chromium at
+   375x667, not from a guess; the numbers in the comments are what was observed.
+   =========================================================================== */
+@media (max-width: 767px) {
+  /* --- THE LAYOUT-VIEWPORT BUG. Read this before touching it. -------------
+     A table wider than the screen inside `overflow-x-auto` scrolls correctly, but
+     on mobile it ALSO expands the *layout viewport*: at 375px wide, /app/plans
+     reported `innerWidth: 497` while `visualViewport.width` stayed 375. Because
+     the top bar and bottom tab bar are `position: fixed; inset-x-0`, they sized to
+     that 497px layout viewport — so the Upgrade button and the profile menu were
+     rendered off the right edge of the screen and could not be tapped at all.
+     `overflow-x: hidden` on html/body does not prevent this; it hides the evidence
+     while leaving the fixed bars broken.
+
+     `contain: layout paint` makes the scroller its own containment context, so its
+     overflow stops contributing to the document width. Measured after: innerWidth
+     375, header 375, and the table still scrolls (scrollWidth 544 > clientWidth
+     343) — the data is not lost, only the viewport damage.
+
+     Scoped with `:has(> table)` rather than to every `.overflow-x-auto`, because
+     `contain: paint` also clips painting and makes the element a containing block
+     for fixed descendants. Table scrollers have neither concern; a wrapper holding
+     a popover would have both. ~20 pages use `<Table className="min-w-[...]">`,
+     so this is a defence for all of them rather than a patch for one. */
+  .overflow-x-auto:has(> table) { contain: layout paint; }
+
+  /* --- Touch targets ---------------------------------------------------
+     `--control-h` is 38px (comfortable) / 32px (compact). Every input and button
+     in the product inherits it, so on a phone every control sat below the 44px
+     minimum Apple's HIG and WCAG 2.5.5 both specify. Raised for touch only; the
+     desktop value is unchanged, and the compact override is re-stated because
+     `[data-density]` and `:root` have equal specificity — without repeating it,
+     agent/ops on a phone would keep 32px controls. */
+  :root, [data-density='compact'] { --control-h: 44px; }
+
+  /* --- iOS Safari zoom-on-focus ----------------------------------------
+     Safari zooms the page when a focused control's font is under 16px, and then
+     does not zoom back out. Controls were rendering at 14px, so tapping any field
+     threw the layout out and left the user pinching to recover. 16px is the
+     threshold, not a preference. `font: inherit` on the element is not enough —
+     the size has to actually resolve to >= 16px. */
+  input:not([type='checkbox']):not([type='radio']),
+  select:not([hidden]),
+  textarea:not([hidden]) { font-size: 16px; }
+
+  /* Native checkboxes and radios render ~13px, which is a 13px tap target sitting
+     next to 16px text. Enlarging the control itself (rather than padding a wrapper)
+     keeps the native focus ring and the platform's own checked styling. */
+  input[type='checkbox'],
+  input[type='radio'] { width: 24px; height: 24px; }
+
+  /* --- Display type ----------------------------------------------------
+     40px of Didone plus `pt-10` spent roughly half of a 667px screen on the page
+     title before any content. The face and the hierarchy are unchanged; only the
+     size steps down, so the page still opens with a display heading. */
+  :root { --text-title-page: 1.875rem; }  /* 30px, from 40px */
+  [data-density='compact'] { --text-title-page: 1.625rem; }  /* 26px, from 32px */
+}
+
 * { box-sizing: border-box; padding: 0; margin: 0; }
 
 /* `font-size` is deliberately NOT set on :root. Every token here is in `rem`, so a

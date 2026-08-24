@@ -43,7 +43,7 @@ export function ProfileMenu({ name, email, portal, role }: { name: string | null
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
-        className="focus-visible-ring flex h-8 max-w-44 items-center gap-2 rounded-md border border-line bg-surface px-1.5 text-left transition-colors duration-fast hover:border-line-strong"
+        className="focus-visible-ring flex h-11 max-w-44 items-center gap-2 rounded-md border border-line bg-surface px-2 text-left transition-colors duration-fast hover:border-line-strong md:h-8 md:px-1.5"
       >
         {/* Square, not a circle: the avatar is a monogram plate, and `rounded-full` here
               was the only circle in a system whose mark is built from hard corners. Bone
