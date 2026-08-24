@@ -32,6 +32,6 @@ describe('authenticated Comtrade response transformation',()=>{
 
   test('malformed and provider error responses fail rather than returning invented rows',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({error:'bad request'}),{status:400,headers:{'content-type':'application/json'}})));
-    await expect(new ComtradeApiClient('key',policy).fetchChapter(params)).rejects.toThrow(/400/);
+    await expect(new ComtradeApiClient('key',policy).fetchChapter(params)).rejects.toMatchObject({message:expect.stringMatching(/400/),physicalRequestCount:1});
   });
 });

@@ -308,6 +308,7 @@ export async function completeJob(
       status,
       result,
       progress: 100,
+      progress_stage: 'completed',
       completed_at: new Date(),
       error_code: status === JobStatus.failed ? 'INGEST_FAILED' : null,
       error_message: status === JobStatus.failed ? 'The domain ingest failed. Inspect the linked IngestRun.' : null,
@@ -371,6 +372,10 @@ export async function updateJobProgress(jobId: string, progress: number) {
   });
 }
 
+export async function updateJobStage(jobId:string,stage:string,progress:number,checkpoint?:Prisma.InputJsonValue){
+  return prisma.job.update({where:{id:jobId},data:{progress_stage:stage,progress:Math.max(0,Math.min(100,Math.round(progress))),...(checkpoint===undefined?{}:{checkpoint})}});
+}
+
 export async function cancelJob(jobId: string) {
   return prisma.job.updateMany({
     // Only non-terminal jobs can be cancelled — cancelling a completed job would
@@ -426,6 +431,7 @@ export interface JobContext {
   target_id: string | null;
   correlation_id: string;
   reportProgress: (percent: number) => Promise<void>;
+  reportStage?: (stage:string,percent:number,checkpoint?:Prisma.InputJsonValue) => Promise<void>;
 }
 
 export interface JobOutcome {
@@ -471,6 +477,9 @@ export async function runClaimedJob(job: {
       correlation_id: job.correlation_id,
       reportProgress: async (percent) => {
         await updateJobProgress(job.id, percent);
+      },
+      reportStage: async (stage,percent,checkpoint) => {
+        await updateJobStage(job.id,stage,percent,checkpoint);
       },
     });
     await completeJob(job.id, job.attempt_no, outcome.result, outcome.status);

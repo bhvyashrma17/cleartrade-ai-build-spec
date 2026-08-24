@@ -36,6 +36,10 @@ export function parseOptionalProviderNumber(value:unknown):{value:number|null;st
 function retryAfterMs(response:Response):number|null { const raw=response.headers.get('retry-after'); if(!raw)return null; const seconds=Number(raw); if(Number.isFinite(seconds))return Math.max(0,seconds*1000); const at=Date.parse(raw); return Number.isFinite(at)?Math.max(0,at-Date.now()):null; }
 function apiError(status:number, body:unknown):Error { const r=body&&typeof body==='object'?body as Record<string,unknown>:null; const message=typeof r?.message==='string'?r.message:typeof body==='string'?body:JSON.stringify(body); return new Error(`Comtrade request failed: ${status}${message?` ${message}`:''}`); }
 function revisionCode(revision:string){const normalized=revision.replace(/[^0-9]/g,'');const map:Record<string,string>={'1992':'H0','1996':'H1','2002':'H2','2007':'H3','2012':'H4','2017':'H5','2022':'H6'};return map[normalized]??revision;}
+function providerRequestError(error:unknown,physicalRequestCount:number){
+  if(error instanceof ComtradeProviderRequestError||error instanceof ComtradeRateLimitError)return error;
+  return new ComtradeProviderRequestError(error instanceof Error?error.message:String(error),physicalRequestCount,{cause:error});
+}
 function quotaMetadata(headers:Headers){
   const number=(...names:string[])=>{for(const name of names){const raw=headers.get(name);if(raw!=null&&Number.isFinite(Number(raw)))return Number(raw);}return null;};
   const reset=headers.get('x-ratelimit-reset')??headers.get('ratelimit-reset');
@@ -51,7 +55,7 @@ export class ComtradeApiClient implements ComtradeClient {
     if(!params.hs_codes.length||params.hs_codes.some(c=>!/^\d{6}$/.test(c)||!c.startsWith(params.hs_chapter)))throw new Error('Comtrade fetch requires explicit six-digit codes from the requested chapter.');
     const frequency=params.frequency??'A',partner2=params.partner2??'0',customs=params.customs_code??'C00',mos=params.mode_of_supply??'0',revision=params.hs_revision??'unknown';
     if(params.purpose==='country_truth'&&revision==='unknown')throw new Error('Country Truth requests require an explicit HS revision.');
-    const url=new URL(this.baseUrl); url.searchParams.set('reporterCode',params.reporter); url.searchParams.set('partnerCode',params.partner);url.searchParams.set('partner2Code',partner2); url.searchParams.set('period',String(params.year)); url.searchParams.set('cmdCode',params.hs_codes.join(',')); url.searchParams.set('flowCode',params.flow_direction==='export'?'X':'M');url.searchParams.set('freqCode',frequency);url.searchParams.set('clCode',revisionCode(revision));url.searchParams.set('customsCode',customs);url.searchParams.set('mosCode',mos);url.searchParams.set('aggregateBy','none');url.searchParams.set('breakdownMode','classic');
+    const url=new URL(this.baseUrl); url.searchParams.set('reporterCode',params.reporter);if(params.partner!=='all')url.searchParams.set('partnerCode',params.partner);url.searchParams.set('partner2Code',partner2); url.searchParams.set('period',String(params.year)); url.searchParams.set('cmdCode',params.hs_codes.join(',')); url.searchParams.set('flowCode',params.flow_direction==='export'?'X':'M');url.searchParams.set('freqCode',frequency);url.searchParams.set('clCode',revisionCode(revision));url.searchParams.set('customsCode',customs);url.searchParams.set('mosCode',mos);url.searchParams.set('breakdownMode','classic');
     let lastError:unknown,physicalCalls=0;
     for(let attempt=0;attempt<=this.policy.max_retries;attempt++) {
       if(attempt)await sleep(this.policy.retry_backoff_ms*2**(attempt-1));
@@ -61,12 +65,12 @@ export class ComtradeApiClient implements ComtradeClient {
       try{response=await fetch(url,{headers:this.apiKey?{'Ocp-Apim-Subscription-Key':this.apiKey}:undefined,signal:controller.signal});}
       catch(error){lastError=error;continue;}
       finally{clearTimeout(timer);}
-      const retrievedAt=new Date();await params.after_physical_response?.({status:response.status,headers:response.headers,retrieved_at:retrievedAt});
+      const retrievedAt=new Date();try{await params.after_physical_response?.({status:response.status,headers:response.headers,retrieved_at:retrievedAt});}catch(error){throw providerRequestError(error,physicalCalls);}
       if(response.status===429){const wait=retryAfterMs(response);lastError=new ComtradeRateLimitError(`Comtrade rate limited request ${attempt+1}.`,wait,physicalCalls);if(attempt<this.policy.max_retries&&wait!=null&&wait<=60_000)await sleep(wait);continue;}
       const raw=await response.text();
       if(response.status>=500){lastError=apiError(response.status,raw);continue;}
-      let body:{data?:ComtradeApiRow[];count?:number}|Record<string,unknown>|null=null;try{body=JSON.parse(raw) as typeof body;}catch{throw new Error('Comtrade response is not valid JSON.');}
-      if(!response.ok)throw apiError(response.status,body); if(!body||!Array.isArray((body as {data?:unknown}).data))throw new Error('Comtrade response has no data array.');
+      let body:{data?:ComtradeApiRow[];count?:number}|Record<string,unknown>|null=null;try{body=JSON.parse(raw) as typeof body;}catch(error){throw providerRequestError(new Error('Comtrade response is not valid JSON.',{cause:error}),physicalCalls);}
+      if(!response.ok)throw providerRequestError(apiError(response.status,body),physicalCalls); if(!body||!Array.isArray((body as {data?:unknown}).data))throw providerRequestError(new Error('Comtrade response has no data array.'),physicalCalls);
       const data=(body as {data:ComtradeApiRow[];count?:number}).data,providerCount=Number.isFinite(Number((body as {count?:number}).count))?Number((body as {count?:number}).count):null;
       const requested=new Set(params.hs_codes),seen=new Set<string>(),rows:ComtradeFlowRow[]=[];let rejected=0;
       for(const row of data){

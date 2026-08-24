@@ -14,6 +14,25 @@ const params={hs_chapter:'09',reporter:'276',partner:'0',partner2:'0',year:2024,
 const row={reporterCode:276,partnerCode:0,partner2Code:0,cmdCode:'090111',refYear:2024,period:'2024',flowCode:'M',freqCode:'A',primaryValue:100,qty:10,qtyUnitAbbr:'kg',customsCode:'C00',mosCode:'0'};
 const response=(data:unknown[],count=data.length,headers:Record<string,string>={})=>new Response(JSON.stringify({count,data}),{status:200,headers:{'content-type':'application/json',...headers}});
 
+function expectCountryTruthRequest(input:unknown,reporter:string,partner:string|null){
+  const url=new URL(String(input));
+  expect(`${url.origin}${url.pathname}`).toBe('https://comtradeapi.un.org/data/v1/get/C/A/HS');
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    reporterCode:reporter,
+    ...(partner===null?{}:{partnerCode:partner}),
+    partner2Code:'0',
+    period:'2025',
+    cmdCode:'100630',
+    flowCode:'M',
+    freqCode:'A',
+    clCode:'H6',
+    customsCode:'C00',
+    mosCode:'0',
+    breakdownMode:'classic',
+  });
+  expect(url.searchParams.has('aggregateBy')).toBe(false);
+}
+
 afterEach(()=>{vi.unstubAllGlobals();setComtradeClient(null);});
 afterAll(()=>prisma.$disconnect());
 
@@ -47,6 +66,24 @@ describe('Country Truth provider boundary',()=>{
     expect(result.evidence_pages?.[0]).toMatchObject({completeness:'COMPLETE',completeness_metadata:{rejected_rows:0}});
   });
 
+  test.each(['276','784','842'])('builds valid World, India and all-supplier HS6 requests for reporter %s',async reporter=>{
+    const fetchMock=vi.fn()
+      .mockResolvedValueOnce(response([{...row,reporterCode:Number(reporter),partnerCode:0,cmdCode:'100630',refYear:2025,period:'2025',clCode:'H6'}]))
+      .mockResolvedValueOnce(response([{...row,reporterCode:Number(reporter),partnerCode:699,cmdCode:'100630',refYear:2025,period:'2025',clCode:'H6'}]))
+      .mockResolvedValueOnce(response([{...row,reporterCode:Number(reporter),partnerCode:156,cmdCode:'100630',refYear:2025,period:'2025',clCode:'H6'}]));
+    vi.stubGlobal('fetch',fetchMock);
+    const client=new ComtradeApiClient('key',policy);
+    const request={...params,hs_chapter:'10',hs_codes:['100630'],reporter,year:2025,hs_revision:'HS2022'};
+
+    await client.fetchChapter({...request,partner:'0'});
+    await client.fetchChapter({...request,partner:'699'});
+    await client.fetchChapter({...request,partner:'all'});
+
+    expectCountryTruthRequest(fetchMock.mock.calls[0][0],reporter,'0');
+    expectCountryTruthRequest(fetchMock.mock.calls[1][0],reporter,'699');
+    expectCountryTruthRequest(fetchMock.mock.calls[2][0],reporter,null);
+  });
+
   test('real zero quantity remains observed zero without becoming a unit-value denominator',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([{...row,qty:0}])))
     const result=await new ComtradeApiClient('key',policy).fetchChapter(params);
@@ -76,6 +113,9 @@ describe('Country Truth provider boundary',()=>{
 
     vi.stubGlobal('fetch',vi.fn().mockImplementation(()=>Promise.resolve(new Response('down',{status:503}))));
     await expect(new ComtradeApiClient('key',policy).fetchChapter(params)).rejects.toMatchObject({physicalRequestCount:2});
+
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({message:'aggregateBy is invalid'}),{status:400,headers:{'content-type':'application/json'}})));
+    await expect(new ComtradeApiClient('key',policy).fetchChapter(params)).rejects.toMatchObject({physicalRequestCount:1});
   });
 });
 
@@ -90,6 +130,18 @@ describe('provider quota reconciliation',()=>{
 });
 
 describe('immutable evidence persistence and cache',()=>{
+  test('failed provider responses count outbound attempts without counting a successful ingest',async()=>{
+    const reporter=String(700+Math.floor(Math.random()*90));
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({message:'aggregateBy is invalid'}),{status:400,headers:{'content-type':'application/json'}})));
+    setComtradeClient(new ComtradeApiClient('accounting-test-key',policy));
+    const outcome=await runComtradeIngest({job_id:randomUUID(),attempt_no:1,payload:{hs_chapter:'10',hs_codes:['100630'],reporter,partner:'0',year:2025,flow_direction:'import',hs_revision:'HS2022',frequency:'A',purpose:'country_truth'},exporter_org_id:null,target_id:null,correlation_id:randomUUID(),reportProgress:async()=>undefined});
+    const result=outcome.result as {ingest_run_id:string;records_written:number;ingest_status:string};
+    const ingest=await prisma.ingestRun.findUniqueOrThrow({where:{id:result.ingest_run_id}});
+    expect(outcome.status).toBe('failed');
+    expect(result).toMatchObject({records_written:0,ingest_status:'failed'});
+    expect(ingest).toMatchObject({request_count:1,records_written:0,status:'failed'});
+  });
+
   test('persists raw evidence and normalized missingness, then reuses fresh exact evidence',async()=>{
     const reporter=String(910+Math.floor(Math.random()*80)),year=2088,calls=vi.fn();
     const raw=JSON.stringify({count:2,data:[{kind:'fixture'}]});

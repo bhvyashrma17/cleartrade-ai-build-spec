@@ -41,6 +41,7 @@ import { JobType, OrgTier } from '@prisma/client';
  */
 export const COSTED_JOB_TYPES: readonly JobType[] = [
   JobType.demand_discovery,
+  JobType.country_truth_discovery,
   JobType.buyer_discovery,
   JobType.buyer_intelligence,
   JobType.document_generation,
