@@ -157,15 +157,18 @@ export function TeamPanel({
         <div className="mt-5 max-w-sm rounded-md border border-[var(--color-border)] bg-surface-muted p-3">
           <p className="text-xs font-normal text-primary">Invite a team member</p>
           <div className="mt-2 space-y-2">
-            <Input type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as typeof role)}
-              className="w-full rounded-md border border-[var(--color-border)] bg-surface px-2 py-1.5 text-sm text-primary focus-visible-ring"
-            >
-              <option value="exporter_member">Member</option>
-              <option value="exporter_owner">Owner</option>
-            </select>
+            <Input label="Email address" type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <label className="block">
+              <span className="eyebrow mb-2 block">Account role</span>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as typeof role)}
+                className="min-h-control w-full rounded-md border border-[var(--color-border)] bg-surface px-2 py-1.5 text-sm text-primary focus-visible-ring"
+              >
+                <option value="exporter_member">Member</option>
+                <option value="exporter_owner">Owner</option>
+              </select>
+            </label>
           </div>
           <Button disabled={busy === 'invite' || !email.trim()} onClick={() => void invite()} className="mt-2 min-h-8 px-3 text-xs">
             {busy === 'invite' ? 'Sending…' : 'Send invite'}

@@ -124,8 +124,8 @@ export function CommandPalette({ portal, navigation }: { portal: Portal; navigat
           <circle cx="7" cy="7" r="4.75" />
           <path d="m10.5 10.5 3 3" strokeLinecap="round" />
         </svg>
-        <span className="hidden sm:inline">Search</span>
-        <kbd className="hidden rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted group-hover:text-muted sm:inline">
+        <span className="sr-only sm:not-sr-only">Search</span>
+        <kbd aria-hidden="true" className="hidden rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted group-hover:text-muted sm:inline">
           ⌘K
         </kbd>
       </button>

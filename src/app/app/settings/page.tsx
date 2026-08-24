@@ -85,7 +85,9 @@ export default async function SettingsPage() {
 
           {settings.signInMethods.length > 0 ? (
             <Card title="Security">
-              <ReadOnlyRow label="Sign-in method" value={settings.signInMethods.join(', ')} />
+              <dl>
+                <ReadOnlyRow label="Sign-in method" value={settings.signInMethods.join(', ')} />
+              </dl>
             </Card>
           ) : null}
 

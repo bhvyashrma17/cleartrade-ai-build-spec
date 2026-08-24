@@ -39,6 +39,14 @@ describe('authenticated profile menu', () => {
     expect(source).toContain('action={signOutFromSettings}');
     expect(source).toContain("'Personal settings'");
     expect(source).toContain('Admin settings');
+    expect(source).toContain('sr-only truncate text-xs font-medium text-slate sm:not-sr-only');
+    expect(source).not.toContain('aria-label={`${monogram}');
     expect(source).not.toMatch(/password_hash|provider_account_id|access_token|refresh_token|client_secret/i);
+  });
+
+  test('responsive shell triggers retain accessible names when their visible labels collapse', async () => {
+    const commandSource = await readFile(path.resolve('src/components/shell/CommandPalette.tsx'), 'utf8');
+    expect(commandSource).toContain('className="sr-only sm:not-sr-only">Search</span>');
+    expect(commandSource).toContain('<kbd aria-hidden="true"');
   });
 });

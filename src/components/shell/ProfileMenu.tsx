@@ -12,6 +12,8 @@ export function ProfileMenu({ name, email, portal, role }: { name: string | null
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   const destinations = profileMenuDestinations(portal, role);
+  const displayName = name || 'Profile';
+  const monogram = (name || email).trim().charAt(0).toUpperCase();
 
   useEffect(() => {
     if (!open) return;
@@ -47,10 +49,10 @@ export function ProfileMenu({ name, email, portal, role }: { name: string | null
               was the only circle in a system whose mark is built from hard corners. Bone
               on ink rather than the accent — seal is never an identity colour. */}
         <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-accent text-[10px] font-semibold text-ground">
-          {(name || email).trim().charAt(0).toUpperCase()}
+          {monogram}
         </span>
-        <span className="hidden min-w-0 sm:block">
-          <span className="block truncate text-xs font-medium text-slate">{name || 'Profile'}</span>
+        <span className="min-w-0">
+          <span className="sr-only truncate text-xs font-medium text-slate sm:not-sr-only sm:block">{displayName}</span>
         </span>
         <svg aria-hidden="true" viewBox="0 0 16 16" className={`size-3.5 shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.75"><path d="m4 6 4 4 4-4" /></svg>
       </button>
