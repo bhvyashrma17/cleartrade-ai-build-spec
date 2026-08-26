@@ -21,6 +21,7 @@ import { errorResponse, newCorrelationId, notFound, single } from '@/lib/errors'
 import { isTerminal } from '@/lib/jobs';
 import { canAccessOrg, isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { projectCountryTruthAssessment } from '@/lib/country-truth-ui';
 
 export async function GET(request: NextRequest, context: { params: Promise<{ jobId: string }> }) {
   const correlationId = newCorrelationId();
@@ -61,6 +62,13 @@ export async function GET(request: NextRequest, context: { params: Promise<{ job
 
     const policy = await getConfig('jobs.policy');
     const done = isTerminal(job.status);
+    const countryTruthAssessments = done && job.type === 'country_truth_discovery'
+      ? await prisma.marketAssessment.findMany({
+          where: { run: { job_id: job.id }, model_version: 'market-attractiveness-v4' },
+          orderBy: { country_code: 'asc' },
+          select: { country_code: true, overall_score: true, confidence_score: true, country_truth_assessment_state: true, rationale: true, country_trade_metrics: { select: { metrics_payload: true } } },
+        })
+      : null;
 
     return NextResponse.json(
       single(
@@ -73,7 +81,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ job
           target: job.target_type ? { type: job.target_type, id: job.target_id } : null,
           // Only a finished job has a meaningful result; exposing a partial one mid-flight
           // would invite the UI to render half a ranking as if it were final.
-          result: done ? job.result : null,
+          result: done
+            ? job.type === 'country_truth_discovery'
+              ? { country_analysis: { assessments: (countryTruthAssessments ?? []).map(projectCountryTruthAssessment) } }
+              : job.result
+            : null,
           error: job.error_code
             ? { code: job.error_code, message: job.error_message }
             : null,

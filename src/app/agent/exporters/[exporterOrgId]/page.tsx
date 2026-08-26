@@ -22,6 +22,7 @@ import {ProductClassificationForm} from '@/components/agent/ProductClassificatio
 import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
 import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
+import { CountryAnalysis } from '@/components/agent/CountryAnalysis';
 import { buyerControlRows } from '@/lib/buyer-control';
 import { activeOnly as activeOnlyCandidates } from '@/lib/demand-control';
 import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/demand-control';
@@ -211,6 +212,24 @@ export default async function ExporterAccountPage({
       </nav>
 
       {activeTab === 'demand' ? (
+        <div className="space-y-4">
+        <CountryAnalysis exporterOrgId={org.id} products={org.products.map(product => ({
+          id: product.id,
+          name: product.name,
+          classificationStatus: product.hs_classification_status ?? 'not classified',
+          canRun: (() => {
+            const confirmed = product.classification_history.find(item => item.status === 'confirmed');
+            return product.hs_classification_status === 'confirmed' && Boolean(
+              confirmed && confirmed.confirmed_at && confirmed.confirmed_by_id &&
+              confirmed.revision === product.hs_classification_revision &&
+              !product.classification_history.some(item => item.revision > confirmed.revision) &&
+              product.hs_code === confirmed.hs6_code && product.itc_hs_code === confirmed.itc_hs_code &&
+              product.hs_nomenclature === confirmed.nomenclature && product.hs_nomenclature_version === confirmed.nomenclature_version &&
+              product.hs_confirmed_by_id === confirmed.confirmed_by_id && product.hs_confirmed_at &&
+              product.hs_code && /^\d{6}$/.test(product.hs_code) && ['2022', 'HS2022'].includes(confirmed.nomenclature_version),
+            );
+          })(),
+        }))} />
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
           <h2 className="text-lg font-semibold text-primary">Demand Discovery control</h2>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
@@ -225,6 +244,7 @@ export default async function ExporterAccountPage({
             />
           </div>
         </section>
+        </div>
       ) : activeTab === 'buyers' ? (
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
           <h2 className="text-lg font-semibold text-primary">Buyer Discovery control</h2>

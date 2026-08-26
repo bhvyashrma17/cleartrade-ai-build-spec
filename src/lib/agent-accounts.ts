@@ -20,7 +20,7 @@ export async function loadExporterAccountScoped(principal: Principal, exporterOr
     where: { id: exporterOrgId },
     include: {
       assigned_agent: { select: { id: true, name: true } },
-      products: { include: { certifications: true }, orderBy: { created_at: 'asc' } },
+      products: { include: { certifications: true, classification_history: { orderBy: { revision: 'desc' } } }, orderBy: { created_at: 'asc' } },
       readiness_assessments: { where: { is_current: true }, take: 1 },
     },
   });
