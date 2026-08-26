@@ -66,4 +66,9 @@ describe('Agent Country Analysis UI', () => {
     expect(jobRoute).not.toMatch(/TradeFlow|WarehouseDiscovery|warehouse-engine/);
     expect(component).not.toMatch(/TradeFlow|WarehouseDiscovery|manifest|policy.hash|raw job payload/i);
   });
+
+  test('formats market size with the shared compact USD formatter', () => {
+    expect(component).toContain('formatCompactUsd(metric.value)');
+    expect(component).not.toContain("Intl.NumberFormat('en-IN'");
+  });
 });

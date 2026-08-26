@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import { COUNTRY_TRUTH_PILOT_COUNTRIES, countryTruthStage, type CountryTruthAssessmentView, type MetricView } from '@/lib/country-truth-ui';
 import { Button, StatusChip } from '@/components/ui';
+import { formatCompactUsd } from '@/lib/usd-format';
 
 type ProductOption = { id: string; name: string; classificationStatus: string; canRun: boolean };
 type JobResponse = { data: { job_id: string; status: string; progress: number; progress_stage: string | null; result: { country_analysis?: { assessments: CountryTruthAssessmentView[] } } | null; error: { code: string; message: string | null } | null }; meta?: { poll_after_ms?: number | null; is_terminal?: boolean; is_partial?: boolean } };
 
 function metricText(metric: MetricView, kind: 'money' | 'percent' | 'hhi') {
   if (metric.value == null) return metric.reason ? `Unavailable — ${metric.reason}` : 'Unavailable';
-  if (kind === 'money') return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(metric.value);
+  if (kind === 'money') return formatCompactUsd(metric.value);
   if (kind === 'percent') return `${metric.value.toFixed(1)}%`;
   return metric.value.toFixed(3);
 }
