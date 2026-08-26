@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { EvidenceOrigin, OrgTier, ProductClassificationMethod, ProductClassificationStatus, TradeSourceMode, UserRole } from '@prisma/client';
+import { EvidenceOrigin, OrgTier, Prisma, ProductClassificationMethod, ProductClassificationStatus, TradeSourceMode, UserRole } from '@prisma/client';
 import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
 import { setComtradeClient, type ComtradeFetchParams } from '../src/lib/comtrade';
 import { createCountryEvidencePlan, executeCountryEvidencePlan, resolveCountryEvidencePlan } from '../src/lib/country-evidence/service';
@@ -8,6 +8,8 @@ import { reserveProviderQuota } from '../src/lib/provider-quota';
 import { calculateAndPersistCountryTradeMetrics, formatCountryTradeMetricsReconciliation } from '../src/lib/country-trade-metrics/service';
 import { CONFIG_DEFAULTS } from '../src/lib/config';
 import { createCountryTruthV4Assessments } from '../src/lib/discovery/country-truth-v4-service';
+import { canonicalComtradeRequest, comtradeRequestFingerprint } from '../src/lib/comtrade/request';
+import { COMTRADE_NORMALIZATION_VERSION } from '../src/lib/comtrade/normalization';
 
 async function confirmedClassification(revision='HS2022'){
   const marker=`country-plan-${randomUUID()}`;
@@ -32,6 +34,35 @@ function fixtureClient(options:{omitIndia?:boolean}={}){
 afterEach(()=>setComtradeClient(null));afterAll(()=>prisma.$disconnect());
 
 describe('Country Evidence persisted plan and manifest',()=>{
+  test('re-normalizes cached v1 evidence into immutable v2 observations without a provider call',async()=>{
+    const classification=await confirmedClassification(),fixture=fixtureClient();setComtradeClient(fixture.client);
+    const plan=await createCountryEvidencePlan({product_classification_id:classification.id,as_of_date:new Date('2026-08-26T00:00:00Z'),candidate_reporters:['392'],source_mode:TradeSourceMode.fixture});
+    expect((plan.policy_snapshot as {frozen_definition?:{normalization_version?:string}}).frozen_definition?.normalization_version).toBe(COMTRADE_NORMALIZATION_VERSION);
+    let sequence=0;
+    for(const item of plan.items){
+      const partners=item.partner_scope==='all_suppliers'?[['380',60],['699',40]]:[[item.partner_code,item.partner_scope==='india'?10:100]];
+      const request=canonicalComtradeRequest({provider:'un_comtrade',dataset:'goods-trade',source_mode:'fixture',purpose:'country_truth',reporter_code:item.reporter_code,partner_code:item.partner_code,partner2_code:'0',flow_direction:'import',frequency:'A',period:String(item.period),hs_codes:[item.hs_code],hs_revision:item.hs_revision,customs_code:item.customs_code,mode_of_supply:item.mode_of_supply});
+      const raw=JSON.stringify({count:partners.length,data:partners.map(([partner,value])=>({reporterCode:392,partnerCode:Number(partner),partner2Code:0,cmdCode:item.hs_code,refYear:item.period,period:String(item.period),flowCode:'M',freqCode:'A',primaryValue:value,customsCode:'C00',mosCode:'0',clCode:'H6'}))});
+      await prisma.sourceEvidence.create({data:{provider:'un_comtrade',dataset:'fixture-country-evidence',dataset_version:'v1',source_origin:EvidenceOrigin.fixture,environment:'test',request_fingerprint:comtradeRequestFingerprint(request),request_parameters:request as unknown as Prisma.InputJsonValue,redacted_request:'comtrade://cached-v1',http_status:200,response_checksum:createHash('sha256').update(raw).digest('hex'),raw_response_text:raw,retrieved_at:new Date(),provider_row_count:partners.length,returned_row_count:partners.length,completeness:'COMPLETE',parser_version:'comtrade-parser-v2',status:'accepted',observations:{create:partners.map(([partner,value])=>({observation_key:`cached-v1-${randomUUID()}-${sequence++}`,reporter_code:'392',reporter_iso2:'JP',partner_code:String(partner),partner_iso2:partner==='380'?null:partner==='699'?'IN':null,partner_is_world:partner==='0',partner2_code:'0',flow_direction:'import',frequency:'A',period:String(item.period),ref_year:item.period,hs_code:item.hs_code,hs_level:6,hs_revision:item.hs_revision,customs_code:'C00',mode_of_supply:'0',trade_value:value,trade_value_status:'observed',quantity_status:'missing',normalization_version:'comtrade-normalization-v1',retrieved_at:new Date(),source_origin:EvidenceOrigin.fixture}))}}});
+    }
+
+    const first=await executeCountryEvidencePlan(plan.id);
+    expect(first.physical_calls).toBe(0);expect(fixture.calls).not.toHaveBeenCalled();
+    if(!first.manifest)throw new Error('Expected a v2 manifest.');
+    expect((first.manifest.manifest_payload as {normalization_version?:string}).normalization_version).toBe(COMTRADE_NORMALIZATION_VERSION);
+    const referencedIds=first.manifest.references.flatMap(reference=>reference.observation_ids);
+    const referenced=await prisma.normalizedTradeObservation.findMany({where:{id:{in:referencedIds}}});
+    expect(referenced.every(row=>row.normalization_version===COMTRADE_NORMALIZATION_VERSION)).toBe(true);
+    expect(referenced.find(row=>row.partner_code==='380')).toMatchObject({partner_iso2:'IT'});
+    expect(await prisma.normalizedTradeObservation.count({where:{source_evidence_id:{in:first.manifest.references.map(reference=>reference.source_evidence_id)},normalization_version:'comtrade-normalization-v1'}})).toBe(12);
+    const v2Count=await prisma.normalizedTradeObservation.count({where:{source_evidence_id:{in:first.manifest.references.map(reference=>reference.source_evidence_id)},normalization_version:COMTRADE_NORMALIZATION_VERSION}});
+
+    const second=await executeCountryEvidencePlan(plan.id);
+    expect(second.physical_calls).toBe(0);expect(second.manifest?.id).toBe(first.manifest.id);
+    expect(await prisma.normalizedTradeObservation.count({where:{source_evidence_id:{in:first.manifest.references.map(reference=>reference.source_evidence_id)},normalization_version:COMTRADE_NORMALIZATION_VERSION}})).toBe(v2Count);
+    expect(fixture.calls).not.toHaveBeenCalled();
+  });
+
   test('is idempotent, cache-resumable, supplier-complete, and freezes immutable lineage',async()=>{
     const classification=await confirmedClassification(),fixture=fixtureClient();setComtradeClient(fixture.client);
     const args={product_classification_id:classification.id,as_of_date:new Date('2026-08-22T00:00:00Z'),candidate_reporters:['276'],source_mode:TradeSourceMode.fixture};

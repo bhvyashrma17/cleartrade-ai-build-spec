@@ -4,6 +4,7 @@ import { canonicalHash } from '@/lib/country-evidence/planner';
 import { tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { prisma } from '@/lib/prisma';
 import { toIso2 } from '@/lib/comtrade/areas';
+import { COMTRADE_NORMALIZATION_VERSION } from '@/lib/comtrade/normalization';
 import { calculateCountryTradeMetrics, type CountryMetricInput, type MetricFact } from './calculator';
 
 const json=(value:unknown)=>value as Prisma.InputJsonValue;
@@ -19,6 +20,7 @@ async function loadManifestInputs(manifestId:string,policy:CountryTradeMetricPol
     for(const observation of reference.source_evidence.observations){
       if(!selected.has(observation.id))continue;
       if(observation.reporter_code!==reference.reporter_code||observation.ref_year!==reference.period||observation.hs_code!==manifest.plan.hs_code||observation.hs_revision!==manifest.plan.hs_revision)throw new Error(`Manifest reference ${reference.id} contains an incompatible observation.`);
+      if(observation.normalization_version!==COMTRADE_NORMALIZATION_VERSION)throw new Error(`Manifest reference ${reference.id} contains an incompatible normalization version.`);
       facts.push({purpose:reference.purpose as MetricFact['purpose'],reporter_code:observation.reporter_code,partner_code:observation.partner_code,partner_iso2:observation.partner_iso2,partner_is_world:observation.partner_is_world,partner2_code:observation.partner2_code,period:observation.ref_year,hs_code:observation.hs_code,hs_revision:observation.hs_revision,flow_direction:observation.flow_direction,frequency:observation.frequency,trade_value:observation.trade_value==null?null:Number(observation.trade_value),trade_value_status:observation.trade_value_status,quantity:observation.quantity==null?null:Number(observation.quantity),quantity_status:observation.quantity_status,quantity_unit:observation.quantity_unit,net_weight:observation.net_weight==null?null:Number(observation.net_weight),source_evidence_id:reference.source_evidence_id,observation_id:observation.id,retrieved_at:reference.evidence_retrieved_at.toISOString(),freshness_state:reference.freshness_state,evidence_completeness:reference.evidence_completeness,cell_state:reference.cell_state});
     }
   }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { CountryEvidencePolicy } from '@/lib/config';
+import { COMTRADE_NORMALIZATION_VERSION } from '@/lib/comtrade/normalization';
 
 export type EvidencePurpose = 'WORLD_IMPORT_HISTORY' | 'INDIA_IMPORT_HISTORY' | 'LATEST_SUPPLIER_DISTRIBUTION';
 export type PlannedSourceMode = 'authenticated' | 'fixture' | 'mock' | 'preview';
@@ -100,6 +101,7 @@ export function buildCountryEvidencePlan(input: CountryEvidencePlanInput): Froze
     policy_version: input.policy.policy_version,
     policy_config_version: input.policy_config_version,
     policy_hash: policyHash,
+    normalization_version: COMTRADE_NORMALIZATION_VERSION,
     period_set: periods,
     latest_common_year: latest,
     candidate_strategy: input.policy.candidate_strategy,

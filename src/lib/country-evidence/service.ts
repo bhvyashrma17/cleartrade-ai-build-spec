@@ -1,6 +1,7 @@
 import { Prisma, TradeSourceMode } from '@prisma/client';
 import { getComtradeClient } from '@/lib/comtrade';
 import { canonicalComtradeRequest, comtradeRequestFingerprint } from '@/lib/comtrade/request';
+import { COMTRADE_NORMALIZATION_VERSION, COMTRADE_PARSER_VERSION, ensureCurrentComtradeNormalization } from '@/lib/comtrade/normalization';
 import { getConfig, getConfigWithVersion } from '@/lib/config';
 import { isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
@@ -31,7 +32,7 @@ export async function createCountryEvidencePlan(input: Omit<CountryEvidencePlanI
 async function resolveItem(item: Awaited<ReturnType<typeof prisma.countryEvidencePlanItem.findFirstOrThrow>>, sourceMode: TradeSourceMode) {
   const request = requestFor(item, sourceMode);
   const evidence = await prisma.sourceEvidence.findMany({
-    where:{request_fingerprint:comtradeRequestFingerprint(request),source_origin:tradeSourceModeToEvidenceOrigin(sourceMode),parser_version:'comtrade-parser-v2',status:{in:['accepted','partial']}},
+    where:{request_fingerprint:comtradeRequestFingerprint(request),source_origin:tradeSourceModeToEvidenceOrigin(sourceMode),parser_version:COMTRADE_PARSER_VERSION,status:{in:['accepted','partial']}},
     include:{observations:true},orderBy:{retrieved_at:'desc'},take:5,
   });
   const cutoff = new Date(Date.now() - item.freshness_days * 86_400_000);
@@ -42,7 +43,8 @@ async function resolveItem(item: Awaited<ReturnType<typeof prisma.countryEvidenc
     return incompatible?{state:'incompatible',evidence:null,metadata:{reason:'hs_revision_mismatch',found_revision:incompatible.hs_revision,observation_id:incompatible.id,source_evidence_id:incompatible.source_evidence_id}}:{state:'fetch_required',evidence:null,metadata:{reason:'no_matching_evidence'}};
   }
   if (candidate.retrieved_at < cutoff) return {state:'fetch_required',evidence:null,metadata:{reason:'stale',stale_evidence_id:candidate.id,retrieved_at:candidate.retrieved_at.toISOString()}};
-  const observations = candidate.observations.filter(row=>row.reporter_code===item.reporter_code&&row.hs_code===item.hs_code&&row.ref_year===item.period&&row.flow_direction==='import'&&row.hs_revision===item.hs_revision);
+  const normalized = await ensureCurrentComtradeNormalization(candidate);
+  const observations = normalized.filter(row=>row.reporter_code===item.reporter_code&&row.hs_code===item.hs_code&&row.ref_year===item.period&&row.flow_direction==='import'&&row.hs_revision===item.hs_revision);
   if (item.partner_scope !== 'all_suppliers') {
     const cell = observations.find(row=>row.partner_code===item.partner_code);
     if (!cell) return {state:'missing',evidence:candidate,metadata:{reason:'complete_response_has_no_explicit_partner_row',absence_is_not_zero:true,observation_ids:[]}};
@@ -111,8 +113,8 @@ export async function createCountryEvidenceManifest(planId:string) {
   const coverageFailures:string[]=[];
   for(const supplier of plan.items.filter(item=>item.partner_scope==='all_suppliers'&&item.source_evidence)){
     const world=plan.items.find(item=>item.reporter_code===supplier.reporter_code&&item.period===supplier.period&&item.partner_scope==='world');
-    const supplierRows=supplier.source_evidence!.observations.filter(row=>!row.partner_is_world&&row.trade_value!=null&&['observed','observed_zero'].includes(row.trade_value_status));
-    const worldRow=world?.source_evidence?.observations.find(row=>row.partner_is_world&&row.hs_code===plan.hs_code&&row.ref_year===supplier.period);
+    const supplierRows=supplier.source_evidence!.observations.filter(row=>row.normalization_version===COMTRADE_NORMALIZATION_VERSION&&!row.partner_is_world&&row.trade_value!=null&&['observed','observed_zero'].includes(row.trade_value_status));
+    const worldRow=world?.source_evidence?.observations.find(row=>row.normalization_version===COMTRADE_NORMALIZATION_VERSION&&row.partner_is_world&&row.hs_code===plan.hs_code&&row.ref_year===supplier.period);
     if(!worldRow?.trade_value||Number(worldRow.trade_value)<=0){coverageFailures.push(`${supplier.reporter_code}:missing_world_denominator`);continue;}
     const ratio=supplierRows.reduce((sum,row)=>sum+Number(row.trade_value),0)/Number(worldRow.trade_value);
     if(ratio<policy.supplier_coverage_min_ratio||ratio>policy.supplier_coverage_max_ratio)coverageFailures.push(`${supplier.reporter_code}:supplier_coverage_${ratio.toFixed(6)}`);
@@ -120,7 +122,7 @@ export async function createCountryEvidenceManifest(planId:string) {
   const allReusable=plan.items.every(item=>item.resolution_state==='reusable');
   const anyUsable=plan.items.some(item=>item.resolution_state==='reusable');
   const evaluationState=allReusable&&coverageFailures.length===0?'metric_ready':anyUsable?'partial':'not_evaluable';
-  const payload={schema_version:'country-evidence-manifest-v1',plan_key:plan.plan_key,hs_code:plan.hs_code,hs_revision:plan.hs_revision,as_of_date:plan.as_of_date.toISOString(),period_set:plan.period_set,latest_common_year:plan.latest_common_year,source_mode:plan.source_mode,policy_version:plan.policy_version,policy_hash:plan.policy_hash,evaluation_state:evaluationState,coverage_failures:coverageFailures,references};
+  const payload={schema_version:'country-evidence-manifest-v1',plan_key:plan.plan_key,hs_code:plan.hs_code,hs_revision:plan.hs_revision,normalization_version:COMTRADE_NORMALIZATION_VERSION,as_of_date:plan.as_of_date.toISOString(),period_set:plan.period_set,latest_common_year:plan.latest_common_year,source_mode:plan.source_mode,policy_version:plan.policy_version,policy_hash:plan.policy_hash,evaluation_state:evaluationState,coverage_failures:coverageFailures,references};
   const checksum=canonicalHash(payload),existing=await prisma.countryEvidenceManifest.findUnique({where:{checksum},include:{references:true}});
   if(existing)return existing;
   return prisma.countryEvidenceManifest.create({data:{plan_id:plan.id,checksum,evaluation_state:evaluationState,policy_version:plan.policy_version,policy_hash:plan.policy_hash,policy_snapshot:JSON(plan.policy_snapshot),manifest_payload:JSON(payload),references:{create:references}},include:{references:true}});
