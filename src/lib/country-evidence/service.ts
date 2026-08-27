@@ -23,7 +23,7 @@ export async function createCountryEvidencePlan(input: Omit<CountryEvidencePlanI
   const existing = await prisma.countryEvidencePlan.findUnique({where:{plan_key:built.plan_key},include:{items:true,manifests:true}});
   if (existing) return existing;
   return prisma.countryEvidencePlan.create({
-    data:{plan_key:built.plan_key,product_classification_id:input.product_classification_id,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,as_of_date:input.as_of_date,candidate_reporters:built.candidate_reporters,source_mode:input.source_mode as TradeSourceMode,policy_version:configured.value.policy_version,policy_hash:built.policy_hash,policy_snapshot:JSON({...configured.value,config_version:configured.version,frozen_definition:built.frozen_definition}),period_set:built.period_set,latest_common_year:built.latest_common_year,requested_history_years:configured.value.history_years,actual_history_years:built.actual_history_years,candidate_strategy:configured.value.candidate_strategy,estimated_call_cost:built.items.length,allow_partial_execution:configured.value.allow_partial_execution,items:{create:built.items.map(item=>({...item,flow_direction:'import',frequency:'A',hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,customs_code:'C00',mode_of_supply:'0'}))}},
+    data:{plan_key:built.plan_key,product_classification_id:input.product_classification_id,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,as_of_date:input.as_of_date,candidate_reporters:built.candidate_reporters,source_mode:input.source_mode as TradeSourceMode,policy_version:configured.value.policy_version,policy_hash:built.policy_hash,policy_snapshot:JSON({...configured.value,config_version:configured.version,frozen_definition:built.frozen_definition}),period_set:built.period_set,latest_common_year:built.latest_common_year,requested_history_years:configured.value.history_years,actual_history_years:built.actual_history_years,reporter_period_windows:input.reporter_period_windows?JSON(built.reporter_period_windows):undefined,preferred_period:input.preferred_period??undefined,candidate_strategy:configured.value.candidate_strategy,estimated_call_cost:built.items.length,allow_partial_execution:configured.value.allow_partial_execution,items:{create:built.items.map(item=>({...item,flow_direction:'import',frequency:'A',hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,customs_code:'C00',mode_of_supply:'0'}))}},
     include:{items:{orderBy:[{priority:'asc'},{reporter_code:'asc'},{period:'desc'}]},manifests:true},
   });
 }
@@ -96,7 +96,7 @@ export async function createCountryEvidenceManifest(planId:string) {
   const policy=plan.policy_snapshot as unknown as {supplier_coverage_min_ratio:number;supplier_coverage_max_ratio:number};
   const references=plan.items.filter(item=>item.source_evidence).map(item=>{
     const ids=((item.resolution_metadata as {observation_ids?:string[]}|null)?.observation_ids??[]).sort();
-    return {plan_item_key:item.item_key,purpose:item.purpose,reporter_code:item.reporter_code,period:item.period,source_evidence_id:item.source_evidence_id!,observation_ids:ids,cell_state:item.resolution_state,freshness_state:item.resolution_state==='fetch_required'?'stale':'fresh',evidence_completeness:item.source_evidence!.completeness,evidence_retrieved_at:item.source_evidence!.retrieved_at};
+    return {plan_item_key:item.item_key,purpose:item.purpose,reporter_code:item.reporter_code,period:item.period,source_evidence_id:item.source_evidence_id!,observation_ids:ids,cell_state:item.resolution_state,freshness_state:item.resolution_state==='fetch_required'?'stale':'fresh',evidence_completeness:item.source_evidence!.completeness,evidence_retrieved_at:item.source_evidence!.retrieved_at.toISOString()};
   });
   const coverageFailures:string[]=[];
   for(const supplier of plan.items.filter(item=>item.partner_scope==='all_suppliers'&&item.source_evidence)){
@@ -107,10 +107,20 @@ export async function createCountryEvidenceManifest(planId:string) {
     const ratio=supplierRows.reduce((sum,row)=>sum+Number(row.trade_value),0)/Number(worldRow.trade_value);
     if(ratio<policy.supplier_coverage_min_ratio||ratio>policy.supplier_coverage_max_ratio)coverageFailures.push(`${supplier.reporter_code}:supplier_coverage_${ratio.toFixed(6)}`);
   }
-  const allReusable=plan.items.every(item=>item.resolution_state==='reusable');
-  const anyUsable=plan.items.some(item=>item.resolution_state==='reusable');
-  const evaluationState=allReusable&&coverageFailures.length===0?'metric_ready':anyUsable?'partial':'not_evaluable';
-  const payload={schema_version:'country-evidence-manifest-v1',plan_key:plan.plan_key,hs_code:plan.hs_code,hs_revision:plan.hs_revision,normalization_version:COMTRADE_NORMALIZATION_VERSION,as_of_date:plan.as_of_date.toISOString(),period_set:plan.period_set,latest_common_year:plan.latest_common_year,source_mode:plan.source_mode,policy_version:plan.policy_version,policy_hash:plan.policy_hash,evaluation_state:evaluationState,coverage_failures:coverageFailures,references};
+  // Evaluated PER REPORTER. The previous all-or-nothing rule meant one country's gap in one
+  // year downgraded every other country in the plan — the concrete mechanism by which a lagging
+  // market made a fully-evidenced one report as partial.
+  const windows=(plan.reporter_period_windows??null) as Record<string,number[]>|null;
+  const failedReporters=new Set(coverageFailures.map(failure=>failure.split(':')[0]));
+  const reporterEvaluation=Object.fromEntries([...plan.candidate_reporters].sort((a,b)=>Number(a)-Number(b)).map(reporter=>{
+    const own=plan.items.filter(item=>item.reporter_code===reporter);
+    const ready=own.length>0&&own.every(item=>item.resolution_state==='reusable')&&!failedReporters.has(reporter);
+    const usable=own.some(item=>item.resolution_state==='reusable');
+    return [reporter,{state:ready?'metric_ready':usable?'partial':'not_evaluable',period_set:windows?.[reporter]??plan.period_set,latest_common_year:(windows?.[reporter]??plan.period_set).at(-1)??plan.latest_common_year,reusable_items:own.filter(item=>item.resolution_state==='reusable').length,total_items:own.length}];
+  }));
+  const readyReporters=Object.values(reporterEvaluation).filter(entry=>entry.state==='metric_ready').length;
+  const evaluationState=readyReporters===plan.candidate_reporters.length?'metric_ready':readyReporters>0||plan.items.some(item=>item.resolution_state==='reusable')?'partial':'not_evaluable';
+  const payload={schema_version:'country-evidence-manifest-v2',plan_key:plan.plan_key,hs_code:plan.hs_code,hs_revision:plan.hs_revision,normalization_version:COMTRADE_NORMALIZATION_VERSION,as_of_date:plan.as_of_date.toISOString(),period_set:plan.period_set,latest_common_year:plan.latest_common_year,reporter_period_windows:windows,reporter_evaluation:reporterEvaluation,metric_ready_reporters:readyReporters,source_mode:plan.source_mode,policy_version:plan.policy_version,policy_hash:plan.policy_hash,evaluation_state:evaluationState,coverage_failures:coverageFailures,references};
   const checksum=canonicalHash(payload),existing=await prisma.countryEvidenceManifest.findUnique({where:{checksum},include:{references:true}});
   if(existing)return existing;
   return prisma.countryEvidenceManifest.create({data:{plan_id:plan.id,checksum,evaluation_state:evaluationState,policy_version:plan.policy_version,policy_hash:plan.policy_hash,policy_snapshot:JSON(plan.policy_snapshot),manifest_payload:JSON(payload),references:{create:references}},include:{references:true}});

@@ -3558,7 +3558,8 @@ model SourceEvidence {
   @@index([response_checksum])
 }
 
-/// Frozen acquisition intent for one confirmed HS classification and one common reporting period.
+/// Frozen acquisition intent for one confirmed HS classification. Each candidate reporter may be
+/// analysed across its own consecutive window, ending at the latest year it actually reported.
 /// Execution state lives on child items; the definition and policy snapshot are never recalculated.
 model CountryEvidencePlan {
   id                        String          @id @default(cuid())
@@ -3572,10 +3573,17 @@ model CountryEvidencePlan {
   policy_version            String
   policy_hash               String
   policy_snapshot           Json
+  /// Union of every reporter's window. Individual reporters may cover different years.
   period_set                Int[]
+  /// The newest year any reporter in this plan is analysed through.
   latest_common_year        Int
   requested_history_years   Int
   actual_history_years      Int
+  /// Phase 1G: each reporter's own consecutive analysis window, ending at the latest year that
+  /// reporter actually has usable evidence for. Null on plans built before per-reporter windows.
+  reporter_period_windows   Json?
+  /// The period the screen preferred. Per-reporter lag is measured against this.
+  preferred_period          Int?
   candidate_strategy        String
   status                    String          @default("planned")
   estimated_call_cost       Int
@@ -3701,45 +3709,51 @@ model CountryEvidenceManifestReference {
 /// creation; only execution state advances. A completed run and its results are immutable, so a
 /// historical shortlist can always prove which countries were considered and on what evidence.
 model CountryScreeningRun {
-  id                          String          @id @default(cuid())
-  run_key                     String          @unique
-  product_classification_id   String
-  hs_code                     String
-  hs_revision                 String
-  as_of_date                  DateTime
-  /// The single annual period this run evaluates. Per-country period fallback is Phase 1G.
-  screening_period            Int
-  source_mode                 TradeSourceMode
-  policy_version              String
-  policy_hash                 String
-  policy_snapshot             Json
-  universe_version            String
-  universe_checksum           String
-  universe_size               Int
+  id                               String          @id @default(cuid())
+  run_key                          String          @unique
+  product_classification_id        String
+  hs_code                          String
+  hs_revision                      String
+  as_of_date                       DateTime
+  /// The period this run PREFERS. Phase 1G lets each market resolve to an older usable year;
+  /// the year actually used is `CountryScreeningResult.observation_period`.
+  screening_period                 Int
+  /// Frozen latest-usable-period policy. Execution reads this snapshot, never live config.
+  period_selection_policy_version  String
+  period_selection_policy_hash     String
+  period_selection_policy_snapshot Json
+  max_fallback_lookback_years      Int
+  source_mode                      TradeSourceMode
+  policy_version                   String
+  policy_hash                      String
+  policy_snapshot                  Json
+  universe_version                 String
+  universe_checksum                String
+  universe_size                    Int
   /// Provider reporting identity frozen into the run. A reporter-reference refresh that moves
   /// any reporter code changes this, the universe checksum, the run key and every request
   /// fingerprint beneath it — so a completed run can never be reinterpreted under new codes.
-  reporter_registry_version   String
-  reporter_registry_checksum  String
+  reporter_registry_version        String
+  reporter_registry_checksum       String
   /// Full resolved universe and its exclusions, so the evaluated set is provable after the fact.
-  universe_snapshot           Json
-  screening_algorithm_version String
-  parser_version              String
-  normalization_version       String
-  shortlist_target_size       Int
-  max_shortlist_size          Int
-  estimated_call_cost         Int
-  allow_partial_execution     Boolean         @default(false)
-  status                      String          @default("planned")
-  resolved_count              Int             @default(0)
-  eligible_count              Int             @default(0)
-  shortlist_size              Int             @default(0)
-  physical_call_count         Int             @default(0)
+  universe_snapshot                Json
+  screening_algorithm_version      String
+  parser_version                   String
+  normalization_version            String
+  shortlist_target_size            Int
+  max_shortlist_size               Int
+  estimated_call_cost              Int
+  allow_partial_execution          Boolean         @default(false)
+  status                           String          @default("planned")
+  resolved_count                   Int             @default(0)
+  eligible_count                   Int             @default(0)
+  shortlist_size                   Int             @default(0)
+  physical_call_count              Int             @default(0)
   /// Last quota accounting for this run: considered, reusable, required, estimated, available.
-  quota_snapshot              Json?
-  completed_at                DateTime?
-  created_at                  DateTime        @default(now())
-  updated_at                  DateTime        @updatedAt
+  quota_snapshot                   Json?
+  completed_at                     DateTime?
+  created_at                       DateTime        @default(now())
+  updated_at                       DateTime        @updatedAt
 
   product_classification ProductClassification    @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
   results                CountryScreeningResult[]
@@ -3766,8 +3780,18 @@ model CountryScreeningResult {
   import_value          Decimal?  @db.Decimal(20, 3)
   /// The observation's own status: observed, observed_zero, suppressed, missing, invalid.
   import_value_status   String?
-  /// Period the usable observation came from. Nullable so Phase 1G can differ per country.
+  /// The year the usable observation actually came from. Differs per market under Phase 1G.
   observation_period    Int?
+  /// The year this run preferred, so lag is readable without joining the run.
+  preferred_period      Int?
+  /// Years between the preferred and selected period. 0 = current.
+  period_lag            Int?
+  /// Evidence weight for that lag. Never applied to `import_value`.
+  evidence_confidence   Decimal?  @db.Decimal(6, 4)
+  /// Raw demand score discounted by evidence confidence. What ranking and shortlist use.
+  selection_score       Decimal?  @db.Decimal(9, 6)
+  /// The year acquisition must ask about next, when the period walk is waiting on evidence.
+  next_probe_period     Int?
   freshness_state       String    @default("unknown")
   source_evidence_id    String?
   observation_id        String?

@@ -65,7 +65,8 @@ async function seedWorldEvidence(options: {
   const revision = options.hs_revision ?? 'HS2022';
   const request = worldRequest(options.reporter, { hs_revision: revision, source_mode: sourceMode });
   const rows = options.omit_world_row ? [] : [{ partner: '0', value: options.value ?? null, status: options.value_status ?? 'observed' }];
-  const raw = JSON.stringify({ count: rows.length, data: rows });
+  // Provider-shaped, because re-normalization genuinely re-parses this body.
+  const raw = JSON.stringify({ count: rows.length, data: rows.map(row => ({ reporterCode: Number(options.reporter), partnerCode: Number(row.partner), partner2Code: 0, cmdCode: HS6, refYear: PERIOD, period: String(PERIOD), flowCode: 'M', freqCode: 'A', primaryValue: row.status === 'suppressed' ? 'suppressed' : row.value, customsCode: 'C00', mosCode: '0', clCode: revision === 'HS2022' ? 'H6' : 'H5' })) });
   return prisma.sourceEvidence.create({
     data: {
       provider: 'un_comtrade', dataset: 'comtrade-goods', dataset_version: 'v1', source_origin: origin, environment: 'test',
@@ -134,7 +135,7 @@ afterAll(async () => { await restoreConfig(); await prisma.$disconnect(); });
 describe('Stage A reuses the deep Country Truth evidence architecture', () => {
   test('screens on exactly the request the deep plan already asks for', () => {
     const HS6 = '090111', policy = CONFIG_DEFAULTS['country_screening.policy'];
-    const screening = buildCountryScreeningPlan({ product_classification_id: 'c1', hs_code: HS6, hs_revision: 'HS2022', as_of_date: AS_OF, source_mode: 'authenticated', policy, policy_config_version: 1 });
+    const screening = buildCountryScreeningPlan({ product_classification_id: 'c1', hs_code: HS6, hs_revision: 'HS2022', as_of_date: AS_OF, source_mode: 'authenticated', policy, policy_config_version: 1, period_selection_policy: CONFIG_DEFAULTS['country_period_selection.policy'], period_selection_policy_config_version: 1 });
     const deep = buildCountryEvidencePlan({ product_classification_id: 'c1', hs_code: HS6, hs_revision: 'HS2022', as_of_date: AS_OF, candidate_reporters: ['276'], source_mode: 'authenticated', policy: CONFIG_DEFAULTS['country_evidence.policy'], policy_config_version: 1 });
     const deepWorld = deep.items.find(item => item.purpose === 'WORLD_IMPORT_HISTORY' && item.period === deep.latest_common_year)!;
     expect(screening.screening_period).toBe(deep.latest_common_year);
@@ -155,17 +156,24 @@ describe('screening preserves Country Truth evidence semantics', () => {
     await seedWorldEvidence({ reporter: '76', hs_revision: 'HS2017' });
     const run = await resolveGlobalCountryScreeningRun((await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated })).id);
 
-    expect(statuses(run.results)).toEqual({ DE: 'eligible', US: 'below_minimum_demand', AE: 'insufficient_evidence', JP: 'suppressed', BR: 'incompatible', CN: 'unavailable' });
+    // BR's only evidence is under a different HS revision, so the walk steps past it and asks
+    // for an older year; CN has never been probed at all. Both are acquirable, neither is zero.
+    expect(statuses(run.results)).toEqual({ DE: 'eligible', US: 'below_minimum_demand', AE: 'pending_fallback', JP: 'suppressed', BR: 'pending_fallback', CN: 'pending_fallback' });
     const byCountry = new Map(run.results.map(row => [row.country_code, row]));
     // An observed zero is a real fact and keeps its value; nothing else is rewritten as zero.
     expect(byCountry.get('US')).toMatchObject({ import_value_status: 'observed_zero', observation_period: PERIOD });
     expect(byCountry.get('US')!.import_value?.toString()).toBe('0');
     for (const code of ['AE', 'JP', 'BR', 'CN']) expect(byCountry.get(code)!.import_value, code).toBeNull();
     expect(byCountry.get('JP')).toMatchObject({ import_value_status: 'suppressed' });
-    expect((byCountry.get('AE')!.provenance as { resolution_evidence: { absence_is_not_zero?: boolean } }).resolution_evidence.absence_is_not_zero).toBe(true);
-    expect((byCountry.get('BR')!.provenance as { resolution_reason: string }).resolution_reason).toBe('hs_revision_mismatch');
+    // The UAE shape: 2025 answered with no World row, so the walk moved on to 2024.
+    const aeProbes = (byCountry.get('AE')!.provenance as { resolution_evidence: { period_probes: Array<{ period: number; outcome: string; absence_is_not_zero?: boolean }> } }).resolution_evidence.period_probes;
+    expect(aeProbes[0]).toMatchObject({ period: PERIOD, outcome: 'absent', absence_is_not_zero: true });
+    expect(byCountry.get('AE')).toMatchObject({ next_probe_period: PERIOD - 1, preferred_period: PERIOD });
+    const brProbes = (byCountry.get('BR')!.provenance as { resolution_evidence: { period_probes: Array<{ period: number; outcome: string }> } }).resolution_evidence.period_probes;
+    expect(brProbes[0]).toMatchObject({ period: PERIOD, outcome: 'incompatible' });
     // Only the eligible market is ranked at all.
-    expect(byCountry.get('DE')).toMatchObject({ screening_rank: 1, shortlisted: true, decision_reason: 'shortlisted_top_screening_rank' });
+    expect(byCountry.get('DE')).toMatchObject({ screening_rank: 1, shortlisted: true, decision_reason: 'shortlisted_top_screening_rank', period_lag: 0, freshness_state: 'current' });
+    expect(Number(byCountry.get('DE')!.evidence_confidence)).toBe(1);
     expect(run.results.filter(row => row.screening_rank != null)).toHaveLength(1);
     expect(byCountry.get('US')).toMatchObject({ screening_rank: null, screening_score: null, shortlisted: false, decision_reason: 'not_shortlisted_below_minimum_demand' });
   });
@@ -175,7 +183,8 @@ describe('screening preserves Country Truth evidence semantics', () => {
     const { classification } = await confirmedClassification();
     await seedWorldEvidence({ reporter: '276', value: 5_000_000_000, completeness: 'PARTIAL', status: 'partial' });
     const run = await resolveGlobalCountryScreeningRun((await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated })).id);
-    expect(run.results[0]).toMatchObject({ screening_status: 'insufficient_evidence', import_value: null, decision_reason: 'not_shortlisted_insufficient_evidence' });
+    // An incomplete response is not an answer about the market, so it stays acquirable.
+    expect(run.results[0]).toMatchObject({ screening_status: 'pending_fallback', import_value: null, next_probe_period: PERIOD });
   });
 
   test('evidence older than the freshness requirement is stale, not usable', async () => {
@@ -183,7 +192,7 @@ describe('screening preserves Country Truth evidence semantics', () => {
     const { classification } = await confirmedClassification();
     await seedWorldEvidence({ reporter: '276', value: 5_000_000_000, retrieved_at: new Date(Date.now() - 200 * 86_400_000) });
     const run = await resolveGlobalCountryScreeningRun((await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated })).id);
-    expect(run.results[0]).toMatchObject({ screening_status: 'stale', freshness_state: 'stale', import_value: null });
+    expect(run.results[0]).toMatchObject({ screening_status: 'stale', import_value: null, next_probe_period: PERIOD });
   });
 
   test('fixture and preview evidence can never satisfy an authenticated screen', async () => {
@@ -192,8 +201,9 @@ describe('screening preserves Country Truth evidence semantics', () => {
     await seedWorldEvidence({ reporter: '276', value: 9_000_000_000, source_mode: 'fixture' });
     await seedWorldEvidence({ reporter: '842', value: 8_000_000_000, origin: EvidenceOrigin.preview });
     const run = await resolveGlobalCountryScreeningRun((await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated })).id);
-    expect(statuses(run.results)).toEqual({ DE: 'unavailable', US: 'unavailable' });
+    expect(statuses(run.results)).toEqual({ DE: 'pending_fallback', US: 'pending_fallback' });
     expect(run.results.every(row => row.source_evidence_id === null)).toBe(true);
+    expect(run.results.every(row => row.next_probe_period === PERIOD)).toBe(true);
   });
 
   test('evidence parsed by a superseded parser is not reusable', async () => {
@@ -201,7 +211,7 @@ describe('screening preserves Country Truth evidence semantics', () => {
     const { classification } = await confirmedClassification();
     await seedWorldEvidence({ reporter: '276', value: 9_000_000_000, parser_version: 'comtrade-parser-v1' });
     const run = await resolveGlobalCountryScreeningRun((await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated })).id);
-    expect(run.results[0]).toMatchObject({ screening_status: 'unavailable', decision_reason: 'not_shortlisted_unavailable' });
+    expect(run.results[0]).toMatchObject({ screening_status: 'pending_fallback' });
   });
 
   test('normalization-v1 rows are re-normalized to v2 and only v2 is ever cited', async () => {
@@ -209,7 +219,7 @@ describe('screening preserves Country Truth evidence semantics', () => {
     const { classification } = await confirmedClassification();
     const evidence = await seedWorldEvidence({ reporter: '276', value: 9_000_000_000, normalization_version: 'comtrade-normalization-v1' });
     const run = await resolveGlobalCountryScreeningRun((await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated })).id);
-    expect(run.results[0]).toMatchObject({ screening_status: 'eligible', source_evidence_id: evidence.id });
+    expect(run.results[0]).toMatchObject({ screening_status: 'eligible', source_evidence_id: evidence.id, period_lag: 0 });
     const cited = await prisma.normalizedTradeObservation.findUniqueOrThrow({ where: { id: run.results[0]!.observation_id! } });
     expect(cited.normalization_version).toBe(COMTRADE_NORMALIZATION_VERSION);
     // The historical v1 row is retained as the parser's own output, never rewritten.
@@ -248,14 +258,15 @@ describe('screening rank, shortlist and provenance', () => {
     const evidence = await seedWorldEvidence({ reporter: '276', value: 9_000_000_000 });
     const created = await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated });
     const run = await resolveGlobalCountryScreeningRun(created.id);
-    expect(run).toMatchObject({ universe_size: 2, screening_period: PERIOD, normalization_version: COMTRADE_NORMALIZATION_VERSION, parser_version: COMTRADE_PARSER_VERSION, policy_version: 'country-screening-policy-v1' });
+    expect(run).toMatchObject({ universe_size: 2, screening_period: PERIOD, normalization_version: COMTRADE_NORMALIZATION_VERSION, parser_version: COMTRADE_PARSER_VERSION, policy_version: 'country-screening-policy-v2', period_selection_policy_version: 'country-period-selection-policy-v1', max_fallback_lookback_years: 2 });
     const snapshot = run.universe_snapshot as { checksum: string; entries: Array<{ iso2: string; reporter_code: string }>; exclusions: unknown[] };
     expect(snapshot.checksum).toBe(run.universe_checksum);
     expect(snapshot.entries.map(entry => `${entry.reporter_code}:${entry.iso2}`)).toEqual(['276:DE', '842:US']);
     const german = run.results.find(row => row.country_code === 'DE')!;
-    expect(german).toMatchObject({ source_evidence_id: evidence.id, observation_period: PERIOD, freshness_state: 'fresh', import_value_status: 'observed' });
+    // Freshness now describes how old the DATA is, not how old the retrieval was.
+    expect(german).toMatchObject({ source_evidence_id: evidence.id, observation_period: PERIOD, freshness_state: 'current', period_lag: 0, import_value_status: 'observed' });
     expect(german.observation_id).toBeTruthy();
-    expect(german.provenance).toMatchObject({ universe_checksum: run.universe_checksum, normalization_version: COMTRADE_NORMALIZATION_VERSION, screening_algorithm_version: 'country-screening-rank-v1', requested_period: PERIOD });
+    expect(german.provenance).toMatchObject({ universe_checksum: run.universe_checksum, normalization_version: COMTRADE_NORMALIZATION_VERSION, screening_algorithm_version: 'country-screening-rank-v2', period_selection_policy_version: 'country-period-selection-policy-v1', selected_period: PERIOD, period_lag: 0 });
     // The definition is not editable, whatever a later caller believes.
     await expect(prisma.countryScreeningRun.update({ where: { id: run.id }, data: { hs_code: '090121' } })).rejects.toThrow(/immutable/);
     await expect(prisma.countryScreeningResult.update({ where: { id: german.id }, data: { reporter_code: '999' } })).rejects.toThrow(/immutable/);
@@ -531,11 +542,18 @@ describe('adversarial: the run refuses to be corrupted', () => {
     const failing = authenticatedClient({ '276': 9e9, '842': 'error' });
     setComtradeClient(failing.client);
     const created = await createGlobalCountryScreeningRun({ product_classification_id: classification.id, as_of_date: AS_OF, source_mode: TradeSourceMode.authenticated });
-    const first = await executeGlobalCountryScreeningRun(created.id);
-    // One attempt was the whole budget, so the run closes rather than retrying indefinitely.
-    expect(first.status).toBe('completed');
-    expect(first.quota).toMatchObject({ acquisition_attempts_exhausted: 1, requires_acquisition: 0 });
+
+    // The budget is one attempt per candidate period, because a fallback walk legitimately
+    // spends one attempt per year it inspects. Each execution retries the failing market once.
+    let status = (await executeGlobalCountryScreeningRun(created.id)).status;
+    expect(status).toBe('partial');
+    for (let attempt = 0; attempt < 3 && status !== 'completed'; attempt++) status = (await executeGlobalCountryScreeningRun(created.id)).status;
+
+    // Once the budget is spent the run closes instead of retrying forever.
+    expect(status).toBe('completed');
     const failed = await prisma.countryScreeningResult.findFirstOrThrow({ where: { run_id: created.id, country_code: 'US' } });
-    expect(failed).toMatchObject({ screening_status: 'failed', attempts: 1, shortlisted: false });
+    expect(failed).toMatchObject({ screening_status: 'failed', shortlisted: false });
+    expect(failed.attempts).toBeGreaterThanOrEqual(3);
+    expect((await estimateGlobalCountryScreeningQuota(created.id)).acquisition_attempts_exhausted).toBe(1);
   });
 });

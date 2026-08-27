@@ -18,6 +18,9 @@ const payloadSchema=z.object({
   hs6:z.string().regex(/^\d{6}$/),hs_revision:z.enum(['2022','HS2022']),
   candidates:z.array(z.object({country_code:z.string().length(2),country_name:z.string().min(1),reporter_code:z.string().regex(/^\d{1,3}$/)})).min(1),
   requested_by_agent_id:z.string().min(1),requested_at:z.string().datetime(),
+  /** Phase 1G: each candidate's own consecutive analysis window, from Stage A period selection. */
+  reporter_period_windows:z.record(z.string(),z.array(z.number().int()).min(1)).optional(),
+  preferred_period:z.number().int().optional(),
   policies:z.object({
     country_evidence:policyIdentitySchema.extend({policy_version:z.string().min(1)}),
     country_trade_metrics:policyIdentitySchema.extend({policy_version:z.string().min(1),calculation_version:z.string().min(1)}),
@@ -59,12 +62,17 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   const stage=async(name:string,progress:number,patch:Partial<Checkpoint>={})=>{Object.assign(checkpoint,patch);if(ctx.reportStage)await ctx.reportStage(name,progress,json(checkpoint));else await updateJobStage(ctx.job_id,name,progress,json(checkpoint));};
   await stage('planning',5);
   const scoringClock=new Date(payload.requested_at);if(Number.isNaN(scoringClock.getTime()))throw new Error('Country Truth requested timestamp is invalid.');
-  const plan=await createCountryEvidencePlan({product_classification_id:payload.product_classification_id,as_of_date:scoringClock,candidate_reporters:payload.candidates.map(candidate=>candidate.reporter_code),source_mode:TradeSourceMode.authenticated});
+  const plan=await createCountryEvidencePlan({product_classification_id:payload.product_classification_id,as_of_date:scoringClock,candidate_reporters:payload.candidates.map(candidate=>candidate.reporter_code),source_mode:TradeSourceMode.authenticated,reporter_period_windows:payload.reporter_period_windows,preferred_period:payload.preferred_period});
   if(plan.product_classification_id!==payload.product_classification_id||plan.hs_code!==payload.hs6||plan.hs_revision!==payload.hs_revision||plan.policy_version!==payload.policies.country_evidence.policy_version||plan.policy_hash!==payload.policies.country_evidence.policy_hash||JSON.stringify([...plan.candidate_reporters].sort())!==JSON.stringify(payload.candidates.map(candidate=>candidate.reporter_code).sort()))throw new Error('Resolved Country Evidence plan does not match the frozen job identity.');
   await stage('acquiring_evidence',20,{country_evidence_plan_id:plan.id});
   const acquisition=await executeCountryEvidencePlan(plan.id);
   if(!acquisition.manifest){await stage('acquiring_evidence',20);throw new Error(`Country Truth evidence acquisition is ${acquisition.status}; retry from persisted plan ${plan.id}.`);}
   await stage('building_manifest',55,{country_evidence_manifest_id:acquisition.manifest.id});
+  // A RETRYABLE unresolved item still stops the job: a provider failure is our outage, and
+  // baking it into a frozen partial result would lose work a retry could recover. Data the
+  // provider confirmed it does not have resolves to `missing`, which was never in this list —
+  // so a lagging reporter no longer blocks the run, and under per-reporter analysis windows it
+  // is asked only for years it actually reported.
   const unresolved=await prisma.countryEvidencePlanItem.count({where:{plan_id:plan.id,resolution_state:{in:['fetch_required','fetching','failed','incompatible']}}});
   if(unresolved>0)throw new Error(`Country Truth evidence acquisition left ${unresolved} provider request(s) unresolved; retry will reuse completed evidence.`);
   await stage('calculating_metrics',70);

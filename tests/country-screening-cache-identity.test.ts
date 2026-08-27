@@ -46,7 +46,7 @@ async function confirmedClassification() {
 
 async function seedWorldEvidence(reporter: string, value: number) {
   const request = canonicalComtradeRequest({ provider: 'un_comtrade', dataset: 'goods-trade', source_mode: 'authenticated', purpose: 'country_truth', reporter_code: reporter, partner_code: '0', partner2_code: '0', flow_direction: 'import', frequency: 'A', period: String(PERIOD), hs_codes: [HS6], hs_revision: 'HS2022', customs_code: 'C00', mode_of_supply: '0' });
-  const raw = JSON.stringify({ count: 1, data: [{ partner: '0', value }] });
+  const raw = JSON.stringify({ count: 1, data: [{ reporterCode: Number(reporter), partnerCode: 0, partner2Code: 0, cmdCode: HS6, refYear: PERIOD, period: String(PERIOD), flowCode: 'M', freqCode: 'A', primaryValue: value, customsCode: 'C00', mosCode: '0', clCode: 'H6' }] });
   return prisma.sourceEvidence.create({ data: {
     provider: 'un_comtrade', dataset: 'comtrade-goods', dataset_version: 'v1', source_origin: EvidenceOrigin.authenticated_real, environment: 'test',
     request_fingerprint: comtradeRequestFingerprint(request), request_parameters: request as unknown as Prisma.InputJsonValue,
@@ -105,7 +105,7 @@ describe('reporter identity is part of the evidence question', () => {
   });
 
   test('moving a reporter code moves the plan identity and every item key', () => {
-    const base = { product_classification_id: 'c1', hs_code: '100630', hs_revision: 'HS2022', as_of_date: AS_OF, source_mode: 'authenticated' as const, policy: CONFIG_DEFAULTS['country_screening.policy'], policy_config_version: 1 };
+    const base = { product_classification_id: 'c1', hs_code: '100630', hs_revision: 'HS2022', as_of_date: AS_OF, source_mode: 'authenticated' as const, policy: CONFIG_DEFAULTS['country_screening.policy'], policy_config_version: 1, period_selection_policy: CONFIG_DEFAULTS['country_period_selection.policy'], period_selection_policy_config_version: 1 };
     const before = buildCountryScreeningPlan(base);
     const after = buildCountryScreeningPlan({ ...base, reporter_registry: registryWithReporter('IT', '381') });
     expect(after.run_key).not.toBe(before.run_key);
@@ -132,7 +132,7 @@ describe('a registry change cannot silently reuse an incompatible screening resu
     expect(moved.reporter_registry_checksum).not.toBe(current.reporter_registry_checksum);
     const resolved = await resolveGlobalCountryScreeningRun(moved.id);
     const movedItaly = resolved.results.find(row => row.country_code === 'IT')!;
-    expect(movedItaly).toMatchObject({ reporter_code: '381', screening_status: 'unavailable', source_evidence_id: null });
+    expect(movedItaly).toMatchObject({ reporter_code: '381', screening_status: 'pending_fallback', source_evidence_id: null });
     expect(movedItaly.request_fingerprint).not.toBe(italy.request_fingerprint);
     // The original run and its result are untouched history.
     const reloaded = await prisma.countryScreeningResult.findUniqueOrThrow({ where: { id: italy.id } });

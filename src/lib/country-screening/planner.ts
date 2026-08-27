@@ -14,7 +14,8 @@
  * evidence architecture.
  */
 
-import type { CountryScreeningPolicy } from '@/lib/config';
+import type { CountryPeriodSelectionPolicy, CountryScreeningPolicy } from '@/lib/config';
+import { selectPreferredPeriod, validateCountryPeriodSelectionPolicy } from '@/lib/country-period-selection';
 import { COMTRADE_NORMALIZATION_VERSION, COMTRADE_PARSER_VERSION } from '@/lib/comtrade/normalization';
 import { canonicalComtradeRequest, type CanonicalComtradeRequest } from '@/lib/comtrade/request';
 import type { ComtradeReporterRegistry } from '@/lib/comtrade/reporter-registry';
@@ -31,6 +32,7 @@ import { buildCountryScreeningUniverse, type CountryScreeningUniverse, type Coun
  */
 export const COUNTRY_SCREENING_STATUSES = [
   'pending_acquisition',
+  'pending_fallback',
   'eligible',
   'below_minimum_demand',
   'insufficient_evidence',
@@ -44,9 +46,9 @@ export const COUNTRY_SCREENING_STATUSES = [
 export type CountryScreeningStatus = (typeof COUNTRY_SCREENING_STATUSES)[number];
 
 /** States that a later attempt could still resolve, and that therefore keep a run open. */
-export const RETRYABLE_SCREENING_STATUSES: readonly CountryScreeningStatus[] = ['pending_acquisition', 'deferred_quota', 'failed'];
+export const RETRYABLE_SCREENING_STATUSES: readonly CountryScreeningStatus[] = ['pending_acquisition', 'pending_fallback', 'deferred_quota', 'failed'];
 /** States whose fix is one provider request for the frozen screening period. */
-export const ACQUIRABLE_SCREENING_STATUSES: readonly CountryScreeningStatus[] = ['pending_acquisition', 'unavailable', 'stale', 'incompatible', 'deferred_quota', 'failed'];
+export const ACQUIRABLE_SCREENING_STATUSES: readonly CountryScreeningStatus[] = ['pending_acquisition', 'pending_fallback', 'unavailable', 'stale', 'incompatible', 'deferred_quota', 'failed'];
 
 export interface CountryScreeningPlanInput {
   product_classification_id: string;
@@ -56,6 +58,8 @@ export interface CountryScreeningPlanInput {
   source_mode: PlannedSourceMode;
   policy: CountryScreeningPolicy;
   policy_config_version: number;
+  period_selection_policy: CountryPeriodSelectionPolicy;
+  period_selection_policy_config_version: number;
   /** Test seam. Production always resolves the frozen provider reporter snapshot. */
   reporter_registry?: ComtradeReporterRegistry;
 }
@@ -78,6 +82,7 @@ export interface PlannedScreeningItem {
 export interface FrozenCountryScreeningPlan {
   run_key: string;
   policy_hash: string;
+  period_selection_policy_hash: string;
   screening_period: number;
   universe: CountryScreeningUniverse;
   items: PlannedScreeningItem[];
@@ -95,9 +100,12 @@ function validate(input: CountryScreeningPlanInput) {
   // v1 screens on complete responses only. Reading a demand signal out of a truncated page is
   // a different evidence contract, and it would arrive as a new policy version, not a flag.
   if (!input.policy.require_complete_evidence) throw new Error('Country screening policy v1 requires complete provider evidence.');
-  // Phase 1G owns the per-country latest-usable-period walk. Phase 1F fails closed rather than
-  // inventing a fallback that would change what a frozen screening period means.
-  if (input.policy.period_fallback_lookback_years !== 0) throw new Error('Per-country screening period fallback is not implemented in country-screening-policy-v1.');
+  // The lookback lives in `country_period_selection.policy` from Phase 1G onwards. This field
+  // is retained only so a frozen Phase 1F snapshot still parses; a second, disagreeing lookback
+  // configured here would silently contend with the real one.
+  if (input.policy.period_fallback_lookback_years !== 0) throw new Error('Screening fallback lookback is owned by country_period_selection.policy; this field must remain 0.');
+  if (input.policy.period_selection_policy_version !== input.period_selection_policy.policy_version) throw new Error(`Country screening expects period selection policy ${input.policy.period_selection_policy_version}; the build supplies ${input.period_selection_policy.policy_version}.`);
+  validateCountryPeriodSelectionPolicy(input.period_selection_policy);
   if (!Number.isFinite(input.policy.minimum_import_value_usd) || input.policy.minimum_import_value_usd < 0) throw new Error('Country screening minimum import value must be a non-negative number.');
   if (!Number.isInteger(input.policy.latest_period_freshness_days) || input.policy.latest_period_freshness_days <= 0) throw new Error('Country screening freshness requirement must be a positive number of days.');
   // Ranking and shortlist arithmetic is validated HERE rather than when it first runs. Both are
@@ -121,6 +129,11 @@ export function selectScreeningPeriod(asOf: Date, policy: CountryScreeningPolicy
   return asOf.getUTCFullYear() - (releaseReached ? 1 : 2);
 }
 
+/** The preferred period, delegated to the shared engine so screening and deep planning agree. */
+export function preferredScreeningPeriod(asOf: Date, periodPolicy: CountryPeriodSelectionPolicy): number {
+  return selectPreferredPeriod(asOf, periodPolicy);
+}
+
 export function buildCountryScreeningPlan(input: CountryScreeningPlanInput): FrozenCountryScreeningPlan {
   validate(input);
   const universe = buildCountryScreeningUniverse({
@@ -134,8 +147,9 @@ export function buildCountryScreeningPlan(input: CountryScreeningPlanInput): Fro
   });
   if (universe.size === 0) throw new Error('Country screening universe resolved to no countries.');
   if (universe.size > input.policy.max_countries_per_run) throw new Error(`Country screening universe of ${universe.size} exceeds the configured maximum of ${input.policy.max_countries_per_run}.`);
-  const period = selectScreeningPeriod(input.as_of_date, input.policy);
+  const period = preferredScreeningPeriod(input.as_of_date, input.period_selection_policy);
   const policyHash = canonicalHash({ ...input.policy, config_version: input.policy_config_version });
+  const periodPolicyHash = canonicalHash({ ...input.period_selection_policy, config_version: input.period_selection_policy_config_version });
   const definition = {
     schema_version: 'country-screening-run-definition-v1',
     product_classification_id: input.product_classification_id,
@@ -155,6 +169,11 @@ export function buildCountryScreeningPlan(input: CountryScreeningPlanInput): Fro
     // old one — and, because reporter code is inside the canonical request, a new fingerprint.
     reporter_registry_version: universe.reporter_registry_version,
     reporter_registry_checksum: universe.reporter_registry_checksum,
+    // The period policy is part of the frozen question: change the lookback or the freshness
+    // weighting and this becomes a different screen, not a reinterpretation of the same one.
+    period_selection_policy_version: input.period_selection_policy.policy_version,
+    period_selection_policy_hash: periodPolicyHash,
+    max_fallback_lookback_years: input.period_selection_policy.max_fallback_lookback_years,
     screening_algorithm_version: input.policy.screening_algorithm_version,
     parser_version: COMTRADE_PARSER_VERSION,
     normalization_version: COMTRADE_NORMALIZATION_VERSION,
@@ -176,7 +195,7 @@ export function buildCountryScreeningPlan(input: CountryScreeningPlanInput): Fro
     period,
     estimated_call_cost: 1,
   }));
-  return { run_key: canonicalHash(definition), policy_hash: policyHash, screening_period: period, universe, items, frozen_definition: definition };
+  return { run_key: canonicalHash(definition), policy_hash: policyHash, period_selection_policy_hash: periodPolicyHash, screening_period: period, universe, items, frozen_definition: definition };
 }
 
 /**

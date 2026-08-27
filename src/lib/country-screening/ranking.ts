@@ -17,16 +17,26 @@
 import type { CountryScreeningPolicy } from '@/lib/config';
 
 /** Ranking identity. A change to the formula or the tie-break order requires a new version. */
-export const COUNTRY_SCREENING_ALGORITHM_VERSION = 'country-screening-rank-v1';
+export const COUNTRY_SCREENING_ALGORITHM_VERSION = 'country-screening-rank-v2';
 
 export interface ScreeningRankCandidate {
   reporter_code: string;
-  /** Observed World import value in USD. Only eligible candidates are ranked. */
+  /** Observed World import value in USD, exactly as the provider reported it. */
   import_value: number;
+  /**
+   * Evidence weight for how old the selected observation is (1.0 current, 0.8 one year back,
+   * 0.64 two years back). Never applied to `import_value` — see `selection_score`.
+   */
+  evidence_confidence: number;
+  /** Years between the run's preferred period and the one this value came from. */
+  period_lag: number;
 }
 
 export interface ScreeningRankResult extends ScreeningRankCandidate {
+  /** Raw demand magnitude. A pure function of the observed value; comparable across runs. */
   screening_score: number;
+  /** What ordering actually uses: demand discounted by how old the evidence is. */
+  selection_score: number;
   screening_rank: number;
 }
 
@@ -45,23 +55,41 @@ export function screeningScore(importValue: number, policy: CountryScreeningPoli
 }
 
 /**
- * Rank eligible candidates, most demand first.
+ * Rank eligible candidates, most demand first, without pretending stale and current evidence
+ * are equally good.
  *
- * Tie-breaking is total and never depends on input order: equal scores fall back to the exact
- * observed value, and equal values fall back to the numeric reporter code, which is unique
- * within a universe. Two runs over the same evidence therefore produce byte-identical ranks.
+ * Once some markets are selected on 2025 data and others on 2023 data, comparing raw values
+ * alone would let a lagging market outrank a current one purely because of growth or inflation
+ * between the two years. So two numbers are kept and both are persisted:
+ *
+ *   - `screening_score` is the raw demand magnitude and stays a pure function of the observed
+ *     value. It is the number to compare across runs, and it is never discounted.
+ *   - `selection_score` is that score weighted by evidence confidence, and it is the only thing
+ *     ordering and shortlist selection use.
+ *
+ * The provider's value itself is never altered. A market on two-year-old evidence still reports
+ * exactly what the provider said it imported in that year.
+ *
+ * Tie-breaking is total and never depends on input order: equal selection scores fall back to
+ * raw score, then the exact observed value, then the fresher evidence, then the numeric reporter
+ * code, which is unique within a universe.
  */
 export function rankScreeningCandidates(candidates: readonly ScreeningRankCandidate[], policy: CountryScreeningPolicy): ScreeningRankResult[] {
-  if (policy.tie_breaker !== 'screening_score_desc_then_import_value_desc_then_reporter_code_asc_v1') throw new Error(`Unsupported screening tie breaker ${policy.tie_breaker}.`);
+  if (policy.tie_breaker !== 'selection_score_desc_then_screening_score_desc_then_import_value_desc_then_period_lag_asc_then_reporter_code_asc_v2') throw new Error(`Unsupported screening tie breaker ${policy.tie_breaker}.`);
   if (policy.screening_algorithm_version !== COUNTRY_SCREENING_ALGORITHM_VERSION) throw new Error(`Unsupported screening algorithm version ${policy.screening_algorithm_version}.`);
   const seen = new Set<string>();
   for (const candidate of candidates) {
     if (seen.has(candidate.reporter_code)) throw new Error(`Duplicate screening candidate reporter ${candidate.reporter_code}.`);
+    if (!(candidate.evidence_confidence > 0) || candidate.evidence_confidence > 1) throw new Error(`Screening candidate ${candidate.reporter_code} has an out-of-range evidence confidence.`);
+    if (!Number.isInteger(candidate.period_lag) || candidate.period_lag < 0) throw new Error(`Screening candidate ${candidate.reporter_code} has an invalid period lag.`);
     seen.add(candidate.reporter_code);
   }
   return candidates
-    .map(candidate => ({ ...candidate, screening_score: screeningScore(candidate.import_value, policy) }))
-    .sort((a, b) => b.screening_score - a.screening_score || b.import_value - a.import_value || Number(a.reporter_code) - Number(b.reporter_code))
+    .map(candidate => {
+      const screening_score = screeningScore(candidate.import_value, policy);
+      return { ...candidate, screening_score, selection_score: round6(screening_score * candidate.evidence_confidence) };
+    })
+    .sort((a, b) => b.selection_score - a.selection_score || b.screening_score - a.screening_score || b.import_value - a.import_value || a.period_lag - b.period_lag || Number(a.reporter_code) - Number(b.reporter_code))
     .map((candidate, index) => ({ ...candidate, screening_rank: index + 1 }));
 }
 

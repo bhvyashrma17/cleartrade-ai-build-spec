@@ -16,6 +16,21 @@ export interface CountryEvidencePlanInput {
   policy_config_version: number;
   /** Optional provider-availability snapshot. Keys are annual periods, values are reporters with usable World facts. */
   available_reporters_by_year?: Record<number, string[]>;
+  /**
+   * Phase 1G: each reporter's own consecutive analysis window, ending at the latest year that
+   * reporter actually has usable evidence for. Supplied by Stage A's period selection.
+   *
+   * When absent the plan keeps its original single-common-period behaviour, so historical plans
+   * and the pilot path remain exactly readable. When present, a reporter that last reported in
+   * 2023 is planned across 2019-2023 instead of being asked for years it never filed — which is
+   * what stopped lagging markets from ever becoming rankable.
+   */
+  reporter_period_windows?: Record<string, number[]>;
+  /**
+   * The period the screen PREFERRED. Lag is measured against this, so a reporter's freshness is
+   * a property of the reporter — not of whichever other market happened to file most recently.
+   */
+  preferred_period?: number;
 }
 
 export interface PlannedEvidenceItem {
@@ -33,10 +48,14 @@ export interface PlannedEvidenceItem {
 export interface FrozenCountryEvidencePlan {
   plan_key: string;
   policy_hash: string;
+  /** The newest year any reporter in this plan is analysed through. */
   latest_common_year: number;
+  /** Union of every reporter's window, so the plan still describes its whole period footprint. */
   period_set: number[];
   actual_history_years: number;
   candidate_reporters: string[];
+  /** Per-reporter consecutive windows. Always populated, even in single-period mode. */
+  reporter_period_windows: Record<string, number[]>;
   items: PlannedEvidenceItem[];
   frozen_definition: Record<string, unknown>;
 }
@@ -57,6 +76,19 @@ function validate(input: CountryEvidencePlanInput) {
   if (input.candidate_reporters.length === 0) throw new Error('At least one candidate reporter is required.');
   if (input.candidate_reporters.some(code => !/^[0-9]+$/.test(code))) throw new Error('Candidate reporters must use UN M49 numeric codes.');
   if (input.source_mode === 'preview') throw new Error('Preview evidence is not valid for a Country Evidence plan.');
+  if (input.reporter_period_windows) {
+    const candidates = new Set(input.candidate_reporters);
+    for (const [reporter, periods] of Object.entries(input.reporter_period_windows)) {
+      if (!candidates.has(reporter)) throw new Error(`Analysis window supplied for ${reporter}, which is not a candidate reporter.`);
+      if (!periods.length) throw new Error(`Analysis window for ${reporter} is empty.`);
+      // The metric layer computes CAGR, momentum, trend and volatility straight off this array
+      // and does not itself verify continuity, so a gapped window would be silently labelled
+      // "per year". Refuse it here, where the window is still a decision rather than a result.
+      if (periods.some((year, index) => index > 0 && year - periods[index - 1]! !== 1)) throw new Error(`Analysis window for ${reporter} is not consecutive.`);
+    }
+    const missing = input.candidate_reporters.filter(reporter => !input.reporter_period_windows![reporter]);
+    if (missing.length) throw new Error(`Analysis windows are missing for ${missing.join(', ')}.`);
+  }
 }
 
 /**
@@ -89,7 +121,13 @@ export function buildCountryEvidencePlan(input: CountryEvidencePlanInput): Froze
   validate(input);
   const reporters = [...new Set(input.candidate_reporters)].sort((a, b) => Number(a) - Number(b));
   const normalizedInput = { ...input, candidate_reporters: reporters };
-  const { latest, periods } = selectCommonAnnualPeriod(normalizedInput);
+  // With explicit per-reporter windows there is no common period to find, and the coverage walk
+  // would throw for exactly the no-common-year case Phase 1G exists to serve.
+  const { periods } = input.reporter_period_windows ? { periods: [] as number[] } : selectCommonAnnualPeriod(normalizedInput);
+  // Each reporter's own window, defaulting to the common one when Stage A supplied none.
+  const windows: Record<string, number[]> = Object.fromEntries(reporters.map(reporter => [reporter, [...(input.reporter_period_windows?.[reporter] ?? periods)].sort((a, b) => a - b)]));
+  const unionPeriods = [...new Set(Object.values(windows).flat())].sort((a, b) => a - b);
+  const newestYear = Math.max(...Object.values(windows).map(window => window.at(-1)!));
   const policyHash = canonicalHash(input.policy);
   const definition = {
     product_classification_id: input.product_classification_id,
@@ -102,26 +140,43 @@ export function buildCountryEvidencePlan(input: CountryEvidencePlanInput): Froze
     policy_config_version: input.policy_config_version,
     policy_hash: policyHash,
     normalization_version: COMTRADE_NORMALIZATION_VERSION,
-    period_set: periods,
-    latest_common_year: latest,
+    period_set: unionPeriods,
+    latest_common_year: newestYear,
     candidate_strategy: input.policy.candidate_strategy,
+    ...(input.preferred_period == null ? {} : { preferred_period: input.preferred_period }),
+    // Only present when Stage A actually varied the windows, so a single-period plan keeps its
+    // original identity and historical plans stay reachable by their existing plan_key.
+    ...(input.reporter_period_windows ? { reporter_period_windows: windows } : {}),
   };
   const items: PlannedEvidenceItem[] = [];
   for (const reporter of reporters) {
-    for (const period of [...periods].reverse()) {
-      const latestPeriod = period === latest;
+    const window = windows[reporter]!, reporterLatest = window.at(-1)!;
+    // Item identity hashes the WHOLE plan definition, windows included. Narrowing it to this
+    // reporter's own window made two different plans mint identical item keys whenever a
+    // reporter's window happened to match — and `item_key` is globally unique, so the second
+    // plan died on a constraint violation. Letting one reporter's fallback shift another's item
+    // key costs nothing: evidence is reused by `request_fingerprint`, never by item key.
+    const identityBase = definition;
+    for (const period of [...window].reverse()) {
+      // Freshness is about whether the PROVIDER may still revise the year, which depends on the
+      // preferred period — not on where this reporter's own window happens to end. A closed year
+      // cannot change, so billing it on the 90-day latest-period clock would re-buy the same
+      // immutable fact forever, and would do it to exactly the lagging markets Phase 1G serves.
+      const latestPeriod = period === (input.preferred_period ?? reporterLatest);
       const freshness = latestPeriod ? input.policy.latest_period_freshness_days : input.policy.closed_period_freshness_days;
       for (const spec of [
         { purpose: 'WORLD_IMPORT_HISTORY' as const, scope: 'world' as const, partner: input.policy.world_partner_code, priority: latestPeriod ? 10 : 20 },
         { purpose: 'INDIA_IMPORT_HISTORY' as const, scope: 'india' as const, partner: input.policy.india_partner_code, priority: latestPeriod ? 30 : 40 },
       ]) {
-        const identity = { ...definition, purpose: spec.purpose, reporter, partner: spec.partner, period };
+        const identity = { ...identityBase, purpose: spec.purpose, reporter, partner: spec.partner, period };
         items.push({ item_key: canonicalHash(identity), purpose: spec.purpose, reporter_code: reporter, partner_scope: spec.scope, partner_code: spec.partner, period, priority: spec.priority, freshness_days: freshness, estimated_call_cost: 1 });
       }
     }
-    const identity = { ...definition, purpose: 'LATEST_SUPPLIER_DISTRIBUTION', reporter, partner: input.policy.all_suppliers_partner_code, period: latest };
-    items.push({ item_key: canonicalHash(identity), purpose: 'LATEST_SUPPLIER_DISTRIBUTION', reporter_code: reporter, partner_scope: 'all_suppliers', partner_code: input.policy.all_suppliers_partner_code, period: latest, priority: 50, freshness_days: input.policy.supplier_distribution_freshness_days, estimated_call_cost: 1 });
+    // The supplier distribution must belong to the SAME year as this reporter's own latest
+    // World total, or HHI would divide one year's suppliers by another year's denominator.
+    const identity = { ...identityBase, purpose: 'LATEST_SUPPLIER_DISTRIBUTION', reporter, partner: input.policy.all_suppliers_partner_code, period: reporterLatest };
+    items.push({ item_key: canonicalHash(identity), purpose: 'LATEST_SUPPLIER_DISTRIBUTION', reporter_code: reporter, partner_scope: 'all_suppliers', partner_code: input.policy.all_suppliers_partner_code, period: reporterLatest, priority: 50, freshness_days: reporterLatest === (input.preferred_period ?? reporterLatest) ? input.policy.supplier_distribution_freshness_days : input.policy.closed_period_freshness_days, estimated_call_cost: 1 });
   }
   items.sort((a, b) => a.priority - b.priority || Number(a.reporter_code) - Number(b.reporter_code) || b.period - a.period || a.purpose.localeCompare(b.purpose));
-  return { plan_key: canonicalHash(definition), policy_hash: policyHash, latest_common_year: latest, period_set: periods, actual_history_years: periods.length, candidate_reporters: reporters, items, frozen_definition: definition };
+  return { plan_key: canonicalHash(definition), policy_hash: policyHash, latest_common_year: newestYear, period_set: unionPeriods, actual_history_years: Math.max(...Object.values(windows).map(window => window.length)), candidate_reporters: reporters, reporter_period_windows: windows, items, frozen_definition: definition };
 }

@@ -117,6 +117,7 @@ export interface ConfigShape {
   'jobs.policy': JobsPolicy;
   'comtrade.policy': ComtradePolicy;
   'country_evidence.policy': CountryEvidencePolicy;
+  'country_period_selection.policy': CountryPeriodSelectionPolicy;
   'country_screening.policy': CountryScreeningPolicy;
   'country_trade_metrics.policy': CountryTradeMetricPolicy;
   'country_truth.scoring_v4': CountryTruthScoringV4Policy;
@@ -271,6 +272,51 @@ export interface CountryEvidencePolicy {
 }
 
 /**
+ * Latest-usable-period selection (Phase 1G).
+ *
+ * Owns the answer to "which annual period should THIS country be judged on?", separately from
+ * how any country is scored. It exists because a globally-common latest year silently excludes
+ * every reporter that files late, which is a property of national statistics offices rather
+ * than of demand.
+ *
+ * The two numeric constants are derived from policy this repository already holds rather than
+ * invented: `discovery.scoring.confidence.accepted_reporting_lag_years` (2) sets how far back
+ * the walk may go, and `discovery.scoring.recency_decay_per_year` (0.8) sets what a year of age
+ * costs in evidence confidence. Nothing here ever alters a raw trade value.
+ */
+export interface CountryPeriodSelectionPolicy {
+  policy_version: string;
+  selection_rule: 'first_usable_walking_back_v1';
+  /** Annual data becomes eligible only from this UTC month. */
+  annual_release_month_utc: number;
+  /** How many years older than the preferred period the walk may reach. */
+  max_fallback_lookback_years: number;
+  /** Cell statuses that answer the question. Anything else is not a usable observation. */
+  usable_cell_statuses: string[];
+  /** A measured zero is an answer; searching past it would manufacture demand. Must stay true. */
+  observed_zero_terminates_selection: boolean;
+  /** Suppression says a value exists and is withheld — not that the market is absent. */
+  suppressed_permits_fallback: boolean;
+  /** An HS-revision mismatch is a real incompatibility at that year, so an older year may serve. */
+  incompatible_permits_fallback: boolean;
+  /** Our own outage is never evidence about a country. Must stay false. */
+  provider_failure_permits_fallback: boolean;
+  /** Evidence weight decay per year of lag. Mirrors discovery.scoring.recency_decay_per_year. */
+  recency_decay_per_year: number;
+  /** Freshness label per lag, index 0 = preferred period. */
+  freshness_states_by_lag: string[];
+  /** Label applied once the lookback is exhausted. */
+  beyond_lookback_state: string;
+  /**
+   * How long acquired evidence for a CLOSED (non-preferred) period stays reusable. A closed
+   * year does not change, so re-acquiring it on the preferred period's 90-day clock would
+   * re-buy the same immutable fact forever — and would do it to exactly the lagging countries
+   * this policy exists to serve.
+   */
+  closed_period_freshness_days: number;
+}
+
+/**
  * Stage A global country screening (Phase 1F).
  *
  * This policy decides which countries are worth spending deep Country Truth quota on. It is
@@ -305,8 +351,9 @@ export interface CountryScreeningPolicy {
   /** Annual data becomes eligible only from this UTC month, matching country_evidence. */
   annual_release_month_utc: number;
   /**
-   * Phase 1G seam. Phase 1F evaluates exactly one screening period and must remain 0; the
-   * deterministic latest-usable-period walk is a later, separately versioned policy.
+   * Retained for historical run snapshots only. Phase 1G moved the lookback into
+   * `country_period_selection.policy`; this field must stay 0 so a v1 snapshot still parses
+   * and no second, disagreeing lookback can be configured here.
    */
   period_fallback_lookback_years: number;
   latest_period_freshness_days: number;
@@ -317,7 +364,9 @@ export interface CountryScreeningPolicy {
   screening_algorithm_version: string;
   /** Market-size transformation. Screening rank is explicitly not a v4 country score. */
   demand_signal: { method: 'world_import_value_log10_v1'; floor_usd: number; ceiling_usd: number };
-  tie_breaker: 'screening_score_desc_then_import_value_desc_then_reporter_code_asc_v1';
+  tie_breaker: 'selection_score_desc_then_screening_score_desc_then_import_value_desc_then_period_lag_asc_then_reporter_code_asc_v2';
+  /** The period-selection policy this screening policy is pinned to. */
+  period_selection_policy_version: string;
   max_acquisition_attempts_per_country: number;
   allow_partial_execution: boolean;
 }
@@ -356,7 +405,7 @@ export interface CountryTruthScoringV4Policy {
   risk:{trade_stability_weight:number;macro_resilience_weight:number;payment_resilience_weight:number;volatility_ceiling_pp:number};
   export_economics:{existing_economics_weight:number;unit_value_weight:number;benchmark_ratio_ceiling:number};
   ranking:{minimum_available_base_weight:number;require_demand:boolean;require_growth_or_competition:boolean};
-  confidence:{formula_version:'weighted_component_evidence_coverage_v4'};
+  confidence:{formula_version:string;/** Confidence decay per year the analysis window lags the preferred period. */recency_decay_per_year:number};
 }
 
 /**
@@ -573,8 +622,25 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     candidate_strategy: 'explicit_candidates_v1',
     allow_partial_execution: false,
   },
+  'country_period_selection.policy': {
+    policy_version: 'country-period-selection-policy-v1',
+    selection_rule: 'first_usable_walking_back_v1',
+    annual_release_month_utc: 8,
+    // discovery.scoring.confidence.accepted_reporting_lag_years
+    max_fallback_lookback_years: 2,
+    usable_cell_statuses: ['observed', 'observed_zero'],
+    observed_zero_terminates_selection: true,
+    suppressed_permits_fallback: false,
+    incompatible_permits_fallback: true,
+    provider_failure_permits_fallback: false,
+    // discovery.scoring.recency_decay_per_year -> lag 0 = 1.0, lag 1 = 0.8, lag 2 = 0.64
+    recency_decay_per_year: 0.8,
+    freshness_states_by_lag: ['current', 'recent', 'aged'],
+    beyond_lookback_state: 'stale',
+    closed_period_freshness_days: 3650,
+  },
   'country_screening.policy': {
-    policy_version: 'country-screening-policy-v1',
+    policy_version: 'country-screening-policy-v2',
     screening_stage: 'stage_a_global_demand_v1',
     universe_version: COUNTRY_SCREENING_UNIVERSE_VERSION,
     reporter_identity_strategy: 'comtrade_reporter_reference_v1',
@@ -602,7 +668,8 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     required_normalization_version: 'comtrade-normalization-v2',
     screening_algorithm_version: COUNTRY_SCREENING_ALGORITHM_VERSION,
     demand_signal: { method: 'world_import_value_log10_v1', floor_usd: 100_000, ceiling_usd: 10_000_000_000 },
-    tie_breaker: 'screening_score_desc_then_import_value_desc_then_reporter_code_asc_v1',
+    tie_breaker: 'selection_score_desc_then_screening_score_desc_then_import_value_desc_then_period_lag_asc_then_reporter_code_asc_v2',
+    period_selection_policy_version: 'country-period-selection-policy-v1',
     max_acquisition_attempts_per_country: 2,
     allow_partial_execution: false,
   },
@@ -639,7 +706,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     risk:{trade_stability_weight:60,macro_resilience_weight:20,payment_resilience_weight:20,volatility_ceiling_pp:50},
     export_economics:{existing_economics_weight:80,unit_value_weight:20,benchmark_ratio_ceiling:2},
     ranking:{minimum_available_base_weight:45,require_demand:true,require_growth_or_competition:true},
-    confidence:{formula_version:'weighted_component_evidence_coverage_v4'},
+    confidence:{formula_version:'weighted_component_evidence_coverage_and_recency_v5',recency_decay_per_year:0.8},
   },
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
@@ -700,6 +767,9 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   if (key === 'country_evidence.policy') {
     return { ...CONFIG_DEFAULTS['country_evidence.policy'], ...(row.value as object) } as ConfigShape[K];
   }
+  if (key === 'country_period_selection.policy') {
+    return { ...CONFIG_DEFAULTS['country_period_selection.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
   if (key === 'country_screening.policy') {
     const defaults=CONFIG_DEFAULTS['country_screening.policy'],stored=row.value as Partial<CountryScreeningPolicy>;
     return {...defaults,...stored,excluded_iso2_codes:{...defaults.excluded_iso2_codes,...(stored.excluded_iso2_codes??{})},demand_signal:{...defaults.demand_signal,...(stored.demand_signal??{})}} as ConfigShape[K];
@@ -709,7 +779,9 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   }
   if (key === 'country_truth.scoring_v4') {
     const defaults=CONFIG_DEFAULTS['country_truth.scoring_v4'],stored=row.value as Partial<CountryTruthScoringV4Policy>;
-    return {...defaults,...stored,base_component_weights:{...defaults.base_component_weights,...(stored.base_component_weights??{})},demand:{...defaults.demand,...(stored.demand??{})},growth:{...defaults.growth,...(stored.growth??{})},competition:{...defaults.competition,...(stored.competition??{})},risk:{...defaults.risk,...(stored.risk??{})},export_economics:{...defaults.export_economics,...(stored.export_economics??{})},ranking:{...defaults.ranking,...(stored.ranking??{})},confidence:{...defaults.confidence,...(stored.confidence??{})}} as ConfigShape[K];
+    return {...defaults,...stored,base_component_weights:{...defaults.base_component_weights,...(stored.base_component_weights??{})},demand:{...defaults.demand,...(stored.demand??{})},growth:{...defaults.growth,...(stored.growth??{})},competition:{...defaults.competition,...(stored.competition??{})},risk:{...defaults.risk,...(stored.risk??{})},export_economics:{...defaults.export_economics,...(stored.export_economics??{})},ranking:{...defaults.ranking,...(stored.ranking??{})},// A stored row predating the recency term has no decay key. Taking the whole confidence block
+    // from defaults keeps `formula_version` and the arithmetic describing the same thing.
+    confidence:(stored.confidence&&'recency_decay_per_year' in stored.confidence)?{...defaults.confidence,...stored.confidence}:defaults.confidence} as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];

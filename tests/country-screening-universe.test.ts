@@ -7,6 +7,8 @@ import { buildCountryScreeningUniverse, COUNTRY_SCREENING_UNIVERSE_VERSION } fro
 import { buildCountryScreeningPlan, selectScreeningPeriod } from '../src/lib/country-screening/planner';
 import { COUNTRY_SCREENING_ALGORITHM_VERSION, rankScreeningCandidates, screeningScore, shortlistSize } from '../src/lib/country-screening/ranking';
 
+const PERIOD_POLICY = CONFIG_DEFAULTS['country_period_selection.policy'];
+
 const POLICY = CONFIG_DEFAULTS['country_screening.policy'];
 const universeInput = (overrides: Partial<Parameters<typeof buildCountryScreeningUniverse>[0]> = {}) => ({
   universe_version: POLICY.universe_version,
@@ -119,7 +121,7 @@ describe('Country Screening Universe is derived, not curated', () => {
 });
 
 describe('screening rank is a market-size signal, ranked deterministically', () => {
-  const candidate = (reporter_code: string, import_value: number) => ({ reporter_code, import_value });
+  const candidate = (reporter_code: string, import_value: number, evidence_confidence = 1, period_lag = 0) => ({ reporter_code, import_value, evidence_confidence, period_lag });
 
   test('is monotone in import value and bounded by the policy band', () => {
     expect(screeningScore(POLICY.demand_signal.floor_usd, POLICY)).toBe(0);
@@ -150,6 +152,8 @@ describe('screening rank is a market-size signal, ranked deterministically', () 
     expect(() => rankScreeningCandidates([candidate('276', 1e6), candidate('276', 2e6)], POLICY)).toThrow(/Duplicate screening candidate/);
     expect(() => rankScreeningCandidates([candidate('276', 1e6)], { ...POLICY, screening_algorithm_version: 'country-screening-rank-v9' })).toThrow(/Unsupported screening algorithm version/);
     expect(() => rankScreeningCandidates([candidate('276', 1e6)], { ...POLICY, tie_breaker: 'alphabetical' as CountryScreeningPolicy['tie_breaker'] })).toThrow(/Unsupported screening tie breaker/);
+    expect(() => rankScreeningCandidates([candidate('276', 1e6, 0)], POLICY)).toThrow(/out-of-range evidence confidence/);
+    expect(() => rankScreeningCandidates([candidate('276', 1e6, 1, -1)], POLICY)).toThrow(/invalid period lag/);
     expect(POLICY.screening_algorithm_version).toBe(COUNTRY_SCREENING_ALGORITHM_VERSION);
   });
 
@@ -170,7 +174,8 @@ describe('the screening plan is frozen, cheap and Phase 1G ready', () => {
   const planInput = (overrides: Partial<Parameters<typeof buildCountryScreeningPlan>[0]> = {}) => ({
     product_classification_id: 'classification-1', hs_code: '090111', hs_revision: 'HS2022',
     as_of_date: new Date('2026-08-26T00:00:00Z'), source_mode: 'authenticated' as const,
-    policy: POLICY, policy_config_version: 1, ...overrides,
+    policy: POLICY, policy_config_version: 1,
+    period_selection_policy: PERIOD_POLICY, period_selection_policy_config_version: 1, ...overrides,
   });
 
   test('plans exactly one World import request per country and nothing deeper', () => {
@@ -182,10 +187,24 @@ describe('the screening plan is frozen, cheap and Phase 1G ready', () => {
     expect(new Set(plan.items.map(item => item.item_key)).size).toBe(plan.items.length);
   });
 
-  test('follows the same annual release rule as the deep evidence policy', () => {
+  test('prefers the same annual release rule as the deep evidence policy', () => {
     expect(selectScreeningPeriod(new Date('2026-08-26T00:00:00Z'), POLICY)).toBe(2025);
     expect(selectScreeningPeriod(new Date('2026-07-31T00:00:00Z'), POLICY)).toBe(2024);
     expect(buildCountryScreeningPlan(planInput()).screening_period).toBe(2025);
+  });
+
+  test('freezes the period-selection policy into the run identity', () => {
+    const base = buildCountryScreeningPlan(planInput());
+    expect(base.frozen_definition).toMatchObject({ period_selection_policy_version: PERIOD_POLICY.policy_version, max_fallback_lookback_years: 2 });
+    // Change the lookback or the freshness weighting and it is a different screen, not a
+    // reinterpretation of the same one.
+    const widened = buildCountryScreeningPlan(planInput({ period_selection_policy: { ...PERIOD_POLICY, max_fallback_lookback_years: 1 } }));
+    expect(widened.run_key).not.toBe(base.run_key);
+    expect(widened.period_selection_policy_hash).not.toBe(base.period_selection_policy_hash);
+    const decayed = buildCountryScreeningPlan(planInput({ period_selection_policy: { ...PERIOD_POLICY, recency_decay_per_year: 0.9 } }));
+    expect(decayed.run_key).not.toBe(base.run_key);
+    // A screening policy pinned to a different period policy version is refused outright.
+    expect(() => buildCountryScreeningPlan(planInput({ policy: { ...POLICY, period_selection_policy_version: 'country-period-selection-policy-v9' } }))).toThrow(/expects period selection policy/);
   });
 
   test('changes identity when the policy, period or universe changes', () => {
@@ -201,7 +220,7 @@ describe('the screening plan is frozen, cheap and Phase 1G ready', () => {
     expect(() => buildCountryScreeningPlan(planInput({ hs_code: '0901' }))).toThrow(/validated HS6/);
     expect(() => buildCountryScreeningPlan(planInput({ hs_revision: 'unknown' }))).toThrow(/explicit HS revision/);
     // Phase 1G owns per-country period fallback. Phase 1F fails closed rather than guessing.
-    expect(() => buildCountryScreeningPlan(planInput({ policy: { ...POLICY, period_fallback_lookback_years: 3 } }))).toThrow(/not implemented in country-screening-policy-v1/);
+    expect(() => buildCountryScreeningPlan(planInput({ policy: { ...POLICY, period_fallback_lookback_years: 3 } }))).toThrow(/owned by country_period_selection.policy/);
     expect(() => buildCountryScreeningPlan(planInput({ policy: { ...POLICY, required_normalization_version: 'comtrade-normalization-v1' } }))).toThrow(/comtrade-normalization-v2/);
     expect(() => buildCountryScreeningPlan(planInput({ policy: { ...POLICY, required_parser_version: 'comtrade-parser-v1' } }))).toThrow(/current Comtrade parser version/);
     expect(() => buildCountryScreeningPlan(planInput({ policy: { ...POLICY, require_complete_evidence: false } }))).toThrow(/requires complete provider evidence/);

@@ -95,7 +95,7 @@ describe('country_screening job', () => {
     const result = finished.result as Record<string, unknown>;
     expect(finished.status).toBe('completed');
     expect(provider.calls).toHaveBeenCalledTimes(4);
-    expect(result).toMatchObject({ schema_version: 'global-country-screening-result-v1', screening_status: 'completed', universe_size: 4, screening_period: 2025, eligible_count: 4, shortlist_size: 2, shortlist_reporters: ['276', '842'], physical_calls: 4 });
+    expect(result).toMatchObject({ schema_version: 'global-country-screening-result-v1', screening_status: 'completed', universe_size: 4, preferred_period: 2025, max_fallback_lookback_years: 2, eligible_count: 4, shortlist_size: 2, shortlist_reporters: ['276', '842'], physical_calls: 4 });
     expect(finished).toMatchObject({ progress_stage: 'completed', progress: 100, checkpoint: expect.objectContaining({ shortlist_reporters: ['276', '842'] }) });
     const run = await prisma.countryScreeningRun.findUniqueOrThrow({ where: { id: String(result.screening_run_id) } });
     expect(run).toMatchObject({ status: 'completed', source_mode: TradeSourceMode.authenticated, hs_code: f.hs6, universe_size: 4 });

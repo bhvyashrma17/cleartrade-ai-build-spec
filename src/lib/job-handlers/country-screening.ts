@@ -31,7 +31,10 @@ const payloadSchema = z.object({
   source_mode: z.enum([TradeSourceMode.authenticated, TradeSourceMode.fixture, TradeSourceMode.mock]),
   requested_by_agent_id: z.string().min(1),
   requested_at: z.string().datetime(),
-  policies: z.object({ country_screening: z.object({ config_version: z.number().int().positive(), policy_version: z.string().min(1), policy_hash: z.string().min(1), universe_version: z.string().min(1), screening_algorithm_version: z.string().min(1) }) }),
+  policies: z.object({
+    country_screening: z.object({ config_version: z.number().int().positive(), policy_version: z.string().min(1), policy_hash: z.string().min(1), universe_version: z.string().min(1), screening_algorithm_version: z.string().min(1) }),
+    country_period_selection: z.object({ config_version: z.number().int().positive(), policy_version: z.string().min(1), policy_hash: z.string().min(1), max_fallback_lookback_years: z.number().int().min(0) }),
+  }),
 });
 
 type Payload = z.infer<typeof payloadSchema>;
@@ -42,12 +45,24 @@ export function screeningPolicyIdentity(configured: { value: { policy_version: s
   return { config_version: configured.version, policy_version: configured.value.policy_version, policy_hash: canonicalHash({ ...configured.value, config_version: configured.version }), universe_version: configured.value.universe_version, screening_algorithm_version: configured.value.screening_algorithm_version };
 }
 
+export function periodSelectionPolicyIdentity(configured: { value: { policy_version: string; max_fallback_lookback_years: number }; version: number }) {
+  return { config_version: configured.version, policy_version: configured.value.policy_version, policy_hash: canonicalHash({ ...configured.value, config_version: configured.version }), max_fallback_lookback_years: configured.value.max_fallback_lookback_years };
+}
+
 async function validatePolicyIdentity(payload: Payload) {
   const configured = await getConfigWithVersion('country_screening.policy');
   const identity = screeningPolicyIdentity(configured);
   const frozen = payload.policies.country_screening;
   if (identity.config_version !== frozen.config_version || identity.policy_version !== frozen.policy_version || identity.policy_hash !== frozen.policy_hash || identity.universe_version !== frozen.universe_version || identity.screening_algorithm_version !== frozen.screening_algorithm_version) {
     throw new Error('Country screening policy identity no longer matches the frozen job payload.');
+  }
+  // The period policy decides which year each market is judged on, so drifting it mid-flight
+  // would silently change the question the frozen job was approved to ask.
+  const periodConfigured = await getConfigWithVersion('country_period_selection.policy');
+  const periodIdentity = periodSelectionPolicyIdentity(periodConfigured);
+  const frozenPeriod = payload.policies.country_period_selection;
+  if (periodIdentity.config_version !== frozenPeriod.config_version || periodIdentity.policy_version !== frozenPeriod.policy_version || periodIdentity.policy_hash !== frozenPeriod.policy_hash || periodIdentity.max_fallback_lookback_years !== frozenPeriod.max_fallback_lookback_years) {
+    throw new Error('Country period selection policy identity no longer matches the frozen job payload.');
   }
 }
 
@@ -80,7 +95,7 @@ export async function runGlobalCountryScreening(ctx: JobContext): Promise<JobOut
   await stage('planning', 5);
   const run = await createGlobalCountryScreeningRun({ product_classification_id: payload.product_classification_id, as_of_date: asOf, source_mode: payload.source_mode });
   if (checkpoint.screening_run_id && checkpoint.screening_run_id !== run.id) throw new Error('Checkpointed country screening run does not match the frozen job identity.');
-  if (run.hs_code !== payload.hs6 || run.hs_revision !== payload.hs_revision || run.policy_version !== payload.policies.country_screening.policy_version || run.policy_hash !== payload.policies.country_screening.policy_hash || run.universe_version !== payload.policies.country_screening.universe_version) throw new Error('Resolved country screening run does not match the frozen job identity.');
+  if (run.hs_code !== payload.hs6 || run.hs_revision !== payload.hs_revision || run.policy_version !== payload.policies.country_screening.policy_version || run.policy_hash !== payload.policies.country_screening.policy_hash || run.universe_version !== payload.policies.country_screening.universe_version || run.period_selection_policy_version !== payload.policies.country_period_selection.policy_version || run.period_selection_policy_hash !== payload.policies.country_period_selection.policy_hash) throw new Error('Resolved country screening run does not match the frozen job identity.');
 
   await stage('screening', 25, { screening_run_id: run.id });
   const execution = await executeGlobalCountryScreeningRun(run.id);
@@ -92,7 +107,7 @@ export async function runGlobalCountryScreening(ctx: JobContext): Promise<JobOut
   const complete = execution.status === 'completed';
   return {
     status: complete ? JobStatus.completed : JobStatus.partial,
-    result: json({ schema_version: 'global-country-screening-result-v1', screening_run_id: run.id, screening_status: execution.status, universe_size: run.universe_size, screening_period: run.screening_period, eligible_count: execution.eligible_count, shortlist_size: execution.shortlist_size, shortlist_reporters: reporters, shortlist, physical_calls: execution.physical_calls, total_physical_calls: execution.total_physical_calls, quota: execution.quota }),
+    result: json({ schema_version: 'global-country-screening-result-v1', screening_run_id: run.id, screening_status: execution.status, universe_size: run.universe_size, preferred_period: run.screening_period, max_fallback_lookback_years: run.max_fallback_lookback_years, eligible_count: execution.eligible_count, shortlist_size: execution.shortlist_size, shortlist_reporters: reporters, shortlist, physical_calls: execution.physical_calls, total_physical_calls: execution.total_physical_calls, quota: execution.quota }),
   };
 }
 
@@ -109,14 +124,16 @@ export async function buildGlobalCountryScreeningPayload(args: { exporter_org_id
     product_classification_id: args.product_classification_id, hs6: args.hs6, hs_revision: args.hs_revision,
     source_mode: args.source_mode, requested_by_agent_id: args.requested_by_agent_id,
     requested_at: (args.requested_at ?? new Date()).toISOString(),
-    policies: { country_screening: screeningPolicyIdentity(configured) },
+    policies: { country_screening: screeningPolicyIdentity(configured), country_period_selection: periodSelectionPolicyIdentity(await getConfigWithVersion('country_period_selection.policy')) },
   });
 }
 
 /** Enqueue one screen. The dedupe key is the frozen work identity, so a double submit is a no-op. */
 export async function enqueueGlobalCountryScreening(args: Parameters<typeof buildGlobalCountryScreeningPayload>[0] & { correlation_id?: string }) {
   const payload = await buildGlobalCountryScreeningPayload(args);
-  const dedupeKey = `country_screening:${canonicalHash({ classification_id: payload.product_classification_id, policy_hash: payload.policies.country_screening.policy_hash, source_mode: payload.source_mode })}`;
+  // The preferred period and the period policy are part of the work identity: re-screening
+// across a release boundary is a different question, not a duplicate of the previous one.
+const dedupeKey = `country_screening:${canonicalHash({ classification_id: payload.product_classification_id, policy_hash: payload.policies.country_screening.policy_hash, period_policy_hash: payload.policies.country_period_selection.policy_hash, requested_at: payload.requested_at, source_mode: payload.source_mode })}`;
   const job = await enqueueJob({ type: JobType.country_screening, payload: json(payload), exporter_org_id: payload.exporter_org_id, requested_by_id: payload.requested_by_agent_id, target_type: 'product_classification', target_id: payload.product_classification_id, dedupe_key: dedupeKey, correlation_id: args.correlation_id });
   return { job, payload };
 }

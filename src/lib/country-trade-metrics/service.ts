@@ -31,12 +31,19 @@ export async function calculateAndPersistCountryTradeMetrics(manifestId:string,p
   const configured=policyOverride?{value:policyOverride,version:0}:await getConfigWithVersion('country_trade_metrics.policy');
   const loaded=await loadManifestInputs(manifestId,configured.value),policyHash=canonicalHash({...configured.value,config_version:configured.version});
   const records=[];
+  // Each reporter is measured across ITS OWN window when the plan carries one. Feeding the
+  // plan-wide union to every reporter is what made a lagging market unrankable: its market size
+  // was looked up at a year it never reported, so demand was unavailable and the score died.
+  const windows=(loaded.manifest.plan.reporter_period_windows??null) as Record<string,number[]>|null;
   for(const reporter of [...loaded.manifest.plan.candidate_reporters].sort((a,b)=>Number(a)-Number(b))){
-    const input:CountryMetricInput={reporter_code:reporter,hs_code:loaded.manifest.plan.hs_code,hs_revision:loaded.manifest.plan.hs_revision,period_set:loaded.manifest.plan.period_set,latest_common_year:loaded.manifest.plan.latest_common_year,facts:loaded.facts.filter(f=>f.reporter_code===reporter),policy:configured.value};
+    const window=windows?.[reporter]??loaded.manifest.plan.period_set;
+    const latestForReporter=window.at(-1)??loaded.manifest.plan.latest_common_year;
+    const input:CountryMetricInput={reporter_code:reporter,hs_code:loaded.manifest.plan.hs_code,hs_revision:loaded.manifest.plan.hs_revision,period_set:window,latest_common_year:latestForReporter,facts:loaded.facts.filter(f=>f.reporter_code===reporter),policy:configured.value};
     const metrics=calculateCountryTradeMetrics(input);
-    const payload={schema_version:'country-trade-metrics-payload-v1',manifest_id:loaded.manifest.id,manifest_checksum:loaded.manifest.checksum,reporter_code:reporter,country_code:toIso2(reporter),hs_code:input.hs_code,hs_revision:input.hs_revision,as_of_date:loaded.manifest.plan.as_of_date.toISOString(),period_set:input.period_set,latest_common_year:input.latest_common_year,metric_policy_version:configured.value.policy_version,metric_policy_hash:policyHash,calculation_version:configured.value.calculation_version,metrics};
+    const payload={schema_version:'country-trade-metrics-payload-v2',manifest_id:loaded.manifest.id,manifest_checksum:loaded.manifest.checksum,reporter_code:reporter,country_code:toIso2(reporter),hs_code:input.hs_code,hs_revision:input.hs_revision,as_of_date:loaded.manifest.plan.as_of_date.toISOString(),period_set:input.period_set,latest_common_year:input.latest_common_year,plan_latest_common_year:loaded.manifest.plan.latest_common_year,period_lag:Math.max(0,(loaded.manifest.plan.preferred_period??loaded.manifest.plan.latest_common_year)-input.latest_common_year),metric_policy_version:configured.value.policy_version,metric_policy_hash:policyHash,calculation_version:configured.value.calculation_version,metrics};
     const checksum=canonicalHash(payload);
     const existing=await prisma.countryTradeMetrics.findUnique({where:{manifest_id_reporter_code_metric_policy_hash_calculation_version:{manifest_id:manifestId,reporter_code:reporter,metric_policy_hash:policyHash,calculation_version:configured.value.calculation_version}}});
+    if(existing&&existing.checksum!==checksum)throw new Error(`CountryTradeMetrics ${existing.id} was computed under a different payload than the current code produces; recompute under a new calculation version rather than reusing it.`);
     records.push(existing??await prisma.countryTradeMetrics.create({data:{manifest_id:manifestId,product_classification_id:loaded.manifest.plan.product_classification_id,reporter_code:reporter,country_code:toIso2(reporter),hs_code:input.hs_code,hs_revision:input.hs_revision,as_of_date:loaded.manifest.plan.as_of_date,period_set:input.period_set,latest_common_year:input.latest_common_year,metric_policy_version:configured.value.policy_version,metric_policy_hash:policyHash,metric_policy_snapshot:json({...configured.value,config_version:configured.version}),calculation_version:configured.value.calculation_version,metrics_payload:json(payload),checksum}}));
   }
   return records;

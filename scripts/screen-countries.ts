@@ -22,15 +22,16 @@ async function main(){
   const asOf=new Date(`${asOfText}T00:00:00.000Z`);if(Number.isNaN(asOf.getTime()))throw new Error('--as-of must be YYYY-MM-DD.');
   const classification=await requireCountryTruthClassification(classificationId);
   const configured=await getConfigWithVersion('country_screening.policy');
+  const periodConfigured=await getConfigWithVersion('country_period_selection.policy');
   const mode=(process.env.COMTRADE_CLIENT==='real'?'authenticated':process.env.COMTRADE_CLIENT==='fixture'?'fixture':'mock') as 'authenticated'|'fixture'|'mock';
   const registry=comtradeReporterRegistry();
-  const planned=buildCountryScreeningPlan({product_classification_id:classification.id,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,as_of_date:asOf,source_mode:mode,policy:configured.value,policy_config_version:configured.version});
+  const planned=buildCountryScreeningPlan({product_classification_id:classification.id,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,as_of_date:asOf,source_mode:mode,policy:configured.value,policy_config_version:configured.version,period_selection_policy:periodConfigured.value,period_selection_policy_config_version:periodConfigured.version});
   const exclusionCounts=planned.universe.exclusions.reduce<Record<string,number>>((counts,row)=>({...counts,[row.reason]:(counts[row.reason]??0)+1}),{});
   const summary={
     environment:appEnvironment(),source_mode:mode,run_key:planned.run_key,
     classification_id:classification.id,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,
     as_of_date:asOf.toISOString(),screening_period_requested:planned.screening_period,
-    policy_version:configured.value.policy_version,policy_config_version:configured.version,policy_hash:planned.policy_hash,
+    policy_version:configured.value.policy_version,policy_config_version:configured.version,policy_hash:planned.policy_hash,period_selection_policy_version:periodConfigured.value.policy_version,period_selection_policy_hash:planned.period_selection_policy_hash,max_fallback_lookback_years:periodConfigured.value.max_fallback_lookback_years,
     universe_version:planned.universe.version,universe_checksum:planned.universe.checksum,
     reporter_registry:{version:registry.version,checksum:registry.checksum,live_reporters:registry.reporters.length,source:registry.source,anomalies:registry.anomalies},
     total_screening_markets:planned.universe.size,
