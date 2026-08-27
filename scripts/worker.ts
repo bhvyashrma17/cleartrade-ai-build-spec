@@ -93,11 +93,12 @@ async function tick(): Promise<boolean> {
 }
 
 async function main() {
+  log('info','platform_worker_starting',{instance_id:instanceId});
   validateRuntimeEnvironment('worker');
   registerAllJobHandlers();
   const policy = await getConfig('jobs.policy');
-  log('info','worker_started',{instance_id:instanceId,poll_interval_ms:policy.worker_poll_interval_ms,stale_after_seconds:policy.stale_after_seconds});
   await heartbeat('ready');
+  log('info','worker_started',{instance_id:instanceId,poll_interval_ms:policy.worker_poll_interval_ms,stale_after_seconds:policy.stale_after_seconds});
   const heartbeatTimer=setInterval(()=>void heartbeat(activeJobId?'busy':'ready').catch(error=>reportError(error,{event_scope:'worker_heartbeat'})),Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS??15000));heartbeatTimer.unref();
 
   // `--once` drains the queue and exits: used by tests and by a one-shot CI run, so a
