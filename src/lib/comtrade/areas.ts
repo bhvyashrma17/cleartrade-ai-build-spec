@@ -12,7 +12,7 @@ import { numericToAlpha2 } from 'i18n-iso-countries';
  * Source: UN Statistics Division, Standard country or area codes for statistical use (M49),
  * https://unstats.un.org/unsd/methodology/m49/overview/ (snapshot dependency 7.14.0).
  */
-const COMTRADE_LEGACY_AREA_TO_ISO2: Readonly<Record<string, string>> = {
+export const COMTRADE_LEGACY_AREA_TO_ISO2: Readonly<Record<string, string>> = {
   '251': 'FR',
   '381': 'IT',
   '579': 'NO',

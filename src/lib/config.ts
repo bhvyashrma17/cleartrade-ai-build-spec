@@ -12,6 +12,10 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { WORLD_PARTNER } from '@/lib/comtrade/areas';
+import { COMTRADE_REPORTER_REGISTRY_VERSION } from '@/lib/comtrade/reporter-registry';
+import { COUNTRY_SCREENING_ALGORITHM_VERSION } from '@/lib/country-screening/ranking';
+import { COUNTRY_SCREENING_UNIVERSE_VERSION, type CountryScreeningExclusionReason } from '@/lib/country-screening/universe';
 import { DEFAULT_PLAN_PRICING, type PlanPricing } from '@/lib/billing/plans';
 import type { Money } from '@/types';
 
@@ -113,6 +117,7 @@ export interface ConfigShape {
   'jobs.policy': JobsPolicy;
   'comtrade.policy': ComtradePolicy;
   'country_evidence.policy': CountryEvidencePolicy;
+  'country_screening.policy': CountryScreeningPolicy;
   'country_trade_metrics.policy': CountryTradeMetricPolicy;
   'country_truth.scoring_v4': CountryTruthScoringV4Policy;
   'discovery.scoring': DiscoveryScoringPolicy;
@@ -262,6 +267,58 @@ export interface CountryEvidencePolicy {
   world_partner_code: string;
   all_suppliers_partner_code: string;
   candidate_strategy: 'explicit_candidates_v1';
+  allow_partial_execution: boolean;
+}
+
+/**
+ * Stage A global country screening (Phase 1F).
+ *
+ * This policy decides which countries are worth spending deep Country Truth quota on. It is
+ * NOT an attractiveness model: it names one cheap trade signal (latest usable World import
+ * value for the confirmed HS6, by reporter), the evidence that signal is allowed to come
+ * from, and how many markets survive to the deep pipeline. Every constant that changes a
+ * screening outcome lives here rather than in service code, so a historical run can be
+ * reproduced from its frozen snapshot alone.
+ */
+export interface CountryScreeningPolicy {
+  policy_version: string;
+  /** Names the stage so a later regional-discovery stage cannot be confused with this one. */
+  screening_stage: 'stage_a_global_demand_v1';
+  universe_version: string;
+  /** Reporter identity comes from the provider's own reference, never from an alias map. */
+  reporter_identity_strategy: 'comtrade_reporter_reference_v1';
+  reporter_registry_version: string;
+  /** ISO 3166-1 alpha-2 → why that identity can never be a ClearTrade target market. */
+  excluded_iso2_codes: Record<string, CountryScreeningExclusionReason>;
+  /** ClearTrade exports FROM India; India is not one of its own target markets. */
+  exclude_origin_country: boolean;
+  /** Canonical ISO identity. The reporter code for it is resolved through the registry. */
+  origin_country_iso2: string;
+  /** Guard against a universe that silently explodes past what quota planning assumes. */
+  max_countries_per_run: number;
+  /** Deep-analysis shortlist target. Fewer markets ship when fewer qualify. */
+  shortlist_target_size: number;
+  max_shortlist_size: number;
+  /** Minimum evidence requirement: a real observation at or above this annual import value. */
+  minimum_import_value_usd: number;
+  world_partner_code: string;
+  /** Annual data becomes eligible only from this UTC month, matching country_evidence. */
+  annual_release_month_utc: number;
+  /**
+   * Phase 1G seam. Phase 1F evaluates exactly one screening period and must remain 0; the
+   * deterministic latest-usable-period walk is a later, separately versioned policy.
+   */
+  period_fallback_lookback_years: number;
+  latest_period_freshness_days: number;
+  /** v1 screens on complete responses only; relaxing it would be a new policy version. */
+  require_complete_evidence: boolean;
+  required_parser_version: string;
+  required_normalization_version: string;
+  screening_algorithm_version: string;
+  /** Market-size transformation. Screening rank is explicitly not a v4 country score. */
+  demand_signal: { method: 'world_import_value_log10_v1'; floor_usd: number; ceiling_usd: number };
+  tie_breaker: 'screening_score_desc_then_import_value_desc_then_reporter_code_asc_v1';
+  max_acquisition_attempts_per_country: number;
   allow_partial_execution: boolean;
 }
 
@@ -516,6 +573,39 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     candidate_strategy: 'explicit_candidates_v1',
     allow_partial_execution: false,
   },
+  'country_screening.policy': {
+    policy_version: 'country-screening-policy-v1',
+    screening_stage: 'stage_a_global_demand_v1',
+    universe_version: COUNTRY_SCREENING_UNIVERSE_VERSION,
+    reporter_identity_strategy: 'comtrade_reporter_reference_v1',
+    reporter_registry_version: COMTRADE_REPORTER_REGISTRY_VERSION,
+    // Uninhabited or civilian-population-free territories cannot import commercially, and
+    // XK/983 is an ISO user-assigned code the UN never assigned. Nothing else is removed:
+    // a market with no authenticated evidence is reported as `unavailable`, not deleted.
+    excluded_iso2_codes: {
+      AQ: 'no_resident_population', BV: 'no_resident_population', GS: 'no_resident_population',
+      HM: 'no_resident_population', IO: 'no_resident_population', TF: 'no_resident_population',
+      UM: 'no_resident_population', XK: 'not_un_m49_identity',
+    },
+    exclude_origin_country: true,
+    origin_country_iso2: 'IN',
+    max_countries_per_run: 300,
+    shortlist_target_size: 20,
+    max_shortlist_size: 30,
+    minimum_import_value_usd: 100_000,
+    world_partner_code: WORLD_PARTNER,
+    annual_release_month_utc: 8,
+    period_fallback_lookback_years: 0,
+    latest_period_freshness_days: 90,
+    require_complete_evidence: true,
+    required_parser_version: 'comtrade-parser-v2',
+    required_normalization_version: 'comtrade-normalization-v2',
+    screening_algorithm_version: COUNTRY_SCREENING_ALGORITHM_VERSION,
+    demand_signal: { method: 'world_import_value_log10_v1', floor_usd: 100_000, ceiling_usd: 10_000_000_000 },
+    tie_breaker: 'screening_score_desc_then_import_value_desc_then_reporter_code_asc_v1',
+    max_acquisition_attempts_per_country: 2,
+    allow_partial_execution: false,
+  },
   'country_trade_metrics.policy': {
     policy_version: 'country-trade-metrics-v1',
     calculation_version: 'country-trade-calculator-v1',
@@ -609,6 +699,10 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   }
   if (key === 'country_evidence.policy') {
     return { ...CONFIG_DEFAULTS['country_evidence.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'country_screening.policy') {
+    const defaults=CONFIG_DEFAULTS['country_screening.policy'],stored=row.value as Partial<CountryScreeningPolicy>;
+    return {...defaults,...stored,excluded_iso2_codes:{...defaults.excluded_iso2_codes,...(stored.excluded_iso2_codes??{})},demand_signal:{...defaults.demand_signal,...(stored.demand_signal??{})}} as ConfigShape[K];
   }
   if (key === 'country_trade_metrics.policy') {
     return { ...CONFIG_DEFAULTS['country_trade_metrics.policy'], ...(row.value as object) } as ConfigShape[K];

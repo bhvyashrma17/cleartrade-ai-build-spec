@@ -560,6 +560,9 @@ enum JobType {
   /// Agent-requested Country Truth orchestration. Enqueue-only until its dedicated
   /// acquisition/metrics/scoring handler is implemented.
   country_truth_discovery
+  /// Phase 1F Stage A: cheap global country screening that produces the deep pipeline's
+  /// candidate reporter set. Acquires one World import fact per country, never a deep package.
+  country_screening
   buyer_discovery
   document_generation
   report_export
@@ -1020,6 +1023,7 @@ model ProductClassification {
   proposed_by            User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
   confirmed_by           User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
   country_evidence_plans CountryEvidencePlan[]
+  country_screening_runs CountryScreeningRun[]
   country_trade_metrics  CountryTradeMetrics[]
 
   @@unique([product_id, revision])
@@ -3548,6 +3552,7 @@ model SourceEvidence {
   observations                NormalizedTradeObservation[]
   country_evidence_items      CountryEvidencePlanItem[]
   country_evidence_references CountryEvidenceManifestReference[]
+  country_screening_results   CountryScreeningResult[]
 
   @@index([request_fingerprint, source_origin, retrieved_at])
   @@index([response_checksum])
@@ -3687,6 +3692,101 @@ model CountryEvidenceManifestReference {
   source_evidence SourceEvidence          @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
 
   @@unique([manifest_id, plan_item_key])
+  @@index([source_evidence_id])
+}
+
+/// Frozen Stage A global screening intent for one confirmed classification and one annual period.
+///
+/// The definition, the country universe it evaluated and the policy that chose it are frozen at
+/// creation; only execution state advances. A completed run and its results are immutable, so a
+/// historical shortlist can always prove which countries were considered and on what evidence.
+model CountryScreeningRun {
+  id                          String          @id @default(cuid())
+  run_key                     String          @unique
+  product_classification_id   String
+  hs_code                     String
+  hs_revision                 String
+  as_of_date                  DateTime
+  /// The single annual period this run evaluates. Per-country period fallback is Phase 1G.
+  screening_period            Int
+  source_mode                 TradeSourceMode
+  policy_version              String
+  policy_hash                 String
+  policy_snapshot             Json
+  universe_version            String
+  universe_checksum           String
+  universe_size               Int
+  /// Provider reporting identity frozen into the run. A reporter-reference refresh that moves
+  /// any reporter code changes this, the universe checksum, the run key and every request
+  /// fingerprint beneath it — so a completed run can never be reinterpreted under new codes.
+  reporter_registry_version   String
+  reporter_registry_checksum  String
+  /// Full resolved universe and its exclusions, so the evaluated set is provable after the fact.
+  universe_snapshot           Json
+  screening_algorithm_version String
+  parser_version              String
+  normalization_version       String
+  shortlist_target_size       Int
+  max_shortlist_size          Int
+  estimated_call_cost         Int
+  allow_partial_execution     Boolean         @default(false)
+  status                      String          @default("planned")
+  resolved_count              Int             @default(0)
+  eligible_count              Int             @default(0)
+  shortlist_size              Int             @default(0)
+  physical_call_count         Int             @default(0)
+  /// Last quota accounting for this run: considered, reusable, required, estimated, available.
+  quota_snapshot              Json?
+  completed_at                DateTime?
+  created_at                  DateTime        @default(now())
+  updated_at                  DateTime        @updatedAt
+
+  product_classification ProductClassification    @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  results                CountryScreeningResult[]
+
+  @@index([product_classification_id, created_at])
+  @@index([status, created_at])
+}
+
+/// One screened country. Missing, suppressed, unavailable and incompatible are distinct states
+/// and are never rewritten as an observed zero; `import_value` is only ever a real observation.
+model CountryScreeningResult {
+  id                    String    @id @default(cuid())
+  run_id                String
+  result_key            String    @unique
+  reporter_code         String
+  country_code          String    @db.VarChar(2)
+  iso_numeric           String
+  country_name          String
+  /// Canonical Comtrade request identity. Shared with the deep plan's latest World import item.
+  request_fingerprint   String
+  screening_status      String    @default("pending_acquisition")
+  screening_score       Decimal?  @db.Decimal(9, 6)
+  screening_rank        Int?
+  import_value          Decimal?  @db.Decimal(20, 3)
+  /// The observation's own status: observed, observed_zero, suppressed, missing, invalid.
+  import_value_status   String?
+  /// Period the usable observation came from. Nullable so Phase 1G can differ per country.
+  observation_period    Int?
+  freshness_state       String    @default("unknown")
+  source_evidence_id    String?
+  observation_id        String?
+  evidence_retrieved_at DateTime?
+  shortlisted           Boolean   @default(false)
+  decision_reason       String    @default("pending_acquisition")
+  provenance            Json?
+  attempts              Int       @default(0)
+  last_attempted_at     DateTime?
+  error                 String?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  run             CountryScreeningRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  source_evidence SourceEvidence?     @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
+
+  @@unique([run_id, reporter_code])
+  @@index([run_id, screening_rank])
+  @@index([run_id, screening_status])
   @@index([source_evidence_id])
 }
 

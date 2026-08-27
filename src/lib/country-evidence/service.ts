@@ -1,13 +1,12 @@
 import { Prisma, TradeSourceMode } from '@prisma/client';
-import { getComtradeClient } from '@/lib/comtrade';
 import { canonicalComtradeRequest, comtradeRequestFingerprint } from '@/lib/comtrade/request';
 import { COMTRADE_NORMALIZATION_VERSION, COMTRADE_PARSER_VERSION, ensureCurrentComtradeNormalization } from '@/lib/comtrade/normalization';
-import { getConfig, getConfigWithVersion } from '@/lib/config';
+import { getConfigWithVersion } from '@/lib/config';
 import { isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { prisma } from '@/lib/prisma';
 import { requireCountryTruthClassification } from '@/lib/product-classification';
-import { providerDailyWindow } from '@/lib/provider-quota';
+import { availableProviderRequestAllowance } from '@/lib/provider-quota';
 import { buildCountryEvidencePlan, canonicalHash, type CountryEvidencePlanInput } from './planner';
 
 const JSON = (value: unknown) => value as Prisma.InputJsonValue;
@@ -67,21 +66,10 @@ export async function resolveCountryEvidencePlan(planId:string) {
   return prisma.countryEvidencePlan.findUniqueOrThrow({where:{id:planId},include:{items:{orderBy:[{priority:'asc'},{reporter_code:'asc'},{period:'desc'}]},manifests:true}});
 }
 
-async function availableQuota(sourceMode:TradeSourceMode) {
-  if (sourceMode === TradeSourceMode.fixture || sourceMode === TradeSourceMode.mock) return Number.MAX_SAFE_INTEGER;
-  const comtrade=await getConfig('comtrade.policy'),identity=getComtradeClient(comtrade).identity;
-  if (sourceMode !== TradeSourceMode.authenticated || identity.mode !== 'authenticated') return 0;
-  const {window_start}=providerDailyWindow();
-  const row=await prisma.providerQuotaWindow.findUnique({where:{provider_credential_fingerprint_window_start:{provider:identity.provider,credential_fingerprint:identity.credential_fingerprint,window_start}}});
-  const local=(comtrade.daily_request_budget??450)-(row?.requests_reserved??0);
-  const provider=row?.provider_reported_remaining??Number.MAX_SAFE_INTEGER;
-  return Math.max(0,Math.min(local,provider));
-}
-
 export async function executeCountryEvidencePlan(planId:string, options:{allow_partial_execution?:boolean}={}) {
   let plan=await resolveCountryEvidencePlan(planId);
   const required=plan.items.filter(item=>['fetch_required','failed','incompatible'].includes(item.resolution_state)||(item.resolution_state==='partial'&&!item.source_evidence_id));
-  const allowance=await availableQuota(plan.source_mode);
+  const allowance=await availableProviderRequestAllowance(plan.source_mode);
   const partial=options.allow_partial_execution??plan.allow_partial_execution;
   if(required.length>allowance&&!partial){
     await prisma.countryEvidencePlan.update({where:{id:plan.id},data:{status:'deferred_quota'}});

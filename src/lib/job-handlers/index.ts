@@ -21,6 +21,7 @@ import { runCbpManifestIngest } from '@/lib/job-handlers/cbp-manifest';
 import { runBuyerIntelligenceJob } from '@/lib/job-handlers/buyer-intelligence';
 import { runDemandDiscovery } from '@/lib/job-handlers/discovery';
 import { runCountryTruthDiscovery } from '@/lib/job-handlers/country-truth-discovery';
+import { runGlobalCountryScreening } from '@/lib/job-handlers/country-screening';
 import { runDocumentGeneration } from '@/lib/job-handlers/documents';
 import { runPayoutRecompute } from '@/lib/job-handlers/payouts';
 import { runReadinessAssessment } from '@/lib/job-handlers/readiness';
@@ -35,6 +36,7 @@ export function registerAllJobHandlers() {
   if (registered) return;
   registerJobHandler(JobType.demand_discovery, runDemandDiscovery);
   registerJobHandler(JobType.country_truth_discovery, runCountryTruthDiscovery);
+  registerJobHandler(JobType.country_screening, runGlobalCountryScreening);
   registerJobHandler(JobType.readiness_assessment, runReadinessAssessment);
   registerJobHandler(JobType.document_generation, runDocumentGeneration);
   registerJobHandler(JobType.payout_recompute, runPayoutRecompute);

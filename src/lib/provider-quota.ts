@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { TradeSourceMode } from '@prisma/client';
+import { getComtradeClient } from '@/lib/comtrade';
+import { getConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 
 export interface QuotaReservation {
@@ -59,4 +62,24 @@ export async function reconcileProviderQuota(input: {
       provider_reported_reset_at: input.reset_at ?? undefined,
     },
   });
+}
+
+/**
+ * How many further physical provider requests this credential may still make today.
+ *
+ * The single answer to "can this plan run?", shared by deep Country Evidence acquisition and
+ * Stage A global screening so neither invents its own accounting. It reads the same ledger the
+ * reservation path writes, takes the stricter of the local budget and whatever the provider's
+ * own headers last reported, and fails closed: a source mode the current client cannot serve
+ * has an allowance of zero rather than an optimistic guess.
+ */
+export async function availableProviderRequestAllowance(sourceMode: TradeSourceMode): Promise<number> {
+  if (sourceMode === TradeSourceMode.fixture || sourceMode === TradeSourceMode.mock) return Number.MAX_SAFE_INTEGER;
+  const comtrade = await getConfig('comtrade.policy'), identity = getComtradeClient(comtrade).identity;
+  if (sourceMode !== TradeSourceMode.authenticated || identity.mode !== 'authenticated') return 0;
+  const { window_start } = providerDailyWindow();
+  const row = await prisma.providerQuotaWindow.findUnique({ where: { provider_credential_fingerprint_window_start: { provider: identity.provider, credential_fingerprint: identity.credential_fingerprint, window_start } } });
+  const local = (comtrade.daily_request_budget ?? 450) - (row?.requests_reserved ?? 0);
+  const provider = row?.provider_reported_remaining ?? Number.MAX_SAFE_INTEGER;
+  return Math.max(0, Math.min(local, provider));
 }

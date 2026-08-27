@@ -115,6 +115,17 @@ govern every PR.
   assertions against rows the seed already placed at the end state.** When you add a new
   lifecycle (a new gate, a new status enum, a new cross-object effect), extend the cross-portal
   walk rather than only adding a seeded-fixture scenario for it.
+- **A compatibility alias map is not an authority on provider identity.** `COMTRADE_LEGACY_AREA_TO_ISO2`
+  exists to READ area codes already sitting in stored evidence. Phase 1F initially inverted it to
+  decide which reporter code to ASK Comtrade about, and produced `381` for Italy — a code UN
+  Comtrade lists in neither its reporter nor its partner reference. The request would have returned
+  nothing, Italy would have been recorded `unavailable`, and no error would have been raised
+  anywhere; the same inversion happened to be right for the USA (`842`) and India (`699`), which is
+  exactly why it looked correct. Provider identity now comes from the provider's own reference
+  (`src/lib/comtrade/reporter-registry.ts` over a checked-in snapshot of the public, keyless
+  `files/v1/app/reference/Reporters.json`), and ISO/M49 stays the geographic identity. When you
+  need a provider's internal id, fetch its reference table — never derive one from a mapping built
+  for the opposite direction.
 - **Restart the WORKER after adding a `JobType`, or it strands jobs in `processing` forever.**
   A long-running `npm run worker` holds a Prisma client generated before the new enum value
   existed. It still claims the new job (the candidate query selects only `id`, so nothing
@@ -158,6 +169,7 @@ govern every PR.
 | `docs/12-appendix-reference.md` | Screen registry, route conventions, glossary (CHA, BRC, ICEGATE, Incoterm, HS code…) |
 | `docs/13-blueprint-reconciliation.md` | **Read before Phase 0.** Where the two sources conflict, what's missing from each, and 10 decisions this raises |
 | `docs/14-guest-and-tiers.md` | **Read before any permission, auth or access-control work.** Guest/freemium tiers, the capability matrix, guest lifecycle from mint through upgrade, retention, and the abuse surface. Supersedes the "all access is authenticated" assumption in `docs/01`–`docs/13` |
+| `docs/31-global-country-screening.md` | Phase 1F Stage A: the derived country universe, Country Screening Policy v1, screening rank, quota planning and the handoff into the deep Country Truth pipeline |
 
 ## Build order (don't build portal-by-portal)
 
