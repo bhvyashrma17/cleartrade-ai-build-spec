@@ -5,7 +5,7 @@ import { tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { prisma } from '@/lib/prisma';
 import { toIso2 } from '@/lib/comtrade/areas';
 import { COMTRADE_NORMALIZATION_VERSION } from '@/lib/comtrade/normalization';
-import { calculateCountryTradeMetrics, type CountryMetricInput, type MetricFact } from './calculator';
+import { calculateCountryTradeMetrics, calculateIndiaOriginUnitValues, INDIA_ORIGIN_UNIT_VALUE_VERSION, type CountryMetricInput, type MetricFact } from './calculator';
 
 const json=(value:unknown)=>value as Prisma.InputJsonValue;
 
@@ -27,8 +27,8 @@ async function loadManifestInputs(manifestId:string,policy:CountryTradeMetricPol
   return{manifest,facts,policy};
 }
 
-export async function calculateAndPersistCountryTradeMetrics(manifestId:string,policyOverride?:CountryTradeMetricPolicy){
-  const configured=policyOverride?{value:policyOverride,version:0}:await getConfigWithVersion('country_trade_metrics.policy');
+export async function calculateAndPersistCountryTradeMetrics(manifestId:string,policyOverride?:CountryTradeMetricPolicy|{value:CountryTradeMetricPolicy;version:number}){
+  const configured=policyOverride?('value' in policyOverride?policyOverride:{value:policyOverride,version:0}):await getConfigWithVersion('country_trade_metrics.policy');
   const loaded=await loadManifestInputs(manifestId,configured.value),policyHash=canonicalHash({...configured.value,config_version:configured.version});
   const records=[];
   // Each reporter is measured across ITS OWN window when the plan carries one. Feeding the
@@ -47,6 +47,24 @@ export async function calculateAndPersistCountryTradeMetrics(manifestId:string,p
     records.push(existing??await prisma.countryTradeMetrics.create({data:{manifest_id:manifestId,product_classification_id:loaded.manifest.plan.product_classification_id,reporter_code:reporter,country_code:toIso2(reporter),hs_code:input.hs_code,hs_revision:input.hs_revision,as_of_date:loaded.manifest.plan.as_of_date,period_set:input.period_set,latest_common_year:input.latest_common_year,metric_policy_version:configured.value.policy_version,metric_policy_hash:policyHash,metric_policy_snapshot:json({...configured.value,config_version:configured.version}),calculation_version:configured.value.calculation_version,metrics_payload:json(payload),checksum}}));
   }
   return records;
+}
+
+/**
+ * Supplemental India-origin unit value, per reporter, over an already-frozen manifest.
+ *
+ * It deliberately writes nothing. Persisting it as part of CountryTradeMetrics would change
+ * that record's checksum and force a new calculation version, which is exactly what would make
+ * an in-progress Phase 1G run recompute metrics it has already validated. Phase 1H records the
+ * result in its own fact manifest instead.
+ */
+export async function calculateIndiaOriginUnitValueSupplement(manifestId:string,policy:CountryTradeMetricPolicy){
+  const loaded=await loadManifestInputs(manifestId,policy);
+  const windows=(loaded.manifest.plan.reporter_period_windows??null) as Record<string,number[]>|null;
+  return [...loaded.manifest.plan.candidate_reporters].sort((a,b)=>Number(a)-Number(b)).map(reporter=>{
+    const window=windows?.[reporter]??loaded.manifest.plan.period_set;
+    const input:CountryMetricInput={reporter_code:reporter,hs_code:loaded.manifest.plan.hs_code,hs_revision:loaded.manifest.plan.hs_revision,period_set:window,latest_common_year:window.at(-1)??loaded.manifest.plan.latest_common_year,facts:loaded.facts.filter(f=>f.reporter_code===reporter),policy};
+    return {reporter_code:reporter,country_code:toIso2(reporter),supplemental_version:INDIA_ORIGIN_UNIT_VALUE_VERSION,result:calculateIndiaOriginUnitValues(input)};
+  });
 }
 
 export function formatCountryTradeMetricsReconciliation(record:{reporter_code:string;country_code:string|null;hs_code:string;hs_revision:string;checksum:string;metrics_payload:Prisma.JsonValue}){

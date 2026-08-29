@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import { JobStatus, JobType, ProductClassificationStatus, UserRole, type Prisma } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { canonicalHash } from '@/lib/country-evidence/planner';
-import { getConfigWithVersion } from '@/lib/config';
+import { getConfigWithVersion, type CountryEvidencePolicy, type CountryTradeMetricPolicy, type CountryTruthPhase1HPolicy, type CountryTruthScoringV4Policy } from '@/lib/config';
+import { buildCountryTruthExporterFactSnapshot, type CountryTruthExporterFactSnapshot } from '@/lib/country-truth/exporter-fact-snapshot';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { enqueueJob, findInFlightJob } from '@/lib/jobs';
 import { assertCan, assertOrgAccess } from '@/lib/permissions';
@@ -25,7 +25,7 @@ const COUNTRY_ALIASES: Record<string,{country_code:string;country_name:string;re
 };
 
 export interface CountryTruthDiscoveryPayload {
-  schema_version:'country-truth-discovery-job-v1';
+  schema_version:'country-truth-discovery-job-v3';
   exporter_org_id:string;
   product_id:string;
   product_classification_id:string;
@@ -34,10 +34,13 @@ export interface CountryTruthDiscoveryPayload {
   candidates:Array<{country_code:string;country_name:string;reporter_code:string}>;
   requested_by_agent_id:string;
   requested_at:string;
+  exporter_fact_snapshot:CountryTruthExporterFactSnapshot;
+  exporter_fact_snapshot_checksum:string;
   policies:{
-    country_evidence:{config_version:number;policy_version:string;policy_hash:string};
-    country_trade_metrics:{config_version:number;policy_version:string;calculation_version:string;policy_hash:string};
-    country_truth_scoring:{config_version:number;model_version:string;formula_version:string;policy_hash:string};
+    country_evidence:{config_version:number;policy_version:string;policy_hash:string;snapshot:CountryEvidencePolicy};
+    country_trade_metrics:{config_version:number;policy_version:string;calculation_version:string;policy_hash:string;snapshot:CountryTradeMetricPolicy};
+    country_truth_scoring:{config_version:number;model_version:string;formula_version:string;policy_hash:string;snapshot:CountryTruthScoringV4Policy};
+    country_truth_phase_1h:{config_version:number;policy_version:string;calculation_version:string;policy_hash:string;snapshot:CountryTruthPhase1HPolicy};
   };
 }
 
@@ -62,7 +65,7 @@ export async function requestCountryTruthDiscovery(args:{actor:Principal;exporte
   if(args.candidate_countries.length===0)throw validationError([{field:'candidate_countries',code:'required',message:'Select at least one candidate country.'}]);
   const candidates=mapCountryTruthCandidates(args.candidate_countries);
 
-  const product=await prisma.product.findFirst({where:{id:args.product_id,exporter_org_id:args.exporter_org_id},include:{classification_history:{orderBy:{revision:'desc'}}}});
+  const product=await prisma.product.findFirst({where:{id:args.product_id,exporter_org_id:args.exporter_org_id},include:{exporter_org:true,certifications:true,classification_history:{orderBy:{revision:'desc'}}}});
   if(!product)throw notFound('That product is not available for this exporter.');
   const classification=product.classification_history.find(item=>item.status===ProductClassificationStatus.confirmed);
   if(!classification||!classification.confirmed_at||!classification.confirmed_by_id)throw validationError([{field:'product_id',code:'classification_required',message:'Confirm the product classification before requesting Country Truth analysis.'}]);
@@ -73,22 +76,32 @@ export async function requestCountryTruthDiscovery(args:{actor:Principal;exporte
   catch{throw validationError([{field:'product_id',code:'classification_unsupported',message:'Country Truth currently requires a confirmed ITC-HS or HS 2022 classification.'}]);}
   if(!['2022','HS2022'].includes(classification.nomenclature_version))throw validationError([{field:'product_id',code:'classification_unsupported',message:'Country Truth currently requires a confirmed ITC-HS or HS 2022 classification.'}]);
 
-  const [evidence,metrics,scoring]=await Promise.all([
+  const [evidence,metrics,scoring,phase1h]=await Promise.all([
     getConfigWithVersion('country_evidence.policy'),
     getConfigWithVersion('country_trade_metrics.policy'),
     getConfigWithVersion('country_truth.scoring_v4'),
+    getConfigWithVersion('country_truth.phase_1h'),
   ]);
   const requestedAt=args.requested_at??new Date();
+  const sourceReferences=Array.isArray(classification.source_references)?classification.source_references.filter((item):item is string=>typeof item==='string'):[];
+  const exporterFacts=buildCountryTruthExporterFactSnapshot({
+    exporter_org:{id:product.exporter_org.id,country:product.exporter_org.country,state:product.exporter_org.state,city:product.exporter_org.city,pickup_location_code:product.exporter_org.pickup_location_code,preferred_origin_gateway:product.exporter_org.preferred_origin_gateway,updated_at:product.exporter_org.updated_at},
+    product:{id:product.id,exporter_org_id:product.exporter_org_id,updated_at:product.updated_at,evidence_origin:product.evidence_origin,hs_code:product.hs_code,hs_nomenclature_version:product.hs_nomenclature_version,hs_classification_revision:product.hs_classification_revision,hs_classification_status:product.hs_classification_status,price_target_amount:product.price_target_amount,price_target_currency:product.price_target_currency,price_target_quantity_unit:product.price_target_quantity_unit,price_target_incoterm:product.price_target_incoterm,capacity_value:product.capacity_value,capacity_unit:product.capacity_unit,moq_value:product.moq_value,moq_unit:product.moq_unit,lead_time_days:product.lead_time_days,delivery_commitment_days:product.delivery_commitment_days,logistics_constraint_codes:product.logistics_constraint_codes,logistics_constraints_confirmed:product.logistics_constraints_confirmed,desired_order_size_amount:product.desired_order_size_amount,desired_order_size_currency:product.desired_order_size_currency,customization_capability:product.customization_capability,packaging_capability:product.packaging_capability,packaging:product.packaging},
+    certifications:product.certifications.map(item=>({id:item.id,product_id:item.product_id,code:item.code,name:item.name,status:item.status,evidence_ref:item.evidence_ref,valid_until:item.valid_until,updated_at:item.updated_at})),
+    classification:{id:classification.id,product_id:classification.product_id,revision:classification.revision,hs6_code:hs6,nomenclature_version:classification.nomenclature_version,status:'confirmed',confirmed_by_id:classification.confirmed_by_id,confirmed_at:classification.confirmed_at,evidence_refs:sourceReferences},
+    captured_at:requestedAt,
+  });
   const payload:CountryTruthDiscoveryPayload={
-    schema_version:'country-truth-discovery-job-v1',exporter_org_id:args.exporter_org_id,product_id:product.id,product_classification_id:classification.id,hs6,hs_revision:classification.nomenclature_version,candidates,requested_by_agent_id:actor.id,requested_at:requestedAt.toISOString(),
+    schema_version:'country-truth-discovery-job-v3',exporter_org_id:args.exporter_org_id,product_id:product.id,product_classification_id:classification.id,hs6,hs_revision:classification.nomenclature_version,candidates,requested_by_agent_id:actor.id,requested_at:requestedAt.toISOString(),exporter_fact_snapshot:exporterFacts.snapshot,exporter_fact_snapshot_checksum:exporterFacts.checksum,
     policies:{
-      country_evidence:{config_version:evidence.version,policy_hash:canonicalHash(evidence.value),policy_version:evidence.value.policy_version},
-      country_trade_metrics:{...policyIdentity(metrics),policy_version:metrics.value.policy_version,calculation_version:metrics.value.calculation_version},
-      country_truth_scoring:{...policyIdentity(scoring),model_version:scoring.value.model_version,formula_version:scoring.value.formula_version},
+      country_evidence:{config_version:evidence.version,policy_hash:canonicalHash(evidence.value),policy_version:evidence.value.policy_version,snapshot:evidence.value},
+      country_trade_metrics:{...policyIdentity(metrics),policy_version:metrics.value.policy_version,calculation_version:metrics.value.calculation_version,snapshot:metrics.value},
+      country_truth_scoring:{...policyIdentity(scoring),model_version:scoring.value.model_version,formula_version:scoring.value.formula_version,snapshot:scoring.value},
+      country_truth_phase_1h:{...policyIdentity(phase1h),policy_version:phase1h.value.policy_version,calculation_version:phase1h.value.calculation_version,snapshot:phase1h.value},
     },
   };
-  const workIdentity={classification_id:classification.id,reporters:candidates.map(item=>item.reporter_code)};
-  const dedupeKey=`country_truth_discovery:${createHash('sha256').update(JSON.stringify(workIdentity)).digest('hex')}`;
+  const workIdentity={schema_version:payload.schema_version,exporter_org_id:payload.exporter_org_id,product_id:payload.product_id,classification_id:classification.id,hs6,hs_revision:payload.hs_revision,reporters:candidates.map(item=>item.reporter_code),scoring_clock:payload.requested_at,exporter_fact_snapshot_checksum:payload.exporter_fact_snapshot_checksum,policy_hashes:Object.values(payload.policies).map(item=>item.policy_hash)};
+  const dedupeKey=`country_truth_discovery:${canonicalHash(workIdentity)}`;
   const existing=await findInFlightJob(dedupeKey);
   if(existing)return {job:existing,payload:existing.payload as unknown as CountryTruthDiscoveryPayload,created:false};
 
@@ -100,6 +113,6 @@ export async function requestCountryTruthDiscovery(args:{actor:Principal;exporte
     if(!raced)throw error;
     return {job:raced,payload:raced.payload as unknown as CountryTruthDiscoveryPayload,created:false};
   }
-  await writeAuditEvent({actor,action:AUDIT_ACTIONS.create,object_type:'country_truth_job',object_id:job.id,exporter_org_id:args.exporter_org_id,after_summary:{product_id:product.id,classification_id:classification.id,hs6,candidate_countries:candidates.map(item=>item.country_code),reporter_codes:candidates.map(item=>item.reporter_code),job_status:JobStatus.queued},correlation_id:args.correlation_id});
+  await writeAuditEvent({actor,action:AUDIT_ACTIONS.create,object_type:'country_truth_job',object_id:job.id,exporter_org_id:args.exporter_org_id,after_summary:{product_id:product.id,classification_id:classification.id,hs6,candidate_countries:candidates.map(item=>item.country_code),reporter_codes:candidates.map(item=>item.reporter_code),exporter_fact_snapshot_checksum:exporterFacts.checksum,policy_hashes:Object.values(payload.policies).map(item=>item.policy_hash),job_status:JobStatus.queued},correlation_id:args.correlation_id});
   return {job,payload,created:true};
 }

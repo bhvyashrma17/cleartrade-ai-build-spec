@@ -1,8 +1,8 @@
 import { Prisma, TradeSourceMode } from '@prisma/client';
 import { canonicalComtradeRequest, comtradeRequestFingerprint } from '@/lib/comtrade/request';
 import { COMTRADE_NORMALIZATION_VERSION, COMTRADE_PARSER_VERSION, ensureCurrentComtradeNormalization } from '@/lib/comtrade/normalization';
-import { getConfigWithVersion } from '@/lib/config';
-import { isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
+import { getConfigWithVersion, type CountryEvidencePolicy } from '@/lib/config';
+import { appEnvironment, isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { prisma } from '@/lib/prisma';
 import { requireCountryTruthClassification } from '@/lib/product-classification';
@@ -15,10 +15,13 @@ function requestFor(item: { reporter_code:string;partner_code:string;period:numb
   return canonicalComtradeRequest({provider:'un_comtrade',dataset:'goods-trade',source_mode:sourceMode as CountryEvidencePlanInput['source_mode'],purpose:'country_truth',reporter_code:item.reporter_code,partner_code:item.partner_code,partner2_code:'0',flow_direction:'import',frequency:'A',period:String(item.period),hs_codes:[item.hs_code],hs_revision:item.hs_revision,customs_code:item.customs_code,mode_of_supply:item.mode_of_supply});
 }
 
-export async function createCountryEvidencePlan(input: Omit<CountryEvidencePlanInput, 'policy'|'policy_config_version'|'hs_code'|'hs_revision'>) {
+export async function createCountryEvidencePlan(
+  input: Omit<CountryEvidencePlanInput, 'policy'|'policy_config_version'|'hs_code'|'hs_revision'>,
+  frozenPolicy?: { value: CountryEvidencePolicy; version: number },
+) {
   if(isRealWorkflowEnvironment()&&input.source_mode!==TradeSourceMode.authenticated)throw new Error('Staging/production Country Evidence plans require authenticated source mode.');
   const classification = await requireCountryTruthClassification(input.product_classification_id);
-  const configured = await getConfigWithVersion('country_evidence.policy');
+  const configured = frozenPolicy ?? await getConfigWithVersion('country_evidence.policy');
   const built = buildCountryEvidencePlan({...input,hs_code:classification.hs6_code,hs_revision:classification.nomenclature_version,policy:configured.value,policy_config_version:configured.version});
   const existing = await prisma.countryEvidencePlan.findUnique({where:{plan_key:built.plan_key},include:{items:true,manifests:true}});
   if (existing) return existing;
@@ -31,7 +34,7 @@ export async function createCountryEvidencePlan(input: Omit<CountryEvidencePlanI
 async function resolveItem(item: Awaited<ReturnType<typeof prisma.countryEvidencePlanItem.findFirstOrThrow>>, sourceMode: TradeSourceMode) {
   const request = requestFor(item, sourceMode);
   const evidence = await prisma.sourceEvidence.findMany({
-    where:{request_fingerprint:comtradeRequestFingerprint(request),source_origin:tradeSourceModeToEvidenceOrigin(sourceMode),parser_version:COMTRADE_PARSER_VERSION,status:{in:['accepted','partial']}},
+    where:{request_fingerprint:comtradeRequestFingerprint(request),source_origin:tradeSourceModeToEvidenceOrigin(sourceMode),environment:appEnvironment(),parser_version:COMTRADE_PARSER_VERSION,status:{in:['accepted','partial']}},
     include:{observations:true},orderBy:{retrieved_at:'desc'},take:5,
   });
   const cutoff = new Date(Date.now() - item.freshness_days * 86_400_000);

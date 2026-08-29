@@ -26,7 +26,7 @@ import { analysisWindowFor, selectCountryPeriod, type PeriodProbeOutcome } from 
 import { COMTRADE_NORMALIZATION_VERSION, COMTRADE_PARSER_VERSION, ensureCurrentComtradeNormalization } from '@/lib/comtrade/normalization';
 import { getConfig, getConfigWithVersion, type CountryPeriodSelectionPolicy, type CountryScreeningPolicy } from '@/lib/config';
 import { createCountryEvidencePlan } from '@/lib/country-evidence/service';
-import { isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
+import { appEnvironment, isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { prisma } from '@/lib/prisma';
 import { requireCountryTruthClassification } from '@/lib/product-classification';
@@ -218,7 +218,7 @@ async function probePeriod(run: ScreeningRun, result: ScreeningResult, period: n
   // The preferred period's fingerprint is the frozen one on the row; older years are derived.
   const fingerprint = period === run.screening_period ? result.request_fingerprint : comtradeRequestFingerprint(screeningComtradeRequest({ reporter_code: result.reporter_code, partner_code: policy.world_partner_code, period, hs_code: run.hs_code, hs_revision: run.hs_revision, source_mode: plannedSourceMode(run.source_mode) }));
   const evidence = await prisma.sourceEvidence.findMany({
-    where: { request_fingerprint: fingerprint, source_origin: origin, parser_version: policy.required_parser_version, status: { in: ['accepted', 'partial'] } },
+    where: { request_fingerprint: fingerprint, source_origin: origin, environment: appEnvironment(), parser_version: policy.required_parser_version, status: { in: ['accepted', 'partial'] } },
     include: { observations: true }, orderBy: { retrieved_at: 'desc' }, take: 5,
   });
   const candidate = evidence.find(row => row.completeness === 'COMPLETE' && row.status === 'accepted');

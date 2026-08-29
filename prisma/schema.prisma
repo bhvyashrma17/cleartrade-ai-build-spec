@@ -760,27 +760,28 @@ model ExporterOrg {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  assigned_agent           User?                    @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
-  users                    User[]                   @relation("OrgMembers")
-  products                 Product[]
-  readiness_assessments    ReadinessAssessment[]
-  discovery_runs           DiscoveryRun[]
-  buyer_leads              BuyerLead[]
-  buyer_fit_assessments    BuyerFitAssessment[]
-  buyer_outcomes           BuyerOutcome[]
-  buyer_shortlists         BuyerShortlist[]
-  deals                    Deal[]
-  tasks                    Task[]
-  assignments              AgentAssignment[]
-  invitations              Invitation[]
-  agent_decisions          AgentDecision[]
-  buyer_profiles           BuyerCommercialProfile[]
-  invoice_series           InvoiceSeries[]
-  issued_invoice_numbers   IssuedInvoiceNumber[]
-  exchange_rate_quotes     ExchangeRateQuote[]
-  document_input_snapshots DocumentInputSnapshot[]
-  bank_accounts            ExporterBankAccount[]
-  subscriptions            Subscription[]
+  assigned_agent               User?                      @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
+  users                        User[]                     @relation("OrgMembers")
+  products                     Product[]
+  readiness_assessments        ReadinessAssessment[]
+  discovery_runs               DiscoveryRun[]
+  buyer_leads                  BuyerLead[]
+  buyer_fit_assessments        BuyerFitAssessment[]
+  buyer_outcomes               BuyerOutcome[]
+  buyer_shortlists             BuyerShortlist[]
+  deals                        Deal[]
+  tasks                        Task[]
+  assignments                  AgentAssignment[]
+  invitations                  Invitation[]
+  agent_decisions              AgentDecision[]
+  buyer_profiles               BuyerCommercialProfile[]
+  invoice_series               InvoiceSeries[]
+  issued_invoice_numbers       IssuedInvoiceNumber[]
+  exchange_rate_quotes         ExchangeRateQuote[]
+  country_truth_fact_snapshots CountryTruthFactSnapshot[]
+  document_input_snapshots     DocumentInputSnapshot[]
+  bank_accounts                ExporterBankAccount[]
+  subscriptions                Subscription[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -983,48 +984,50 @@ model Product {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  exporter_org           ExporterOrg             @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  certifications         ProductCertification[]
-  market_assessments     MarketAssessment[]
-  buyer_leads            BuyerLead[]
-  buyer_fit_assessments  BuyerFitAssessment[]
-  deals                  Deal[]
-  classification_history ProductClassification[]
-  hs_confirmed_by        User?                   @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
+  exporter_org                 ExporterOrg                @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  certifications               ProductCertification[]
+  market_assessments           MarketAssessment[]
+  buyer_leads                  BuyerLead[]
+  buyer_fit_assessments        BuyerFitAssessment[]
+  deals                        Deal[]
+  classification_history       ProductClassification[]
+  country_truth_fact_snapshots CountryTruthFactSnapshot[]
+  hs_confirmed_by              User?                      @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
 
   @@index([exporter_org_id])
   @@index([hs_code])
 }
 
 model ProductClassification {
-  id                     String                      @id @default(cuid())
-  product_id             String
-  revision               Int
-  itc_hs_code            String?
-  hs6_code               String
-  nomenclature           String
-  nomenclature_version   String
-  method                 ProductClassificationMethod
+  id                           String                      @id @default(cuid())
+  product_id                   String
+  revision                     Int
+  itc_hs_code                  String?
+  hs6_code                     String
+  nomenclature                 String
+  nomenclature_version         String
+  method                       ProductClassificationMethod
   /// Canonical product facts frozen by the server when this classification is proposed.
   /// Later product edits must not rewrite the basis on which the code was reviewed.
-  product_facts_snapshot Json
-  evidence               Json
-  rationale              String
+  product_facts_snapshot       Json
+  evidence                     Json
+  rationale                    String
   /// Structured public/source references supporting the human classification decision.
-  source_references      Json
-  confidence             Decimal                     @db.Decimal(5, 4)
-  status                 ProductClassificationStatus
-  proposed_by_id         String
-  proposed_at            DateTime                    @default(now())
-  confirmed_by_id        String?
-  confirmed_at           DateTime?
-  superseded_at          DateTime?
-  product                Product                     @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  proposed_by            User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
-  confirmed_by           User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
-  country_evidence_plans CountryEvidencePlan[]
-  country_screening_runs CountryScreeningRun[]
-  country_trade_metrics  CountryTradeMetrics[]
+  source_references            Json
+  confidence                   Decimal                     @db.Decimal(5, 4)
+  status                       ProductClassificationStatus
+  proposed_by_id               String
+  proposed_at                  DateTime                    @default(now())
+  confirmed_by_id              String?
+  confirmed_at                 DateTime?
+  superseded_at                DateTime?
+  product                      Product                     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  proposed_by                  User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
+  confirmed_by                 User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+  country_evidence_plans       CountryEvidencePlan[]
+  country_screening_runs       CountryScreeningRun[]
+  country_trade_metrics        CountryTradeMetrics[]
+  country_truth_fact_snapshots CountryTruthFactSnapshot[]
 
   @@unique([product_id, revision])
   @@index([product_id, status])
@@ -1185,25 +1188,33 @@ model MarketAssessment {
   /// selection. Non-exclusive: any number of assessments may be saved at once.
   saved_at    DateTime?
 
-  run                   DiscoveryRun         @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  product               Product?             @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  agent_decisions       AgentDecision[]
-  country_trade_metrics CountryTradeMetrics? @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+  run                         DiscoveryRun              @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  product                     Product?                  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  agent_decisions             AgentDecision[]
+  country_trade_metrics       CountryTradeMetrics?      @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+  country_truth_fact_snapshot CountryTruthFactSnapshot? @relation(fields: [country_truth_fact_snapshot_id], references: [id], onDelete: Restrict)
 
-  country_trade_metrics_id           String?
-  country_trade_metrics_checksum     String?
-  country_evidence_manifest_id       String?
-  country_evidence_manifest_checksum String?
-  country_metric_policy_version      String?
-  country_metric_policy_hash         String?
-  country_truth_period_set           Int[]
-  country_truth_as_of_date           DateTime?
-  country_truth_assessment_state     String?
-  assessment_checksum                String?
+  country_trade_metrics_id             String?
+  country_trade_metrics_checksum       String?
+  country_evidence_manifest_id         String?
+  country_evidence_manifest_checksum   String?
+  country_metric_policy_version        String?
+  country_metric_policy_hash           String?
+  country_truth_period_set             Int[]
+  country_truth_as_of_date             DateTime?
+  country_truth_assessment_state       String?
+  assessment_checksum                  String?
+  /// Stable record identity (run + country + every frozen-input identity). The content
+  /// checksum may legitimately repeat across two runs; this record identity may not.
+  assessment_identity                  String?   @unique(map: "MarketAssessment_assessment_identity_key")
+  /// Phase 1H facts are immutable records separate from the scores derived from them.
+  country_truth_fact_snapshot_id       String?
+  country_truth_fact_snapshot_checksum String?
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
   @@index([country_trade_metrics_id])
+  @@index([country_truth_fact_snapshot_id])
 }
 
 /// Explicit destination/HS hard gates. Sanctions entity-list rows never become a country
@@ -3376,6 +3387,18 @@ enum EvidenceOrigin {
   manually_entered_real
 }
 
+/// Epistemic ownership of a fact. This is deliberately orthogonal to EvidenceOrigin:
+/// `public_real` says a row may serve in production, while `authoritative_public` says who
+/// actually stands behind the assertion. A partner quote and an exporter declaration can both
+/// be real production evidence without becoming public-authority facts.
+enum EvidenceAssertionClass {
+  authoritative_public
+  exporter_declared
+  agent_verified
+  partner_quote
+  unknown_legacy
+}
+
 enum IngestStatus {
   running
   throttled
@@ -3673,12 +3696,55 @@ model CountryTradeMetrics {
   checksum                  String   @unique
   created_at                DateTime @default(now())
 
-  manifest               CountryEvidenceManifest @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
-  product_classification ProductClassification   @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  manifest               CountryEvidenceManifest    @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
+  product_classification ProductClassification      @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
   market_assessments     MarketAssessment[]
+  fact_snapshots         CountryTruthFactSnapshot[]
 
   @@unique([manifest_id, reporter_code, metric_policy_hash, calculation_version])
   @@index([product_classification_id, reporter_code, created_at])
+}
+
+/// Immutable Phase 1H fact manifest for one exporter × product classification × country.
+///
+/// The payload contains typed first-party facts and selected external facts, never component or
+/// overall scores. `snapshot_key` identifies the frozen question and selected evidence;
+/// `facts_checksum` protects the canonical payload. A semantic change must use a new calculation
+/// version or policy hash and therefore creates a new row instead of reinterpreting history.
+model CountryTruthFactSnapshot {
+  id                         String                   @id @default(cuid())
+  snapshot_key               String                   @unique(map: "CountryTruthFactSnapshot_snapshot_key_key")
+  schema_version             String
+  calculation_version        String
+  exporter_org_id            String
+  product_id                 String
+  product_classification_id  String
+  country_trade_metrics_id   String
+  reporter_code              String
+  country_code               String                   @db.VarChar(2)
+  hs_code                    String
+  hs_revision                String
+  as_of_date                 DateTime
+  exporter_snapshot_checksum String
+  selection_policy_version   Int
+  selection_policy_hash      String
+  selection_policy_snapshot  Json
+  facts_payload              Json
+  facts_checksum             String
+  evidence_origins           EvidenceOrigin[]         @default([unknown_legacy])
+  assertion_classes          EvidenceAssertionClass[] @default([unknown_legacy])
+  created_at                 DateTime                 @default(now())
+
+  exporter_org           ExporterOrg           @relation(fields: [exporter_org_id], references: [id], onDelete: Restrict)
+  product                Product               @relation(fields: [product_id], references: [id], onDelete: Restrict)
+  product_classification ProductClassification @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  country_trade_metrics  CountryTradeMetrics   @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+  market_assessments     MarketAssessment[]
+
+  @@unique([country_trade_metrics_id, exporter_snapshot_checksum, selection_policy_hash, calculation_version], map: "CountryTruthFactSnapshot_input_identity_key")
+  @@index([exporter_org_id, product_id, country_code, created_at], map: "CountryTruthFactSnapshot_org_product_country_created_idx")
+  @@index([product_classification_id, reporter_code, as_of_date], map: "CountryTruthFactSnapshot_classification_reporter_as_of_idx")
+  @@index([facts_checksum], map: "CountryTruthFactSnapshot_facts_checksum_idx")
 }
 
 model CountryEvidenceManifestReference {

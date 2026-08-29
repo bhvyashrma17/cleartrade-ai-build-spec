@@ -60,10 +60,39 @@ export interface FrozenCountryEvidencePlan {
   frozen_definition: Record<string, unknown>;
 }
 
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]));
-  return value;
+function canonical(value: unknown, path = '$'): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Cannot hash a non-finite number at ${path}.`);
+    // JSON.stringify collapses -0 to 0. Make that normalization explicit so callers do not
+    // mistake a runtime quirk for an identity distinction.
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (typeof value === 'bigint') return { $bigint: value.toString() };
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw new Error(`Cannot hash an invalid Date at ${path}.`);
+    return { $date: value.toISOString() };
+  }
+  if (Array.isArray(value)) return value.map((entry, index) => canonical(entry, `${path}[${index}]`));
+  if (value && typeof value === 'object') {
+    // Prisma Decimal and similar value objects expose a stable JSON scalar. Calling toJSON is
+    // necessary because enumerating a Date/Decimal as a plain object used to turn both into `{}`
+    // and created real cache-key collisions.
+    const prototype = Object.getPrototypeOf(value);
+    const serializable = value as { toJSON?: () => unknown };
+    if (prototype !== Object.prototype && prototype !== null && typeof serializable.toJSON === 'function') {
+      return canonical(serializable.toJSON(), `${path}.toJSON()`);
+    }
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => {
+          if (entry === undefined) throw new Error(`Cannot hash undefined at ${path}.${key}; use an explicit null or omit the key.`);
+          return [key, canonical(entry, `${path}.${key}`)];
+        }),
+    );
+  }
+  throw new Error(`Cannot hash ${typeof value} at ${path}.`);
 }
 
 export function canonicalHash(value: unknown): string {

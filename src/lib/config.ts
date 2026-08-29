@@ -16,7 +16,15 @@ import { WORLD_PARTNER } from '@/lib/comtrade/areas';
 import { COMTRADE_REPORTER_REGISTRY_VERSION } from '@/lib/comtrade/reporter-registry';
 import { COUNTRY_SCREENING_ALGORITHM_VERSION } from '@/lib/country-screening/ranking';
 import { COUNTRY_SCREENING_UNIVERSE_VERSION, type CountryScreeningExclusionReason } from '@/lib/country-screening/universe';
+import { INDIA_ORIGIN_UNIT_VALUE_VERSION } from '@/lib/country-trade-metrics/calculator';
 import { DEFAULT_PLAN_PRICING, type PlanPricing } from '@/lib/billing/plans';
+import type {
+  AssertionClass,
+  ExportEconomicsV3Policy,
+  ExporterMarketFitV3Policy,
+  LogisticsV3Policy,
+  MarketAccessV2Policy,
+} from '@/lib/country-truth/phase-1h-calculations';
 import type { Money } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -121,6 +129,7 @@ export interface ConfigShape {
   'country_screening.policy': CountryScreeningPolicy;
   'country_trade_metrics.policy': CountryTradeMetricPolicy;
   'country_truth.scoring_v4': CountryTruthScoringV4Policy;
+  'country_truth.phase_1h': CountryTruthPhase1HPolicy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
   /**
@@ -409,6 +418,37 @@ export interface CountryTruthScoringV4Policy {
 }
 
 /**
+ * Phase 1H non-trade pillar policy.
+ *
+ * Every sub-policy carries its own formula/calculation version because a change to any of them
+ * changes the meaning of a persisted score. `policy_version` names the bundle; the config row
+ * version and this object's canonical hash together form the identity that a frozen assessment
+ * records, so an Ops edit produces a NEW assessment rather than reinterpreting an old one.
+ */
+export interface CountryTruthPhase1HPolicy {
+  policy_version: string;
+  calculation_version: string;
+  /** Schema version of the persisted CountryTruthFactSnapshot payload. */
+  facts_schema_version: string;
+  /**
+   * Version of the supplemental India-origin unit-value statistic Phase 1H records in its own
+   * fact manifest. It lives here, not in country_trade_metrics.policy, so revising it changes
+   * Phase 1H manifest identity only and never a CountryTradeMetrics identity.
+   */
+  india_origin_unit_value_version: string;
+  /**
+   * Destinations whose reported import statistics are known to be valued CIF, and are therefore
+   * comparable to a landed-cost buildup. Empty by default: a unit value whose valuation basis is
+   * unrecorded is not published as a benchmark rather than being assumed CIF.
+   */
+  trade_statistical_import_valuation_by_country: Record<string, 'CIF' | 'FOB'>;
+  market_access: MarketAccessV2Policy;
+  export_economics: ExportEconomicsV3Policy;
+  exporter_market_fit: ExporterMarketFitV3Policy;
+  logistics_feasibility: LogisticsV3Policy;
+}
+
+/**
  * Guest-tier limits. These bound real money — an anonymous caller triggering an AI job
  * spends on every run — so they are business settings that Ops must be able to retune
  * under load without a deploy, exactly like fees and SLAs (docs/01 §2).
@@ -436,6 +476,136 @@ export type ConfigKey = keyof ConfigShape;
  * Seed values only. docs/01 §2 "current/default assumption" column, plus the concrete
  * SLA starting values from AGT-07 (docs/13 E4).
  */
+/**
+ * Evidence authority multipliers. They reduce CONFIDENCE only — never a pillar score — so that
+ * "we are less sure" can never be mistaken for "this market is worse". `unknown_legacy` is
+ * pinned to zero because a row whose authorship was never recorded may not lend credibility.
+ */
+const PHASE_1H_ASSERTION_CONFIDENCE: Record<AssertionClass, number> = {
+  authoritative_public: 1,
+  agent_verified: 0.9,
+  partner_quote: 0.8,
+  exporter_declared: 0.7,
+  unknown_legacy: 0,
+};
+
+const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v1';
+
+const PHASE_1H_TARIFF_POLICY = {
+  formula_version: 'applicable-india-tariff-v2',
+  calculation_version: PHASE_1H_CALCULATION_VERSION,
+  minimum_evidence_confidence: 50,
+};
+
+/**
+ * Cost components already carried by an exporter price quoted at each Incoterm.
+ *
+ * DAP/DPU/DDP are listed deliberately even though they cannot currently be used: naming what
+ * they bundle lets the calculation reject them with the real reason (the price already contains
+ * post-customs cost that we refuse to invent a split for) instead of a vague "unknown Incoterm".
+ */
+const PHASE_1H_INCOTERM_COST_OWNERSHIP: CountryTruthPhase1HPolicy['export_economics']['incoterm_cost_ownership'] = {
+  EXW: [],
+  FCA: ['packaging', 'inland_transport'],
+  FAS: ['packaging', 'inland_transport'],
+  FOB: ['packaging', 'inland_transport', 'origin_charges'],
+  CFR: ['packaging', 'inland_transport', 'origin_charges', 'international_freight'],
+  CPT: ['packaging', 'inland_transport', 'origin_charges', 'international_freight'],
+  CIF: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance'],
+  CIP: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance'],
+  DAP: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance', 'destination_charges'],
+  DPU: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance', 'destination_charges'],
+  DDP: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance', 'destination_charges'],
+};
+
+const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
+  policy_version: 'country-truth-phase-1h-v1',
+  calculation_version: PHASE_1H_CALCULATION_VERSION,
+  facts_schema_version: 'country-truth-facts-v1',
+  india_origin_unit_value_version: INDIA_ORIGIN_UNIT_VALUE_VERSION,
+  trade_statistical_import_valuation_by_country: {},
+  market_access: {
+    formula_version: 'market-access-v2',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    weights: { tariff: 60, regulatory: 40 },
+    tariff_policy: PHASE_1H_TARIFF_POLICY,
+    tariff_zero_score_percent: 25,
+    requirement_penalties: { restriction: 25, mandatory_certification: 15, other_document: 5 },
+    unresolved_obtainability_penalty: 10,
+    maximum_requirement_age_days: 180,
+    maximum_coverage_age_days: 30,
+    allowed_assertion_classes: ['authoritative_public'],
+  },
+  export_economics: {
+    formula_version: 'export-economics-v3',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    tariff_policy: PHASE_1H_TARIFF_POLICY,
+    incoterm_cost_ownership: PHASE_1H_INCOTERM_COST_OWNERSHIP,
+    // Every component is required. A component left out of this list is added to the landed
+    // cost as nothing at all, which is exactly the "missing becomes zero" defect — and it
+    // biases the score OPTIMISTICALLY, because a cost we failed to record makes the market
+    // look cheaper. Relaxing an entry here is a deliberate, versioned Ops decision.
+    required_cost_components: [
+      'packaging',
+      'inland_transport',
+      'origin_charges',
+      'international_freight',
+      'insurance',
+      'destination_charges',
+      'financing',
+      'cleartrade_fee',
+    ],
+    allowed_price_assertion_classes: ['exporter_declared', 'agent_verified'],
+    allowed_benchmark_assertion_classes: ['authoritative_public'],
+    allowed_cost_assertion_classes: ['authoritative_public', 'agent_verified', 'partner_quote', 'exporter_declared'],
+    allowed_customs_basis_assertion_classes: ['authoritative_public'],
+    // Deliberately empty. Ops must state a destination's valuation rule with a citation before
+    // duty is taken on it; seeding a guess here would be indistinguishable from fabricated data.
+    customs_valuation_basis_by_country: {},
+    allowed_fx_assertion_classes: ['authoritative_public'],
+    maximum_price_age_days: 180,
+    // Customs statistics publish in arrears; the benchmark's age is measured from the end of
+    // the period it describes, so this window has to admit the normal reporting lag.
+    maximum_benchmark_age_days: 1100,
+    maximum_cost_component_age_days: 90,
+    maximum_customs_basis_age_days: 400,
+    maximum_fx_age_days: 7,
+    full_score_at_or_below_ratio: 0.9,
+    zero_score_at_or_above_ratio: 1.6,
+  },
+  exporter_market_fit: {
+    formula_version: 'exporter-market-fit-v3',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    weights: { capacity: 20, moq: 15, production_lead_time: 15, price: 20, packaging: 10, certification: 20 },
+    certification_scores: { held_documented: 100, held_undocumented: 70, in_progress: 40, not_started: 10, confirmed_absent: 0, expired: 5 },
+    packaging_scores: { capability_matches: 100, capability_does_not_match: 20 },
+    allowed_benchmark_assertion_classes: ['authoritative_public'],
+    allowed_exporter_assertion_classes: ['exporter_declared', 'agent_verified'],
+    allowed_fx_assertion_classes: ['authoritative_public'],
+    maximum_benchmark_age_days: 365,
+    maximum_exporter_fact_age_days: 365,
+    maximum_fx_age_days: 7,
+  },
+  logistics_feasibility: {
+    formula_version: 'logistics-feasibility-v3',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    weights: { route_availability: 40, transit_time: 20, freight_burden: 25, handling_compatibility: 15 },
+    route_available_score: 100,
+    route_unavailable_score: 0,
+    transit_zero_score_days: 90,
+    freight_burden_zero_score_percent: 20,
+    handling_scores: { supported: 100, unsupported: 20 },
+    maximum_route_age_days: 30,
+    maximum_freight_quote_age_days: 30,
+    allowed_route_assertion_classes: ['authoritative_public', 'partner_quote'],
+    allowed_freight_quote_assertion_classes: ['partner_quote', 'agent_verified'],
+  },
+};
+
 export const CONFIG_DEFAULTS: ConfigShape = {
   'agent.capacity': { target_exporters_per_agent: 10 },
   'sla.thresholds': {
@@ -674,6 +844,9 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     allow_partial_execution: false,
   },
   'country_trade_metrics.policy': {
+    // Frozen at v1. The India-origin unit value Phase 1H needs is a SEPARATE supplemental
+    // statistic (see calculateIndiaOriginUnitValues) precisely so that this identity — and
+    // therefore every CountryTradeMetrics row Phase 1G has already validated — is unchanged.
     policy_version: 'country-trade-metrics-v1',
     calculation_version: 'country-trade-calculator-v1',
     expected_history_years: 5,
@@ -708,6 +881,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     ranking:{minimum_available_base_weight:45,require_demand:true,require_growth_or_competition:true},
     confidence:{formula_version:'weighted_component_evidence_coverage_and_recency_v5',recency_decay_per_year:0.8},
   },
+  'country_truth.phase_1h': PHASE_1H_DEFAULT_POLICY,
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
     base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
@@ -782,6 +956,20 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
     return {...defaults,...stored,base_component_weights:{...defaults.base_component_weights,...(stored.base_component_weights??{})},demand:{...defaults.demand,...(stored.demand??{})},growth:{...defaults.growth,...(stored.growth??{})},competition:{...defaults.competition,...(stored.competition??{})},risk:{...defaults.risk,...(stored.risk??{})},export_economics:{...defaults.export_economics,...(stored.export_economics??{})},ranking:{...defaults.ranking,...(stored.ranking??{})},// A stored row predating the recency term has no decay key. Taking the whole confidence block
     // from defaults keeps `formula_version` and the arithmetic describing the same thing.
     confidence:(stored.confidence&&'recency_decay_per_year' in stored.confidence)?{...defaults.confidence,...stored.confidence}:defaults.confidence} as ConfigShape[K];
+  }
+  if (key === 'country_truth.phase_1h') {
+    // Each pillar block is merged whole-field over defaults so a stored row written before a
+    // new knob existed still yields a complete, hashable policy rather than an undefined field
+    // that would silently disable a guard.
+    const defaults=CONFIG_DEFAULTS['country_truth.phase_1h'],stored=row.value as Partial<CountryTruthPhase1HPolicy>;
+    return {
+      ...defaults,
+      ...stored,
+      market_access:{...defaults.market_access,...(stored.market_access??{})},
+      export_economics:{...defaults.export_economics,...(stored.export_economics??{})},
+      exporter_market_fit:{...defaults.exporter_market_fit,...(stored.exporter_market_fit??{})},
+      logistics_feasibility:{...defaults.logistics_feasibility,...(stored.logistics_feasibility??{})},
+    } as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];
