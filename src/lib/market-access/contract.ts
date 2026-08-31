@@ -180,7 +180,27 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
     });
   }
 
-  return prisma.$transaction(async (tx) => {
+  // Only the writes need atomicity, and Prisma's interactive-transaction timeout is a budget
+  // for the whole callback, so the callback must contain nothing but the writes. A live UK HS6
+  // (108 declarable candidates) produces ~7,221 tariff-line rows and ~326 evidence rows; reading
+  // that full nested relation set back INSIDE the same transaction — which the previous version
+  // did, purely to shape the return value — added a second full pass over the same data volume
+  // for no caller: the job handler only ever reads `.tariff_lines.length`/`.evidence.length`
+  // (equal to `result.lines.length`/`evidence.length`, already known before any DB call), and no
+  // test inspects `.tariff_lines` row data at all. So the read now happens AFTER the transaction
+  // returns, via the top-level client rather than `tx`. This changes nothing about atomicity or
+  // visibility: the read can only ever see the fully-committed snapshot (Postgres MVCC guarantees
+  // no session observes a transaction's writes before it commits), so a caller can never observe
+  // a partial snapshot either way — the write path is exactly as atomic as before, just no longer
+  // paying for an unread bulk fetch inside the timed window.
+  //
+  // `timeout` is bounded, not removed: the writes themselves (1 snapshot row + up to ~150
+  // candidates' worth of tariff-line/evidence rows — `fetchUkMarketAccess`'s own
+  // `max_commodity_requests` ceiling — chunked across Postgres's per-statement parameter limit by
+  // Prisma's `createMany`) are legitimately large and pay real network round-trips beyond
+  // Prisma's 5s default. 30s leaves ample margin above the ~6.3-6.6s this took in production
+  // reproduction while still failing closed well short of a stuck/deadlocked transaction.
+  const snapshotId = await prisma.$transaction(async (tx) => {
     const snapshot = await tx.marketAccessEvidenceSnapshot.create({
       data: {
         jurisdiction: result.jurisdiction, country_code: result.country_code, hs_code_scope: result.hs6, hs6_code: result.hs6,
@@ -233,8 +253,12 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
       });
     }
     if (evidence.length) await tx.marketAccessEvidence.createMany({ data: evidence.map((row) => ({ ...row, snapshot_id: snapshot.id })) });
-    return tx.marketAccessEvidenceSnapshot.findUniqueOrThrow({ where: { id: snapshot.id }, include: { evidence: true, tariff_lines: true } });
-  });
+    return snapshot.id;
+  }, { timeout: 30_000, maxWait: 10_000 });
+
+  // Reached only once every write above has durably committed (a thrown/rolled-back transaction
+  // never returns, so this line never runs against a partial snapshot).
+  return prisma.marketAccessEvidenceSnapshot.findUniqueOrThrow({ where: { id: snapshotId }, include: { evidence: true, tariff_lines: true } });
 }
 
 export function marketAccessEnvironment() {

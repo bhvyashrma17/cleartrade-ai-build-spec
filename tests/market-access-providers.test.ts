@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EvidenceOrigin, OrgTier, UserRole } from '@prisma/client';
 import { afterAll, describe, expect, test } from 'vitest';
-import { persistMarketAccessIngest, type MarketAccessIngestResult } from '../src/lib/market-access/contract';
+import { persistMarketAccessIngest, type MarketAccessIngestResult, type MarketAccessLineRecord, type MarketAccessRequirementRecord } from '../src/lib/market-access/contract';
 import { buildManualAuthoritativeMarketAccess } from '../src/lib/market-access/manual-authoritative';
 import { UNCONFIGURED_MARKET_ACCESS_SOURCES, unconfiguredSourceForCountry } from '../src/lib/market-access/unconfigured-sources';
 import { parseDutyExpression, resolveNationalTariffLine, type CandidateTariffLine } from '../src/lib/market-access/tariff-semantics';
@@ -103,6 +103,138 @@ describe('market access persistence', () => {
       india_preference: { applicability: 'not_applicable', duty: null, geographic_area_id: null, basis: 'Beneficiary list is complete and excludes India.' },
     }));
     expect(execution.evidence.every((row) => row.verification_grade === 'execution_grade')).toBe(true);
+  });
+});
+
+/**
+ * Regression fixture approximating the live UK HS 1006.30 shape that made `persistMarketAccessIngest`
+ * exceed Prisma's 5s default interactive-transaction timeout: 100 declarable candidates fanning out
+ * into thousands of tariff-line rows and hundreds of evidence rows (the real ingest: 108 candidates,
+ * ~7,221 lines, ~326 evidence rows). Proves the write path stays correct at that volume, not just fast.
+ */
+describe('high-fanout persistence (live-shape regression)', () => {
+  const CANDIDATE_COUNT = 100;
+  const LINES_PER_CANDIDATE = 20;
+  const REQUIREMENT_COUNT = 300;
+  const MEASURE_KINDS = ['third_country_duty', 'tariff_preference', 'tariff_quota', 'additional_duty', 'vat', 'other'] as const;
+
+  function highFanoutCodes(): string[] {
+    return Array.from({ length: CANDIDATE_COUNT }, (_, i) => `10063${String(10000 + i)}`);
+  }
+
+  function linesFor(code: string): MarketAccessLineRecord[] {
+    return Array.from({ length: LINES_PER_CANDIDATE }, (_, i) => ({
+      national_tariff_code: code, description: `Measure ${i} for ${code}`, declarable: true,
+      measure_kind: MEASURE_KINDS[i % MEASURE_KINDS.length]!,
+      origin_geographic_area_id: i % 3 === 0 ? '1013' : null,
+      origin_scope: i % 3 === 0 ? 'group' : 'erga_omnes',
+      applies_to_origin_country: null,
+      duty: parseDutyExpression('121.00 GBP / 1000 kg'),
+      conditions: {}, effective_from: null, effective_to: null,
+      source_reference: 'https://example.test/uk/100630', raw_measure: { i },
+    }));
+  }
+
+  function requirementsFor(codes: string[]): MarketAccessRequirementRecord[] {
+    return Array.from({ length: REQUIREMENT_COUNT }, (_, i) => ({
+      rule_type: 'mandatory_certification', requirement_code: `REQ-${i}`, requirement_description: `Requirement ${i}`,
+      requirement_obtainable: null, national_tariff_code: codes[i % codes.length]!,
+      effective_from: null, effective_to: null, source_reference: 'https://example.test/uk/100630', raw: { i },
+    }));
+  }
+
+  function highFanoutIngest(codes: string[], over: Partial<MarketAccessIngestResult> = {}): MarketAccessIngestResult {
+    const candidates = codes.map((code, i) => candidate({
+      national_tariff_code: code,
+      general_duty: parseDutyExpression(i % 2 === 0 ? '121.00 GBP / 1000 kg' : '145.00 GBP / 1000 kg'),
+    }));
+    const resolution = resolveNationalTariffLine(candidates);
+    return ingest({
+      resolution, general_duty: null, regulatory_coverage_complete: true,
+      lines: codes.flatMap(linesFor), requirements: requirementsFor(codes),
+      ...over,
+    });
+  }
+
+  test('a live-UK-shaped ingest persists every row exactly once with no duplicate candidates', async () => {
+    const codes = highFanoutCodes();
+    const runId = `high-fanout-${randomUUID()}`;
+    const snapshot = await persistMarketAccessIngest(highFanoutIngest(codes), { source_run_id: runId });
+
+    // A 100-candidate spread with differing duties is exactly the live UK case: no single line can
+    // be stated, so refinement is required and no destination_tariff row is published.
+    expect(snapshot.classification_resolution).toBe('classification_refinement_required');
+    expect(snapshot.candidate_line_count).toBe(CANDIDATE_COUNT);
+    expect(snapshot.tariff_lines).toHaveLength(CANDIDATE_COUNT * LINES_PER_CANDIDATE);
+    expect(snapshot.evidence).toHaveLength(REQUIREMENT_COUNT + 1); // + the one India-preference row
+
+    // Independently confirmed against the database, not just the object the function returned.
+    const [lineCount, evidenceCount] = await Promise.all([
+      prisma.marketAccessTariffLine.count({ where: { snapshot_id: snapshot.id } }),
+      prisma.marketAccessEvidence.count({ where: { snapshot_id: snapshot.id } }),
+    ]);
+    expect(lineCount).toBe(CANDIDATE_COUNT * LINES_PER_CANDIDATE);
+    expect(evidenceCount).toBe(REQUIREMENT_COUNT + 1);
+
+    // Every declared candidate survives the bulk write exactly once — this is the fingerprint
+    // `recordClassificationRefinement` later validates a refinement's candidates against.
+    const detail = snapshot.resolution_detail as { declarable_candidates: Array<{ code: string }> };
+    const persistedCodes = detail.declarable_candidates.map((line) => line.code);
+    expect(persistedCodes).toHaveLength(CANDIDATE_COUNT);
+    expect(new Set(persistedCodes).size).toBe(CANDIDATE_COUNT);
+    expect(persistedCodes.slice().sort()).toEqual(codes.slice().sort());
+  });
+
+  test('an injected mid-transaction failure leaves zero rows, and a corrected retry persists cleanly without duplication', async () => {
+    const codes = highFanoutCodes();
+    const runId = `high-fanout-rollback-${randomUUID()}`;
+    const validRequirements = requirementsFor(codes);
+    const broken = highFanoutIngest(codes, {
+      // Not a real MarketAccessRuleType. The Prisma client rejects it deep inside
+      // evidence.createMany — AFTER all `CANDIDATE_COUNT * LINES_PER_CANDIDATE` tariff-line rows
+      // have already been written (uncommitted) earlier in the same transaction — so this proves
+      // a later failure rolls back writes an earlier statement in the same transaction made.
+      requirements: [...validRequirements.slice(0, -1), { ...validRequirements.at(-1)!, rule_type: 'not_a_real_rule_type' } as unknown as MarketAccessRequirementRecord],
+    });
+
+    const before = await Promise.all([
+      prisma.marketAccessEvidenceSnapshot.count(),
+      prisma.marketAccessTariffLine.count(),
+      prisma.marketAccessEvidence.count(),
+    ]);
+    await expect(persistMarketAccessIngest(broken, { source_run_id: runId })).rejects.toThrow();
+    const after = await Promise.all([
+      prisma.marketAccessEvidenceSnapshot.count(),
+      prisma.marketAccessTariffLine.count(),
+      prisma.marketAccessEvidence.count(),
+    ]);
+    // Nothing from the failed attempt survived: not the snapshot, not one of the ~2,000 tariff-line
+    // rows, not one evidence row. Postgres rolled back the whole write, not just the failed statement.
+    expect(after).toEqual(before);
+    expect(await prisma.marketAccessEvidenceSnapshot.findFirst({ where: { source_run_id: runId } })).toBeNull();
+
+    // A retry with corrected data (same source_run_id, as a job retry would resubmit) succeeds and
+    // produces exactly one clean copy — the rolled-back attempt left nothing behind to duplicate.
+    const snapshot = await persistMarketAccessIngest(highFanoutIngest(codes), { source_run_id: runId });
+    expect(snapshot.tariff_lines).toHaveLength(CANDIDATE_COUNT * LINES_PER_CANDIDATE);
+    expect(snapshot.evidence).toHaveLength(REQUIREMENT_COUNT + 1);
+    expect(await prisma.marketAccessEvidence.count({ where: { snapshot_id: snapshot.id } })).toBe(REQUIREMENT_COUNT + 1);
+    expect(await prisma.marketAccessEvidenceSnapshot.count({ where: { source_run_id: runId } })).toBe(1);
+  });
+
+  test('a small US-style ingest still behaves unchanged next to the high-fanout write path', async () => {
+    const resolution = resolveNationalTariffLine([
+      candidate({ national_tariff_code: '10063010', general_duty: parseDutyExpression('11.2%') }),
+      candidate({ national_tariff_code: '10063090', general_duty: parseDutyExpression('1.4c/kg'), declarable: false }),
+    ]);
+    const snapshot = await persistMarketAccessIngest(ingest({
+      country_code: 'US', jurisdiction: 'US', national_code_system: 'US_HTS', provider: 'us_hts',
+      resolution, general_duty: resolution.resolved_line!.general_duty,
+    }));
+    expect(snapshot.classification_resolution).toBe('exact');
+    expect(snapshot.candidate_line_count).toBe(2);
+    expect(snapshot.tariff_lines).toHaveLength(0);
+    expect(snapshot.evidence.find((row) => row.rule_type === 'destination_tariff')).toMatchObject({ national_tariff_code: '10063010', duty_expression: '11.2%' });
   });
 });
 
