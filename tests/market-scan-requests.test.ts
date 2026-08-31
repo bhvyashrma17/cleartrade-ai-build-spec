@@ -138,6 +138,29 @@ describe('idempotency', () => {
     expect(await prisma.job.count({ where: { type: JobType.country_screening, exporter_org_id: f.org.id } })).toBe(0);
   });
 
+  test('a screen that deferred for quota is NOT treated as a current answer', async () => {
+    // Staging UAT hit this: a screen can finish the JOB while producing no usable shortlist
+    // (`deferred_quota`, 0 eligible, 0 shortlisted) because the provider budget ran out. Widening
+    // reuse to "any run that exists" would tell the exporter their markets were already found
+    // when in fact nothing was. Only a `completed` run counts.
+    const f = await fixture();
+    await prisma.countryScreeningRun.create({ data: {
+      product_classification_id: f.classification!.id, run_key: `run-${randomUUID()}`, status: 'deferred_quota',
+      hs_code: f.hs6, hs_revision: 'HS2022', as_of_date: new Date(), source_mode: 'mock',
+      screening_period: 2025, period_selection_policy_version: 'pp1', period_selection_policy_hash: 'ph1',
+      period_selection_policy_snapshot: {}, max_fallback_lookback_years: 2,
+      policy_version: 'p1', policy_hash: 'h1', policy_snapshot: {},
+      universe_version: 'v1', universe_checksum: 'uc1', universe_size: 218, universe_snapshot: {},
+      reporter_registry_version: 'rr1', reporter_registry_checksum: 'rc1',
+      screening_algorithm_version: 'v1', parser_version: 'pv1', normalization_version: 'nv1',
+      shortlist_target_size: 20, max_shortlist_size: 25, estimated_call_cost: 218,
+      eligible_count: 0, shortlist_size: 0,
+    } });
+    const { request, satisfied_by_existing_run } = await ask(f);
+    expect(satisfied_by_existing_run).toBe(false);
+    expect(request.status).toBe(MarketScanRequestStatus.pending);
+  });
+
   test('an in-flight screening job attaches the request rather than queueing a rival', async () => {
     const f = await fixture();
     await prisma.job.create({ data: {
