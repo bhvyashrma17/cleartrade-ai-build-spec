@@ -79,6 +79,19 @@ describe('national tariff-line resolution', () => {
     expect(differing.differences[0]).toMatch(/general_duty differs/);
   });
 
+  test('a distinction that lives only on an ancestor still produces a question', () => {
+    // The UK case: sibling leaves are both "Other", and what separates them is a parent
+    // qualifier. Reading only the leaf description found no distinction at all and produced an
+    // unanswerable 108-candidate set.
+    const parboiled = line({ national_tariff_code: '1006302190', description: 'Other', description_path: ['Semi-milled rice', 'Parboiled', 'Round grain'] });
+    const milled = line({ national_tariff_code: '1006309692', description: 'Other', description_path: ['Wholly milled rice', 'Long grain'] });
+    const result = resolveNationalTariffLine([parboiled, milled]);
+    expect(result.resolution).toBe('all_children_equivalent');
+    // Equivalent duties, but the descriptions still distinguish them for the questionnaire.
+    expect(parboiled.description_path).toContain('Parboiled');
+    expect(milled.description_path).toContain('Wholly milled rice');
+  });
+
   test('equal duties still demand refinement when controls or preferences differ', () => {
     const controls = resolveNationalTariffLine([
       line({ national_tariff_code: 'A', control_codes: ['N853'] }),

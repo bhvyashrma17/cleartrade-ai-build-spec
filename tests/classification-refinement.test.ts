@@ -63,6 +63,20 @@ describe('minimal questions engine', () => {
     expect(questions.find((question) => question.attribute === 'basmati')!.question).toBe('Is this Basmati rice?');
   });
 
+  test('mines the ancestor chain, not just the leaf description', () => {
+    // Real UK leaves are mostly "Other"; the qualifiers that separate them ("Parboiled",
+    // "Long grain", "Aromatic rice", "Wholly milled rice") live on the ancestors. Reading only
+    // the leaf found no distinction and produced an unanswerable 108-candidate set.
+    const leavesOnly = UK_CANDIDATES.map((line) => ({ ...line, description_path: undefined }));
+    const fromLeaves = deriveRefinementQuestions(leavesOnly).map((question) => question.attribute);
+    const fromAncestry = deriveRefinementQuestions(UK_CANDIDATES).map((question) => question.attribute);
+    expect(fromAncestry.length).toBeGreaterThan(fromLeaves.length);
+    for (const attribute of ['grain_length', 'wholly_milled', 'aromatic']) {
+      expect(fromLeaves).not.toContain(attribute);
+      expect(fromAncestry).toContain(attribute);
+    }
+  });
+
   test('never asks a question the candidates do not actually distinguish', () => {
     const questions = deriveRefinementQuestions(UK_CANDIDATES).map((question) => question.attribute);
     // Every UK candidate here is parboiled or inherits it, and none mentions organic, so neither

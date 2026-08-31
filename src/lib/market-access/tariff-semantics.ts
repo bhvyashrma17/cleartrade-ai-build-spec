@@ -124,6 +124,12 @@ export type ClassificationResolution =
 export interface CandidateTariffLine {
   national_tariff_code: string;
   description: string;
+  /**
+   * Ancestry descriptions, outermost first. Sibling lines often differ only in a qualifier that
+   * lives on a parent ("Parboiled", "Long grain", "Aromatic rice"), so equivalence and the
+   * refinement questionnaire both need the whole chain, not just the leaf.
+   */
+  description_path?: readonly string[];
   declarable: boolean;
   /** The general/third-country duty applicable to this line. */
   general_duty: ParsedDuty;

@@ -30,7 +30,7 @@ export interface CandidateLine {
   national_tariff_code: string;
   description: string;
   /** Ancestry descriptions, outermost first. The distinguishing words usually live here. */
-  description_path?: string[];
+  description_path?: readonly string[];
   duty_expression: string | null;
   duty_kind: string | null;
   effective_from?: string | null;

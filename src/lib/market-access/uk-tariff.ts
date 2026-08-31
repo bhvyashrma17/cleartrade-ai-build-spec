@@ -106,6 +106,16 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
     const index = new Map(resources.map((resource) => [key(resource), resource]));
     responses.push({ commodity_code: code, url, sha256: createHash('sha256').update(JSON.stringify(document)).digest('hex') });
 
+    // The description lives on the commodity DOCUMENT, not on the entry in the subheading tree —
+    // that one carries an empty string. Reading the wrong one is not cosmetic: the refinement
+    // questionnaire is derived from these words, so an empty description silently produces a
+    // candidate set nobody can be asked about. The ancestor chain supplies the qualifiers
+    // ("Parboiled", "Long grain", "Aromatic rice") that actually separate siblings.
+    const selfDescription = str(document.data.attributes.description) ?? str(commodity.attributes.description) ?? '';
+    const ancestry = related(document.data, 'ancestors', index)
+      .map((ancestor) => str(ancestor.attributes.description))
+      .filter((value): value is string => Boolean(value));
+
     // A measure whose validity has ended is history, not law. A measure whose validity has not
     // begun is a future change and must not be applied before its effective date.
     const measures = resources.filter((resource) => {
@@ -138,7 +148,7 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
 
       lines.push({
         national_tariff_code: code,
-        description: String(commodity.attributes.description ?? ''),
+        description: selfDescription,
         declarable: true,
         measure_kind: measureKind,
         origin_geographic_area_id: geoId,
@@ -196,7 +206,7 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
       }
     }
 
-    candidates.push({ national_tariff_code: code, description: String(commodity.attributes.description ?? ''), declarable: true, general_duty: generalDuty, control_codes: controlCodes, preference_area_ids: preferenceAreas });
+    candidates.push({ national_tariff_code: code, description: selfDescription, description_path: ancestry, declarable: true, general_duty: generalDuty, control_codes: controlCodes, preference_area_ids: preferenceAreas });
   }
 
   const resolution = resolveNationalTariffLine(candidates);
