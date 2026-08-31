@@ -157,7 +157,15 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
   for (const requirement of result.requirements) {
     evidence.push({
       jurisdiction: result.jurisdiction, country_code: result.country_code,
-      hs_code_scope: requirement.national_tariff_code ?? result.hs6,
+      // A requirement is published against a national line. Fact selection matches evidence
+      // scopes at HS6, heading or chapter, so a 10-digit scope never matches the product — which
+      // is correct while the declarable line is unknown, and wrong once it IS known: the
+      // snapshot would then claim complete regulatory coverage with no admissible requirement
+      // beneath it, and "we found none" would read as "there are none". So the requirement is
+      // published at the product's HS6 only once a single line has actually been established;
+      // otherwise it stays at national scope, where coverage is PARTIAL and absence stays
+      // unknown. The originating line is retained either way.
+      hs_code_scope: resolved ? result.hs6 : requirement.national_tariff_code ?? result.hs6,
       rule_type: requirement.rule_type,
       source_authority: result.source_authority, source_reference: requirement.source_reference,
       retrieved_at: result.retrieved_at,

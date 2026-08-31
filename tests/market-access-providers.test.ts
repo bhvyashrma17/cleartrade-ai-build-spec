@@ -71,6 +71,29 @@ describe('market access persistence', () => {
     expect(preference.verification_grade).toBe('discovery_grade');
   });
 
+  test('a requirement is only asserted for the product once a line is established', async () => {
+    const requirement = { rule_type: 'mandatory_certification' as const, requirement_code: 'N853', requirement_description: 'Phytosanitary certificate', requirement_obtainable: null, national_tariff_code: '1006302712', effective_from: null, effective_to: null, source_reference: 'ref', raw: {} };
+    const resolved = await persistMarketAccessIngest(ingest({ requirements: [requirement] }));
+    const admissible = resolved.evidence.find((row) => row.rule_type === 'mandatory_certification')!;
+    // Scoped to the product's HS6 so fact selection can actually admit it, with the national
+    // line it came from retained.
+    expect(admissible.hs_code_scope).toBe('100630');
+    expect(admissible.national_tariff_code).toBe('1006302712');
+
+    const unresolved = await persistMarketAccessIngest(ingest({
+      requirements: [requirement],
+      resolution: resolveNationalTariffLine([
+        candidate({ national_tariff_code: '1006301000', general_duty: parseDutyExpression('11.2%') }),
+        candidate({ national_tariff_code: '1006309000', general_duty: parseDutyExpression('1.4c/kg') }),
+      ]),
+      general_duty: null,
+    }));
+    // No line established: the requirement stays at national scope and the snapshot is PARTIAL,
+    // so an absent requirement reads as unknown rather than as "no restrictions".
+    expect(unresolved.evidence.find((row) => row.rule_type === 'mandatory_certification')!.hs_code_scope).toBe('1006302712');
+    expect(unresolved.completeness_status).toBe('PARTIAL');
+  });
+
   test('execution grade requires a resolved line, complete coverage and a settled preference', async () => {
     const discovery = await persistMarketAccessIngest(ingest({ regulatory_coverage_complete: false }));
     expect(discovery.evidence.every((row) => row.verification_grade === 'discovery_grade')).toBe(true);
