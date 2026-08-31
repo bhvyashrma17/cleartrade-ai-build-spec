@@ -41,10 +41,15 @@ import type { CountryTruthExporterFactSnapshot, CountryTruthFact } from './expor
 /**
  * v2: India-preference applicability is read from the provider's explicit determination instead
  * of being inferred from evidence status, and authoritative published FX observations are
- * admitted alongside exporter-recorded quotes. Both change what a manifest MEANS, so the version
- * moves and every new manifest gets a new identity rather than overwriting a v1 one.
+ * admitted alongside exporter-recorded quotes.
+ *
+ * v3: operational cost components and the destination's legal customs valuation basis now enter
+ * selection at all — previously both arrays were always empty, so Export Economics could never
+ * become available regardless of what evidence existed. `system_derived` joins the assertion
+ * vocabulary for the ClearTrade fee. Each of these changes what a manifest MEANS, so the version
+ * moves and every new manifest gets a new identity rather than overwriting an older one.
  */
-export const COUNTRY_TRUTH_FACT_SELECTION_VERSION = 'country-truth-fact-selection-v2' as const;
+export const COUNTRY_TRUTH_FACT_SELECTION_VERSION = 'country-truth-fact-selection-v3' as const;
 
 type DecimalLike = { toString(): string } | string | number | null | undefined;
 
@@ -1254,10 +1259,18 @@ function selectExporterFacts(
   const originLocation = presentValue(snapshot.origin.pickup_location_code);
   const originGateway = presentValue(snapshot.origin.preferred_origin_gateway);
 
-  // `packaging_capability` is free prose in exporter master data. Deriving a structured
-  // capability code from it would be an invention, so packaging stays an explicit unknown until
-  // a coded capability surface exists.
-  const packaging: ScopedFact<PackagingCapabilityValue> | null = null;
+  // Coded packaging capability only. The free-prose `packaging_capability` is deliberately not
+  // mined: deriving a capability code from a sentence would be an invention, and an exporter who
+  // has written nothing coded has an unknown capability rather than an empty one.
+  const packagingCodes = presentValue(snapshot.commercial.packaging_capability_codes);
+  const packaging: ScopedFact<PackagingCapabilityValue> | null =
+    packagingCodes && packagingCodes.length
+      ? {
+          ...base('exporter_packaging_capability', snapshot.commercial.packaging_capability_codes),
+          state: 'present',
+          value: { capability_codes: [...packagingCodes].map((code) => code.trim().toUpperCase()).sort(), declared_at: capturedAt },
+        }
+      : null;
 
   return {
     exporter_price: exporterPrice,

@@ -26,6 +26,7 @@ import {
   type SelectedCountryTruthFacts,
 } from './fact-selection';
 import type { AssertionClass } from './phase-1h-calculations';
+import { deriveClearTradeFeeComponent, loadOperationalCostRows, selectOperationalCostRows, type CostNormalizationBasis } from './operational-evidence';
 
 export const COUNTRY_TRUTH_FACTS_SCHEMA_VERSION = 'country-truth-facts-v1' as const;
 
@@ -56,6 +57,16 @@ export interface CountryTruthFactSnapshotRequest {
    * has already validated. A customs statistic, never a selling price.
    */
   india_origin_unit_value?: CountryTruthSupplementalUnitValue | null;
+  /**
+   * The exporter's declared standard shipment, frozen at request time. It is what converts a
+   * per-shipment or per-container operational quote into a per-unit cost; absent, those quotes
+   * are not normalizable and the components they would have supplied stay missing.
+   */
+  shipment_basis?: {
+    quantity: number | null;
+    quantity_unit: string | null;
+    container_count: number | null;
+  } | null;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -90,7 +101,7 @@ async function loadEvidenceRows(
   const scopes = hsScopeCandidates(request.hs6);
   const asOf = request.as_of_date;
 
-  const [snapshots, fitBenchmarks, routes, fxQuotes, fxObservations] = await Promise.all([
+  const [snapshots, fitBenchmarks, routes, fxQuotes, customsBases, fxObservations] = await Promise.all([
     prisma.marketAccessEvidenceSnapshot.findMany({
       where: {
         country_code: request.country_code,
@@ -123,6 +134,22 @@ async function loadEvidenceRows(
       where: { exporter_org_id: request.exporter_org_id, created_at: { lte: asOf } },
       orderBy: { id: 'asc' },
     }),
+    // The destination's LEGAL customs valuation basis — what duty is assessed on. Deliberately
+    // not the trade-statistical import basis: a country may report statistics on one basis and
+    // assess duty on another, and substituting one for the other puts duty on the wrong base.
+    prisma.customsValuationBasisEvidence.findMany({
+      where: {
+        country_code: request.country_code,
+        valuation_type: 'legal_customs_valuation',
+        status: 'verified',
+        retrieved_at: { lte: asOf },
+        effective_from: { lte: asOf },
+        evidence_origin: { in: origins },
+        OR: [{ effective_to: null }, { effective_to: { gt: asOf } }],
+        AND: [{ OR: [{ superseded_at: null }, { superseded_at: { gt: asOf } }] }],
+      },
+      orderBy: { id: 'asc' },
+    }),
     // Published reference rates are global. They are filtered by environment and origin like
     // every other evidence class, and by OBSERVATION date as well as retrieval date, so a rate
     // for a day after the clock can never be admitted.
@@ -151,6 +178,61 @@ async function loadEvidenceRows(
         orderBy: { id: 'asc' },
       })
     : [];
+
+  // Operational quotes become per-unit cost components only through an explicit basis taken
+  // from frozen facts. Anything that cannot be converted is REJECTED with a stated reason, which
+  // leaves the component missing — and a missing required component is exactly what keeps the
+  // Export Economics pillar unavailable rather than optimistic.
+  const price = request.exporter_snapshot.commercial?.price_target;
+  const priceAmount = price?.amount?.state === 'present' ? Number(price.amount.value) : null;
+  const priceCurrency = price?.currency?.state === 'present' ? price.currency.value : null;
+  const priceUnit = price?.quantity_unit?.state === 'present' ? price.quantity_unit.value : null;
+  const basis: CostNormalizationBasis = {
+    shipment_quantity: request.shipment_basis?.quantity ?? null,
+    quantity_unit: request.shipment_basis?.quantity_unit ?? priceUnit ?? null,
+    containers_per_shipment: request.shipment_basis?.container_count ?? null,
+    goods_value_per_unit: priceAmount != null && Number.isFinite(priceAmount) ? priceAmount : null,
+    goods_value_currency: priceCurrency,
+    // A percentage may only be taken against a value that exists at that point in the buildup.
+    // The exporter's own price is the one we hold; a CIF-value percentage would need the freight
+    // and insurance legs to already be settled, so it is not offered here.
+    supported_percent_bases: ['invoice_value', 'exporter_price'],
+  };
+  const operationalRows = await loadOperationalCostRows({
+    exporter_org_id: request.exporter_org_id,
+    product_id: request.product_id,
+    destination_country: request.country_code,
+    as_of: asOf,
+    origins,
+  });
+  if (basis.quantity_unit && basis.shipment_quantity != null && priceAmount != null && priceCurrency) {
+    // The ClearTrade fee is never typed by an exporter: it is derived from the versioned
+    // FeePolicy and frozen with that version, so a later repricing cannot reach backwards.
+    try {
+      const fee = await deriveClearTradeFeeComponent({
+        exporter_org_id: request.exporter_org_id,
+        product_id: request.product_id,
+        destination_country: request.country_code,
+        hs6: request.hs6,
+        hs_revision: request.hs_revision,
+        shipment_value: { amount: String(priceAmount * basis.shipment_quantity), currency: priceCurrency },
+        shipment_quantity: basis.shipment_quantity,
+        quantity_unit: basis.quantity_unit,
+        observed_at: asOf,
+      });
+      operationalRows.push(fee.row);
+    } catch {
+      // No active FeePolicy: the fee component stays missing, which keeps economics unavailable.
+    }
+  }
+  const costSelection = selectOperationalCostRows(operationalRows, {
+    exporter_org_id: request.exporter_org_id,
+    destination_country: request.country_code,
+    hs6: request.hs6,
+    hs_revision: request.hs_revision,
+    as_of: asOf,
+  }, basis);
+  const costComponents = costSelection.rows;
 
   return {
     market_access_snapshots: snapshots.map((row) => ({
@@ -265,10 +347,20 @@ async function loadEvidenceRows(
       rate_date: row.rate_date,
       created_at: row.created_at,
     })),
-    // No connected provider or capture surface exists for per-unit export cost lines or for
-    // published customs valuation rules yet. They stay empty rather than being approximated.
-    cost_components: [],
-    customs_valuation_bases: [],
+    cost_components: costComponents,
+    customs_valuation_bases: customsBases.map((row) => ({
+      id: row.id,
+      country_code: row.country_code,
+      basis: row.basis,
+      effective_from: row.effective_from,
+      effective_to: row.effective_to,
+      observed_at: row.observed_at,
+      source: row.source_authority,
+      source_reference: row.source_reference,
+      retrieved_at: row.retrieved_at,
+      confidence: row.confidence,
+      evidence_origin: row.evidence_origin,
+    })),
     import_benchmarks: request.import_benchmark ? [request.import_benchmark] : [],
   };
 }

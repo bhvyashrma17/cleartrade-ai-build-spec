@@ -12,6 +12,8 @@ export type AssertionClass =
   | 'exporter_declared'
   | 'agent_verified'
   | 'partner_quote'
+  /** Computed by ClearTrade from its own versioned policy, e.g. the ClearTrade fee. */
+  | 'system_derived'
   | 'unknown_legacy';
 
 export type FactState = 'present' | 'missing' | 'unknown' | 'confirmed_absent';
@@ -255,6 +257,7 @@ function validateConfidencePolicy(policy: AssertionConfidencePolicy) {
     'exporter_declared',
     'agent_verified',
     'partner_quote',
+    'system_derived',
     'unknown_legacy',
   ] as const) {
     const multiplier = policy.assertion_class_multipliers[assertionClass];

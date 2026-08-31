@@ -83,6 +83,10 @@ export interface ProductFactSource {
   customization_capability?: string | null;
   packaging_capability?: string | null;
   packaging?: string | null;
+  /** Structured packaging fields. Only these may become coded capability. */
+  packaging_format?: string | null;
+  container_compatibility?: readonly string[] | null;
+  special_handling_codes?: readonly string[] | null;
 }
 
 export type CertificationLifecycleStatus =
@@ -105,6 +109,27 @@ export interface ProductCertificationFactSource {
   attribution?: FactAttributionInput | null;
   /** The only input which may elevate this certification assertion to agent-verified. */
   verification?: ExplicitAgentVerificationInput | null;
+}
+
+/**
+ * Coded packaging capability from structured fields only.
+ *
+ * An empty result is `null` (unknown) rather than an empty list, because "we hold no coded
+ * packaging fields" is not the same as "this product has no packaging capability".
+ */
+function packagingCapabilityCodes(product: {
+  packaging_format?: string | null;
+  container_compatibility?: readonly string[] | null;
+  special_handling_codes?: readonly string[] | null;
+}): readonly string[] | null {
+  const codes = [
+    ...(product.packaging_format ? [product.packaging_format] : []),
+    ...(product.container_compatibility ?? []),
+    ...(product.special_handling_codes ?? []),
+  ]
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean);
+  return codes.length ? [...new Set(codes)].sort() : null;
 }
 
 export interface ConfirmedProductClassificationFactSource {
@@ -203,6 +228,11 @@ export interface CountryTruthExporterFactSnapshot {
     customization_capability: CountryTruthFact<string>;
     packaging_capability: CountryTruthFact<string>;
     packaging_description: CountryTruthFact<string>;
+    /**
+     * Coded packaging capability, derived ONLY from the structured product fields. The free-prose
+     * `packaging_capability` above is never mined for codes: a sentence is not a declaration.
+     */
+    packaging_capability_codes: CountryTruthFact<readonly string[]>;
   };
   certifications: {
     /** No rows means unknown, never a declaration that no certification is held. */
@@ -653,6 +683,7 @@ export function buildCountryTruthExporterFactSnapshot(
       },
       customization_capability: declaredFact(optionalText(input.product.customization_capability), productAttribution('customization_capability')),
       packaging_capability: declaredFact(optionalText(input.product.packaging_capability), productAttribution('packaging_capability')),
+      packaging_capability_codes: declaredFact(packagingCapabilityCodes(input.product), productAttribution('packaging_capability')),
       packaging_description: declaredFact(optionalText(input.product.packaging), productAttribution('packaging')),
     },
     certifications: {

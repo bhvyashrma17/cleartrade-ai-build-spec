@@ -760,8 +760,8 @@ model ExporterOrg {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  assigned_agent               User?                      @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
-  users                        User[]                     @relation("OrgMembers")
+  assigned_agent               User?                             @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
+  users                        User[]                            @relation("OrgMembers")
   products                     Product[]
   readiness_assessments        ReadinessAssessment[]
   discovery_runs               DiscoveryRun[]
@@ -782,6 +782,8 @@ model ExporterOrg {
   document_input_snapshots     DocumentInputSnapshot[]
   bank_accounts                ExporterBankAccount[]
   subscriptions                Subscription[]
+  classification_refinements   ProductClassificationRefinement[]
+  operational_cost_evidence    OperationalCostEvidence[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -811,58 +813,63 @@ model User {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  exporter_org                ExporterOrg?              @relation("OrgMembers", fields: [exporter_org_id], references: [id])
-  agent_for_orgs              ExporterOrg[]             @relation("OrgAssignedAgent")
-  agent_assignments           AgentAssignment[]         @relation("AssignmentAgent")
-  assignments_made            AgentAssignment[]         @relation("AssignmentActor")
-  owned_leads                 BuyerLead[]               @relation("LeadAgent")
-  created_leads               BuyerLead[]               @relation("LeadCreatedBy")
-  owned_deals                 Deal[]                    @relation("DealOwnerAgent")
-  owned_tasks                 Task[]                    @relation("TaskOwner")
-  proposals_made              DealProposal[]            @relation("ProposalProposedBy")
-  proposals_approved          DealProposal[]            @relation("ProposalApprovedBy")
-  proposals_changes_requested DealProposal[]            @relation("ProposalChangesRequestedBy")
-  outreach_activities         OutreachActivity[]
-  outreach_attempts           OutreachAttempt[]
-  buyer_lead_transitions      BuyerLeadTransition[]
-  raw_data_access_events      RawDataAccessEvent[]
-  data_deletion_reviews       DataDeletionRequest[]
-  audit_events                AuditEvent[]
-  notifications               Notification[]
-  notification_preferences    NotificationPreference[]
-  messages_sent               Message[]
-  internal_notes              InternalNote[]
-  documents_approved          Document[]                @relation("DocumentApprover")
-  documents_reviewed          Document[]                @relation("DocumentReviewer")
-  documents_filed             Document[]                @relation("DocumentFiler")
-  partner_handoffs            PartnerHandoff[]          @relation("PartnerHandoffOwner")
-  disputes_owned              Dispute[]
-  jobs_requested              Job[]
-  invitations_sent            Invitation[]              @relation("InvitationInviter")
-  task_evidence_uploaded      TaskEvidence[]            @relation("TaskEvidenceUploader")
-  task_evidence_reviewed      TaskEvidence[]            @relation("TaskEvidenceReviewer")
-  payouts                     Payout[]                  @relation("PayoutAgent")
-  payouts_approved            Payout[]                  @relation("PayoutApprovedBy")
-  payout_adjustments_made     PayoutAdjustment[]        @relation("PayoutAdjustmentAuthor")
-  sanctions_review_decisions  SanctionsReviewDecision[]
-  classifications_proposed    ProductClassification[]   @relation("ClassificationProposer")
-  classifications_confirmed   ProductClassification[]   @relation("ClassificationConfirmer")
-  products_hs_confirmed       Product[]
-  auth_provider_accounts      AuthProviderAccount[]
-  agent_decisions             AgentDecision[]           @relation("AgentDecisionActor")
-  staff_invitations_sent      StaffInvitation[]         @relation("StaffInvitationInviter")
-  staff_invitations_revoked   StaffInvitation[]         @relation("StaffInvitationRevoker")
-  staff_invitation_accepted   StaffInvitation?          @relation("StaffInvitationAcceptor")
-  staff_access_grants_made    StaffAccessGrant[]        @relation("StaffAccessGrantGrantor")
-  staff_access_grants_revoked StaffAccessGrant[]        @relation("StaffAccessGrantRevoker")
-  staff_access_grant_claimed  StaffAccessGrant?         @relation("StaffAccessGrantClaimant")
-  buyer_profiles_edited       BuyerCommercialProfile[]  @relation("BuyerProfileEditor")
-  exchange_rates_recorded     ExchangeRateQuote[]       @relation("ExchangeRateRecorder")
-  invoice_numbers_issued      IssuedInvoiceNumber[]     @relation("InvoiceNumberIssuer")
-  invoice_numbers_voided      IssuedInvoiceNumber[]     @relation("InvoiceNumberVoider")
-  document_snapshots_created  DocumentInputSnapshot[]   @relation("DocumentSnapshotCreator")
-  document_artifacts_created  DocumentArtifact[]        @relation("DocumentArtifactGenerator")
-  bug_reports                 BugReport[]
+  exporter_org                       ExporterOrg?                      @relation("OrgMembers", fields: [exporter_org_id], references: [id])
+  agent_for_orgs                     ExporterOrg[]                     @relation("OrgAssignedAgent")
+  agent_assignments                  AgentAssignment[]                 @relation("AssignmentAgent")
+  assignments_made                   AgentAssignment[]                 @relation("AssignmentActor")
+  owned_leads                        BuyerLead[]                       @relation("LeadAgent")
+  created_leads                      BuyerLead[]                       @relation("LeadCreatedBy")
+  owned_deals                        Deal[]                            @relation("DealOwnerAgent")
+  owned_tasks                        Task[]                            @relation("TaskOwner")
+  proposals_made                     DealProposal[]                    @relation("ProposalProposedBy")
+  proposals_approved                 DealProposal[]                    @relation("ProposalApprovedBy")
+  proposals_changes_requested        DealProposal[]                    @relation("ProposalChangesRequestedBy")
+  outreach_activities                OutreachActivity[]
+  outreach_attempts                  OutreachAttempt[]
+  buyer_lead_transitions             BuyerLeadTransition[]
+  raw_data_access_events             RawDataAccessEvent[]
+  data_deletion_reviews              DataDeletionRequest[]
+  audit_events                       AuditEvent[]
+  notifications                      Notification[]
+  notification_preferences           NotificationPreference[]
+  messages_sent                      Message[]
+  internal_notes                     InternalNote[]
+  documents_approved                 Document[]                        @relation("DocumentApprover")
+  documents_reviewed                 Document[]                        @relation("DocumentReviewer")
+  documents_filed                    Document[]                        @relation("DocumentFiler")
+  partner_handoffs                   PartnerHandoff[]                  @relation("PartnerHandoffOwner")
+  disputes_owned                     Dispute[]
+  jobs_requested                     Job[]
+  invitations_sent                   Invitation[]                      @relation("InvitationInviter")
+  task_evidence_uploaded             TaskEvidence[]                    @relation("TaskEvidenceUploader")
+  task_evidence_reviewed             TaskEvidence[]                    @relation("TaskEvidenceReviewer")
+  payouts                            Payout[]                          @relation("PayoutAgent")
+  payouts_approved                   Payout[]                          @relation("PayoutApprovedBy")
+  payout_adjustments_made            PayoutAdjustment[]                @relation("PayoutAdjustmentAuthor")
+  sanctions_review_decisions         SanctionsReviewDecision[]
+  classifications_proposed           ProductClassification[]           @relation("ClassificationProposer")
+  classifications_confirmed          ProductClassification[]           @relation("ClassificationConfirmer")
+  products_hs_confirmed              Product[]
+  auth_provider_accounts             AuthProviderAccount[]
+  agent_decisions                    AgentDecision[]                   @relation("AgentDecisionActor")
+  staff_invitations_sent             StaffInvitation[]                 @relation("StaffInvitationInviter")
+  staff_invitations_revoked          StaffInvitation[]                 @relation("StaffInvitationRevoker")
+  staff_invitation_accepted          StaffInvitation?                  @relation("StaffInvitationAcceptor")
+  staff_access_grants_made           StaffAccessGrant[]                @relation("StaffAccessGrantGrantor")
+  staff_access_grants_revoked        StaffAccessGrant[]                @relation("StaffAccessGrantRevoker")
+  staff_access_grant_claimed         StaffAccessGrant?                 @relation("StaffAccessGrantClaimant")
+  buyer_profiles_edited              BuyerCommercialProfile[]          @relation("BuyerProfileEditor")
+  exchange_rates_recorded            ExchangeRateQuote[]               @relation("ExchangeRateRecorder")
+  invoice_numbers_issued             IssuedInvoiceNumber[]             @relation("InvoiceNumberIssuer")
+  invoice_numbers_voided             IssuedInvoiceNumber[]             @relation("InvoiceNumberVoider")
+  document_snapshots_created         DocumentInputSnapshot[]           @relation("DocumentSnapshotCreator")
+  document_artifacts_created         DocumentArtifact[]                @relation("DocumentArtifactGenerator")
+  bug_reports                        BugReport[]
+  verified_product_certifications    ProductCertification[]            @relation("ProductCertificationVerifier")
+  decided_classification_refinements ProductClassificationRefinement[] @relation("ClassificationRefinementDecider")
+  entered_operational_costs          OperationalCostEvidence[]         @relation("OperationalCostEnteredBy")
+  verified_operational_costs         OperationalCostEvidence[]         @relation("OperationalCostVerifiedBy")
+  recorded_customs_valuations        CustomsValuationBasisEvidence[]   @relation("CustomsValuationRecorder")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -980,11 +987,57 @@ model Product {
   customization_capability        String?
   packaging_capability            String?
 
-  packaging  String?
+  packaging String?
+
+  /// Structured packaging. `packaging`/`packaging_capability` above remain free prose for the
+  /// exporter's own description; only these typed fields may be reasoned about, so a sentence
+  /// can never be mistaken for a declared capability.
+  packaging_format        String?
+  pack_size_value         Decimal? @db.Decimal(18, 4)
+  pack_size_unit          String?
+  /// Consumer packs inside one carton/master pack.
+  units_per_carton        Int?
+  cartons_per_pallet      Int?
+  palletized              Boolean?
+  /// Container/load types this pack is compatible with, e.g. 20FT_DRY, 40FT_HC, REEFER_40FT.
+  container_compatibility String[] @default([])
+  special_handling_codes  String[] @default([])
+  /// Required storage/transport temperature band, when the product needs one at all.
+  temperature_min_celsius Decimal? @db.Decimal(6, 2)
+  temperature_max_celsius Decimal? @db.Decimal(6, 2)
+  /// Null = unknown. False = exporter explicitly declared no temperature control is required.
+  temperature_controlled  Boolean?
+
+  /// Capacity actually free for new orders, as distinct from installed monthly capacity.
+  available_capacity_value Decimal? @db.Decimal(18, 4)
+  capacity_period          String?
+
+  /// The exporter's standard export shipment. Declared rather than inferred, because it is what
+  /// converts a per-shipment or per-container quote into a per-unit cost: guessing it would put
+  /// a plausible but wrong number into a landed cost. MOQ is a commercial minimum and is NOT a
+  /// substitute for it.
+  shipment_quantity_value  Decimal? @db.Decimal(18, 4)
+  shipment_quantity_unit   String?
+  shipment_container_count Int?
+  shipment_container_type  String?
+
+  /// Dispatch/manufacturing origin for this product. Falls back to the org address only when
+  /// explicitly absent; it is never silently assumed to equal the registered office.
+  origin_city          String?
+  origin_state         String?
+  origin_country       String? @db.VarChar(2)
+  origin_postal_code   String?
+  origin_location_code String?
+  origin_gateway_code  String?
+  /// exporter_declared | agent_verified | system_derived. A suggested gateway is not verified.
+  origin_provenance    String?
+
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  exporter_org                 ExporterOrg                @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  exporter_org                 ExporterOrg                       @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  classification_refinements   ProductClassificationRefinement[]
+  operational_cost_evidence    OperationalCostEvidence[]
   certifications               ProductCertification[]
   market_assessments           MarketAssessment[]
   buyer_leads                  BuyerLead[]
@@ -992,14 +1045,14 @@ model Product {
   deals                        Deal[]
   classification_history       ProductClassification[]
   country_truth_fact_snapshots CountryTruthFactSnapshot[]
-  hs_confirmed_by              User?                      @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
+  hs_confirmed_by              User?                             @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
 
   @@index([exporter_org_id])
   @@index([hs_code])
 }
 
 model ProductClassification {
-  id                           String                      @id @default(cuid())
+  id                           String                            @id @default(cuid())
   product_id                   String
   revision                     Int
   itc_hs_code                  String?
@@ -1014,20 +1067,21 @@ model ProductClassification {
   rationale                    String
   /// Structured public/source references supporting the human classification decision.
   source_references            Json
-  confidence                   Decimal                     @db.Decimal(5, 4)
+  confidence                   Decimal                           @db.Decimal(5, 4)
   status                       ProductClassificationStatus
   proposed_by_id               String
-  proposed_at                  DateTime                    @default(now())
+  proposed_at                  DateTime                          @default(now())
   confirmed_by_id              String?
   confirmed_at                 DateTime?
   superseded_at                DateTime?
-  product                      Product                     @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  proposed_by                  User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
-  confirmed_by                 User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+  product                      Product                           @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  proposed_by                  User                              @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
+  confirmed_by                 User?                             @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
   country_evidence_plans       CountryEvidencePlan[]
   country_screening_runs       CountryScreeningRun[]
   country_trade_metrics        CountryTradeMetrics[]
   country_truth_fact_snapshots CountryTruthFactSnapshot[]
+  classification_refinements   ProductClassificationRefinement[]
 
   @@unique([product_id, revision])
   @@index([product_id, status])
@@ -1041,12 +1095,30 @@ model ProductCertification {
   status       CertificationStatus @default(not_started)
   evidence_ref String?
   valid_until  DateTime?
-  created_at   DateTime            @default(now())
-  updated_at   DateTime            @updatedAt
 
-  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  /// Who issued it, and the certificate's own reference. Both recorded, never inferred.
+  issuer                String?
+  certificate_reference String?
+  valid_from            DateTime?
+  /// unverified | agent_verified. An exporter can never move its own row to agent_verified;
+  /// only an assigned agent's review does, and it records who and when.
+  verification_state    String    @default("unverified")
+  verified_by_id        String?
+  verified_at           DateTime?
+  /// Null = unknown (the default and the safe reading). True = the exporter has explicitly
+  /// declared it does NOT hold this certification, which is a fact and not the same as silence.
+  declared_absent       Boolean?
+  /// Supporting document, when one has been uploaded.
+  document_id           String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  product     Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  verified_by User?   @relation("ProductCertificationVerifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
 
   @@unique([product_id, code])
+  @@index([product_id, verification_state])
 }
 
 /// Fields derived from EXP-02/EXP-03 (the PRD gives no field dictionary — see docs/02 note).
@@ -3470,11 +3542,207 @@ enum EvidenceOrigin {
 /// `public_real` says a row may serve in production, while `authoritative_public` says who
 /// actually stands behind the assertion. A partner quote and an exporter declaration can both
 /// be real production evidence without becoming public-authority facts.
+/// A destination's national tariff line for one product, and how it was arrived at.
+///
+/// HS6 is a classification of goods; a national tariff line is a DECLARABLE code, and the step
+/// between them is a judgement about the actual product. This record exists so that judgement is
+/// never implicit: it keeps the full candidate set the authority returned, which line was
+/// selected, on what basis, by whom, and how strongly that is verified.
+///
+/// Nothing here selects a line automatically. `refinement_required` is a legitimate terminal
+/// state and is what HS 100630 currently resolves to in the UK and US.
+model ProductClassificationRefinement {
+  id                        String  @id @default(cuid())
+  exporter_org_id           String
+  product_id                String
+  product_classification_id String
+  /// The frozen HS6 every candidate must sit beneath.
+  hs6_code                  String
+  hs_revision               String
+  destination_country       String  @db.VarChar(2)
+  national_code_system      String
+  /// The snapshot whose candidate set this refinement is answering.
+  source_snapshot_id        String?
+
+  /// unresolved | refinement_required | exporter_declared_selection | agent_verified_selection |
+  /// authoritative_verified | superseded.
+  state                  String  @default("unresolved")
+  /// Every candidate the authority returned, with the description and duty that distinguishes it.
+  candidate_lines        Json
+  candidate_count        Int
+  /// Null in every state except a selection. Always one of `candidate_lines`.
+  selected_national_code String?
+  /// Why this line and not its siblings, in product terms.
+  selection_rationale    String?
+  /// The product attributes that determined it, so the decision can be re-derived.
+  deciding_attributes    Json?
+  /// Distinguishing questions still outstanding before a line can be chosen.
+  outstanding_questions  Json?
+
+  source_authority String
+  source_reference String
+  effective_from   DateTime?
+  effective_to     DateTime?
+
+  decided_by_id    String?
+  decided_at       DateTime?
+  evidence_origin  EvidenceOrigin         @default(unknown_legacy)
+  assertion_class  EvidenceAssertionClass @default(unknown_legacy)
+  /// Refinements are append-only: a revision supersedes rather than rewrites, so an assessment
+  /// that cited the previous state stays readable.
+  superseded_at    DateTime?
+  superseded_by_id String?
+  created_at       DateTime               @default(now())
+
+  exporter_org           ExporterOrg                       @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product                Product                           @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  product_classification ProductClassification             @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  decided_by             User?                             @relation("ClassificationRefinementDecider", fields: [decided_by_id], references: [id], onDelete: SetNull)
+  superseded_by          ProductClassificationRefinement?  @relation("ClassificationRefinementSupersession", fields: [superseded_by_id], references: [id], onDelete: SetNull)
+  supersedes             ProductClassificationRefinement[] @relation("ClassificationRefinementSupersession")
+
+  @@index([exporter_org_id, product_id, destination_country, created_at])
+  @@index([product_classification_id, destination_country, state])
+}
+
+/// One operational cost input to Export Economics, as somebody actually stated it.
+///
+/// Deliberately ONE model rather than five near-identical ones: a CHA quote, an inland haulage
+/// quote, a cargo insurance quote, a financing estimate and a destination handling quote differ
+/// in which fields are populated, not in what they are — a priced, dated, attributable
+/// assertion about one cost component. Fields that genuinely belong to one kind of quote
+/// (carrier, equipment, coverage) are explicit columns rather than being flattened into JSON.
+///
+/// Immutable. A revised quote is a new row that supersedes its predecessor, so an assessment
+/// that used the old figure keeps meaning what it meant.
+model OperationalCostEvidence {
+  id                        String  @id @default(cuid())
+  exporter_org_id           String
+  product_id                String?
+  product_classification_id String?
+  /// Destination this cost was quoted for. Null only for origin-side costs that do not vary by
+  /// destination; selection still requires an explicit match or an explicit null.
+  destination_country       String? @db.VarChar(2)
+  hs6_code                  String?
+  hs_revision               String?
+
+  /// One of the eight Export Economics cost components.
+  component  String
+  /// cha | inland_transport | cargo_insurance | financing | destination_handling | packaging |
+  /// international_freight | cleartrade_fee. Narrows `component` to the kind of quote it is.
+  quote_type String
+
+  amount           Decimal  @db.Decimal(18, 4)
+  currency         String   @db.VarChar(3)
+  /// The quantity this amount is FOR: per_unit | per_kg | per_shipment | per_container |
+  /// percent_of_value. Never assumed.
+  rate_basis       String
+  /// The unit `rate_basis` counts in, when it counts something (kg, MT, CTN, 20FT_DRY).
+  quantity_unit    String?
+  /// Populated only for percent_of_value bases.
+  percent_of_value Decimal? @db.Decimal(9, 4)
+  /// The basis a percentage applies to, e.g. cif_value or invoice_value.
+  percent_basis    String?
+
+  /// Which Incoterm party owns this cost. Recorded so a buyer-paid cost cannot silently enter
+  /// exporter economics.
+  cost_owner String @default("exporter")
+
+  /// Route/partner context, populated for the quote kinds that have it.
+  route_evidence_id String?
+  transport_mode    String?
+  equipment_code    String?
+  carrier_name      String?
+  partner_name      String?
+  quote_reference   String?
+  /// Insurance-specific: what the cover actually is.
+  coverage_terms    String?
+  coverage_percent  Decimal? @db.Decimal(6, 2)
+
+  observed_at    DateTime
+  effective_from DateTime
+  /// An operational quote without an expiry is not open-ended: selection requires validity.
+  valid_until    DateTime?
+
+  assertion_class  EvidenceAssertionClass
+  evidence_origin  EvidenceOrigin
+  source           String
+  source_reference String
+  document_id      String?
+  entered_by_id    String?
+  verified_by_id   String?
+  verified_at      DateTime?
+  /// Frozen identity of the policy a system-derived amount came from (currently FeePolicy).
+  derivation       Json?
+  confidence       Decimal                @db.Decimal(5, 4)
+  status           String                 @default("verified")
+  superseded_at    DateTime?
+  superseded_by_id String?
+  raw_evidence     Json?
+  created_at       DateTime               @default(now())
+
+  exporter_org  ExporterOrg               @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product       Product?                  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  entered_by    User?                     @relation("OperationalCostEnteredBy", fields: [entered_by_id], references: [id], onDelete: SetNull)
+  verified_by   User?                     @relation("OperationalCostVerifiedBy", fields: [verified_by_id], references: [id], onDelete: SetNull)
+  superseded_by OperationalCostEvidence?  @relation("OperationalCostSupersession", fields: [superseded_by_id], references: [id], onDelete: SetNull)
+  supersedes    OperationalCostEvidence[] @relation("OperationalCostSupersession")
+
+  @@index([exporter_org_id, destination_country, component, valid_until])
+  @@index([exporter_org_id, product_id, component, status])
+  @@index([route_evidence_id])
+}
+
+/// How a destination values goods for customs, and on what authority.
+///
+/// Deliberately separate from the trade-statistical import valuation basis: a country may
+/// report import statistics on one basis and assess duty on another, and conflating them puts a
+/// duty on the wrong base. Only an authoritative citation may establish either.
+model CustomsValuationBasisEvidence {
+  id                  String                 @id @default(cuid())
+  jurisdiction        String
+  country_code        String                 @db.VarChar(2)
+  /// legal_customs_valuation | trade_statistical_import_valuation. The two are recorded
+  /// separately and are never substituted for one another.
+  valuation_type      String
+  /// CIF | FOB | CIP | other, as the source states it.
+  basis               String
+  included_components String[]               @default([])
+  excluded_components String[]               @default([])
+  source_authority    String
+  source_reference    String
+  source_version      String?
+  effective_from      DateTime
+  effective_to        DateTime?
+  observed_at         DateTime
+  retrieved_at        DateTime
+  /// discovery_grade | execution_grade.
+  verification_grade  String                 @default("discovery_grade")
+  assertion_class     EvidenceAssertionClass
+  evidence_origin     EvidenceOrigin
+  recorded_by_id      String?
+  confidence          Decimal                @db.Decimal(5, 4)
+  status              String                 @default("verified")
+  superseded_at       DateTime?
+  notes               String?
+  raw_evidence        Json?
+  created_at          DateTime               @default(now())
+
+  recorded_by User? @relation("CustomsValuationRecorder", fields: [recorded_by_id], references: [id], onDelete: SetNull)
+
+  @@unique([country_code, valuation_type, basis, effective_from, source_reference], map: "CustomsValuationBasisEvidence_identity_key")
+  @@index([country_code, valuation_type, effective_from])
+}
+
 enum EvidenceAssertionClass {
   authoritative_public
   exporter_declared
   agent_verified
   partner_quote
+  /// Computed by ClearTrade from its own versioned policy (currently the ClearTrade fee from
+  /// FeePolicy). Not an observation of the world, so it is not authoritative_public; not a
+  /// claim by a party, so it is not a declaration or a quote.
+  system_derived
   unknown_legacy
 }
 

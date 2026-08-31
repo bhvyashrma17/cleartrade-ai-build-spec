@@ -113,6 +113,12 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   const metricIds=metrics.map(metric=>metric.id).sort();await stage('freezing_facts',78,{country_trade_metrics_ids:metricIds});
   const phase1hPolicy={value:payload.policies.country_truth_phase_1h.snapshot as unknown as CountryTruthPhase1HPolicy,version:payload.policies.country_truth_phase_1h.config_version};
   const frozenExporterFacts=payload.exporter_fact_snapshot as unknown as CountryTruthExporterFactSnapshot;
+  const shipmentProduct=await prisma.product.findUniqueOrThrow({where:{id:payload.product_id},select:{shipment_quantity_value:true,shipment_quantity_unit:true,shipment_container_count:true}});
+  const frozenShipmentBasis={
+    quantity:shipmentProduct.shipment_quantity_value==null?null:Number(shipmentProduct.shipment_quantity_value),
+    quantity_unit:shipmentProduct.shipment_quantity_unit,
+    container_count:shipmentProduct.shipment_container_count,
+  };
   // Computed from the same frozen manifest, but persisted only in the Phase 1H fact manifest.
   // Nothing here writes to CountryTradeMetrics, so no Phase 1G identity moves.
   const indiaUnitValues=new Map((await calculateIndiaOriginUnitValueSupplement(acquisition.manifest.id,payload.policies.country_trade_metrics.snapshot as unknown as CountryTradeMetricPolicy)).map(item=>[item.reporter_code,{supplemental_version:item.supplemental_version,value:item.result.value,unit:item.result.unit,status:item.result.status,periods_used:item.result.periods_used,calculation_method:item.result.calculation_method,exclusion_reason:item.result.exclusion_reason}]));
@@ -138,6 +144,9 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
       exporter_snapshot_checksum:payload.exporter_fact_snapshot_checksum,
       policy:phase1hPolicy,
       india_origin_unit_value:indiaUnitValues.get(record.reporter_code)??null,
+      // The exporter's declared standard shipment, frozen with the rest of the request. It is
+      // what converts a per-shipment or per-container operational quote into a per-unit cost.
+      shipment_basis:frozenShipmentBasis,
       import_benchmark:importBenchmarkFromTradeMetrics({policy:phase1hPolicy.value,country_trade_metrics_id:record.id,country_code:countryCode,hs_code:record.hs_code,hs_revision:record.hs_revision,as_of_date:record.as_of_date,latest_period_year:record.latest_common_year??record.period_set.at(-1)??null,unit_value:metricsPayload.metrics?.unit_value}),
     });
     const pillars=calculateCountryTruthPillars(resolved.facts,phase1hPolicy.value);

@@ -493,16 +493,19 @@ export type ConfigKey = keyof ConfigShape;
  */
 const PHASE_1H_ASSERTION_CONFIDENCE: Record<AssertionClass, number> = {
   authoritative_public: 1,
+  // Our own fee under a versioned policy is not an uncertain observation of the world; it is a
+  // definition. It still cannot raise a pillar on its own — it is one required component of many.
+  system_derived: 1,
   agent_verified: 0.9,
   partner_quote: 0.8,
   exporter_declared: 0.7,
   unknown_legacy: 0,
 };
 
-// v2 accompanies country-truth-fact-selection-v2. The pillar formulas are unchanged; the
-// identity moves because the evidence admitted beneath them changed, and a v1 manifest must
-// stay reproducible under exactly the rules that produced it.
-const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v2';
+// v3 accompanies country-truth-fact-selection-v3. The pillar formulas are still unchanged; the
+// identity moves because the evidence admitted beneath them changed again, and every earlier
+// manifest must stay reproducible under exactly the rules that produced it.
+const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v3';
 
 const PHASE_1H_TARIFF_POLICY = {
   formula_version: 'applicable-india-tariff-v2',
@@ -532,7 +535,7 @@ const PHASE_1H_INCOTERM_COST_OWNERSHIP: CountryTruthPhase1HPolicy['export_econom
 };
 
 const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
-  policy_version: 'country-truth-phase-1h-v2',
+  policy_version: 'country-truth-phase-1h-v3',
   calculation_version: PHASE_1H_CALCULATION_VERSION,
   facts_schema_version: 'country-truth-facts-v1',
   india_origin_unit_value_version: INDIA_ORIGIN_UNIT_VALUE_VERSION,
@@ -572,7 +575,7 @@ const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
     ],
     allowed_price_assertion_classes: ['exporter_declared', 'agent_verified'],
     allowed_benchmark_assertion_classes: ['authoritative_public'],
-    allowed_cost_assertion_classes: ['authoritative_public', 'agent_verified', 'partner_quote', 'exporter_declared'],
+    allowed_cost_assertion_classes: ['authoritative_public', 'system_derived', 'agent_verified', 'partner_quote', 'exporter_declared'],
     allowed_customs_basis_assertion_classes: ['authoritative_public'],
     // Deliberately empty. Ops must state a destination's valuation rule with a citation before
     // duty is taken on it; seeding a guess here would be indistinguishable from fabricated data.
