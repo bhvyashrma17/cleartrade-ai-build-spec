@@ -43,8 +43,29 @@ describe('exporter fact authorization', () => {
       actor: t.owner, exporter_org_id: t.org.id, product_id: t.product.id, correlation_id: randomUUID(),
       facts: { price_target_amount: '1.20', price_target_currency: 'usd', price_target_quantity_unit: 'kg', price_target_incoterm: 'fob', moq_value: '20000', moq_unit: 'kg', packaging_format: 'pp_bag', container_compatibility: ['20ft_dry'] },
     });
-    expect(updated).toMatchObject({ price_target_currency: 'USD', price_target_incoterm: 'FOB', packaging_format: 'PP_BAG', origin_provenance: 'exporter_declared' });
+    expect(updated).toMatchObject({ price_target_currency: 'USD', price_target_incoterm: 'FOB', packaging_format: 'PP_BAG', origin_provenance: null });
     expect(updated.container_compatibility).toEqual(['20FT_DRY']);
+  });
+
+  test('an agent entering the exporter\'s statement does not silently verify it', async () => {
+    const t = await tenant();
+    const updated = await declareProductOperationalFacts({
+      actor: t.agent, exporter_org_id: t.org.id, product_id: t.product.id, correlation_id: randomUUID(),
+      facts: { origin_city: 'Karnal', origin_state: 'Haryana', origin_country: 'IN', origin_location_code: 'INKNU' },
+    });
+    expect(updated.origin_provenance).toBe('exporter_declared');
+    const audit = await prisma.auditEvent.findFirstOrThrow({ where: { object_type: 'product_operational_facts', object_id: t.product.id }, orderBy: { timestamp: 'desc' } });
+    expect(audit.after_summary).toMatchObject({ provenance: 'exporter_declared' });
+  });
+
+  test('editing an unrelated declaration does not downgrade separately verified origin data', async () => {
+    const t = await tenant();
+    await prisma.product.update({ where: { id: t.product.id }, data: { origin_city: 'Karnal', origin_country: 'IN', origin_provenance: 'agent_verified' } });
+    const updated = await declareProductOperationalFacts({
+      actor: t.owner, exporter_org_id: t.org.id, product_id: t.product.id, correlation_id: randomUUID(),
+      facts: { moq_value: '20000', moq_unit: 'kg' },
+    });
+    expect(updated.origin_provenance).toBe('agent_verified');
   });
 
   test('an exporter cannot verify its own certification', async () => {
@@ -117,6 +138,15 @@ describe('exporter fact authorization', () => {
     expect(forA).toHaveLength(1);
   });
 
+  test('a manually recorded route belongs only to the exporter it was obtained for', async () => {
+    const a = await tenant();
+    const b = await tenant();
+    const route = await recordRouteEvidence({ actor: a.agent, exporter_org_id: a.org.id, correlation_id: randomUUID(), route: { origin_country: 'IN', destination_country: 'DE', transport_mode: LogisticsTransportMode.ocean, route_available: true, provider: 'partner', source_reference: `route-${randomUUID()}` } });
+    expect(route).toMatchObject({ exporter_org_id: a.org.id, assertion_class: 'partner_quote' });
+    await expect(recordOperationalQuote({ actor: b.agent, exporter_org_id: b.org.id, correlation_id: randomUUID(), quote: quote({ component: 'international_freight', quote_type: 'international_freight', route_evidence_id: route.id }) }))
+      .rejects.toMatchObject({ fields: expect.arrayContaining([expect.objectContaining({ field: 'route_evidence_id', code: 'not_found' })]) });
+  });
+
   test('a product a tenant does not own cannot be named on its quote', async () => {
     const a = await tenant();
     const b = await tenant();
@@ -126,8 +156,9 @@ describe('exporter fact authorization', () => {
 
   test('a revised quote supersedes rather than mutating the one an assessment may have used', async () => {
     const t = await tenant();
-    const first = await recordOperationalQuote({ actor: t.agent, exporter_org_id: t.org.id, quote: quote({ product_id: t.product.id, amount: '400' }), correlation_id: randomUUID() });
-    const second = await recordOperationalQuote({ actor: t.agent, exporter_org_id: t.org.id, quote: quote({ product_id: t.product.id, amount: '600' }), correlation_id: randomUUID() });
+    const sourceReference = `revision-${randomUUID()}`;
+    const first = await recordOperationalQuote({ actor: t.agent, exporter_org_id: t.org.id, quote: quote({ product_id: t.product.id, amount: '400', source_reference: sourceReference, quote_reference: 'PARTNER-REV-1' }), correlation_id: randomUUID() });
+    const second = await recordOperationalQuote({ actor: t.agent, exporter_org_id: t.org.id, quote: quote({ product_id: t.product.id, amount: '600', source_reference: sourceReference, quote_reference: 'PARTNER-REV-1' }), correlation_id: randomUUID() });
 
     const original = await prisma.operationalCostEvidence.findUniqueOrThrow({ where: { id: first.id } });
     expect(Number(original.amount)).toBe(400);
@@ -136,6 +167,16 @@ describe('exporter fact authorization', () => {
     // was permitted.
     await expect(prisma.operationalCostEvidence.update({ where: { id: first.id }, data: { amount: new Prisma.Decimal('1') } })).rejects.toThrow(/immutable/);
     await expect(prisma.operationalCostEvidence.delete({ where: { id: first.id } })).rejects.toThrow(/immutable/);
+  });
+
+  test('alternative quotes for another route, equipment or partner coexist', async () => {
+    const t = await tenant();
+    const route20 = await recordRouteEvidence({ actor: t.agent, exporter_org_id: t.org.id, correlation_id: randomUUID(), route: { origin_country: 'IN', destination_country: 'DE', transport_mode: LogisticsTransportMode.ocean, route_available: true, equipment_assumption: '20FT_DRY', provider: 'partner-a', source_reference: `route-a-${randomUUID()}` } });
+    const route40 = await recordRouteEvidence({ actor: t.agent, exporter_org_id: t.org.id, correlation_id: randomUUID(), route: { origin_country: 'IN', destination_country: 'DE', transport_mode: LogisticsTransportMode.ocean, route_available: true, equipment_assumption: '40FT_HC', provider: 'partner-b', source_reference: `route-b-${randomUUID()}` } });
+    const first = await recordOperationalQuote({ actor: t.agent, exporter_org_id: t.org.id, correlation_id: randomUUID(), quote: quote({ product_id: t.product.id, component: 'international_freight', quote_type: 'international_freight', route_evidence_id: route20.id, equipment_code: '20FT_DRY', partner_name: 'Partner A', source_reference: `A-${randomUUID()}` }) });
+    const second = await recordOperationalQuote({ actor: t.agent, exporter_org_id: t.org.id, correlation_id: randomUUID(), quote: quote({ product_id: t.product.id, component: 'international_freight', quote_type: 'international_freight', route_evidence_id: route40.id, equipment_code: '40FT_HC', partner_name: 'Partner B', source_reference: `B-${randomUUID()}` }) });
+    expect(await prisma.operationalCostEvidence.findUniqueOrThrow({ where: { id: first.id } })).toMatchObject({ superseded_at: null, superseded_by_id: null });
+    expect(await prisma.operationalCostEvidence.findUniqueOrThrow({ where: { id: second.id } })).toMatchObject({ superseded_at: null, superseded_by_id: null });
   });
 
   test('an incomplete price is refused rather than half-recorded', async () => {

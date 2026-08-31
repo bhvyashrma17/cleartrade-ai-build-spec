@@ -48,8 +48,12 @@ import type { CountryTruthExporterFactSnapshot, CountryTruthFact } from './expor
  * become available regardless of what evidence existed. `system_derived` joins the assertion
  * vocabulary for the ClearTrade fee. Each of these changes what a manifest MEANS, so the version
  * moves and every new manifest gets a new identity rather than overwriting an older one.
+ *
+ * v4: tenant-scoped partner routes can no longer masquerade as global authoritative evidence,
+ * and available capacity is preferred over installed capacity. Frozen shipment/equipment facts
+ * also constrain operational quote selection.
  */
-export const COUNTRY_TRUTH_FACT_SELECTION_VERSION = 'country-truth-fact-selection-v3' as const;
+export const COUNTRY_TRUTH_FACT_SELECTION_VERSION = 'country-truth-fact-selection-v4' as const;
 
 type DecimalLike = { toString(): string } | string | number | null | undefined;
 
@@ -128,6 +132,8 @@ export interface ExporterFitBenchmarkRow {
 
 export interface LogisticsRouteEvidenceRow {
   id: string;
+  exporter_org_id?: string | null;
+  assertion_class?: string;
   origin_country: string;
   origin_location_code: string | null;
   origin_gateway: string | null;
@@ -148,11 +154,36 @@ export interface LogisticsRouteEvidenceRow {
   source_reference: string;
   retrieved_at: Date;
   valid_until: Date | null;
+  equipment_assumption?: string | null;
   supported_product_constraint_codes: readonly string[];
   hs_code_scope: string | null;
   confidence: DecimalLike;
   status: string;
   evidence_origin: string;
+}
+
+export interface ClassificationRefinementEvidenceRow {
+  id: string;
+  exporter_org_id: string;
+  product_id: string;
+  product_classification_id: string;
+  hs6_code: string;
+  hs_revision: string;
+  destination_country: string;
+  national_code_system: string;
+  source_snapshot_id: string | null;
+  state: string;
+  candidate_lines: unknown;
+  candidate_count: number;
+  selected_national_code: string | null;
+  deciding_attributes: unknown;
+  outstanding_questions: unknown;
+  source_authority: string;
+  source_reference: string;
+  assertion_class: string;
+  evidence_origin: string;
+  created_at: Date;
+  superseded_at: Date | null;
 }
 
 export interface AuthoritativeFxObservationRow {
@@ -250,6 +281,7 @@ export interface CountryTruthEvidenceRows {
   market_access_evidence: readonly MarketAccessEvidenceRow[];
   fit_benchmarks: readonly ExporterFitBenchmarkRow[];
   logistics_routes: readonly LogisticsRouteEvidenceRow[];
+  classification_refinements?: readonly ClassificationRefinementEvidenceRow[];
   exchange_rate_quotes: readonly ExchangeRateQuoteRow[];
   /**
    * Published reference observations from an authoritative FX publisher. Global rather than
@@ -268,6 +300,8 @@ export interface SelectedCountryTruthFacts {
     tariffs: ScopedFact<TariffFactValue>[];
     requirements: ScopedFact<MarketAccessRequirementValue>[];
     regulatory_coverage: ScopedFact<RegulatoryCoverageValue> | null;
+    /** Frozen classification decision metadata. Scoring remains separate and ignores it. */
+    classification_refinement: ScopedFact<Record<string, unknown>> | null;
   };
   export_economics: {
     exporter_price: ScopedFact<ExporterPriceValue> | null;
@@ -700,8 +734,16 @@ function selectRoutes(
 ) {
   const routes: ScopedFact<LogisticsRouteValue>[] = [];
   const freightQuotes: ScopedFact<LogisticsFreightQuoteValue>[] = [];
-  const factScope = scopeFor(scope, false);
   for (const row of [...rows].sort((left, right) => left.id.localeCompare(right.id))) {
+    if (row.exporter_org_id != null && row.exporter_org_id !== scope.exporter_org_id) {
+      recorder.reject('logistics_route', row.id, 'exporter_org_mismatch');
+      continue;
+    }
+    const assertionClass = row.assertion_class ?? 'authoritative_public';
+    if (row.exporter_org_id == null && assertionClass !== 'authoritative_public') {
+      recorder.reject('logistics_route', row.id, 'unscoped_non_public_route_evidence');
+      continue;
+    }
     if (row.destination_country.toUpperCase() !== scope.country_code) {
       recorder.reject('logistics_route', row.id, 'destination_country_mismatch');
       continue;
@@ -725,12 +767,13 @@ function selectRoutes(
       continue;
     }
     const routeId = `logistics_route:${row.id}`;
+    const routeScope = scopeFor(scope, row.exporter_org_id != null);
     routes.push({
       id: routeId,
       state: 'present',
-      scope: factScope,
+      scope: routeScope,
       provenance: {
-        assertion_class: 'authoritative_public',
+        assertion_class: assertionClass as AssertionClass,
         source: row.provider,
         source_reference: row.source_reference,
         retrieved_at: iso(row.retrieved_at),
@@ -758,6 +801,14 @@ function selectRoutes(
     const freight = decimal(row.freight_amount);
     const goodsValue = decimal(row.assumed_shipment_value_amount);
     if (freight == null) continue;
+    if (row.freight_retrieved_at != null && !retrievedBefore(row.freight_retrieved_at, asOf)) {
+      recorder.reject('logistics_freight_quote', row.id, 'freight_retrieved_after_assessment_clock');
+      continue;
+    }
+    if (row.freight_valid_until != null && row.freight_valid_until.getTime() <= asOf) {
+      recorder.reject('logistics_freight_quote', row.id, 'freight_quote_expired_before_assessment_clock');
+      continue;
+    }
     if (
       goodsValue == null ||
       goodsValue <= 0 ||
@@ -773,10 +824,9 @@ function selectRoutes(
     freightQuotes.push({
       id: `logistics_freight_quote:${row.id}`,
       state: 'present',
-      // A commercial rate is a partner assertion made to this exporter, so it is tenant scoped.
-      scope: scopeFor(scope, true),
+      scope: scopeFor(scope, row.exporter_org_id != null),
       provenance: {
-        assertion_class: 'partner_quote',
+        assertion_class: assertionClass as AssertionClass,
         source: row.provider,
         source_reference: row.source_reference,
         retrieved_at: iso(row.freight_retrieved_at),
@@ -795,6 +845,44 @@ function selectRoutes(
     });
   }
   return { routes, freightQuotes };
+}
+
+function selectClassificationRefinement(
+  rows: readonly ClassificationRefinementEvidenceRow[],
+  scope: CountryTruthSelectionScope,
+  exporterSnapshot: CountryTruthExporterFactSnapshot,
+  asOf: number,
+  recorder: Recorder,
+): ScopedFact<Record<string, unknown>> | null {
+  const usable = [...rows].filter((row) => {
+    if (row.exporter_org_id !== scope.exporter_org_id) { recorder.reject('classification_refinement', row.id, 'exporter_org_mismatch'); return false; }
+    if (row.product_id !== exporterSnapshot.identity.product_id || row.product_classification_id !== exporterSnapshot.identity.product_classification_id) { recorder.reject('classification_refinement', row.id, 'product_or_classification_mismatch'); return false; }
+    if (row.destination_country !== scope.country_code || row.hs6_code !== scope.hs6 || row.hs_revision.toUpperCase() !== scope.hs_revision) { recorder.reject('classification_refinement', row.id, 'destination_or_hs_scope_mismatch'); return false; }
+    if (!row.source_snapshot_id) { recorder.reject('classification_refinement', row.id, 'authoritative_source_snapshot_missing'); return false; }
+    if (row.created_at.getTime() > asOf) { recorder.reject('classification_refinement', row.id, 'created_after_assessment_clock'); return false; }
+    if (row.superseded_at != null && row.superseded_at.getTime() <= asOf) { recorder.reject('classification_refinement', row.id, 'superseded_before_assessment_clock'); return false; }
+    return true;
+  }).sort((left, right) => right.created_at.getTime() - left.created_at.getTime() || left.id.localeCompare(right.id));
+  const row = usable[0];
+  if (!row) return null;
+  return {
+    id: `classification_refinement:${row.id}`,
+    state: 'present',
+    scope: scopeFor(scope, true),
+    provenance: { assertion_class: row.assertion_class as AssertionClass, source: row.source_authority, source_reference: row.source_reference, retrieved_at: iso(row.created_at) },
+    confidence: MAX_CONFIDENCE,
+    value: {
+      refinement_id: row.id,
+      source_snapshot_id: row.source_snapshot_id,
+      state: row.state,
+      national_code_system: row.national_code_system,
+      candidate_count: row.candidate_count,
+      candidate_lines: row.candidate_lines,
+      selected_national_code: row.selected_national_code,
+      deciding_attributes: row.deciding_attributes,
+      outstanding_questions: row.outstanding_questions,
+    },
+  };
 }
 
 const AUTHORITATIVE_FX_SOURCES = new Set(['rbi_reference', 'customs_notified']);
@@ -1272,9 +1360,15 @@ function selectExporterFacts(
         }
       : null;
 
+  const availableCapacity = snapshot.commercial.available_capacity?.value.state === 'present'
+    ? quantityFact('exporter_available_capacity', snapshot.commercial.available_capacity.value, snapshot.commercial.available_capacity.unit)
+    : null;
+
   return {
     exporter_price: exporterPrice,
-    capacity: quantityFact('exporter_capacity', snapshot.commercial.capacity.value, snapshot.commercial.capacity.unit),
+    // Available capacity is the commercial capability for a new order. Installed capacity is a
+    // backwards-compatible fallback for snapshots created before that distinction was captured.
+    capacity: availableCapacity ?? quantityFact('exporter_capacity', snapshot.commercial.capacity.value, snapshot.commercial.capacity.unit),
     moq: quantityFact('exporter_moq', snapshot.commercial.minimum_order_quantity.value, snapshot.commercial.minimum_order_quantity.unit),
     production_lead_time: productionLeadTime,
     price: priceCapability,
@@ -1321,6 +1415,7 @@ export function selectCountryTruthFacts(args: {
     recorder,
   );
   const regulatoryCoverage = selectRegulatoryCoverage(args.evidence.market_access_snapshots, scope, asOf, recorder);
+  const classificationRefinement = selectClassificationRefinement(args.evidence.classification_refinements ?? [], scope, args.exporter_snapshot, asOf, recorder);
   const benchmarks = [
     ...selectFitBenchmarks(args.evidence.fit_benchmarks, scope, asOf, recorder),
     ...certificationRequirementBenchmarks(requirements),
@@ -1338,7 +1433,7 @@ export function selectCountryTruthFacts(args: {
   return {
     selection_version: COUNTRY_TRUTH_FACT_SELECTION_VERSION,
     scope,
-    market_access: { tariffs, requirements, regulatory_coverage: regulatoryCoverage },
+    market_access: { tariffs, requirements, regulatory_coverage: regulatoryCoverage, classification_refinement: classificationRefinement },
     export_economics: {
       exporter_price: exporter.exporter_price,
       import_benchmark: importBenchmark,

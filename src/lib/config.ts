@@ -502,10 +502,11 @@ const PHASE_1H_ASSERTION_CONFIDENCE: Record<AssertionClass, number> = {
   unknown_legacy: 0,
 };
 
-// v3 accompanies country-truth-fact-selection-v3. The pillar formulas are still unchanged; the
-// identity moves because the evidence admitted beneath them changed again, and every earlier
+// v4 accompanies country-truth-fact-selection-v4. The pillar formulas are still unchanged; the
+// identity moves because route tenancy, frozen shipment basis and available-capacity selection
+// changed which evidence can be admitted, and every earlier
 // manifest must stay reproducible under exactly the rules that produced it.
-const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v3';
+const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v4';
 
 const PHASE_1H_TARIFF_POLICY = {
   formula_version: 'applicable-india-tariff-v2',
@@ -535,7 +536,7 @@ const PHASE_1H_INCOTERM_COST_OWNERSHIP: CountryTruthPhase1HPolicy['export_econom
 };
 
 const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
-  policy_version: 'country-truth-phase-1h-v3',
+  policy_version: 'country-truth-phase-1h-v4',
   calculation_version: PHASE_1H_CALCULATION_VERSION,
   facts_schema_version: 'country-truth-facts-v1',
   india_origin_unit_value_version: INDIA_ORIGIN_UNIT_VALUE_VERSION,

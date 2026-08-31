@@ -92,23 +92,27 @@ async function syntheticExporter() {
 }
 
 /** Every operational input, as explicitly fixture-origin evidence. */
-async function seedOperationalEvidence(f: Awaited<ReturnType<typeof syntheticExporter>>) {
+async function seedOperationalEvidence(
+  f: Awaited<ReturnType<typeof syntheticExporter>>,
+  options: { omit_component?: string; freight_valid_until?: Date } = {},
+) {
   const common = { exporter_org_id: f.org.id, product_id: f.product.id, destination_country: COUNTRY, hs6_code: f.hs6, hs_revision: 'HS2022', observed_at: AS_OF, effective_from: AS_OF, valid_until: new Date('2026-12-31T00:00:00Z'), evidence_origin: EvidenceOrigin.fixture, confidence: new Prisma.Decimal(1), status: 'verified', entered_by_id: f.agent.id, cost_owner: 'exporter' };
   // FOB already carries packaging, inland transport and origin charges, so only the legs beyond
   // the ship's rail are quoted. The ClearTrade fee is derived from FeePolicy, never quoted.
   await prisma.operationalCostEvidence.createMany({
     data: [
-      { ...common, component: 'international_freight', quote_type: 'international_freight', amount: new Prisma.Decimal('1800'), currency: 'USD', rate_basis: 'per_container', quantity_unit: 'kg', equipment_code: '20FT_DRY', transport_mode: 'ocean', partner_name: 'Synthetic Forwarder', quote_reference: 'FRT-1', assertion_class: EvidenceAssertionClass.partner_quote, source: 'Synthetic Forwarder', source_reference: 'FRT-1' },
+      { ...common, valid_until: options.freight_valid_until ?? common.valid_until, component: 'international_freight', quote_type: 'international_freight', amount: new Prisma.Decimal('1800'), currency: 'USD', rate_basis: 'per_container', quantity_unit: 'kg', equipment_code: '20FT_DRY', transport_mode: 'ocean', partner_name: 'Synthetic Forwarder', quote_reference: 'FRT-1', assertion_class: EvidenceAssertionClass.partner_quote, source: 'Synthetic Forwarder', source_reference: 'FRT-1' },
       { ...common, component: 'insurance', quote_type: 'cargo_insurance', amount: new Prisma.Decimal('0'), currency: 'USD', rate_basis: 'percent_of_value', percent_of_value: new Prisma.Decimal('0.5'), percent_basis: 'invoice_value', coverage_terms: 'ICC(A) 110%', coverage_percent: new Prisma.Decimal('110'), assertion_class: EvidenceAssertionClass.partner_quote, source: 'Synthetic Insurer', source_reference: 'INS-1' },
       { ...common, component: 'destination_charges', quote_type: 'destination_handling', amount: new Prisma.Decimal('220'), currency: 'USD', rate_basis: 'per_shipment', quantity_unit: 'kg', assertion_class: EvidenceAssertionClass.partner_quote, source: 'Synthetic Destination Agent', source_reference: 'DEST-1' },
       { ...common, component: 'financing', quote_type: 'financing', amount: new Prisma.Decimal('150'), currency: 'USD', rate_basis: 'per_shipment', quantity_unit: 'kg', assertion_class: EvidenceAssertionClass.agent_verified, source: 'Synthetic Bank', source_reference: 'FIN-1' },
-    ],
+    ].filter((row) => row.component !== options.omit_component),
   });
   await prisma.customsValuationBasisEvidence.create({
     data: { jurisdiction: 'EU', country_code: COUNTRY, valuation_type: 'legal_customs_valuation', basis: 'CIF', included_components: ['goods_price', 'international_freight', 'insurance'], excluded_components: ['import_duty'], source_authority: 'Synthetic UAT authority', source_reference: `synthetic-customs-${f.org.id}`, effective_from: new Date('2020-01-01T00:00:00Z'), observed_at: AS_OF, retrieved_at: AS_OF, verification_grade: 'discovery_grade', assertion_class: EvidenceAssertionClass.authoritative_public, evidence_origin: EvidenceOrigin.fixture, confidence: new Prisma.Decimal(1), status: 'verified' },
   });
   await prisma.logisticsRouteEvidence.create({
     data: {
+      exporter_org_id: f.org.id, assertion_class: EvidenceAssertionClass.partner_quote,
       origin_country: 'IN', origin_state: 'Maharashtra', origin_city: 'Mumbai', origin_location_code: 'INNSA1', origin_gateway: 'INNSA',
       destination_country: COUNTRY, destination_port: 'DEHAM', transport_mode: LogisticsTransportMode.ocean,
       route_available: true, transit_time_min_days: 22, transit_time_max_days: 30,
@@ -256,9 +260,7 @@ describe('Canary A — all three operational pillars from synthetic evidence', (
     await ensureFeePolicy();
     await seedFx();
     const f = await syntheticExporter();
-    await seedOperationalEvidence(f);
-    // Supersede the destination-charges quote: the component becomes unknown, not zero.
-    await prisma.operationalCostEvidence.updateMany({ where: { exporter_org_id: f.org.id, component: 'destination_charges' }, data: { superseded_at: new Date('2026-08-29T00:00:00Z') } });
+    await seedOperationalEvidence(f, { omit_component: 'destination_charges' });
 
     const { pillars } = await runPillars(f);
     const economics = pillars.results.export_economics;
@@ -276,8 +278,7 @@ describe('Canary A — all three operational pillars from synthetic evidence', (
     await ensureFeePolicy();
     await seedFx();
     const f = await syntheticExporter();
-    await seedOperationalEvidence(f);
-    await prisma.operationalCostEvidence.updateMany({ where: { exporter_org_id: f.org.id, component: 'international_freight' }, data: { superseded_at: new Date('2026-08-29T00:00:00Z') } });
+    await seedOperationalEvidence(f, { freight_valid_until: new Date('2026-08-29T00:00:00Z') });
 
     const { pillars } = await runPillars(f);
     expect(pillars.results.export_economics.status).toBe('unavailable');

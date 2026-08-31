@@ -13,8 +13,10 @@
  * carries its author.
  */
 import { EvidenceAssertionClass, EvidenceOrigin, Prisma, UserRole } from '@prisma/client';
+import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
+import type { Principal } from '@/types';
 
 export const CLASSIFICATION_REFINEMENT_VERSION = 'classification-refinement-v1' as const;
 
@@ -151,7 +153,7 @@ export function narrowCandidates(candidates: readonly CandidateLine[], answers: 
 const SELECTION_STATES: readonly RefinementState[] = ['exporter_declared_selection', 'agent_verified_selection', 'authoritative_verified'];
 
 export interface RecordRefinementArgs {
-  actor: { id: string; role: UserRole };
+  actor: Principal;
   exporter_org_id: string;
   product_id: string;
   product_classification_id: string;
@@ -159,7 +161,8 @@ export interface RecordRefinementArgs {
   national_code_system: string;
   source_authority: string;
   source_reference: string;
-  source_snapshot_id?: string | null;
+  /** Immutable authoritative snapshot that owns the candidate set. Required for every record. */
+  source_snapshot_id: string;
   candidates: readonly CandidateLine[];
   /** Omit to record the candidate set and its questions without choosing anything. */
   selected_national_code?: string | null;
@@ -170,6 +173,7 @@ export interface RecordRefinementArgs {
   effective_to?: Date | null;
   curated_questions?: RefinementQuestion[];
   now?: Date;
+  correlation_id: string;
 }
 
 const AGENT_ROLES: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
@@ -183,8 +187,12 @@ const AGENT_ROLES: readonly UserRole[] = [UserRole.agent, UserRole.ops_superviso
  */
 export async function recordClassificationRefinement(args: RecordRefinementArgs) {
   const now = args.now ?? new Date();
-  const classification = await prisma.productClassification.findUnique({ where: { id: args.product_classification_id }, include: { product: true } });
+  const [classification, sourceSnapshot] = await Promise.all([
+    prisma.productClassification.findUnique({ where: { id: args.product_classification_id }, include: { product: true } }),
+    prisma.marketAccessEvidenceSnapshot.findUnique({ where: { id: args.source_snapshot_id } }),
+  ]);
   if (!classification) throw notFound('That product classification does not exist.');
+  if (!sourceSnapshot) throw notFound('That authoritative tariff snapshot does not exist.');
   if (classification.product_id !== args.product_id || classification.product.exporter_org_id !== args.exporter_org_id) {
     throw validationError([{ field: 'product_classification_id', code: 'mismatch', message: 'That classification does not belong to this product and exporter.' }]);
   }
@@ -198,9 +206,51 @@ export async function recordClassificationRefinement(args: RecordRefinementArgs)
 
   const fields: Array<{ field: string; code: string; message: string }> = [];
   if (!/^[A-Z]{2}$/.test(args.destination_country)) fields.push({ field: 'destination_country', code: 'invalid', message: 'An ISO alpha-2 destination is required.' });
-  if (!args.candidates.length) fields.push({ field: 'candidates', code: 'required', message: 'The authoritative candidate set must be recorded, even when no line is selected.' });
+  if (sourceSnapshot.country_code !== args.destination_country) fields.push({ field: 'destination_country', code: 'source_mismatch', message: 'The tariff snapshot belongs to a different destination.' });
+  if (sourceSnapshot.hs6_code !== hs6) fields.push({ field: 'source_snapshot_id', code: 'source_mismatch', message: 'The tariff snapshot belongs to a different frozen HS6.' });
+  if (sourceSnapshot.national_code_system !== args.national_code_system) fields.push({ field: 'national_code_system', code: 'source_mismatch', message: 'The national code system does not match the tariff snapshot.' });
+  if (sourceSnapshot.source_authority !== args.source_authority || sourceSnapshot.source_reference !== args.source_reference) fields.push({ field: 'source_snapshot_id', code: 'source_mismatch', message: 'The cited authority does not match the tariff snapshot.' });
+  if (sourceSnapshot.retrieved_at.getTime() > now.getTime()) fields.push({ field: 'source_snapshot_id', code: 'future_source', message: 'A tariff snapshot retrieved after the decision clock cannot support this refinement.' });
+
+  const detail = sourceSnapshot.resolution_detail as { declarable_candidates?: unknown } | null;
+  const rawCandidates = detail?.declarable_candidates;
+  const canonicalCandidates: CandidateLine[] = Array.isArray(rawCandidates)
+    ? rawCandidates.flatMap((item) => {
+        if (!item || typeof item !== 'object') return [];
+        const row = item as Record<string, unknown>;
+        if (typeof row.code !== 'string' || typeof row.description !== 'string') return [];
+        return [{
+          national_tariff_code: row.code,
+          description: row.description,
+          description_path: Array.isArray(row.description_path) ? row.description_path.filter((part): part is string => typeof part === 'string') : [],
+          duty_expression: typeof row.duty === 'string' ? row.duty : null,
+          duty_kind: typeof row.duty_kind === 'string' ? row.duty_kind : null,
+          effective_from: typeof row.effective_from === 'string' ? row.effective_from : null,
+          effective_to: typeof row.effective_to === 'string' ? row.effective_to : null,
+        }];
+      })
+    : [];
+  if (!canonicalCandidates.length || canonicalCandidates.length !== sourceSnapshot.candidate_line_count) {
+    fields.push({ field: 'source_snapshot_id', code: 'incomplete_source', message: 'The tariff snapshot does not preserve its complete declarable candidate set.' });
+  }
+  const candidateFingerprint = (candidate: CandidateLine) => JSON.stringify({
+    code: candidate.national_tariff_code,
+    description: candidate.description,
+    description_path: [...(candidate.description_path ?? [])],
+    duty: candidate.duty_expression,
+    duty_kind: candidate.duty_kind,
+    effective_from: candidate.effective_from ?? null,
+    effective_to: candidate.effective_to ?? null,
+  });
+  const supplied = [...args.candidates].map(candidateFingerprint).sort();
+  const authoritative = [...canonicalCandidates].map(candidateFingerprint).sort();
+  if (JSON.stringify(supplied) !== JSON.stringify(authoritative)) {
+    fields.push({ field: 'candidates', code: 'source_mismatch', message: 'Candidate lines must exactly match the authoritative tariff snapshot.' });
+  }
+  const candidates = canonicalCandidates;
+  if (!candidates.length) fields.push({ field: 'candidates', code: 'required', message: 'The authoritative candidate set must be recorded, even when no line is selected.' });
   const seen = new Set<string>();
-  for (const [index, candidate] of args.candidates.entries()) {
+  for (const [index, candidate] of candidates.entries()) {
     if (!candidate.national_tariff_code.startsWith(hs6)) fields.push({ field: `candidates[${index}]`, code: 'invalid', message: `Candidate ${candidate.national_tariff_code} does not sit beneath HS6 ${hs6}.` });
     if (candidate.national_tariff_code.length <= hs6.length) fields.push({ field: `candidates[${index}]`, code: 'invalid', message: 'A candidate must be a national line, not the HS6 itself.' });
     if (seen.has(candidate.national_tariff_code)) fields.push({ field: `candidates[${index}]`, code: 'duplicate', message: `Candidate ${candidate.national_tariff_code} is listed twice.` });
@@ -208,63 +258,107 @@ export async function recordClassificationRefinement(args: RecordRefinementArgs)
   }
 
   const selected = args.selected_national_code?.trim() || null;
+  const decidingAttributes = Object.fromEntries(
+    Object.entries(args.deciding_attributes ?? {}).filter(([, value]) => value === 'yes' || value === 'no'),
+  );
+  for (const [attribute, value] of Object.entries(args.deciding_attributes ?? {})) {
+    if (!PRODUCT_ATTRIBUTE_SIGNALS.some((signal) => signal.attribute === attribute)) {
+      fields.push({ field: `deciding_attributes.${attribute}`, code: 'unknown', message: `${attribute} is not a distinction in the supported product questionnaire.` });
+    } else if (value !== 'yes' && value !== 'no') {
+      fields.push({ field: `deciding_attributes.${attribute}`, code: 'invalid', message: 'A product distinction must be answered yes or no.' });
+    }
+  }
+  const narrowing = narrowCandidates(candidates, decidingAttributes);
+  for (const [attribute] of Object.entries(decidingAttributes)) {
+    if (!narrowing.applied.some((answer) => answer.attribute === attribute)) {
+      fields.push({ field: `deciding_attributes.${attribute}`, code: 'inconsistent_answer', message: 'That answer is inconsistent with every authoritative candidate still in scope.' });
+    }
+  }
   if (SELECTION_STATES.includes(args.state)) {
     if (!selected) fields.push({ field: 'selected_national_code', code: 'required', message: 'A selection state requires a selected national line.' });
     else {
-      const candidate = args.candidates.find((line) => line.national_tariff_code === selected);
+      const candidate = candidates.find((line) => line.national_tariff_code === selected);
       // This is the injection guard: the code must have come from the authority, not the client.
       if (!candidate) fields.push({ field: 'selected_national_code', code: 'not_a_candidate', message: `${selected} is not among the candidate lines the authoritative source returned.` });
       else {
+        if (Object.keys(decidingAttributes).length && !narrowing.remaining.some((line) => line.national_tariff_code === selected)) {
+          fields.push({ field: 'selected_national_code', code: 'contradicts_attributes', message: 'The selected line contradicts the product attributes recorded with this decision.' });
+        }
         if (candidate.effective_from && new Date(candidate.effective_from).getTime() > now.getTime()) fields.push({ field: 'selected_national_code', code: 'not_yet_effective', message: 'That line is not yet in force.' });
         if (candidate.effective_to && new Date(candidate.effective_to).getTime() <= now.getTime()) fields.push({ field: 'selected_national_code', code: 'expired', message: 'That line is no longer in force.' });
       }
       if (!args.selection_rationale?.trim()) fields.push({ field: 'selection_rationale', code: 'required', message: 'A selection must record why this line and not its siblings.' });
+      if (args.state === 'agent_verified_selection' && !Object.keys(decidingAttributes).length) fields.push({ field: 'deciding_attributes', code: 'required', message: 'An agent-verified selection must record the product attributes that were explicitly verified.' });
     }
   } else if (selected) {
     fields.push({ field: 'selected_national_code', code: 'invalid', message: 'A non-selection state may not carry a selected line.' });
   }
+  if (args.state === 'authoritative_verified' && (sourceSnapshot.classification_resolution !== 'exact' || candidates.length !== 1)) {
+    fields.push({ field: 'state', code: 'unsupported_verification', message: 'A product-dependent refinement cannot become authoritative merely because narrowing leaves one candidate; record an exporter declaration or explicit agent verification.' });
+  }
   if (fields.length) throw validationError(fields);
 
   const questions = [
-    ...deriveRefinementQuestions(args.candidates),
+    ...narrowing.outstanding_questions,
     ...(args.curated_questions ?? []).map((question) => ({ ...question, origin: 'curated' as const, authored_by_id: args.actor.id })),
   ];
 
+  const hasProductAnswers = Object.keys(decidingAttributes).length > 0;
   const assertionClass = args.state === 'authoritative_verified'
     ? EvidenceAssertionClass.authoritative_public
     : args.state === 'agent_verified_selection'
       ? EvidenceAssertionClass.agent_verified
       : args.state === 'exporter_declared_selection'
         ? EvidenceAssertionClass.exporter_declared
-        : EvidenceAssertionClass.authoritative_public;
+        : hasProductAnswers
+          ? isAgent ? EvidenceAssertionClass.agent_verified : EvidenceAssertionClass.exporter_declared
+          : EvidenceAssertionClass.authoritative_public;
 
   return prisma.$transaction(async (tx) => {
     const created = await tx.productClassificationRefinement.create({
       data: {
         exporter_org_id: args.exporter_org_id, product_id: args.product_id, product_classification_id: args.product_classification_id,
         hs6_code: hs6, hs_revision: classification.nomenclature_version, destination_country: args.destination_country,
-        national_code_system: args.national_code_system, source_snapshot_id: args.source_snapshot_id ?? null,
+        national_code_system: sourceSnapshot.national_code_system!, source_snapshot_id: sourceSnapshot.id,
         state: args.state,
-        candidate_lines: args.candidates as unknown as Prisma.InputJsonValue,
-        candidate_count: args.candidates.length,
+        candidate_lines: candidates as unknown as Prisma.InputJsonValue,
+        candidate_count: candidates.length,
         selected_national_code: selected,
         selection_rationale: args.selection_rationale?.trim() || null,
-        deciding_attributes: (args.deciding_attributes ?? null) as Prisma.InputJsonValue,
+        deciding_attributes: (hasProductAnswers ? decidingAttributes : null) as Prisma.InputJsonValue,
         outstanding_questions: questions as unknown as Prisma.InputJsonValue,
-        source_authority: args.source_authority, source_reference: args.source_reference,
+        source_authority: sourceSnapshot.source_authority, source_reference: sourceSnapshot.source_reference,
         effective_from: args.effective_from ?? null, effective_to: args.effective_to ?? null,
-        decided_by_id: SELECTION_STATES.includes(args.state) ? args.actor.id : null,
-        decided_at: SELECTION_STATES.includes(args.state) ? now : null,
+        decided_by_id: SELECTION_STATES.includes(args.state) || hasProductAnswers ? args.actor.id : null,
+        decided_at: SELECTION_STATES.includes(args.state) || hasProductAnswers ? now : null,
         assertion_class: assertionClass,
-        evidence_origin: args.state === 'authoritative_verified' ? EvidenceOrigin.public_real : EvidenceOrigin.manually_entered_real,
+        evidence_origin: args.state === 'authoritative_verified' || !hasProductAnswers && !SELECTION_STATES.includes(args.state)
+          ? EvidenceOrigin.public_real
+          : EvidenceOrigin.manually_entered_real,
       },
     });
     // Supersede the previous live refinement for the same product/destination. The old row keeps
     // its content; only the forward-only supersession annotation is written, so an assessment
     // that cited it still reads exactly as it did.
     await tx.productClassificationRefinement.updateMany({
-      where: { product_id: args.product_id, destination_country: args.destination_country, superseded_at: null, id: { not: created.id } },
+      where: { product_id: args.product_id, product_classification_id: args.product_classification_id, destination_country: args.destination_country, national_code_system: sourceSnapshot.national_code_system!, superseded_at: null, id: { not: created.id } },
       data: { superseded_at: now, superseded_by_id: created.id },
+    });
+    await writeAuditEvent({
+      actor: args.actor,
+      action: AUDIT_ACTIONS.create,
+      object_type: 'product_classification_refinement',
+      object_id: created.id,
+      exporter_org_id: args.exporter_org_id,
+      after_summary: {
+        state: created.state,
+        destination_country: created.destination_country,
+        candidate_count: created.candidate_count,
+        selected_national_code: created.selected_national_code,
+        source_snapshot_id: created.source_snapshot_id,
+      },
+      correlation_id: args.correlation_id,
+      db: tx,
     });
     return created;
   });

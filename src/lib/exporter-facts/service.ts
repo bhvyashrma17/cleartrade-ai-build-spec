@@ -10,7 +10,7 @@
 import { EvidenceAssertionClass, EvidenceOrigin, LogisticsTransportMode, Prisma, UserRole } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound, validationError } from '@/lib/errors';
-import { assertOrgAccess } from '@/lib/permissions';
+import { assertCan, assertOrgAccess } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { EXPORT_COST_COMPONENTS, type ExportCostComponentCode } from '@/lib/country-truth/phase-1h-calculations';
 import type { OperationalQuoteType, OperationalRateBasis } from '@/lib/country-truth/operational-evidence';
@@ -81,6 +81,7 @@ export async function declareProductOperationalFacts(args: {
   correlation_id: string;
 }) {
   if (!EXPORTER_ROLES.includes(args.actor.role) && !AGENT_ROLES.includes(args.actor.role)) throw forbidden('Only the exporter or its assigned agent may record product facts.');
+  assertCan(args.actor, 'exporter_master_data.edit');
   const product = await productForTenant(args.actor, args.exporter_org_id, args.product_id);
   const facts = args.facts;
   const fields: Array<{ field: string; code: string; message: string }> = [];
@@ -103,9 +104,11 @@ export async function declareProductOperationalFacts(args: {
   if (fields.length) throw validationError(fields);
 
   const decimal = (value: string | null | undefined) => (value == null ? null : new Prisma.Decimal(value));
-  const updated = await prisma.product.update({
-    where: { id: product.id },
-    data: {
+  const touchesOrigin = facts.origin_city !== undefined || facts.origin_location_code !== undefined;
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.product.update({
+      where: { id: product.id },
+      data: {
       ...(facts.price_target_amount !== undefined ? { price_target_amount: decimal(facts.price_target_amount), price_target_currency: facts.price_target_currency?.toUpperCase() ?? null, price_target_quantity_unit: facts.price_target_quantity_unit ?? null, price_target_incoterm: facts.price_target_incoterm?.toUpperCase() ?? null } : {}),
       ...(facts.capacity_value !== undefined ? { capacity_value: decimal(facts.capacity_value), capacity_unit: facts.capacity_unit ?? null } : {}),
       ...(facts.available_capacity_value !== undefined ? { available_capacity_value: decimal(facts.available_capacity_value), capacity_period: facts.capacity_period ?? null } : {}),
@@ -126,11 +129,12 @@ export async function declareProductOperationalFacts(args: {
       ...(facts.origin_location_code !== undefined ? { origin_location_code: facts.origin_location_code, origin_gateway_code: facts.origin_gateway_code ?? null } : {}),
       // Whoever recorded it, this is a declaration about the exporter's own goods. An agent
       // recording it on the exporter's behalf does not make it verified.
-      origin_provenance: AGENT_ROLES.includes(args.actor.role) ? 'agent_verified' : 'exporter_declared',
-    },
+      ...(touchesOrigin ? { origin_provenance: 'exporter_declared' } : {}),
+      },
+    });
+    await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_operational_facts', object_id: product.id, exporter_org_id: args.exporter_org_id, after_summary: { fields: Object.keys(facts), provenance: 'exporter_declared' }, correlation_id: args.correlation_id, db: tx });
+    return updated;
   });
-  await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_operational_facts', object_id: product.id, exporter_org_id: args.exporter_org_id, after_summary: { fields: Object.keys(facts), provenance: updated.origin_provenance }, correlation_id: args.correlation_id });
-  return updated;
 }
 
 /**
@@ -151,6 +155,7 @@ export async function verifyProductCertification(args: {
   correlation_id: string;
 }) {
   if (!AGENT_ROLES.includes(args.actor.role)) throw forbidden('Only an assigned agent or operations reviewer may verify a certification.');
+  assertCan(args.actor, 'demand_discovery.run');
   await productForTenant(args.actor, args.exporter_org_id, args.product_id);
   const certification = await prisma.productCertification.findFirst({ where: { id: args.certification_id, product_id: args.product_id } });
   if (!certification) throw notFound('That certification does not exist for this product.');
@@ -160,19 +165,21 @@ export async function verifyProductCertification(args: {
   const validUntil = args.valid_until ?? certification.valid_until;
   if (validUntil && validUntil.getTime() <= Date.now()) throw validationError([{ field: 'valid_until', code: 'expired', message: 'An expired certificate cannot be verified as current.' }]);
 
-  const updated = await prisma.productCertification.update({
-    where: { id: certification.id },
-    data: {
-      verification_state: 'agent_verified', verified_by_id: args.actor.id, verified_at: new Date(),
-      issuer: args.issuer ?? certification.issuer,
-      certificate_reference: reference,
-      valid_from: args.valid_from ?? certification.valid_from,
-      valid_until: validUntil,
-      declared_absent: false,
-    },
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.productCertification.update({
+      where: { id: certification.id },
+      data: {
+        verification_state: 'agent_verified', verified_by_id: args.actor.id, verified_at: new Date(),
+        issuer: args.issuer ?? certification.issuer,
+        certificate_reference: reference,
+        valid_from: args.valid_from ?? certification.valid_from,
+        valid_until: validUntil,
+        declared_absent: false,
+      },
+    });
+    await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_certification_verification', object_id: certification.id, exporter_org_id: args.exporter_org_id, after_summary: { code: certification.code, verification_state: 'agent_verified', certificate_reference: reference }, correlation_id: args.correlation_id, db: tx });
+    return updated;
   });
-  await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_certification_verification', object_id: certification.id, exporter_org_id: args.exporter_org_id, after_summary: { code: certification.code, verification_state: 'agent_verified', certificate_reference: reference }, correlation_id: args.correlation_id });
-  return updated;
 }
 
 export interface OperationalQuoteInput {
@@ -214,6 +221,7 @@ export interface OperationalQuoteInput {
  */
 export async function recordOperationalQuote(args: { actor: Principal; exporter_org_id: string; quote: OperationalQuoteInput; correlation_id: string }) {
   if (!AGENT_ROLES.includes(args.actor.role)) throw forbidden('Only an assigned agent or operations reviewer may record an operational quote.');
+  assertCan(args.actor, 'demand_discovery.run');
   await assertOrgAccess(args.actor, args.exporter_org_id);
   const quote = args.quote;
   const fields: Array<{ field: string; code: string; message: string }> = [];
@@ -233,9 +241,11 @@ export async function recordOperationalQuote(args: { actor: Principal; exporter_
     if (!owned) fields.push({ field: 'product_id', code: 'not_found', message: 'That product does not belong to this exporter.' });
   }
   if (quote.route_evidence_id) {
-    const route = await prisma.logisticsRouteEvidence.findUnique({ where: { id: quote.route_evidence_id }, select: { id: true, destination_country: true, transport_mode: true, equipment_assumption: true } });
+    const route = await prisma.logisticsRouteEvidence.findUnique({ where: { id: quote.route_evidence_id }, select: { id: true, exporter_org_id: true, assertion_class: true, destination_country: true, transport_mode: true, equipment_assumption: true } });
     if (!route) fields.push({ field: 'route_evidence_id', code: 'not_found', message: 'That route evidence does not exist.' });
     else {
+      if (route.exporter_org_id !== null && route.exporter_org_id !== args.exporter_org_id) fields.push({ field: 'route_evidence_id', code: 'not_found', message: 'That route evidence is not available for this exporter.' });
+      if (route.exporter_org_id === null && route.assertion_class !== EvidenceAssertionClass.authoritative_public) fields.push({ field: 'route_evidence_id', code: 'not_found', message: 'That route evidence is not available for this exporter.' });
       // A freight quote attached to a route must actually describe that route, or it would be
       // reused as if it priced a lane it never priced.
       if (quote.destination_country && route.destination_country.toUpperCase() !== quote.destination_country.toUpperCase()) fields.push({ field: 'route_evidence_id', code: 'mismatch', message: 'The quote destination does not match the route destination.' });
@@ -245,8 +255,9 @@ export async function recordOperationalQuote(args: { actor: Principal; exporter_
   }
   if (fields.length) throw validationError(fields);
 
-  const created = await prisma.operationalCostEvidence.create({
-    data: {
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.operationalCostEvidence.create({
+      data: {
       exporter_org_id: args.exporter_org_id, product_id: quote.product_id ?? null,
       destination_country: quote.destination_country?.toUpperCase() ?? null,
       hs6_code: quote.hs6_code ?? null, hs_revision: quote.hs_revision ?? null,
@@ -267,15 +278,40 @@ export async function recordOperationalQuote(args: { actor: Principal; exporter_
       source: quote.source, source_reference: quote.source_reference, document_id: quote.document_id ?? null,
       entered_by_id: args.actor.id, verified_by_id: args.actor.id, verified_at: new Date(),
       confidence: new Prisma.Decimal(1), status: 'verified',
-    },
+      },
+    });
+    // Supersede only a revision of the SAME quoted scope. Different routes, equipment, bases,
+    // partners or external quote references are alternatives and must coexist.
+    await tx.operationalCostEvidence.updateMany({
+      where: {
+      exporter_org_id: args.exporter_org_id,
+      product_id: created.product_id,
+      product_classification_id: created.product_classification_id,
+      destination_country: created.destination_country,
+      hs6_code: created.hs6_code,
+      hs_revision: created.hs_revision,
+      component: created.component,
+      quote_type: created.quote_type,
+      rate_basis: created.rate_basis,
+      quantity_unit: created.quantity_unit,
+      percent_basis: created.percent_basis,
+      cost_owner: created.cost_owner,
+      route_evidence_id: created.route_evidence_id,
+      transport_mode: created.transport_mode,
+      equipment_code: created.equipment_code,
+      carrier_name: created.carrier_name,
+      partner_name: created.partner_name,
+      quote_reference: created.quote_reference,
+      source: created.source,
+      source_reference: created.source_reference,
+      superseded_at: null,
+      id: { not: created.id },
+      },
+      data: { superseded_at: new Date(), superseded_by_id: created.id },
+    });
+    await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.create, object_type: 'operational_cost_evidence', object_id: created.id, exporter_org_id: args.exporter_org_id, after_summary: { component: quote.component, quote_type: quote.quote_type, currency: created.currency, rate_basis: created.rate_basis, valid_until: created.valid_until?.toISOString() ?? null, source_reference: created.source_reference }, correlation_id: args.correlation_id, db: tx });
+    return created;
   });
-  // Supersede the previous live quote for the same scope: a revision is a new row, never an edit.
-  await prisma.operationalCostEvidence.updateMany({
-    where: { exporter_org_id: args.exporter_org_id, component: quote.component, destination_country: created.destination_country, product_id: created.product_id, superseded_at: null, id: { not: created.id } },
-    data: { superseded_at: new Date(), superseded_by_id: created.id },
-  });
-  await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.create, object_type: 'operational_cost_evidence', object_id: created.id, exporter_org_id: args.exporter_org_id, after_summary: { component: quote.component, quote_type: quote.quote_type, currency: created.currency, rate_basis: created.rate_basis, valid_until: created.valid_until?.toISOString() ?? null, source_reference: created.source_reference }, correlation_id: args.correlation_id });
-  return created;
 }
 
 export interface RouteEvidenceInput {
@@ -307,6 +343,7 @@ export interface RouteEvidenceInput {
  */
 export async function recordRouteEvidence(args: { actor: Principal; exporter_org_id: string; route: RouteEvidenceInput; correlation_id: string }) {
   if (!AGENT_ROLES.includes(args.actor.role)) throw forbidden('Only an assigned agent or operations reviewer may record route evidence.');
+  assertCan(args.actor, 'demand_discovery.run');
   await assertOrgAccess(args.actor, args.exporter_org_id);
   const route = args.route;
   const fields: Array<{ field: string; code: string; message: string }> = [];
@@ -317,8 +354,10 @@ export async function recordRouteEvidence(args: { actor: Principal; exporter_org
   if (route.transit_time_min_days != null && route.transit_time_max_days != null && route.transit_time_min_days > route.transit_time_max_days) fields.push({ field: 'transit_time_min_days', code: 'invalid', message: 'Minimum transit cannot exceed maximum transit.' });
   if (fields.length) throw validationError(fields);
 
-  const created = await prisma.logisticsRouteEvidence.create({
-    data: {
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.logisticsRouteEvidence.create({
+      data: {
+      exporter_org_id: args.exporter_org_id,
       origin_country: route.origin_country.toUpperCase(), origin_state: route.origin_state ?? null, origin_city: route.origin_city ?? null,
       origin_location_code: route.origin_location_code ?? null, origin_gateway: route.origin_gateway ?? null,
       destination_country: route.destination_country.toUpperCase(), destination_port: route.destination_port ?? null,
@@ -330,9 +369,11 @@ export async function recordRouteEvidence(args: { actor: Principal; exporter_org
       supported_product_constraint_codes: (route.supported_product_constraint_codes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean),
       hs_code_scope: route.hs_code_scope ?? null,
       confidence: new Prisma.Decimal(1),
+      assertion_class: EvidenceAssertionClass.partner_quote,
       evidence_origin: EvidenceOrigin.manually_entered_real,
-    },
+      },
+    });
+    await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.create, object_type: 'logistics_route_evidence', object_id: created.id, exporter_org_id: args.exporter_org_id, after_summary: { origin: created.origin_country, destination: created.destination_country, mode: created.transport_mode, route_available: created.route_available, source_reference: created.source_reference }, correlation_id: args.correlation_id, db: tx });
+    return created;
   });
-  await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.create, object_type: 'logistics_route_evidence', object_id: created.id, exporter_org_id: args.exporter_org_id, after_summary: { origin: created.origin_country, destination: created.destination_country, mode: created.transport_mode, route_available: created.route_available, source_reference: created.source_reference }, correlation_id: args.correlation_id });
-  return created;
 }

@@ -46,6 +46,10 @@ async function fixture() {
       capacity_value: new Prisma.Decimal('1000'),
       capacity_unit: 'kg',
       lead_time_days: 21,
+      shipment_quantity_value: new Prisma.Decimal('20000'),
+      shipment_quantity_unit: 'kg',
+      shipment_container_count: 1,
+      shipment_container_type: '20FT_DRY',
     },
   });
   await prisma.product.update({
@@ -96,7 +100,7 @@ async function fixture() {
   // These tests drive the handler directly rather than through the queue. Leaving the job in
   // `queued` would let an unrelated test's claimNextJob pick it up.
   const job = await prisma.job.update({ where: { id: requested.job.id }, data: { status: JobStatus.processing } });
-  return { org, agent, product, classification, hs6, job, payload: requested.payload };
+  return { org, agent, actor, product, classification, hs6, job, payload: requested.payload };
 }
 
 /** Deterministic in-process provider. No network call leaves this test. */
@@ -264,11 +268,22 @@ describe('Phase 1H assessment identity and freezing', () => {
   test('editing the product after the job was frozen does not reinterpret the assessment', async () => {
     const f = await fixture();
     setComtradeClient(authenticatedClient().client);
-    // A price edit between enqueue and execution must not reach the frozen question.
+    // Price and shipment-basis edits between enqueue and execution must not reach the frozen facts.
     await prisma.product.update({
       where: { id: f.product.id },
-      data: { price_target_amount: new Prisma.Decimal('9999'), price_target_incoterm: 'CIF', lead_time_days: 1 },
+      data: {
+        price_target_amount: new Prisma.Decimal('9999'), price_target_incoterm: 'CIF', lead_time_days: 1,
+        shipment_quantity_value: new Prisma.Decimal('2000'), shipment_container_count: 4, shipment_container_type: '40FT_DRY',
+      },
     });
+    await prisma.operationalCostEvidence.create({ data: {
+      exporter_org_id: f.org.id, product_id: f.product.id, product_classification_id: f.classification.id,
+      destination_country: 'DE', hs6_code: f.hs6, hs_revision: '2022', component: 'international_freight',
+      quote_type: 'international_freight', amount: new Prisma.Decimal('1000'), currency: 'USD', rate_basis: 'per_shipment',
+      quantity_unit: 'kg', cost_owner: 'exporter', observed_at: EVIDENCE_RETRIEVED_AT, effective_from: EVIDENCE_RETRIEVED_AT,
+      valid_until: new Date('2026-12-31T00:00:00.000Z'), assertion_class: 'partner_quote', evidence_origin: EvidenceOrigin.authenticated_real,
+      source: 'Test forwarder', source_reference: `frozen-shipment-${f.org.id}`, confidence: new Prisma.Decimal('0.9'),
+    } });
     const outcome = await runCountryTruthDiscovery(context(f));
     const result = outcome.result as Record<string, unknown>;
     const assessment = await prisma.marketAssessment.findFirstOrThrow({ where: { run_id: String(result.discovery_run_id) } });
@@ -276,10 +291,32 @@ describe('Phase 1H assessment identity and freezing', () => {
       where: { id: assessment.country_truth_fact_snapshot_id! },
     });
     const payload = manifest.facts_payload as unknown as {
-      facts: { exporter_market_fit: { price: { value: { amount_per_unit: number } } | null } };
+      facts: {
+        exporter_market_fit: { price: { value: { amount_per_unit: number } } | null };
+        export_economics: { cost_components: Array<{ value: { component: string; amount_per_unit: number } }> };
+      };
     };
     expect(manifest.exporter_snapshot_checksum).toBe(f.payload.exporter_fact_snapshot_checksum);
     expect(payload.facts.exporter_market_fit.price?.value.amount_per_unit).toBe(1200);
+    expect(payload.facts.export_economics.cost_components.find((fact) => fact.value.component === 'international_freight')?.value.amount_per_unit).toBe(0.05);
+
+    // A later request captures the materially changed live source as a new immutable input and
+    // produces a distinct fact/assessment identity; it cannot rewrite the first run.
+    const nextRequest = await requestCountryTruthDiscovery({
+      actor: f.actor, exporter_org_id: f.org.id, product_id: f.product.id,
+      candidate_countries: ['Germany'], correlation_id: randomUUID(), requested_at: new Date(),
+    });
+    const nextJob = await prisma.job.update({ where: { id: nextRequest.job.id }, data: { status: JobStatus.processing } });
+    expect(nextRequest.payload.exporter_fact_snapshot_checksum).not.toBe(f.payload.exporter_fact_snapshot_checksum);
+    const nextOutcome = await runCountryTruthDiscovery(context({ ...f, job: nextJob, payload: nextRequest.payload }));
+    const nextResult = nextOutcome.result as Record<string, unknown>;
+    const nextAssessment = await prisma.marketAssessment.findFirstOrThrow({ where: { run_id: String(nextResult.discovery_run_id) } });
+    expect(nextAssessment.country_truth_fact_snapshot_checksum).not.toBe(assessment.country_truth_fact_snapshot_checksum);
+    expect(nextAssessment.assessment_identity).not.toBe(assessment.assessment_identity);
+    const unchangedManifest = await prisma.countryTruthFactSnapshot.findUniqueOrThrow({ where: { id: manifest.id } });
+    const unchangedAssessment = await prisma.marketAssessment.findUniqueOrThrow({ where: { id: assessment.id } });
+    expect(unchangedManifest.facts_checksum).toBe(manifest.facts_checksum);
+    expect(unchangedAssessment.assessment_identity).toBe(assessment.assessment_identity);
   });
 
   test('an explicit destination prohibition makes the market ineligible instead of merely low scoring', async () => {

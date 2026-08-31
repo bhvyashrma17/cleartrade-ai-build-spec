@@ -66,6 +66,7 @@ export interface CountryTruthFactSnapshotRequest {
     quantity: number | null;
     quantity_unit: string | null;
     container_count: number | null;
+    container_type?: string | null;
   } | null;
   env?: NodeJS.ProcessEnv;
 }
@@ -101,7 +102,7 @@ async function loadEvidenceRows(
   const scopes = hsScopeCandidates(request.hs6);
   const asOf = request.as_of_date;
 
-  const [snapshots, fitBenchmarks, routes, fxQuotes, customsBases, fxObservations] = await Promise.all([
+  const [snapshots, fitBenchmarks, routes, refinements, fxQuotes, customsBases, fxObservations] = await Promise.all([
     prisma.marketAccessEvidenceSnapshot.findMany({
       where: {
         country_code: request.country_code,
@@ -126,9 +127,29 @@ async function loadEvidenceRows(
         destination_country: request.country_code,
         retrieved_at: { lte: asOf },
         evidence_origin: { in: origins },
-        OR: [{ hs_code_scope: null }, { hs_code_scope: { in: scopes } }],
+        AND: [
+          { OR: [{ hs_code_scope: null }, { hs_code_scope: { in: scopes } }] },
+          {
+            OR: [
+              { exporter_org_id: request.exporter_org_id },
+              { exporter_org_id: null, assertion_class: 'authoritative_public' },
+            ],
+          },
+        ],
       },
       orderBy: { id: 'asc' },
+    }),
+    prisma.productClassificationRefinement.findMany({
+      where: {
+        exporter_org_id: request.exporter_org_id,
+        product_id: request.product_id,
+        product_classification_id: request.product_classification_id,
+        destination_country: request.country_code,
+        hs6_code: request.hs6,
+        created_at: { lte: asOf },
+        OR: [{ superseded_at: null }, { superseded_at: { gt: asOf } }],
+      },
+      orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
     }),
     prisma.exchangeRateQuote.findMany({
       where: { exporter_org_id: request.exporter_org_id, created_at: { lte: asOf } },
@@ -191,6 +212,7 @@ async function loadEvidenceRows(
     shipment_quantity: request.shipment_basis?.quantity ?? null,
     quantity_unit: request.shipment_basis?.quantity_unit ?? priceUnit ?? null,
     containers_per_shipment: request.shipment_basis?.container_count ?? null,
+    equipment_code: request.shipment_basis?.container_type ?? null,
     goods_value_per_unit: priceAmount != null && Number.isFinite(priceAmount) ? priceAmount : null,
     goods_value_currency: priceCurrency,
     // A percentage may only be taken against a value that exists at that point in the buildup.
@@ -205,6 +227,19 @@ async function loadEvidenceRows(
     as_of: asOf,
     origins,
   });
+  const frozenOriginLocation = request.exporter_snapshot.origin.pickup_location_code.state === 'present'
+    ? request.exporter_snapshot.origin.pickup_location_code.value.trim().toUpperCase()
+    : null;
+  const frozenOriginGateway = request.exporter_snapshot.origin.preferred_origin_gateway.state === 'present'
+    ? request.exporter_snapshot.origin.preferred_origin_gateway.value.trim().toUpperCase()
+    : null;
+  const allowedRouteIds = routes.filter((route) => {
+    if (route.status !== 'verified' || !route.route_available) return false;
+    if (frozenOriginLocation && route.origin_location_code?.trim().toUpperCase() !== frozenOriginLocation) return false;
+    if (frozenOriginGateway && route.origin_gateway?.trim().toUpperCase() !== frozenOriginGateway) return false;
+    if (basis.equipment_code && route.equipment_assumption && route.equipment_assumption.trim().toUpperCase() !== basis.equipment_code.trim().toUpperCase()) return false;
+    return route.valid_until == null || route.valid_until.getTime() > asOf.getTime();
+  }).map((route) => route.id);
   if (basis.quantity_unit && basis.shipment_quantity != null && priceAmount != null && priceCurrency) {
     // The ClearTrade fee is never typed by an exporter: it is derived from the versioned
     // FeePolicy and frozen with that version, so a later repricing cannot reach backwards.
@@ -231,6 +266,7 @@ async function loadEvidenceRows(
     hs6: request.hs6,
     hs_revision: request.hs_revision,
     as_of: asOf,
+    allowed_route_evidence_ids: allowedRouteIds,
   }, basis);
   const costComponents = costSelection.rows;
 
@@ -297,6 +333,8 @@ async function loadEvidenceRows(
     })),
     logistics_routes: routes.map((row) => ({
       id: row.id,
+      exporter_org_id: row.exporter_org_id,
+      assertion_class: row.assertion_class,
       origin_country: row.origin_country,
       origin_location_code: row.origin_location_code,
       origin_gateway: row.origin_gateway,
@@ -317,11 +355,35 @@ async function loadEvidenceRows(
       source_reference: row.source_reference,
       retrieved_at: row.retrieved_at,
       valid_until: row.valid_until,
+      equipment_assumption: row.equipment_assumption,
       supported_product_constraint_codes: row.supported_product_constraint_codes,
       hs_code_scope: row.hs_code_scope,
       confidence: row.confidence,
       status: row.status,
       evidence_origin: row.evidence_origin,
+    })),
+    classification_refinements: refinements.map((row) => ({
+      id: row.id,
+      exporter_org_id: row.exporter_org_id,
+      product_id: row.product_id,
+      product_classification_id: row.product_classification_id,
+      hs6_code: row.hs6_code,
+      hs_revision: row.hs_revision,
+      destination_country: row.destination_country,
+      national_code_system: row.national_code_system,
+      source_snapshot_id: row.source_snapshot_id,
+      state: row.state,
+      candidate_lines: row.candidate_lines,
+      candidate_count: row.candidate_count,
+      selected_national_code: row.selected_national_code,
+      deciding_attributes: row.deciding_attributes,
+      outstanding_questions: row.outstanding_questions,
+      source_authority: row.source_authority,
+      source_reference: row.source_reference,
+      assertion_class: row.assertion_class,
+      evidence_origin: row.evidence_origin,
+      created_at: row.created_at,
+      superseded_at: row.superseded_at,
     })),
     authoritative_fx_observations: fxObservations.map((row) => ({
       id: row.id,
@@ -373,6 +435,7 @@ function assertionClassesOf(facts: SelectedCountryTruthFacts): AssertionClass[] 
   facts.market_access.tariffs.forEach(visit);
   facts.market_access.requirements.forEach(visit);
   visit(facts.market_access.regulatory_coverage);
+  visit(facts.market_access.classification_refinement);
   visit(facts.export_economics.exporter_price);
   visit(facts.export_economics.import_benchmark);
   visit(facts.export_economics.customs_valuation_basis);
@@ -406,6 +469,7 @@ function evidenceOriginsOf(
   collect('market_access_evidence', rows.market_access_evidence);
   collect('fit_benchmark', rows.fit_benchmarks);
   collect('logistics_route', rows.logistics_routes);
+  collect('classification_refinement', rows.classification_refinements ?? []);
   return [...origins].sort();
 }
 

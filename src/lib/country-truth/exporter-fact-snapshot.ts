@@ -33,6 +33,8 @@ export type ProductFactField =
   | 'price_target_incoterm'
   | 'capacity_value'
   | 'capacity_unit'
+  | 'available_capacity_value'
+  | 'capacity_period'
   | 'moq_value'
   | 'moq_unit'
   | 'lead_time_days'
@@ -43,7 +45,19 @@ export type ProductFactField =
   | 'desired_order_size_currency'
   | 'customization_capability'
   | 'packaging_capability'
-  | 'packaging';
+  | 'packaging'
+  | 'packaging_format'
+  | 'container_compatibility'
+  | 'special_handling_codes'
+  | 'shipment_quantity_value'
+  | 'shipment_quantity_unit'
+  | 'shipment_container_count'
+  | 'shipment_container_type'
+  | 'origin_country'
+  | 'origin_state'
+  | 'origin_city'
+  | 'origin_location_code'
+  | 'origin_gateway_code';
 
 export interface ExporterOrgFactSource {
   id: string;
@@ -72,6 +86,8 @@ export interface ProductFactSource {
   price_target_incoterm?: string | null;
   capacity_value?: DecimalInput | null;
   capacity_unit?: string | null;
+  available_capacity_value?: DecimalInput | null;
+  capacity_period?: string | null;
   moq_value?: DecimalInput | null;
   moq_unit?: string | null;
   lead_time_days?: number | null;
@@ -87,6 +103,15 @@ export interface ProductFactSource {
   packaging_format?: string | null;
   container_compatibility?: readonly string[] | null;
   special_handling_codes?: readonly string[] | null;
+  shipment_quantity_value?: DecimalInput | null;
+  shipment_quantity_unit?: string | null;
+  shipment_container_count?: number | null;
+  shipment_container_type?: string | null;
+  origin_country?: string | null;
+  origin_state?: string | null;
+  origin_city?: string | null;
+  origin_location_code?: string | null;
+  origin_gateway_code?: string | null;
 }
 
 export type CertificationLifecycleStatus =
@@ -219,6 +244,11 @@ export interface CountryTruthExporterFactSnapshot {
       incoterm: CountryTruthFact<string>;
     };
     capacity: { value: CountryTruthFact<string>; unit: CountryTruthFact<string> };
+    available_capacity: {
+      value: CountryTruthFact<string>;
+      unit: CountryTruthFact<string>;
+      period: CountryTruthFact<string>;
+    };
     minimum_order_quantity: { value: CountryTruthFact<string>; unit: CountryTruthFact<string> };
     lead_time_days: CountryTruthFact<number>;
     delivery_commitment_days: CountryTruthFact<number>;
@@ -233,6 +263,12 @@ export interface CountryTruthExporterFactSnapshot {
      * `packaging_capability` above is never mined for codes: a sentence is not a declaration.
      */
     packaging_capability_codes: CountryTruthFact<readonly string[]>;
+    standard_shipment: {
+      quantity: CountryTruthFact<string>;
+      quantity_unit: CountryTruthFact<string>;
+      container_count: CountryTruthFact<number>;
+      container_type: CountryTruthFact<string>;
+    };
   };
   certifications: {
     /** No rows means unknown, never a declaration that no certification is held. */
@@ -574,6 +610,13 @@ export function buildCountryTruthExporterFactSnapshot(
 
   const orgAttribution = (field: ExporterOrgFactField) => input.attributions?.exporter_org?.[field];
   const productAttribution = (field: ProductFactField) => input.attributions?.product?.[field];
+  const combinedProductAttribution = (fields: readonly ProductFactField[]): FactAttributionInput | undefined => {
+    const attributions = fields.map(productAttribution).filter((item): item is FactAttributionInput => item != null);
+    if (!attributions.length) return undefined;
+    const actors = [...new Set(attributions.map((item) => item.actor_user_id).filter((item): item is string => Boolean(item)))];
+    const evidenceRefs = [...new Set(attributions.flatMap((item) => item.evidence_refs ?? []).map((item) => item.trim()).filter(Boolean))].sort();
+    return { ...(actors.length === 1 ? { actor_user_id: actors[0] } : {}), ...(evidenceRefs.length ? { evidence_refs: evidenceRefs } : {}) };
+  };
   if (!Array.isArray(input.product.logistics_constraint_codes)) {
     throw new Error('product.logistics_constraint_codes must be an array.');
   }
@@ -643,11 +686,23 @@ export function buildCountryTruthExporterFactSnapshot(
       classificationProvenance,
     ),
     origin: {
-      country: declaredFact(countryCode(input.exporter_org.country), orgAttribution('country')),
-      state: declaredFact(optionalText(input.exporter_org.state), orgAttribution('state')),
-      city: declaredFact(optionalText(input.exporter_org.city), orgAttribution('city')),
-      pickup_location_code: declaredFact(code(input.exporter_org.pickup_location_code), orgAttribution('pickup_location_code')),
-      preferred_origin_gateway: declaredFact(code(input.exporter_org.preferred_origin_gateway), orgAttribution('preferred_origin_gateway')),
+      // Product dispatch origin wins when declared. The registered-office origin is only a
+      // fallback; neither path upgrades an agent's data entry into verification.
+      country: input.product.origin_country != null
+        ? declaredFact(countryCode(input.product.origin_country), productAttribution('origin_country'))
+        : declaredFact(countryCode(input.exporter_org.country), orgAttribution('country')),
+      state: input.product.origin_state != null
+        ? declaredFact(optionalText(input.product.origin_state), productAttribution('origin_state'))
+        : declaredFact(optionalText(input.exporter_org.state), orgAttribution('state')),
+      city: input.product.origin_city != null
+        ? declaredFact(optionalText(input.product.origin_city), productAttribution('origin_city'))
+        : declaredFact(optionalText(input.exporter_org.city), orgAttribution('city')),
+      pickup_location_code: input.product.origin_location_code != null
+        ? declaredFact(code(input.product.origin_location_code), productAttribution('origin_location_code'))
+        : declaredFact(code(input.exporter_org.pickup_location_code), orgAttribution('pickup_location_code')),
+      preferred_origin_gateway: input.product.origin_gateway_code != null
+        ? declaredFact(code(input.product.origin_gateway_code), productAttribution('origin_gateway_code'))
+        : declaredFact(code(input.exporter_org.preferred_origin_gateway), orgAttribution('preferred_origin_gateway')),
     },
     commercial: {
       price_target: {
@@ -659,6 +714,11 @@ export function buildCountryTruthExporterFactSnapshot(
       capacity: {
         value: declaredFact(optionalDecimal(input.product.capacity_value, 'product.capacity_value'), productAttribution('capacity_value')),
         unit: declaredFact(unit(input.product.capacity_unit), productAttribution('capacity_unit')),
+      },
+      available_capacity: {
+        value: declaredFact(optionalDecimal(input.product.available_capacity_value, 'product.available_capacity_value'), productAttribution('available_capacity_value')),
+        unit: declaredFact(unit(input.product.capacity_unit), productAttribution('capacity_unit')),
+        period: declaredFact(optionalText(input.product.capacity_period), productAttribution('capacity_period')),
       },
       minimum_order_quantity: {
         value: declaredFact(optionalDecimal(input.product.moq_value, 'product.moq_value'), productAttribution('moq_value')),
@@ -683,7 +743,16 @@ export function buildCountryTruthExporterFactSnapshot(
       },
       customization_capability: declaredFact(optionalText(input.product.customization_capability), productAttribution('customization_capability')),
       packaging_capability: declaredFact(optionalText(input.product.packaging_capability), productAttribution('packaging_capability')),
-      packaging_capability_codes: declaredFact(packagingCapabilityCodes(input.product), productAttribution('packaging_capability')),
+      packaging_capability_codes: declaredFact(
+        packagingCapabilityCodes(input.product),
+        combinedProductAttribution(['packaging_format', 'container_compatibility', 'special_handling_codes']),
+      ),
+      standard_shipment: {
+        quantity: declaredFact(optionalDecimal(input.product.shipment_quantity_value, 'product.shipment_quantity_value'), productAttribution('shipment_quantity_value')),
+        quantity_unit: declaredFact(unit(input.product.shipment_quantity_unit), productAttribution('shipment_quantity_unit')),
+        container_count: declaredFact(optionalNonNegativeInteger(input.product.shipment_container_count, 'product.shipment_container_count'), productAttribution('shipment_container_count')),
+        container_type: declaredFact(code(input.product.shipment_container_type), productAttribution('shipment_container_type')),
+      },
       packaging_description: declaredFact(optionalText(input.product.packaging), productAttribution('packaging')),
     },
     certifications: {

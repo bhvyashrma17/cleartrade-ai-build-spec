@@ -57,7 +57,7 @@ export interface OperationalCostRow {
   cost_owner: string;
   route_evidence_id: string | null;
   transport_mode: string | null;
-  equipment_code: string | null;
+  equipment_code?: string | null;
   observed_at: Date;
   effective_from: Date;
   valid_until: Date | null;
@@ -82,6 +82,8 @@ export interface CostNormalizationBasis {
   quantity_unit: string | null;
   /** Containers in one shipment. Required to convert a per-container amount. */
   containers_per_shipment: number | null;
+  /** Declared shipment equipment/load type, used to exclude quotes for another container. */
+  equipment_code: string | null;
   /** Goods value per unit, for a percentage-of-value quote, with its currency. */
   goods_value_per_unit: number | null;
   goods_value_currency: string | null;
@@ -154,7 +156,7 @@ export interface OperationalCostSelectionResult {
  */
 export function selectOperationalCostRows(
   rows: readonly OperationalCostRow[],
-  scope: { exporter_org_id: string; destination_country: string; hs6: string; hs_revision: string; as_of: Date },
+  scope: { exporter_org_id: string; destination_country: string; hs6: string; hs_revision: string; as_of: Date; allowed_route_evidence_ids?: readonly string[] },
   basis: CostNormalizationBasis,
 ): OperationalCostSelectionResult {
   const selected: ExportCostComponentRow[] = [];
@@ -176,6 +178,8 @@ export function selectOperationalCostRows(
     if (row.destination_country != null && row.destination_country.toUpperCase() !== scope.destination_country) { reject('destination_country_mismatch'); continue; }
     if (row.hs6_code != null && row.hs6_code !== scope.hs6) { reject('hs6_mismatch'); continue; }
     if (row.hs_revision != null && row.hs_revision !== scope.hs_revision) { reject('hs_revision_mismatch'); continue; }
+    if (row.route_evidence_id != null && !(scope.allowed_route_evidence_ids ?? []).includes(row.route_evidence_id)) { reject('route_evidence_mismatch'); continue; }
+    if (row.equipment_code != null && basis.equipment_code != null && row.equipment_code.trim().toUpperCase() !== basis.equipment_code.trim().toUpperCase()) { reject('equipment_code_mismatch'); continue; }
     if (row.observed_at.getTime() > asOf) { reject('observed_after_assessment_clock'); continue; }
     if (row.effective_from.getTime() > asOf) { reject('not_yet_effective_at_assessment_clock'); continue; }
     // An expired quote is not a current cost. This is the whole reason validity is recorded.

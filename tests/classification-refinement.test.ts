@@ -34,7 +34,26 @@ async function fixture(role: UserRole = UserRole.agent) {
   const now = new Date();
   await prisma.product.update({ where: { id: product.id }, data: { hs_code: '100630', hs_nomenclature: 'HS', hs_nomenclature_version: 'HS2022', hs_classification_method: ProductClassificationMethod.exporter_supplied, hs_classification_status: ProductClassificationStatus.confirmed, hs_confirmed_by_id: actor.id, hs_confirmed_at: now, hs_classification_revision: 1 } });
   const classification = await prisma.productClassification.create({ data: { product_id: product.id, revision: 1, hs6_code: '100630', nomenclature: 'HS', nomenclature_version: 'HS2022', method: ProductClassificationMethod.exporter_supplied, product_facts_snapshot: {}, evidence: {}, rationale: 'test', source_references: [], confidence: 0.99, status: ProductClassificationStatus.confirmed, proposed_by_id: actor.id, confirmed_by_id: actor.id, confirmed_at: now } });
-  return { org, actor, product, classification, principal: { id: actor.id, role } };
+  const snapshot = await prisma.marketAccessEvidenceSnapshot.create({ data: {
+    jurisdiction: 'GB', country_code: 'GB', hs_code_scope: '100630', hs6_code: '100630', national_code_system: 'UK_COMMODITY',
+    classification_resolution: 'classification_refinement_required', candidate_line_count: UK_CANDIDATES.length,
+    resolution_detail: { declarable_candidates: UK_CANDIDATES.map((candidate) => ({ code: candidate.national_tariff_code, description: candidate.description, description_path: candidate.description_path ?? [], duty: candidate.duty_expression, duty_kind: candidate.duty_kind, effective_from: candidate.effective_from ?? null, effective_to: candidate.effective_to ?? null })) },
+    source_authority: 'HMRC UK Integrated Online Tariff', source_reference: 'https://www.trade-tariff.service.gov.uk/uk/api/search?q=100630',
+    retrieved_at: now, completeness_status: 'PARTIAL', tariff_coverage: false, regulatory_coverage: false,
+    parser_version: 'test', evidence_origin: 'fixture', provider: 'test', raw_evidence: {},
+  } });
+  return { org, actor, product, classification, snapshot, principal: { id: actor.id, email: actor.email, name: actor.name, role, exporter_org_id: role === UserRole.exporter_owner ? org.id : null, tier: OrgTier.paid } };
+}
+
+async function sourceWithCandidates(f: Awaited<ReturnType<typeof fixture>>, candidates: CandidateLine[]) {
+  return prisma.marketAccessEvidenceSnapshot.create({ data: {
+    jurisdiction: 'GB', country_code: 'GB', hs_code_scope: '100630', hs6_code: '100630', national_code_system: 'UK_COMMODITY',
+    classification_resolution: candidates.length === 1 ? 'exact' : 'classification_refinement_required', candidate_line_count: candidates.length,
+    resolution_detail: { declarable_candidates: candidates.map((candidate) => ({ code: candidate.national_tariff_code, description: candidate.description, description_path: candidate.description_path ?? [], duty: candidate.duty_expression, duty_kind: candidate.duty_kind, effective_from: candidate.effective_from ?? null, effective_to: candidate.effective_to ?? null })) },
+    source_authority: 'HMRC UK Integrated Online Tariff', source_reference: 'https://www.trade-tariff.service.gov.uk/uk/api/search?q=100630',
+    retrieved_at: f.snapshot.retrieved_at, completeness_status: 'PARTIAL', tariff_coverage: false, regulatory_coverage: false,
+    parser_version: 'test', evidence_origin: 'fixture', provider: 'test', raw_evidence: {},
+  } });
 }
 
 const baseArgs = (f: Awaited<ReturnType<typeof fixture>>, over: Record<string, unknown> = {}) => ({
@@ -46,8 +65,10 @@ const baseArgs = (f: Awaited<ReturnType<typeof fixture>>, over: Record<string, u
   national_code_system: 'UK_COMMODITY',
   source_authority: 'HMRC UK Integrated Online Tariff',
   source_reference: 'https://www.trade-tariff.service.gov.uk/uk/api/search?q=100630',
+  source_snapshot_id: f.snapshot.id,
   candidates: UK_CANDIDATES,
   state: 'refinement_required' as const,
+  correlation_id: randomUUID(),
   ...over,
 });
 
@@ -123,26 +144,39 @@ describe('recording a refinement', () => {
     expect(record).toMatchObject({ state: 'refinement_required', selected_national_code: null, candidate_count: 4, hs6_code: '100630', destination_country: 'GB' });
     const questions = record.outstanding_questions as Array<{ attribute: string }>;
     expect(questions.map((question) => question.attribute)).toContain('basmati');
+    expect(await prisma.auditEvent.findFirst({ where: { object_type: 'product_classification_refinement', object_id: record.id, exporter_org_id: f.org.id } })).not.toBeNull();
   });
 
   test('a client cannot inject a tariff code the authority did not return', async () => {
     const f = await fixture();
-    await expect(recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006309999', selection_rationale: 'because' })))
+    await expect(recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006309999', selection_rationale: 'because', deciding_attributes: { basmati: 'yes' } })))
       .rejects.toMatchObject({ fields: [expect.objectContaining({ code: 'not_a_candidate' })] });
+  });
+
+  test('the complete candidate set is loaded from the cited immutable snapshot', async () => {
+    const f = await fixture();
+    await expect(recordClassificationRefinement(baseArgs(f, { candidates: [UK_CANDIDATES[2]!] })))
+      .rejects.toMatchObject({ fields: [expect.objectContaining({ field: 'candidates', code: 'source_mismatch' })] });
+    await expect(recordClassificationRefinement(baseArgs(f, { destination_country: 'US' })))
+      .rejects.toMatchObject({ fields: [expect.objectContaining({ field: 'destination_country', code: 'source_mismatch' })] });
   });
 
   test('a selected line must sit beneath the frozen HS6 and be a national line', async () => {
     const f = await fixture();
-    await expect(recordClassificationRefinement(baseArgs(f, { candidates: [{ national_tariff_code: '1006401010', description: 'Broken rice', duty_expression: '0%', duty_kind: 'ad_valorem' }] })))
+    const wrongHeading = [{ national_tariff_code: '1006401010', description: 'Broken rice', duty_expression: '0%', duty_kind: 'ad_valorem' }];
+    const wrongHeadingSource = await sourceWithCandidates(f, wrongHeading);
+    await expect(recordClassificationRefinement(baseArgs(f, { source_snapshot_id: wrongHeadingSource.id, candidates: wrongHeading })))
       .rejects.toMatchObject({ fields: [expect.objectContaining({ message: expect.stringContaining('does not sit beneath HS6 100630') })] });
     // The HS6 itself is not a declarable line.
-    await expect(recordClassificationRefinement(baseArgs(f, { candidates: [{ national_tariff_code: '100630', description: 'Rice', duty_expression: '0%', duty_kind: 'ad_valorem' }] })))
+    const hs6Only = [{ national_tariff_code: '100630', description: 'Rice', duty_expression: '0%', duty_kind: 'ad_valorem' }];
+    const hs6Source = await sourceWithCandidates(f, hs6Only);
+    await expect(recordClassificationRefinement(baseArgs(f, { source_snapshot_id: hs6Source.id, candidates: hs6Only })))
       .rejects.toMatchObject({ fields: [expect.objectContaining({ message: expect.stringContaining('not the HS6 itself') })] });
   });
 
   test('an exporter cannot file an agent-verified selection', async () => {
     const f = await fixture(UserRole.exporter_owner);
-    await expect(recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'It is Basmati.' })))
+    await expect(recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'It is Basmati.', deciding_attributes: { basmati: 'yes' } })))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });
     // The same exporter may declare its own selection, which is recorded as exporter_declared.
     const declared = await recordClassificationRefinement(baseArgs(f, { state: 'exporter_declared_selection', selected_national_code: '1006302712', selection_rationale: 'Our rice is Basmati, long grain, aromatic.' }));
@@ -152,7 +186,7 @@ describe('recording a refinement', () => {
 
   test('a selection must record why, and a non-selection may not carry a line', async () => {
     const f = await fixture();
-    await expect(recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712' })))
+    await expect(recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', deciding_attributes: { basmati: 'yes' } })))
       .rejects.toMatchObject({ fields: [expect.objectContaining({ field: 'selection_rationale' })] });
     await expect(recordClassificationRefinement(baseArgs(f, { state: 'refinement_required', selected_national_code: '1006302712' })))
       .rejects.toMatchObject({ fields: [expect.objectContaining({ field: 'selected_national_code' })] });
@@ -161,8 +195,32 @@ describe('recording a refinement', () => {
   test('an expired candidate line cannot be selected', async () => {
     const f = await fixture();
     const expired = [{ ...UK_CANDIDATES[2]!, effective_to: '2026-01-01T00:00:00.000Z' }];
-    await expect(recordClassificationRefinement(baseArgs(f, { candidates: expired, state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'Basmati.' })))
+    const expiredSource = await sourceWithCandidates(f, expired);
+    await expect(recordClassificationRefinement(baseArgs(f, { source_snapshot_id: expiredSource.id, candidates: expired, state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'Basmati.', deciding_attributes: { basmati: 'yes' } })))
       .rejects.toMatchObject({ fields: [expect.objectContaining({ code: 'expired' })] });
+  });
+
+  test('partial product answers narrow the questions without silently selecting a code', async () => {
+    const f = await fixture(UserRole.exporter_owner);
+    const record = await recordClassificationRefinement(baseArgs(f, { deciding_attributes: { basmati: 'no' } }));
+    expect(record).toMatchObject({ state: 'refinement_required', selected_national_code: null, assertion_class: 'exporter_declared', decided_by_id: f.actor.id });
+    const questions = record.outstanding_questions as Array<{ attribute: string }>;
+    expect(questions.map((question) => question.attribute)).not.toContain('basmati');
+    expect(questions.length).toBeGreaterThan(0);
+  });
+
+  test('product narrowing cannot self-elevate a multi-line source to authoritative verification', async () => {
+    const f = await fixture();
+    await expect(recordClassificationRefinement(baseArgs(f, {
+      state: 'authoritative_verified', selected_national_code: '1006302712', selection_rationale: 'Basmati answer leaves one candidate.', deciding_attributes: { basmati: 'yes' },
+    }))).rejects.toMatchObject({ fields: [expect.objectContaining({ code: 'unsupported_verification' })] });
+  });
+
+  test('a selected line may not contradict the recorded product attributes', async () => {
+    const f = await fixture();
+    await expect(recordClassificationRefinement(baseArgs(f, {
+      state: 'agent_verified_selection', selected_national_code: '1006309692', selection_rationale: 'Contradictory choice.', deciding_attributes: { basmati: 'yes' },
+    }))).rejects.toMatchObject({ fields: [expect.objectContaining({ code: 'contradicts_attributes' })] });
   });
 
   test('a refinement for another tenant\'s classification is refused', async () => {
@@ -175,7 +233,7 @@ describe('recording a refinement', () => {
   test('a revision supersedes rather than rewrites, and history stays readable', async () => {
     const f = await fixture();
     const first = await recordClassificationRefinement(baseArgs(f));
-    const second = await recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'Confirmed Basmati against the certificate of origin.' }));
+    const second = await recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'Confirmed Basmati against the certificate of origin.', deciding_attributes: { basmati: 'yes' } }));
 
     const original = await prisma.productClassificationRefinement.findUniqueOrThrow({ where: { id: first.id } });
     expect(original.state).toBe('refinement_required');
@@ -193,7 +251,7 @@ describe('recording a refinement', () => {
     const first = await recordClassificationRefinement(baseArgs(f));
     const beforeSecond = new Date();
     await new Promise((resolve) => setTimeout(resolve, 5));
-    const second = await recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'Confirmed Basmati.' }));
+    const second = await recordClassificationRefinement(baseArgs(f, { state: 'agent_verified_selection', selected_national_code: '1006302712', selection_rationale: 'Confirmed Basmati.', deciding_attributes: { basmati: 'yes' } }));
 
     // An assessment frozen before the revision still sees the state it was frozen against.
     expect((await currentRefinement({ product_id: f.product.id, destination_country: 'GB', as_of: beforeSecond }))?.id).toBe(first.id);

@@ -784,6 +784,7 @@ model ExporterOrg {
   subscriptions                Subscription[]
   classification_refinements   ProductClassificationRefinement[]
   operational_cost_evidence    OperationalCostEvidence[]
+  logistics_route_evidence     LogisticsRouteEvidence[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -1470,6 +1471,9 @@ model SupplierCoverageAssertion {
 /// not a generated recommendation: unknown rates/times remain null and validity is explicit.
 model LogisticsRouteEvidence {
   id                                 String                  @id @default(cuid())
+  /// Null only for genuinely reusable public-authority/provider evidence. A partner/manual lane
+  /// captured for one exporter is tenant-scoped and must never be selected for another tenant.
+  exporter_org_id                    String?
   origin_country                     String                  @db.VarChar(2)
   origin_state                       String?
   origin_city                        String?
@@ -1498,11 +1502,16 @@ model LogisticsRouteEvidence {
   hs_code_scope                      String?
   confidence                         Decimal                 @db.Decimal(5, 4)
   status                             LogisticsEvidenceStatus @default(verified)
+  assertion_class                    EvidenceAssertionClass  @default(authoritative_public)
   evidence_origin                    EvidenceOrigin
   raw_evidence                       Json?
   created_at                         DateTime                @default(now())
 
-  @@unique([provider, source_reference])
+  exporter_org ExporterOrg? @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+
+  @@unique([exporter_org_id, provider, source_reference])
+  @@index([exporter_org_id, destination_country, status])
+  @@index([provider, source_reference])
   @@index([origin_country, destination_country, transport_mode, valid_until])
   @@index([destination_country, hs_code_scope, status])
 }

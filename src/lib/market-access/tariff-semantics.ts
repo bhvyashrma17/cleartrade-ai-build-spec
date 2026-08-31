@@ -131,6 +131,9 @@ export interface CandidateTariffLine {
    */
   description_path?: readonly string[];
   declarable: boolean;
+  /** Line validity is preserved into the authoritative candidate snapshot for later selection. */
+  effective_from?: Date | null;
+  effective_to?: Date | null;
   /** The general/third-country duty applicable to this line. */
   general_duty: ParsedDuty;
   /**

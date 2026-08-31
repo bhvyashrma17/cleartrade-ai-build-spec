@@ -242,6 +242,33 @@ describe('Phase 1H fact selection scoping', () => {
     expect(selected.state === 'present' && selected.value.supported_constraint_codes).toBeNull();
   });
 
+  test('manual route evidence is tenant scoped and an unscoped manual row fails closed', () => {
+    const base = {
+      id: 'mine', exporter_org_id: 'org-1', assertion_class: 'partner_quote', origin_country: 'IN',
+      origin_location_code: 'INNSA', origin_gateway: 'INNSA', destination_country: 'GB', destination_port: 'GBFXT',
+      transport_mode: LogisticsTransportMode.ocean as string, route_available: true, transit_time_min_days: 20,
+      transit_time_max_days: 30, freight_amount: null, freight_currency: null, freight_rate_basis: null,
+      freight_retrieved_at: null, freight_valid_until: null, assumed_shipment_value_amount: null,
+      assumed_shipment_value_currency: null, provider: 'forwarder', source_reference: 'QUOTE-1', retrieved_at: RETRIEVED,
+      valid_until: null, supported_product_constraint_codes: [] as string[], hs_code_scope: null,
+      confidence: new Prisma.Decimal(1), status: 'verified', evidence_origin: EvidenceOrigin.manually_entered_real as string,
+    };
+    const facts = selectCountryTruthFacts({
+      scope: selectionScope,
+      exporter_snapshot: exporterSnapshot().snapshot,
+      evidence: { ...emptyEvidence, logistics_routes: [
+        base,
+        { ...base, id: 'other-tenant', exporter_org_id: 'org-2' },
+        { ...base, id: 'unscoped-manual', exporter_org_id: null, assertion_class: 'agent_verified' },
+      ] },
+    });
+    expect(facts.logistics.routes.map((route) => route.id)).toEqual(['logistics_route:mine']);
+    expect(facts.rejected).toEqual(expect.arrayContaining([
+      { source: 'logistics_route', row_id: 'other-tenant', reason: 'exporter_org_mismatch' },
+      { source: 'logistics_route', row_id: 'unscoped-manual', reason: 'unscoped_non_public_route_evidence' },
+    ]));
+  });
+
   test('an exporter snapshot from another tenant is refused outright', () => {
     expect(() =>
       selectCountryTruthFacts({

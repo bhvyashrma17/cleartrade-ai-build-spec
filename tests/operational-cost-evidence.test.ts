@@ -18,6 +18,7 @@ const basis: CostNormalizationBasis = {
   shipment_quantity: 20_000,
   quantity_unit: 'kg',
   containers_per_shipment: 1,
+  equipment_code: null,
   goods_value_per_unit: 1.2,
   goods_value_currency: 'USD',
   supported_percent_bases: ['invoice_value', 'exporter_price'],
@@ -119,6 +120,16 @@ describe('operational cost selection', () => {
     const result = selectOperationalCostRows(rows, scope, basis);
     expect(result.rows).toHaveLength(0);
     expect(result.rejected.map((entry) => entry.reason).sort()).toEqual(['destination_country_mismatch', 'exporter_org_mismatch', 'hs6_mismatch']);
+  });
+
+  test('a quote for the wrong route or declared equipment is rejected', () => {
+    const rows = [
+      row({ component: 'international_freight', id: 'wrong-route', route_evidence_id: 'route-b', equipment_code: '20FT_DRY' }),
+      row({ component: 'insurance', id: 'wrong-equipment', route_evidence_id: 'route-a', equipment_code: '40FT_HC' }),
+    ];
+    const result = selectOperationalCostRows(rows, { ...scope, allowed_route_evidence_ids: ['route-a'] }, { ...basis, equipment_code: '20FT_DRY' });
+    expect(result.rows).toHaveLength(0);
+    expect(result.rejected.map((entry) => entry.reason).sort()).toEqual(['equipment_code_mismatch', 'route_evidence_mismatch']);
   });
 
   test('a destination-independent quote is admitted, a destination-specific mismatch is not', () => {

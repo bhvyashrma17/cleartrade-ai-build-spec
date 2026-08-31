@@ -113,11 +113,12 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   const metricIds=metrics.map(metric=>metric.id).sort();await stage('freezing_facts',78,{country_trade_metrics_ids:metricIds});
   const phase1hPolicy={value:payload.policies.country_truth_phase_1h.snapshot as unknown as CountryTruthPhase1HPolicy,version:payload.policies.country_truth_phase_1h.config_version};
   const frozenExporterFacts=payload.exporter_fact_snapshot as unknown as CountryTruthExporterFactSnapshot;
-  const shipmentProduct=await prisma.product.findUniqueOrThrow({where:{id:payload.product_id},select:{shipment_quantity_value:true,shipment_quantity_unit:true,shipment_container_count:true}});
+  const shipment=frozenExporterFacts.commercial.standard_shipment;
   const frozenShipmentBasis={
-    quantity:shipmentProduct.shipment_quantity_value==null?null:Number(shipmentProduct.shipment_quantity_value),
-    quantity_unit:shipmentProduct.shipment_quantity_unit,
-    container_count:shipmentProduct.shipment_container_count,
+    quantity:shipment?.quantity.state==='present'?Number(shipment.quantity.value):null,
+    quantity_unit:shipment?.quantity_unit.state==='present'?shipment.quantity_unit.value:null,
+    container_count:shipment?.container_count.state==='present'?shipment.container_count.value:null,
+    container_type:shipment?.container_type.state==='present'?shipment.container_type.value:null,
   };
   // Computed from the same frozen manifest, but persisted only in the Phase 1H fact manifest.
   // Nothing here writes to CountryTradeMetrics, so no Phase 1G identity moves.
