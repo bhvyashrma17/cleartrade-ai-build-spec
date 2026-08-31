@@ -6,7 +6,7 @@
  * Markets are the answer, not the question.
  */
 import Link from 'next/link';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { prisma } from '@/lib/prisma';
 import { Card, EmptyState, PageHeader, StatusChip } from '@/components/ui';
 import { assessProductReadiness } from '@/lib/country-discovery/readiness';
@@ -14,7 +14,7 @@ import { assessProductReadiness } from '@/lib/country-discovery/readiness';
 export const dynamic = 'force-dynamic';
 
 export default async function ProductsPage() {
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const products = await prisma.product.findMany({
     where: { exporter_org_id: principal.exporter_org_id },
     include: { classification_history: { where: { status: 'confirmed' }, orderBy: { revision: 'desc' }, take: 1 } },

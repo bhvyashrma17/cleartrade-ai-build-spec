@@ -5,7 +5,7 @@
  * manufacturer asked for thirty fields at once fills in none of them.
  */
 import { notFound } from 'next/navigation';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { prisma } from '@/lib/prisma';
 import { PageHeader } from '@/components/ui';
 import { ProductFactsForm } from './ProductFactsForm';
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ProductFactsPage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const product = await prisma.product.findFirst({
     where: { id: productId, exporter_org_id: principal.exporter_org_id },
     select: {

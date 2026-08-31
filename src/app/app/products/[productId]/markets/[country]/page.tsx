@@ -5,7 +5,7 @@
  * reason it has none, and no pillar is ever shown as zero because it is unknown.
  */
 import { notFound } from 'next/navigation';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { countryDetail } from '@/lib/country-discovery/service';
 import { isNotFound } from '@/lib/errors';
 import { PageHeader } from '@/components/ui';
@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function CountryPage({ params }: { params: Promise<{ productId: string; country: string }> }) {
   const { productId, country } = await params;
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const detail = await countryDetail(principal, principal.exporter_org_id, productId, country).catch((error) => {
     if (isNotFound(error)) notFound();
     throw error;

@@ -7,7 +7,7 @@
  * them until a form is filled in would be both false and the fastest way to lose the exporter.
  */
 import { notFound } from 'next/navigation';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { productDiscoveryState } from '@/lib/country-discovery/service';
 import { isNotFound } from '@/lib/errors';
 import { PageHeader } from '@/components/ui';
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ProductPage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const state = await productDiscoveryState(principal, principal.exporter_org_id, productId).catch((error) => {
     // The service already refuses cross-tenant reads with NOT_FOUND; render Next's 404 for it
     // rather than a 500, and let anything else surface as the real error it is.

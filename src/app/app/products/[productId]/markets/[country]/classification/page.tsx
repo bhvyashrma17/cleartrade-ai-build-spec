@@ -5,7 +5,7 @@
  * codes to choose between, and the page never sends one — see `ClassificationQuestions`.
  */
 import { notFound } from 'next/navigation';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { classificationQuestions } from '@/lib/country-discovery/service';
 import { countryName } from '@/lib/country-discovery/country-names';
 import { isNotFound } from '@/lib/errors';
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ClassificationPage({ params }: { params: Promise<{ productId: string; country: string }> }) {
   const { productId, country } = await params;
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const view = await classificationQuestions(principal, principal.exporter_org_id, productId, country).catch((error) => {
     if (isNotFound(error)) notFound();
     throw error;

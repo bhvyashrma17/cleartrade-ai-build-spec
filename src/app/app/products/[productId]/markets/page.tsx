@@ -7,7 +7,7 @@
  * rather than as everything that exists.
  */
 import { notFound } from 'next/navigation';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { marketResults, productDiscoveryState } from '@/lib/country-discovery/service';
 import { isNotFound } from '@/lib/errors';
 import { PageHeader } from '@/components/ui';
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function MarketsPage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const [results, state] = await Promise.all([
     marketResults(principal, principal.exporter_org_id, productId),
     productDiscoveryState(principal, principal.exporter_org_id, productId),

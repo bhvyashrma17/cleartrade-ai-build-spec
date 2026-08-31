@@ -4,7 +4,7 @@
  * Missing evidence is shown as missing. No value is zeroed to make a row line up.
  */
 import { notFound } from 'next/navigation';
-import { requireExporterPrincipal } from '@/lib/auth';
+import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { compareMarkets } from '@/lib/country-discovery/service';
 import { countryName } from '@/lib/country-discovery/country-names';
 import { isNotFound } from '@/lib/errors';
@@ -22,7 +22,7 @@ export default async function ComparePage({
 }) {
   const { productId } = await params;
   const { countries } = await searchParams;
-  const principal = await requireExporterPrincipal();
+  const principal = await requireDiscoveryPrincipal();
   const requested = (countries ?? '').split(',').map((code) => code.trim()).filter(Boolean);
 
   if (!requested.length) {
