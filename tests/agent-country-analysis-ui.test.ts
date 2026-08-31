@@ -1,25 +1,46 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import { COUNTRY_TRUTH_PILOT_COUNTRIES, countryTruthStage, projectCountryTruthAssessment } from '@/lib/country-truth-ui';
+import { countryTruthStage, projectCountryTruthAssessment } from '@/lib/country-truth-ui';
 
-const component = readFileSync('src/components/agent/CountryAnalysis.tsx', 'utf8');
+/**
+ * This file used to assert the pilot Country Analysis surface: a three-country checkbox list
+ * that posted Germany/UAE/USA by NAME. Phase 1I retired that surface, so the tests that pinned
+ * it now pin its replacement — and, crucially, pin that the pilot behaviour cannot come back.
+ * The projection and stage-label assertions are unchanged and still cover the same code.
+ */
+
+const component = readFileSync('src/components/agent/CountryTruthWork.tsx', 'utf8');
 const page = readFileSync('src/app/agent/exporters/[exporterOrgId]/page.tsx', 'utf8');
 const jobRoute = readFileSync('src/app/api/v1/jobs/[jobId]/route.ts', 'utf8');
+const uiModule = readFileSync('src/lib/country-truth-ui.ts', 'utf8');
 
-describe('Agent Country Analysis UI', () => {
-  test('confirmed products can start while unconfirmed products show a blocker', () => {
-    expect(page).toContain("product.hs_classification_status === 'confirmed'");
-    expect(page).toContain("confirmed.revision === product.hs_classification_revision");
-    expect(component).toContain('disabled={!canSubmit}');
-    expect(component).toContain('Analysis blocked.');
-    expect(component).toContain('Confirm a valid HS 2022 or ITC-HS classification');
+describe('Agent Country Truth surface', () => {
+  test('the three-country pilot picker is gone and cannot be reintroduced', () => {
+    // The constant, the component and the alias-based request path are all removed.
+    expect(uiModule).not.toContain('COUNTRY_TRUTH_PILOT_COUNTRIES');
+    expect(() => readFileSync('src/components/agent/CountryAnalysis.tsx', 'utf8')).toThrow();
+    expect(page).not.toContain('CountryAnalysis');
+    // No country list is posted, and there is no control through which one could be chosen.
+    // (The component's header comment names the retired pilot markets to explain the history,
+    // so this asserts the absence of a PICKER rather than the absence of the words.)
+    expect(component).not.toContain('candidate_countries');
+    expect(component).not.toContain('type="checkbox"');
+    expect(component).not.toContain('setCountries');
   });
 
-  test('sends only Germany, UAE, and USA names in the requested payload', () => {
-    expect(COUNTRY_TRUTH_PILOT_COUNTRIES.map(country => country.name)).toEqual(['Germany', 'UAE', 'USA']);
-    expect(component).toContain('{ product_id: productId, candidate_countries: countries }');
-    expect(component).not.toMatch(/reporter.?code/i);
-    expect(component).not.toMatch(/\b276\b|\b784\b|\b842\b/);
+  test('deep analysis is requested by naming a completed screening run, never a country set', () => {
+    expect(component).toContain('/deep-country-truth');
+    expect(component).toContain('screening_run_id: view.screening.screening_run_id');
+    expect(component).toContain('product_id: view.product.id');
+    // The shortlist is the frozen screen's, and the UI says so rather than implying it is editable.
+    expect(component).toContain('cannot be edited here');
+  });
+
+  test('only ClearTrade-owned work reaches the agent queue', () => {
+    expect(component).toContain('ClearTrade actions outstanding');
+    // The filter lives in the service; the component renders what it is given.
+    const service = readFileSync('src/lib/country-discovery/service.ts', 'utf8');
+    expect(service).toContain("if (action.owner !== 'cleartrade') continue;");
   });
 
   test('maps queued and worker progress to the six Agent-facing stages', () => {
@@ -29,18 +50,6 @@ describe('Agent Country Analysis UI', () => {
     expect(countryTruthStage('processing', 'calculating_metrics')).toBe('Calculating market metrics');
     expect(countryTruthStage('processing', 'scoring')).toBe('Ranking markets');
     expect(countryTruthStage('completed', 'completed')).toBe('Complete');
-  });
-
-  test('prevents pending duplicates and respects a reused active job', () => {
-    expect(component).toContain("!submitting && (!job || terminal)");
-    expect(component).toContain('An active analysis already exists. Monitoring that run now.');
-    expect(component).toContain('await poll(response.data.job_id)');
-  });
-
-  test('keeps failed jobs actionable with retry', () => {
-    expect(component).toContain("job?.status === 'failed'");
-    expect(component).toContain('Retry analysis');
-    expect(component).toContain('completed evidence may be reused');
   });
 
   test('projects partial and not-rankable v4 assessments without forcing a score', () => {
@@ -55,8 +64,18 @@ describe('Agent Country Analysis UI', () => {
       } } },
     });
     expect(projected).toMatchObject({ country: 'Germany', score: null, confidence: 42, status: 'not_rankable', market_size: { value: 10_000_000 }, growth: { value: null, status: 'partial' }, india_share: { value: 2.5 }, competition_hhi: { value: 0.31 }, rationale: 'Deterministic rationale.' });
-    expect(component).toContain("result.status === 'partial' ? 'Partial evidence' : 'Not rankable'");
-    expect(component).toContain("result.score == null ? 'No score'");
+  });
+
+  test('country names come from the reporter registry, not a three-entry pilot table', () => {
+    // The pilot mapped exactly DE/AE/US and rendered every other market as a bare ISO code.
+    const projected = (code: string) => projectCountryTruthAssessment({
+      country_code: code, overall_score: 50, confidence_score: 50,
+      country_truth_assessment_state: 'rankable', rationale: null, country_trade_metrics: null,
+    }).country;
+    expect(projected('DE')).toBe('Germany');
+    // A market the pilot table never knew about must still be named.
+    expect(projected('VN')).not.toBe('VN');
+    expect(projected('BR')).not.toBe('BR');
   });
 
   test('reads dedicated v4 assessments and never the legacy discovery warehouse path', () => {
@@ -64,11 +83,5 @@ describe('Agent Country Analysis UI', () => {
     expect(jobRoute).toContain('country_trade_metrics');
     expect(jobRoute).toContain('projectCountryTruthAssessment');
     expect(jobRoute).not.toMatch(/TradeFlow|WarehouseDiscovery|warehouse-engine/);
-    expect(component).not.toMatch(/TradeFlow|WarehouseDiscovery|manifest|policy.hash|raw job payload/i);
-  });
-
-  test('formats market size with the shared compact USD formatter', () => {
-    expect(component).toContain('formatCompactUsd(metric.value)');
-    expect(component).not.toContain("Intl.NumberFormat('en-IN'");
   });
 });

@@ -1,10 +1,12 @@
 import type { Prisma } from '@prisma/client';
+import { countryName } from '@/lib/country-discovery/country-names';
 
-export const COUNTRY_TRUTH_PILOT_COUNTRIES = [
-  { code: 'DE', name: 'Germany' },
-  { code: 'AE', name: 'UAE' },
-  { code: 'US', name: 'USA' },
-] as const;
+/**
+ * The pilot's hard-coded three-market table (Germany, UAE, USA) was removed in Phase 1I.
+ * Country selection is no longer something a caller does: Phase 1F/1G screen every reporting
+ * market and freeze a shortlist, and the deep pipeline reads that shortlist rather than a
+ * hand-picked list. Nothing may reintroduce a country picker on the product path.
+ */
 
 export const COUNTRY_TRUTH_STAGE_LABELS: Record<string, string> = {
   queued: 'Preparing analysis',
@@ -48,8 +50,6 @@ function metric(value: Metric | undefined): MetricView {
   };
 }
 
-const COUNTRY_NAMES: Record<string, string> = { DE: 'Germany', AE: 'UAE', US: 'USA' };
-
 /** Dedicated v4 read projection. It intentionally accepts no TradeFlow/warehouse fields. */
 export function projectCountryTruthAssessment(row: {
   country_code: string;
@@ -62,7 +62,9 @@ export function projectCountryTruthAssessment(row: {
   const payload = (row.country_trade_metrics?.metrics_payload ?? {}) as MetricsPayload;
   const metrics = payload.metrics ?? {};
   return {
-    country: COUNTRY_NAMES[row.country_code] ?? row.country_code,
+    // Named from the checked-in provider reporter registry, so all 200+ screened markets
+    // resolve rather than only the three the pilot knew about.
+    country: countryName(row.country_code),
     country_code: row.country_code,
     score: row.country_truth_assessment_state === 'not_rankable' ? null : row.overall_score,
     confidence: row.confidence_score,

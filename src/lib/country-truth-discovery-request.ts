@@ -10,6 +10,20 @@ import { prisma } from '@/lib/prisma';
 import { projectHs6 } from '@/lib/product-classification';
 import type { Principal } from '@/types';
 
+/**
+ * RETIRED FROM THE PRODUCT PATH (Phase 1I).
+ *
+ * This three-market alias table is the pilot's country resolver, and it is the reason the
+ * exporter product could only ever analyse Germany, the UAE and the USA. Nothing user-facing
+ * reaches it any more: `/app/products/...` starts a global screen and the deep pipeline reads
+ * the frozen shortlist through `country-truth-deep-request`, which resolves identity from the
+ * checked-in Comtrade reporter registry instead.
+ *
+ * It survives only because `requestCountryTruthDiscovery` is still exercised by the Phase 1H
+ * handler and assessment test suites, which pin real backend behaviour. Do NOT route a new
+ * surface through it, and do not extend it with a fourth country — a country list that a caller
+ * supplies is exactly what Stage A exists to replace.
+ */
 const COUNTRY_ALIASES: Record<string,{country_code:string;country_name:string;reporter_code:string}>={
   DE:{country_code:'DE',country_name:'Germany',reporter_code:'276'},
   DEU:{country_code:'DE',country_name:'Germany',reporter_code:'276'},

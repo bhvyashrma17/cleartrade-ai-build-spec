@@ -43,6 +43,7 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
   exporter: [
     { label: 'Overview', href: '/app/overview', minTier: 'free' },
     { label: 'Readiness', href: '/app/readiness', minTier: 'free' },
+    { label: 'Products', href: '/app/products', minTier: 'paid' },
     { label: 'Markets', href: '/app/markets', minTier: 'guest' },
     { label: 'Buyers', href: '/app/buyers', minTier: 'guest' },
     { label: 'Deals', href: '/app/deals', minTier: 'paid' },

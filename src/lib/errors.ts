@@ -132,6 +132,16 @@ export const upgradeRequired = (requiredTier: OrgTier, message?: string) =>
  */
 export const notFound = (message?: string) => new ApiError(ERROR_CODES.NOT_FOUND, { message });
 
+/**
+ * Is this the service layer's "you may not see this" answer?
+ *
+ * Server components need to turn that into Next's `notFound()` rather than a 500, and they
+ * must not do it by string-matching a message. Tenant-scoped reads deliberately raise
+ * NOT_FOUND rather than FORBIDDEN so a guessed id cannot confirm another tenant's data exists.
+ */
+export const isNotFound = (error: unknown): boolean =>
+  error instanceof ApiError && error.code === ERROR_CODES.NOT_FOUND;
+
 export const validationError = (fields: FieldError[], message?: string) =>
   new ApiError(ERROR_CODES.VALIDATION_ERROR, { fields, message });
 
