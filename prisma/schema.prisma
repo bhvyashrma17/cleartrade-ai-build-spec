@@ -783,6 +783,7 @@ model ExporterOrg {
   bank_accounts                ExporterBankAccount[]
   subscriptions                Subscription[]
   classification_refinements   ProductClassificationRefinement[]
+  market_scan_requests         MarketScanRequest[]
   operational_cost_evidence    OperationalCostEvidence[]
   logistics_route_evidence     LogisticsRouteEvidence[]
 
@@ -871,6 +872,9 @@ model User {
   entered_operational_costs          OperationalCostEvidence[]         @relation("OperationalCostEnteredBy")
   verified_operational_costs         OperationalCostEvidence[]         @relation("OperationalCostVerifiedBy")
   recorded_customs_valuations        CustomsValuationBasisEvidence[]   @relation("CustomsValuationRecorder")
+
+  market_scan_requests_made      MarketScanRequest[]               @relation("MarketScanRequester")
+  market_scan_requests_decided   MarketScanRequest[]               @relation("MarketScanDecider")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -1048,6 +1052,8 @@ model Product {
   country_truth_fact_snapshots CountryTruthFactSnapshot[]
   hs_confirmed_by              User?                             @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
 
+  market_scan_requests         MarketScanRequest[]
+
   @@index([exporter_org_id])
   @@index([hs_code])
 }
@@ -1083,6 +1089,8 @@ model ProductClassification {
   country_trade_metrics        CountryTradeMetrics[]
   country_truth_fact_snapshots CountryTruthFactSnapshot[]
   classification_refinements   ProductClassificationRefinement[]
+
+  market_scan_requests   MarketScanRequest[]
 
   @@unique([product_id, revision])
   @@index([product_id, status])
@@ -5094,4 +5102,67 @@ model DocumentArtifact {
 
   @@unique([document_id, format])
   @@index([input_snapshot_id])
+}
+
+/// Lifecycle of an exporter's request for a global market scan.
+///
+/// A scan acquires one authoritative observation per reporting market — roughly 218 metered
+/// provider calls against a platform-wide quota. Phase 1F made execution staff-initiated for
+/// exactly that reason, so the exporter's action is a REQUEST and the metered work stays behind
+/// a human approval. `queued` and `running` mirror the screening job rather than duplicating it.
+enum MarketScanRequestStatus {
+  pending
+  approved
+  queued
+  running
+  completed
+  rejected
+  failed
+}
+
+/// One exporter request for a global market scan, and its approval trail.
+///
+/// The request carries a product and a classification identity and NOTHING about which markets
+/// to look at, which provider mode to use, or what policy to screen under: those are all derived
+/// server-side at approval time from the canonical services. There is deliberately no column
+/// here through which a client could influence the metered work.
+model MarketScanRequest {
+  id                        String                  @id @default(cuid())
+  exporter_org_id           String
+  product_id                String
+  /// The classification the request was raised against. Approval re-reads the product's current
+  /// confirmed classification and refuses if it has moved, so a stale identity is never screened.
+  product_classification_id String
+  /// Denormalised classification identity, frozen at request time, for the same staleness check.
+  hs6_code                  String
+  hs_revision               String
+
+  status           MarketScanRequestStatus @default(pending)
+  requested_by_id  String
+  requested_at     DateTime                @default(now())
+  decided_by_id    String?
+  decided_at       DateTime?
+  /// Required when `status` is `rejected`; the exporter is shown this verbatim.
+  rejection_reason String?
+
+  /// Set once approval hands off to the canonical screening service.
+  screening_job_id String?
+  screening_run_id String?
+  /// Why the request reached a terminal state without spending provider budget — for example
+  /// because a current completed screen already covered this exact classification and policy.
+  resolution_note  String?
+
+  correlation_id String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  exporter_org           ExporterOrg           @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product                Product               @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  product_classification ProductClassification @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  requested_by           User                  @relation("MarketScanRequester", fields: [requested_by_id], references: [id])
+  decided_by             User?                 @relation("MarketScanDecider", fields: [decided_by_id], references: [id])
+
+  @@index([exporter_org_id, status, requested_at])
+  @@index([status, requested_at])
+  @@index([product_classification_id, status])
 }

@@ -46,7 +46,7 @@ function screeningSourceMode(): TradeSourceMode {
 const EXPORTER_ROLES: readonly UserRole[] = [UserRole.exporter_owner, UserRole.exporter_member];
 const AGENT_ROLES: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
 /** Who may spend a global screen's provider budget. Mirrors `runGlobalCountryScreening`. */
-const SCREENING_PRINCIPALS: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
+export const SCREENING_PRINCIPALS: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
 
 const ASSESSMENT_SELECT = {
   id: true, country_code: true, overall_score: true, confidence_score: true,
@@ -75,6 +75,14 @@ export interface ProductDiscoveryState {
   readiness: ProductReadiness;
   /** True when THIS caller may start a screen. False for an exporter: ClearTrade runs it. */
   viewer_can_start_screening: boolean;
+  /** The exporter's standing request for a scan, reconciled against its screening job. */
+  scan_request: {
+    id: string;
+    status: string;
+    requested_at: string;
+    rejection_reason: string | null;
+    resolution_note: string | null;
+  } | null;
   screening: {
     state: 'not_started' | 'queued' | 'running' | 'completed' | 'failed';
     job_id: string | null;
@@ -140,10 +148,24 @@ export async function productDiscoveryState(actor: Principal, exporterOrgId: str
     include: { _count: { select: { market_assessments: true } } },
   });
 
+  // Reconciled on read, so the exporter never sees `queued` for a job that already finished.
+  // Imported lazily because `scan-requests` imports `startMarketDiscovery` from this module.
+  const { currentScanRequest, reconcileScanRequest } = await import('./scan-requests');
+  const standing = classification ? await currentScanRequest(actor, exporterOrgId, productId) : null;
+  const scanRequest = standing ? await reconcileScanRequest(standing.id) : null;
+
   return {
     product: { id: product.id, name: product.name, hs6: classification?.hs6_code ?? null },
     readiness,
     viewer_can_start_screening: SCREENING_PRINCIPALS.includes(actor.role),
+    scan_request: scanRequest
+      ? {
+          id: scanRequest.id, status: scanRequest.status,
+          requested_at: scanRequest.requested_at.toISOString(),
+          rejection_reason: scanRequest.rejection_reason,
+          resolution_note: scanRequest.resolution_note,
+        }
+      : null,
     screening: {
       state: run ? 'completed' : screeningState(screeningJob?.status ?? null),
       job_id: screeningJob?.id ?? null,

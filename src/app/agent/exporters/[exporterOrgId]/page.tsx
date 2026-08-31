@@ -23,6 +23,7 @@ import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
 import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
 import { CountryTruthWork } from '@/components/agent/CountryTruthWork';
+import { MarketScanQueue } from '@/components/agent/MarketScanQueue';
 import { buyerControlRows } from '@/lib/buyer-control';
 import { activeOnly as activeOnlyCandidates } from '@/lib/demand-control';
 import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/demand-control';
@@ -213,6 +214,7 @@ export default async function ExporterAccountPage({
 
       {activeTab === 'demand' ? (
         <div className="space-y-4">
+        <MarketScanQueue />
         <CountryTruthWork exporterOrgId={org.id} />
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
           <h2 className="text-lg font-semibold text-primary">Demand Discovery control</h2>

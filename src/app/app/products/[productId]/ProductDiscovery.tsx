@@ -46,7 +46,8 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
     }
   }, [base]);
 
-  const inFlight = state.screening.state === 'queued' || state.screening.state === 'running';
+  const requestLive = ['pending', 'approved', 'queued', 'running'].includes(state.scan_request?.status ?? '');
+  const inFlight = state.screening.state === 'queued' || state.screening.state === 'running' || requestLive;
   useEffect(() => {
     if (!inFlight) return;
     const timer = setInterval(() => void refresh(), 4000);
@@ -61,6 +62,19 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
       await refresh();
     } catch (caught) {
       setError(caught instanceof ApiClientError ? caught.message : 'Could not start the market scan.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestScan() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPost(`${base}/scan-request`, {});
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof ApiClientError ? caught.message : 'Could not submit your request.');
     } finally {
       setBusy(false);
     }
@@ -132,16 +146,15 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
                 ) : null}
               </>
             ) : (
-              /* A global scan reads every reporting market and is run by ClearTrade. Showing the
-                 exporter a button that the server will refuse would be worse than showing none. */
-              <>
-                <StatusChip label="ClearTrade runs this scan" tone="info" icon="clock" />
-                <p className="mt-2 text-sm text-slate">
-                  {readiness.can_discover
-                    ? 'Your ClearTrade agent starts the global market scan for this product. You will see the recommended markets here as soon as it finishes.'
-                    : readiness.blocked_because}
-                </p>
-              </>
+              /* A global scan reads every reporting market and is metered, so the exporter's
+                 action is a REQUEST and a ClearTrade reviewer releases the work. */
+              <ScanRequest
+                request={state.scan_request}
+                canRequest={readiness.can_discover}
+                blockedBecause={readiness.blocked_because}
+                busy={busy}
+                onRequest={requestScan}
+              />
             )}
           </div>
         )}
@@ -200,6 +213,84 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
           </Link>
         </div>
       </Card>
+    </div>
+  );
+}
+
+
+/**
+ * The exporter's side of the request/approval flow.
+ *
+ * Deliberately says nothing about provider quotas, call counts or which markets will be read:
+ * those are ClearTrade's operational concerns and mean nothing to a manufacturer. What the
+ * exporter needs is where their request stands and whether anything is required of them.
+ */
+function ScanRequest({
+  request,
+  canRequest,
+  blockedBecause,
+  busy,
+  onRequest,
+}: {
+  request: ProductDiscoveryState['scan_request'];
+  canRequest: boolean;
+  blockedBecause: string | null;
+  busy: boolean;
+  onRequest: () => void;
+}) {
+  if (!request || request.status === 'rejected' || request.status === 'failed') {
+    return (
+      <div className="space-y-2">
+        {request?.status === 'rejected' ? (
+          <>
+            <StatusChip label="Request not approved" tone="warning" icon="alert" />
+            <p className="text-sm text-slate">{request.rejection_reason}</p>
+          </>
+        ) : request?.status === 'failed' ? (
+          <>
+            <StatusChip label="Scan did not finish" tone="critical" icon="alert" />
+            <p className="text-sm text-slate">ClearTrade has been notified. You can ask for it to be run again.</p>
+          </>
+        ) : null}
+        <Button onClick={onRequest} disabled={busy || !canRequest}>
+          {busy ? 'Submitting…' : request ? 'Request another scan' : 'Find best export markets'}
+        </Button>
+        {!canRequest ? <p className="text-xs text-muted">{blockedBecause}</p> : null}
+      </div>
+    );
+  }
+
+  if (request.status === 'pending') {
+    return (
+      <div role="status" aria-live="polite" className="space-y-2">
+        <StatusChip label="Request submitted" tone="info" icon="clock" />
+        <p className="text-sm text-bone">ClearTrade is preparing your global market analysis.</p>
+        <p className="text-xs text-muted">
+          A ClearTrade specialist reviews every scan before it runs. You will see your recommended
+          markets here as soon as it is complete — there is nothing further for you to do.
+        </p>
+      </div>
+    );
+  }
+
+  if (request.status === 'completed') {
+    return (
+      <div className="space-y-2">
+        <StatusChip label="Market scan complete" tone="positive" icon="check" />
+        {request.resolution_note ? <p className="text-sm text-slate">{request.resolution_note}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div role="status" aria-live="polite" className="space-y-2">
+      <StatusChip label={request.status === 'running' ? 'Scanning markets' : 'Approved — queued'} tone="info" icon="clock" />
+      <p className="text-sm text-bone">
+        {request.status === 'running'
+          ? 'ClearTrade is scanning global trade markets for this product.'
+          : 'Your request has been approved and is waiting to start.'}
+      </p>
+      <p className="text-xs text-muted">You can leave this page — the scan keeps running.</p>
     </div>
   );
 }
