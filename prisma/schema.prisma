@@ -1242,53 +1242,132 @@ model MarketEligibilityRule {
 /// One authoritative retrieval for a jurisdiction + HS scope. A COMPLETE snapshot is
 /// required before absence of a restriction can be interpreted as evidence.
 model MarketAccessEvidenceSnapshot {
-  id                    String                     @id @default(cuid())
-  jurisdiction          String
-  country_code          String                     @db.VarChar(2)
-  hs_code_scope         String
-  source_authority      String
-  source_reference      String
-  source_version        String?
-  retrieved_at          DateTime
-  effective_at          DateTime?
-  expires_at            DateTime?
-  completeness_status   EvidenceCompletenessStatus
-  tariff_coverage       Boolean                    @default(false)
-  regulatory_coverage   Boolean                    @default(false)
-  parser_version        String
-  evidence_origin       EvidenceOrigin             @default(unknown_legacy)
-  provider              String                     @default("unknown_legacy")
-  source_dataset        String?
-  source_run_id         String?
-  raw_response_checksum String?
-  raw_evidence          Json
-  evidence              MarketAccessEvidence[]
+  id                        String                     @id @default(cuid())
+  jurisdiction              String
+  country_code              String                     @db.VarChar(2)
+  hs_code_scope             String
+  source_authority          String
+  source_reference          String
+  source_version            String?
+  retrieved_at              DateTime
+  effective_at              DateTime?
+  expires_at                DateTime?
+  completeness_status       EvidenceCompletenessStatus
+  tariff_coverage           Boolean                    @default(false)
+  regulatory_coverage       Boolean                    @default(false)
+  parser_version            String
+  evidence_origin           EvidenceOrigin             @default(unknown_legacy)
+  provider                  String                     @default("unknown_legacy")
+  source_dataset            String?
+  source_run_id             String?
+  raw_response_checksum     String?
+  raw_evidence              Json
+  /// The HS6 the snapshot was requested FOR, kept apart from `hs_code_scope`, which may be a
+  /// national line. Null on rows written before national-code refinement existed.
+  hs6_code                  String?
+  /// Which national nomenclature the child lines belong to: UK_COMMODITY, EU_TARIC, US_HTS, GCC.
+  national_code_system      String?
+  /// exact | all_children_equivalent | classification_refinement_required | unavailable.
+  /// An HS6 that fans out into materially different national lines resolves to refinement
+  /// required; it is never collapsed by picking a rate.
+  classification_resolution String?
+  candidate_line_count      Int?
+  /// Every candidate line considered, why they were or were not equivalent, and what differed.
+  resolution_detail         Json?
+  evidence                  MarketAccessEvidence[]
+  tariff_lines              MarketAccessTariffLine[]
 
   @@index([country_code, hs_code_scope, retrieved_at])
+  @@index([country_code, hs6_code, retrieved_at])
+}
+
+/// One national tariff line beneath a requested HS6, exactly as the authority publishes it.
+///
+/// Separate from `MarketAccessEvidence` because that model answers "what applies to this
+/// product" while this one preserves the full candidate set the answer was derived from —
+/// including the lines that were rejected. Duty expressions are retained verbatim: a specific
+/// duty such as `121.00 GBP / 1000 kg` has no honest percentage, so `ad_valorem_rate_percent`
+/// stays null rather than carrying an invented number.
+model MarketAccessTariffLine {
+  id                        String    @id @default(cuid())
+  snapshot_id               String
+  jurisdiction              String
+  country_code              String    @db.VarChar(2)
+  hs6_code                  String
+  hs_revision               String
+  national_tariff_code      String
+  national_code_system      String
+  description               String
+  declarable                Boolean   @default(true)
+  /// third_country_duty | tariff_preference | tariff_quota | additional_duty | vat | other.
+  measure_kind              String
+  /// The authority's own geographic-area identifier for the measure (ERGA OMNES, a group, or a
+  /// country). Retained unmapped so a group can never be silently read as a country.
+  origin_geographic_area_id String?
+  origin_scope              String
+  applies_to_origin_country String?   @db.VarChar(2)
+  /// Verbatim duty text from the source. Never normalised away.
+  duty_expression           String
+  /// ad_valorem | specific | compound | mixed | none | unparsed.
+  duty_kind                 String
+  /// Populated ONLY when the expression is purely ad valorem.
+  ad_valorem_rate_percent   Decimal?  @db.Decimal(9, 4)
+  specific_amount           Decimal?  @db.Decimal(18, 6)
+  specific_currency         String?   @db.VarChar(3)
+  specific_unit             String?
+  specific_unit_quantity    Decimal?  @db.Decimal(18, 6)
+  /// Conditions that gate the measure — quota membership, document requirements, footnotes.
+  conditions                Json
+  effective_from            DateTime?
+  effective_to              DateTime?
+  source_reference          String
+  raw_measure               Json
+  created_at                DateTime  @default(now())
+
+  snapshot MarketAccessEvidenceSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([snapshot_id])
+  @@index([country_code, hs6_code, national_tariff_code])
 }
 
 model MarketAccessEvidence {
-  id                      String                       @id @default(cuid())
-  snapshot_id             String
-  jurisdiction            String
-  country_code            String                       @db.VarChar(2)
-  hs_code_scope           String
-  rule_type               MarketAccessRuleType
-  source_authority        String
-  source_reference        String
-  retrieved_at            DateTime
-  effective_at            DateTime?
-  expires_at              DateTime?
-  superseded_at           DateTime?
-  status                  MarketAccessEvidenceStatus
-  confidence              Decimal                      @db.Decimal(5, 4)
-  evidence_origin         EvidenceOrigin               @default(unknown_legacy)
-  tariff_rate_percent     Decimal?                     @db.Decimal(9, 4)
-  requirement_code        String?
-  requirement_description String?
-  requirement_obtainable  Boolean?
-  raw_evidence            Json
-  snapshot                MarketAccessEvidenceSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+  id                       String                       @id @default(cuid())
+  snapshot_id              String
+  jurisdiction             String
+  country_code             String                       @db.VarChar(2)
+  hs_code_scope            String
+  rule_type                MarketAccessRuleType
+  source_authority         String
+  source_reference         String
+  retrieved_at             DateTime
+  effective_at             DateTime?
+  expires_at               DateTime?
+  superseded_at            DateTime?
+  status                   MarketAccessEvidenceStatus
+  confidence               Decimal                      @db.Decimal(5, 4)
+  evidence_origin          EvidenceOrigin               @default(unknown_legacy)
+  tariff_rate_percent      Decimal?                     @db.Decimal(9, 4)
+  /// The national line this determination was made on, when one was resolved.
+  national_tariff_code     String?
+  national_code_system     String?
+  /// Verbatim duty text. Present whenever the row carries a duty, including specific and
+  /// compound duties that have no ad-valorem equivalent.
+  duty_expression          String?
+  duty_kind                String?
+  /// India-origin applicability, recorded explicitly rather than inferred from evidence status.
+  /// confirmed_applicable | potentially_applicable_requires_origin_proof | not_applicable |
+  /// unknown. The mere existence of a preferential line is never applicability.
+  preference_applicability String?
+  /// What the applicability determination rests on, or what is missing for it.
+  preference_basis         String?
+  /// discovery_grade | execution_grade. Discovery-grade evidence compares markets; it is never
+  /// presented as sufficient for customs execution.
+  verification_grade       String?
+  requirement_code         String?
+  requirement_description  String?
+  requirement_obtainable   Boolean?
+  raw_evidence             Json
+  snapshot                 MarketAccessEvidenceSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
 
   @@index([country_code, hs_code_scope, rule_type, status])
   @@index([snapshot_id])
@@ -3611,15 +3690,21 @@ model CountryEvidencePlan {
   status                    String          @default("planned")
   estimated_call_cost       Int
   allow_partial_execution   Boolean         @default(false)
+  /// The frozen Stage-A screening run whose shortlist produced this plan's candidate reporters.
+  /// Nullable because the pilot request path names countries directly and has no screening run;
+  /// when set it is the answer to "which global screen produced this Deep Country Truth?".
+  screening_run_id          String?
   created_at                DateTime        @default(now())
   updated_at                DateTime        @updatedAt
 
   product_classification ProductClassification     @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  screening_run          CountryScreeningRun?      @relation(fields: [screening_run_id], references: [id], onDelete: SetNull)
   items                  CountryEvidencePlanItem[]
   manifests              CountryEvidenceManifest[]
 
   @@index([product_classification_id, created_at])
   @@index([status, created_at])
+  @@index([screening_run_id])
 }
 
 /// One independently resolvable provider request in a Country Evidence Plan.
@@ -3820,6 +3905,8 @@ model CountryScreeningRun {
   completed_at                     DateTime?
   created_at                       DateTime        @default(now())
   updated_at                       DateTime        @updatedAt
+
+  evidence_plans CountryEvidencePlan[]
 
   product_classification ProductClassification    @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
   results                CountryScreeningResult[]
@@ -4373,6 +4460,67 @@ enum TransportDocumentType {
 /// purpose: a rate with no traceable origin must not be recordable at all, and `rbi_reference`
 /// or `customs_notified` may only be claimed when the notification is cited (enforced by a
 /// database CHECK on `source_reference`).
+/// Immutable raw response from an authoritative public FX publisher (currently the ECB SDMX
+/// data portal). Kept apart from `ExchangeRateQuote`, which is exporter-scoped and holds
+/// tenant-recorded regulatory and bank rates: a published reference rate belongs to nobody, so
+/// scoping it to one exporter would either duplicate it per tenant or leak it between them.
+model AuthoritativeFxSnapshot {
+  id                     String                       @id @default(cuid())
+  provider               String
+  source_authority       String
+  source_dataset         String
+  source_dataset_version String?
+  /// The provider's own series identity, e.g. the SDMX key `EXR.D.INR.EUR.SP00.A`.
+  series_key             String
+  request_reference      String
+  requested_at           DateTime
+  retrieved_at           DateTime
+  http_status            Int
+  raw_response_checksum  String
+  raw_response_text      String
+  parser_version         String
+  normalization_version  String
+  environment            String
+  evidence_origin        EvidenceOrigin               @default(unknown_legacy)
+  completeness           EvidenceCompletenessStatus
+  status                 String                       @default("accepted")
+  observations           AuthoritativeFxObservation[]
+  created_at             DateTime                     @default(now())
+
+  @@index([provider, series_key, retrieved_at])
+  @@index([environment, retrieved_at])
+}
+
+/// One published reference observation: a rate FOR a stated date, not for a retrieval time.
+model AuthoritativeFxObservation {
+  id                    String         @id @default(cuid())
+  snapshot_id           String
+  provider              String
+  series_key            String
+  /// Units of quote_currency per ONE unit of base_currency, in the publisher's own direction.
+  /// ECB publishes foreign currency per euro, so base is EUR and quote is the foreign currency.
+  base_currency         String         @db.VarChar(3)
+  quote_currency        String         @db.VarChar(3)
+  rate                  Decimal        @db.Decimal(24, 10)
+  /// The date the observation IS FOR. Never the retrieval date.
+  observation_date      DateTime       @db.Date
+  observation_status    String
+  normalization_version String
+  parser_version        String
+  environment           String
+  evidence_origin       EvidenceOrigin @default(unknown_legacy)
+  retrieved_at          DateTime
+  created_at            DateTime       @default(now())
+
+  snapshot AuthoritativeFxSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Restrict)
+
+  /// One published value per series, date and normalization within an environment. A second
+  /// retrieval of the same day reuses the row instead of creating a rival observation.
+  @@unique([provider, series_key, observation_date, normalization_version, environment], map: "AuthoritativeFxObservation_identity_key")
+  @@index([environment, base_currency, quote_currency, observation_date])
+  @@index([snapshot_id])
+}
+
 enum ExchangeRateSource {
   rbi_reference
   customs_notified

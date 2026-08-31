@@ -26,6 +26,20 @@ const payloadSchema=z.object({
   /** Phase 1G: each candidate's own consecutive analysis window, from Stage A period selection. */
   reporter_period_windows:z.record(z.string(),z.array(z.number().int()).min(1)).optional(),
   preferred_period:z.number().int().optional(),
+  /**
+   * Frozen Stage-A identity, present when the request came from a completed global screen.
+   * Optional so historical `country-truth-discovery-job-v3` payloads still validate and replay.
+   */
+  provenance:z.object({
+    screening_run_id:z.string().min(1),
+    screening_run_key:z.string().min(1),
+    screening_policy_version:z.string().min(1),
+    screening_policy_hash:z.string().min(1),
+    shortlist_size:z.number().int().positive(),
+    shortlist_reporters:z.array(z.string().regex(/^[0-9]{1,3}$/)).min(1),
+    country_evidence_plan_id:z.string().min(1),
+    country_evidence_plan_key:z.string().min(1),
+  }).optional(),
   policies:z.object({
     country_evidence:policyIdentitySchema.extend({policy_version:z.string().min(1),snapshot:z.record(z.string(),z.unknown())}),
     country_trade_metrics:policyIdentitySchema.extend({policy_version:z.string().min(1),calculation_version:z.string().min(1),snapshot:z.record(z.string(),z.unknown())}),
@@ -74,6 +88,14 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   const scoringClock=new Date(payload.requested_at);if(Number.isNaN(scoringClock.getTime()))throw new Error('Country Truth requested timestamp is invalid.');
   const plan=await createCountryEvidencePlan({product_classification_id:payload.product_classification_id,as_of_date:scoringClock,candidate_reporters:payload.candidates.map(candidate=>candidate.reporter_code),source_mode:TradeSourceMode.authenticated,reporter_period_windows:payload.reporter_period_windows,preferred_period:payload.preferred_period},{value:payload.policies.country_evidence.snapshot as unknown as CountryEvidencePolicy,version:payload.policies.country_evidence.config_version});
   if(plan.product_classification_id!==payload.product_classification_id||plan.hs_code!==payload.hs6||plan.hs_revision!==payload.hs_revision||plan.policy_version!==payload.policies.country_evidence.policy_version||plan.policy_hash!==payload.policies.country_evidence.policy_hash||JSON.stringify([...plan.candidate_reporters].sort())!==JSON.stringify(payload.candidates.map(candidate=>candidate.reporter_code).sort()))throw new Error('Resolved Country Evidence plan does not match the frozen job identity.');
+  if(payload.provenance){
+    // The screen a deep run came from must be answerable from the plan itself, not only from a
+    // job payload that a later retention sweep may age out.
+    if(payload.provenance.country_evidence_plan_key!==plan.plan_key)throw new Error('Resolved Country Evidence plan does not match the screening provenance frozen into the job.');
+    if(JSON.stringify([...payload.provenance.shortlist_reporters].sort())!==JSON.stringify([...plan.candidate_reporters].sort()))throw new Error('Frozen shortlist reporters do not match the resolved deep plan.');
+    if(plan.screening_run_id==null)await prisma.countryEvidencePlan.update({where:{id:plan.id},data:{screening_run_id:payload.provenance.screening_run_id}});
+    else if(plan.screening_run_id!==payload.provenance.screening_run_id)throw new Error(`Country Evidence plan ${plan.id} belongs to screening run ${plan.screening_run_id}, not ${payload.provenance.screening_run_id}.`);
+  }
   await stage('acquiring_evidence',20,{country_evidence_plan_id:plan.id});
   const acquisition=await executeCountryEvidencePlan(plan.id);
   if(!acquisition.manifest){await stage('acquiring_evidence',20);throw new Error(`Country Truth evidence acquisition is ${acquisition.status}; retry from persisted plan ${plan.id}.`);}
@@ -131,7 +153,7 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   await stage('scoring',85,{country_truth_fact_snapshot_ids:factSnapshotIds.sort()});
   let run=checkpoint.discovery_run_id?await prisma.discoveryRun.findUnique({where:{id:checkpoint.discovery_run_id}}):await prisma.discoveryRun.findFirst({where:{job_id:ctx.job_id}});
   if(run&&(run.exporter_org_id!==payload.exporter_org_id||run.product_id!==payload.product_id))throw new Error('Checkpointed DiscoveryRun does not match the frozen Country Truth job.');
-  if(!run)run=await prisma.discoveryRun.create({data:{exporter_org_id:payload.exporter_org_id,product_id:payload.product_id,job_id:ctx.job_id,requested_by_id:payload.requested_by_agent_id,status:JobStatus.processing,started_at:new Date(),as_of_date:scoringClock,filters:{candidate_countries:payload.candidates.map(candidate=>candidate.country_code)},input_snapshot:json({schema_version:'country-truth-discovery-run-v2',job_payload:payload,exporter_fact_snapshot:payload.exporter_fact_snapshot,exporter_fact_snapshot_checksum:payload.exporter_fact_snapshot_checksum,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds})}});
+  if(!run)run=await prisma.discoveryRun.create({data:{exporter_org_id:payload.exporter_org_id,product_id:payload.product_id,job_id:ctx.job_id,requested_by_id:payload.requested_by_agent_id,status:JobStatus.processing,started_at:new Date(),as_of_date:scoringClock,filters:{candidate_countries:payload.candidates.map(candidate=>candidate.country_code)},input_snapshot:json({schema_version:'country-truth-discovery-run-v2',job_payload:payload,screening_provenance:payload.provenance??null,exporter_fact_snapshot:payload.exporter_fact_snapshot,exporter_fact_snapshot_checksum:payload.exporter_fact_snapshot_checksum,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds})}});
   await stage('scoring',90,{discovery_run_id:run.id});
   let assessments=await prisma.marketAssessment.findMany({where:{run_id:run.id},orderBy:{country_code:'asc'}});
   if(assessments.length){const assessmentMetricIds=assessments.map(item=>item.country_trade_metrics_id).filter((id):id is string=>Boolean(id)).sort();if(assessments.length!==metricIds.length||JSON.stringify(assessmentMetricIds)!==JSON.stringify(metricIds)||assessments.some(item=>item.model_version!=='market-attractiveness-v4'))throw new Error('Checkpointed Country Truth assessments are incomplete or incompatible.');}
@@ -139,7 +161,7 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   const assessmentIds=assessments.map(item=>item.id).sort(),partial=acquisition.status!=='metric_ready'||assessments.some(item=>item.country_truth_assessment_state!=='rankable');
   await prisma.discoveryRun.update({where:{id:run.id},data:{status:partial?JobStatus.partial:JobStatus.completed,completed_at:new Date()}});
   await stage('completed',100,{assessment_ids:assessmentIds});
-  return {status:partial?JobStatus.partial:JobStatus.completed,result:json({schema_version:'country-truth-discovery-result-v3',stage:'completed',country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds,country_truth_fact_snapshot_ids:[...factSnapshotIds].sort(),discovery_run_id:run.id,assessment_ids:assessmentIds,evidence_status:acquisition.status,physical_calls:acquisition.physical_calls})};
+  return {status:partial?JobStatus.partial:JobStatus.completed,result:json({schema_version:'country-truth-discovery-result-v3',stage:'completed',screening_run_id:payload.provenance?.screening_run_id??null,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds,country_truth_fact_snapshot_ids:[...factSnapshotIds].sort(),discovery_run_id:run.id,assessment_ids:assessmentIds,evidence_status:acquisition.status,physical_calls:acquisition.physical_calls})};
 }
 
 export const __test__={payloadSchema,validatePolicyIdentities};

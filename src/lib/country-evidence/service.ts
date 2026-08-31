@@ -1,7 +1,7 @@
 import { Prisma, TradeSourceMode } from '@prisma/client';
 import { canonicalComtradeRequest, comtradeRequestFingerprint } from '@/lib/comtrade/request';
 import { COMTRADE_NORMALIZATION_VERSION, COMTRADE_PARSER_VERSION, ensureCurrentComtradeNormalization } from '@/lib/comtrade/normalization';
-import { getConfigWithVersion, type CountryEvidencePolicy } from '@/lib/config';
+import { getConfig, getConfigWithVersion, type CountryEvidencePolicy } from '@/lib/config';
 import { appEnvironment, isRealWorkflowEnvironment, tradeSourceModeToEvidenceOrigin } from '@/lib/evidence-environment';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { prisma } from '@/lib/prisma';
@@ -69,18 +69,74 @@ export async function resolveCountryEvidencePlan(planId:string) {
   return prisma.countryEvidencePlan.findUniqueOrThrow({where:{id:planId},include:{items:{orderBy:[{priority:'asc'},{reporter_code:'asc'},{period:'desc'}]},manifests:true}});
 }
 
-export async function executeCountryEvidencePlan(planId:string, options:{allow_partial_execution?:boolean}={}) {
+/**
+ * A deterministic subset of the items ALREADY PERSISTED on the plan.
+ *
+ * It is a filter, never a source of new work: reporters are checked against the plan's own
+ * frozen candidate list, and periods/HS/partners are never accepted from the caller at all, so
+ * a batch cannot widen scope or mint an item the plan does not contain. Decomposing a plan into
+ * batches changes nothing an evidence identity is derived from — items keep their `item_key`,
+ * every acquisition keeps its `request_fingerprint`, and the manifest checksum is a function of
+ * the resolved plan rather than of how execution was sliced.
+ */
+export interface CountryEvidenceBatch {
+  /** Execute only these reporters. Every code must already be a plan candidate. */
+  reporters?: readonly string[];
+  /** Hard ceiling on items executed in this call, applied after the reporter filter. */
+  max_items?: number;
+}
+
+export interface ExecuteCountryEvidencePlanOptions {
+  allow_partial_execution?: boolean;
+  batch?: CountryEvidenceBatch;
+  /**
+   * Calls this execution must leave unspent. Defaults to `comtrade.policy.minimum_request_reserve`.
+   * Zero is allowed and disables the floor; it must be requested explicitly.
+   */
+  minimum_quota_reserve?: number;
+}
+
+function selectBatch<T extends {reporter_code:string}>(required:readonly T[], plan:{candidate_reporters:string[]}, batch:CountryEvidenceBatch|undefined){
+  if(!batch)return [...required];
+  let selected=[...required];
+  if(batch.reporters){
+    const requested=[...new Set(batch.reporters)];
+    if(!requested.length)throw new Error('A Country Evidence batch reporter list must name at least one reporter.');
+    // Fail closed on an unknown reporter rather than silently executing the intersection: a
+    // caller that believes it asked for a market must never be told the batch "succeeded".
+    const unknown=requested.filter(code=>!plan.candidate_reporters.includes(code));
+    if(unknown.length)throw new Error(`Reporters ${unknown.join(', ')} are not candidates of this Country Evidence plan; a batch may only narrow the frozen plan.`);
+    const wanted=new Set(requested);
+    selected=selected.filter(item=>wanted.has(item.reporter_code));
+  }
+  if(batch.max_items!=null){
+    if(!Number.isInteger(batch.max_items)||batch.max_items<=0)throw new Error('A Country Evidence batch max_items must be a positive integer.');
+    selected=selected.slice(0,batch.max_items);
+  }
+  return selected;
+}
+
+export async function executeCountryEvidencePlan(planId:string, options:ExecuteCountryEvidencePlanOptions={}) {
   let plan=await resolveCountryEvidencePlan(planId);
-  const required=plan.items.filter(item=>['fetch_required','failed','incompatible'].includes(item.resolution_state)||(item.resolution_state==='partial'&&!item.source_evidence_id));
+  const outstanding=plan.items.filter(item=>['fetch_required','failed','incompatible'].includes(item.resolution_state)||(item.resolution_state==='partial'&&!item.source_evidence_id));
+  // Deterministic: `resolveCountryEvidencePlan` returns items ordered by priority, reporter and
+  // period, so the same batch request always selects the same items in the same order.
+  const required=selectBatch(outstanding,plan,options.batch);
+  // Recalculated here, immediately before this batch, rather than inherited from a caller that
+  // measured it before an earlier batch spent part of the day's allowance.
   const allowance=await availableProviderRequestAllowance(plan.source_mode);
+  const comtrade=await getConfig('comtrade.policy');
+  const reserve=options.minimum_quota_reserve??comtrade.minimum_request_reserve??0;
+  if(!Number.isInteger(reserve)||reserve<0)throw new Error('A Country Evidence quota reserve must be a non-negative integer.');
   const partial=options.allow_partial_execution??plan.allow_partial_execution;
-  if(required.length>allowance&&!partial){
+  const spendable=Math.max(0,allowance-reserve);
+  if(required.length>spendable&&!partial){
     await prisma.countryEvidencePlan.update({where:{id:plan.id},data:{status:'deferred_quota'}});
-    return {plan_id:plan.id,status:'deferred_quota',estimated_calls:required.length,available_calls:allowance,physical_calls:0,manifest:null};
+    return {plan_id:plan.id,status:'deferred_quota',estimated_calls:required.length,available_calls:allowance,quota_reserve:reserve,physical_calls:0,executed_items:0,remaining_items:outstanding.length,manifest:null};
   }
   await prisma.countryEvidencePlan.update({where:{id:plan.id},data:{status:'executing'}});
   let physicalCalls=0;
-  for(const item of required.slice(0,partial?allowance:required.length)){
+  for(const item of required.slice(0,partial?spendable:required.length)){
     await prisma.countryEvidencePlanItem.update({where:{id:item.id},data:{resolution_state:'fetching',attempts:{increment:1},last_attempted_at:new Date(),error:null}});
     const outcome=await runComtradeIngest({job_id:`country-evidence:${item.id}`,attempt_no:item.attempts+1,payload:{hs_chapter:item.hs_code.slice(0,2),hs_codes:[item.hs_code],reporter:item.reporter_code,partner:item.partner_code,year:item.period,flow_direction:'import',hs_revision:item.hs_revision,frequency:'A',partner2:'0',customs_code:item.customs_code,mode_of_supply:item.mode_of_supply,purpose:'country_truth'},exporter_org_id:null,target_id:plan.id,correlation_id:`country-evidence:${plan.id}`,reportProgress:async()=>undefined});
     const result=outcome.result as Record<string,unknown>;
@@ -89,9 +145,18 @@ export async function executeCountryEvidencePlan(planId:string, options:{allow_p
     if(outcome.status==='failed')await prisma.countryEvidencePlanItem.update({where:{id:item.id},data:{resolution_state:'failed',error:String(result.error??'Provider acquisition failed.').slice(0,1000)}});
   }
   plan=await resolveCountryEvidencePlan(plan.id);
+  const stillOutstanding=plan.items.filter(item=>['fetch_required','fetching','failed','incompatible'].includes(item.resolution_state)||(item.resolution_state==='partial'&&!item.source_evidence_id));
+  // A batch that left work behind must not mint a manifest. `createCountryEvidenceManifest`
+  // evaluates whatever the plan currently holds, so building one here would freeze a manifest
+  // whose per-reporter completeness reflects only the reporters executed so far — a partial
+  // acquisition presented as a finished evidence set. The plan stays resumable instead.
+  if(options.batch&&stillOutstanding.length){
+    await prisma.countryEvidencePlan.update({where:{id:plan.id},data:{status:'partial'}});
+    return {plan_id:plan.id,status:'batch_incomplete',estimated_calls:required.length,available_calls:allowance,quota_reserve:reserve,physical_calls:physicalCalls,executed_items:required.length,remaining_items:stillOutstanding.length,manifest:null};
+  }
   const manifest=await createCountryEvidenceManifest(plan.id);
   await prisma.countryEvidencePlan.update({where:{id:plan.id},data:{status:manifest.evaluation_state==='metric_ready'?'complete':manifest.evaluation_state==='partial'?'partial':'failed'}});
-  return {plan_id:plan.id,status:manifest.evaluation_state,estimated_calls:required.length,available_calls:allowance,physical_calls:physicalCalls,manifest};
+  return {plan_id:plan.id,status:manifest.evaluation_state,estimated_calls:required.length,available_calls:allowance,quota_reserve:reserve,physical_calls:physicalCalls,executed_items:required.length,remaining_items:stillOutstanding.length,manifest};
 }
 
 export async function createCountryEvidenceManifest(planId:string) {

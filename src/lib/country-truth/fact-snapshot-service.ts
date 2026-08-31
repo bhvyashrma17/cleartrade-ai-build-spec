@@ -15,7 +15,7 @@
 import { Prisma, type CountryTruthFactSnapshot } from '@prisma/client';
 import type { CountryTruthPhase1HPolicy } from '@/lib/config';
 import { canonicalHash } from '@/lib/country-evidence/planner';
-import { allowedEvidenceOrigins } from '@/lib/evidence-environment';
+import { allowedEvidenceOrigins, appEnvironment } from '@/lib/evidence-environment';
 import { prisma } from '@/lib/prisma';
 import type { CountryTruthExporterFactSnapshot } from './exporter-fact-snapshot';
 import {
@@ -90,7 +90,7 @@ async function loadEvidenceRows(
   const scopes = hsScopeCandidates(request.hs6);
   const asOf = request.as_of_date;
 
-  const [snapshots, fitBenchmarks, routes, fxQuotes] = await Promise.all([
+  const [snapshots, fitBenchmarks, routes, fxQuotes, fxObservations] = await Promise.all([
     prisma.marketAccessEvidenceSnapshot.findMany({
       where: {
         country_code: request.country_code,
@@ -122,6 +122,20 @@ async function loadEvidenceRows(
     prisma.exchangeRateQuote.findMany({
       where: { exporter_org_id: request.exporter_org_id, created_at: { lte: asOf } },
       orderBy: { id: 'asc' },
+    }),
+    // Published reference rates are global. They are filtered by environment and origin like
+    // every other evidence class, and by OBSERVATION date as well as retrieval date, so a rate
+    // for a day after the clock can never be admitted.
+    prisma.authoritativeFxObservation.findMany({
+      where: {
+        environment: appEnvironment(request.env),
+        evidence_origin: { in: origins },
+        retrieved_at: { lte: asOf },
+        observation_date: { lte: asOf },
+      },
+      orderBy: [{ observation_date: 'desc' }, { id: 'asc' }],
+      take: 200,
+      include: { snapshot: { select: { source_authority: true } } },
     }),
   ]);
 
@@ -169,6 +183,12 @@ async function loadEvidenceRows(
       confidence: row.confidence,
       evidence_origin: row.evidence_origin,
       tariff_rate_percent: row.tariff_rate_percent,
+      preference_applicability: row.preference_applicability,
+      preference_basis: row.preference_basis,
+      duty_expression: row.duty_expression,
+      duty_kind: row.duty_kind,
+      national_tariff_code: row.national_tariff_code,
+      verification_grade: row.verification_grade,
       requirement_code: row.requirement_code,
       requirement_description: row.requirement_description,
       requirement_obtainable: row.requirement_obtainable,
@@ -219,6 +239,19 @@ async function loadEvidenceRows(
       hs_code_scope: row.hs_code_scope,
       confidence: row.confidence,
       status: row.status,
+      evidence_origin: row.evidence_origin,
+    })),
+    authoritative_fx_observations: fxObservations.map((row) => ({
+      id: row.id,
+      provider: row.provider,
+      series_key: row.series_key,
+      base_currency: row.base_currency,
+      quote_currency: row.quote_currency,
+      rate: row.rate,
+      observation_date: row.observation_date,
+      retrieved_at: row.retrieved_at,
+      source_authority: row.snapshot.source_authority,
+      environment: row.environment,
       evidence_origin: row.evidence_origin,
     })),
     exchange_rate_quotes: fxQuotes.map((row) => ({

@@ -38,7 +38,13 @@ import type {
 } from './phase-1h-calculations';
 import type { CountryTruthExporterFactSnapshot, CountryTruthFact } from './exporter-fact-snapshot';
 
-export const COUNTRY_TRUTH_FACT_SELECTION_VERSION = 'country-truth-fact-selection-v1' as const;
+/**
+ * v2: India-preference applicability is read from the provider's explicit determination instead
+ * of being inferred from evidence status, and authoritative published FX observations are
+ * admitted alongside exporter-recorded quotes. Both change what a manifest MEANS, so the version
+ * moves and every new manifest gets a new identity rather than overwriting a v1 one.
+ */
+export const COUNTRY_TRUTH_FACT_SELECTION_VERSION = 'country-truth-fact-selection-v2' as const;
 
 type DecimalLike = { toString(): string } | string | number | null | undefined;
 
@@ -79,6 +85,16 @@ export interface MarketAccessEvidenceRow {
   confidence: DecimalLike;
   evidence_origin: string;
   tariff_rate_percent: DecimalLike;
+  /**
+   * India-origin applicability recorded by the provider. Absent on rows written before the
+   * determination was explicit, which fall back to the older inference below.
+   */
+  preference_applicability?: string | null;
+  preference_basis?: string | null;
+  duty_expression?: string | null;
+  duty_kind?: string | null;
+  national_tariff_code?: string | null;
+  verification_grade?: string | null;
   requirement_code: string | null;
   requirement_description: string | null;
   requirement_obtainable: boolean | null;
@@ -131,6 +147,20 @@ export interface LogisticsRouteEvidenceRow {
   hs_code_scope: string | null;
   confidence: DecimalLike;
   status: string;
+  evidence_origin: string;
+}
+
+export interface AuthoritativeFxObservationRow {
+  id: string;
+  provider: string;
+  series_key: string;
+  base_currency: string;
+  quote_currency: string;
+  rate: DecimalLike;
+  observation_date: Date;
+  retrieved_at: Date;
+  source_authority: string;
+  environment: string;
   evidence_origin: string;
 }
 
@@ -216,6 +246,11 @@ export interface CountryTruthEvidenceRows {
   fit_benchmarks: readonly ExporterFitBenchmarkRow[];
   logistics_routes: readonly LogisticsRouteEvidenceRow[];
   exchange_rate_quotes: readonly ExchangeRateQuoteRow[];
+  /**
+   * Published reference observations from an authoritative FX publisher. Global rather than
+   * exporter-scoped: a published rate belongs to nobody, so it is not a cross-tenant leak.
+   */
+  authoritative_fx_observations?: readonly AuthoritativeFxObservationRow[];
   cost_components?: readonly ExportCostComponentRow[];
   customs_valuation_bases?: readonly CustomsValuationBasisRow[];
   import_benchmarks?: readonly ImportBenchmarkRow[];
@@ -391,13 +426,23 @@ function selectTariffsAndRequirements(
       }
       const rate = decimal(row.tariff_rate_percent);
       const isPreference = row.rule_type === 'preferential_tariff_india';
+      // A published preferential line is not applicability. When the provider recorded an
+      // explicit determination, that determination governs; only `confirmed_applicable` becomes
+      // the applied rate, and a preference still awaiting rules-of-origin proof stays unknown.
+      const declared = row.preference_applicability?.trim();
       const applicability: TariffFactValue['preference_applicability'] = !isPreference
         ? undefined
-        : row.status === 'not_applicable'
-          ? 'not_applicable'
-          : row.status === 'verified' && rate != null
+        : declared
+          ? declared === 'confirmed_applicable'
             ? 'applicable'
-            : 'unknown';
+            : declared === 'not_applicable'
+              ? 'not_applicable'
+              : 'unknown'
+          : row.status === 'not_applicable'
+            ? 'not_applicable'
+            : row.status === 'verified' && rate != null
+              ? 'applicable'
+              : 'unknown';
       tariffs.push({
         ...base,
         id: `market_access_tariff:${row.id}`,
@@ -748,6 +793,89 @@ function selectRoutes(
 }
 
 const AUTHORITATIVE_FX_SOURCES = new Set(['rbi_reference', 'customs_notified']);
+
+const ORIGIN_CURRENCY = 'INR';
+
+/**
+ * Turn published EUR-denominated observations into the pairs an assessment can actually use.
+ *
+ * A published rate is quoted in ONE direction; a conversion may need either. Both directions are
+ * derived explicitly, each carrying provenance to the observation(s) it rests on, rather than
+ * letting a consumer invert a rate and lose the record of which leg it started from.
+ */
+function selectAuthoritativeFxRates(
+  rows: readonly AuthoritativeFxObservationRow[],
+  scope: CountryTruthSelectionScope,
+  asOf: number,
+  recorder: Recorder,
+): ScopedFact<FxRateValue>[] {
+  const facts: ScopedFact<FxRateValue>[] = [];
+  if (!rows.length) return facts;
+  const asOfDate = new Date(asOf);
+
+  const usable = [...rows]
+    .filter((row) => {
+      if (!retrievedBefore(row.retrieved_at, asOf)) { recorder.reject('authoritative_fx_observation', row.id, 'retrieved_after_assessment_clock'); return false; }
+      // A rate FOR a date after the clock was not knowable at the clock, however early it was
+      // retrieved. Observation date is the governing fact, not retrieval.
+      if (row.observation_date.getTime() > asOf) { recorder.reject('authoritative_fx_observation', row.id, 'observation_date_after_assessment_clock'); return false; }
+      const rate = decimal(row.rate);
+      if (rate == null || rate <= 0) { recorder.reject('authoritative_fx_observation', row.id, 'rate_is_not_positive'); return false; }
+      return true;
+    })
+    .sort((left, right) => right.observation_date.getTime() - left.observation_date.getTime() || left.id.localeCompare(right.id));
+  if (!usable.length) return facts;
+
+  const byDay = new Map<string, AuthoritativeFxObservationRow[]>();
+  for (const row of usable) {
+    const day = row.observation_date.toISOString().slice(0, 10);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day)!.push(row);
+  }
+  const days = [...byDay.keys()].sort((left, right) => right.localeCompare(left));
+  const currencies = [...new Set(usable.map((row) => row.quote_currency.toUpperCase()))].sort();
+
+  const emit = (base: string, quote: string, rate: number, day: string, sources: AuthoritativeFxObservationRow[], formula: string) => {
+    const primary = sources[0]!;
+    facts.push({
+      id: `authoritative_fx:${base}${quote}:${day}:${sources.map((row) => row.id).sort().join('+')}`,
+      state: 'present',
+      // A published reference rate is not scoped to one exporter or one destination.
+      scope: scopeFor(scope, false),
+      provenance: {
+        assertion_class: 'authoritative_public',
+        source: primary.source_authority,
+        source_reference: `${primary.provider}:${sources.map((row) => row.series_key).sort().join('+')}@${day}`,
+        retrieved_at: iso(primary.retrieved_at),
+      },
+      confidence: MAX_CONFIDENCE,
+      value: { base_currency: base, quote_currency: quote, direction: 'quote_per_base', rate, rate_date: `${day}T00:00:00.000Z` },
+    });
+    void formula;
+  };
+
+  // Only the newest published day at or before the clock is admitted. Mixing days would produce
+  // a pair that was never simultaneously true.
+  for (const day of days.slice(0, 1)) {
+    const rowsForDay = byDay.get(day)!;
+    const find = (currency: string) => rowsForDay.find((row) => row.quote_currency.toUpperCase() === currency);
+    const publishedBase = rowsForDay[0]!.base_currency.toUpperCase();
+    const origin = find(ORIGIN_CURRENCY);
+    for (const currency of currencies) {
+      const leg = find(currency);
+      if (!leg) continue;
+      const legRate = decimal(leg.rate)!;
+      emit(publishedBase, currency, legRate, day, [leg], `${currency} per 1 ${publishedBase}`);
+      emit(currency, publishedBase, 1 / legRate, day, [leg], `${publishedBase} per 1 ${currency}`);
+      if (!origin || currency === ORIGIN_CURRENCY) continue;
+      const originRate = decimal(origin.rate)!;
+      emit(currency, ORIGIN_CURRENCY, originRate / legRate, day, [origin, leg], `${ORIGIN_CURRENCY} per 1 ${currency}`);
+      emit(ORIGIN_CURRENCY, currency, legRate / originRate, day, [leg, origin], `${currency} per 1 ${ORIGIN_CURRENCY}`);
+    }
+  }
+  void asOfDate;
+  return facts;
+}
 
 function selectFxRates(
   rows: readonly ExchangeRateQuoteRow[],
@@ -1185,7 +1313,10 @@ export function selectCountryTruthFacts(args: {
     ...certificationRequirementBenchmarks(requirements),
   ].sort((left, right) => left.id.localeCompare(right.id));
   const { routes, freightQuotes } = selectRoutes(args.evidence.logistics_routes, scope, asOf, recorder);
-  const fxRates = selectFxRates(args.evidence.exchange_rate_quotes, scope, asOf, recorder);
+  const fxRates = [
+    ...selectAuthoritativeFxRates(args.evidence.authoritative_fx_observations ?? [], scope, asOf, recorder),
+    ...selectFxRates(args.evidence.exchange_rate_quotes, scope, asOf, recorder),
+  ].sort((left, right) => left.id.localeCompare(right.id));
   const costComponents = selectCostComponents(args.evidence.cost_components ?? [], scope, asOf, recorder);
   const customsBasis = selectCustomsValuationBasis(args.evidence.customs_valuation_bases ?? [], scope, asOf, recorder);
   const importBenchmark = selectImportBenchmark(args.evidence.import_benchmarks ?? [], scope, asOf, recorder);

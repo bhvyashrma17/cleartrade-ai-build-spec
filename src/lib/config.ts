@@ -258,6 +258,16 @@ export interface ComtradePolicy {
   hs_codes_per_request: number;
   /** Conservative local ceiling below the advertised free-key quota. */
   daily_request_budget: number;
+  /**
+   * Calls a batch must leave unspent. A batch that would drop the day's remaining allowance
+   * below this floor defers instead of executing, so an interactive acquisition can never
+   * consume the headroom a retry or an operational query still needs.
+   *
+   * Deliberately here rather than in `country_evidence.policy`: that policy is hashed into
+   * every plan_key, so adding a field there would make every historical plan irreproducible.
+   * Quota headroom is a provider-account concern and changes no evidence identity.
+   */
+  minimum_request_reserve?: number;
   /** Highest-value chapters first; the full ingest script consumes this exact order. */
   chapter_priority: string[];
 }
@@ -489,7 +499,10 @@ const PHASE_1H_ASSERTION_CONFIDENCE: Record<AssertionClass, number> = {
   unknown_legacy: 0,
 };
 
-const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v1';
+// v2 accompanies country-truth-fact-selection-v2. The pillar formulas are unchanged; the
+// identity moves because the evidence admitted beneath them changed, and a v1 manifest must
+// stay reproducible under exactly the rules that produced it.
+const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v2';
 
 const PHASE_1H_TARIFF_POLICY = {
   formula_version: 'applicable-india-tariff-v2',
@@ -519,7 +532,7 @@ const PHASE_1H_INCOTERM_COST_OWNERSHIP: CountryTruthPhase1HPolicy['export_econom
 };
 
 const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
-  policy_version: 'country-truth-phase-1h-v1',
+  policy_version: 'country-truth-phase-1h-v2',
   calculation_version: PHASE_1H_CALCULATION_VERSION,
   facts_schema_version: 'country-truth-facts-v1',
   india_origin_unit_value_version: INDIA_ORIGIN_UNIT_VALUE_VERSION,
@@ -766,6 +779,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     retry_backoff_ms: 2000,
     hs_codes_per_request: 50,
     daily_request_budget: 450,
+    minimum_request_reserve: 100,
     chapter_priority: [
       '84', '85', '27', '30', '87', '71', '39', '29', '72', '73', '61', '62', '63', '09',
       '01', '02', '03', '04', '05', '06', '07', '08', '10', '11', '12', '13', '14', '15',
