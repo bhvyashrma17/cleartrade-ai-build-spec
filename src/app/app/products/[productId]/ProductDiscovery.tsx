@@ -122,12 +122,27 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
           </div>
         ) : (
           <div className="mt-5">
-            <Button onClick={start} disabled={busy || !readiness.can_discover}>
-              {busy ? 'Starting…' : 'Find best export markets'}
-            </Button>
-            {!readiness.can_discover ? (
-              <p className="mt-2 text-xs text-muted">{readiness.blocked_because}</p>
-            ) : null}
+            {state.viewer_can_start_screening ? (
+              <>
+                <Button onClick={start} disabled={busy || !readiness.can_discover}>
+                  {busy ? 'Starting…' : 'Find best export markets'}
+                </Button>
+                {!readiness.can_discover ? (
+                  <p className="mt-2 text-xs text-muted">{readiness.blocked_because}</p>
+                ) : null}
+              </>
+            ) : (
+              /* A global scan reads every reporting market and is run by ClearTrade. Showing the
+                 exporter a button that the server will refuse would be worse than showing none. */
+              <>
+                <StatusChip label="ClearTrade runs this scan" tone="info" icon="clock" />
+                <p className="mt-2 text-sm text-slate">
+                  {readiness.can_discover
+                    ? 'Your ClearTrade agent starts the global market scan for this product. You will see the recommended markets here as soon as it finishes.'
+                    : readiness.blocked_because}
+                </p>
+              </>
+            )}
           </div>
         )}
         {error ? <p className="mt-3 text-sm text-[var(--crit)]" role="alert">{error}</p> : null}

@@ -13,8 +13,22 @@ import type { Principal } from '../src/types';
 
 afterEach(()=>setComtradeClient(null));afterAll(()=>prisma.$disconnect());
 
+/**
+ * A collision-free HS6 per fixture.
+ *
+ * This previously derived the HS6 from a UUID modulo 1000, which gave every fixture in the whole
+ * suite a 1-in-1000 draw from the SAME namespace — and `country-truth-phase-1h-assessment` drew
+ * from that identical range. Vitest runs every file against one schema, so two fixtures landing
+ * on the same HS6 made the second one find the first one's evidence already `reusable`: the
+ * provider was never called, and assertions counting provider calls or expecting `partial`
+ * failed intermittently (~16% per run, and dependent on file order). A monotonic counter in a
+ * per-file band removes the draw entirely.
+ */
+let fixtureHs6Counter = 0;
+const nextFixtureHs6 = () => String(970000 + (fixtureHs6Counter += 1)).padStart(6, '0');
+
 async function fixture(){
-  const marker=`ct-handler-${randomUUID()}`,hs6=String(100000+(parseInt(marker.slice(-6).replace(/-/g,''),16)%1000)).padStart(6,'0'),itcHs=`${hs6}12`,org=await prisma.exporterOrg.create({data:{display_name:marker,tier:OrgTier.paid}}),agent=await prisma.user.create({data:{email:`${marker}@example.test`,name:'Agent',role:UserRole.agent}});
+  const marker=`ct-handler-${randomUUID()}`,hs6=nextFixtureHs6(),itcHs=`${hs6}12`,org=await prisma.exporterOrg.create({data:{display_name:marker,tier:OrgTier.paid}}),agent=await prisma.user.create({data:{email:`${marker}@example.test`,name:'Agent',role:UserRole.agent}});
   await prisma.agentAssignment.create({data:{exporter_org_id:org.id,agent_user_id:agent.id,status:'active'}});
   const product=await prisma.product.create({data:{exporter_org_id:org.id,name:'Basmati rice',evidence_origin:EvidenceOrigin.authenticated_real,price_target_amount:1200,price_target_currency:'USD',price_target_quantity_unit:'kg',price_target_incoterm:'FOB'}}),now=new Date('2026-08-24T00:00:00.000Z');
   await prisma.product.update({where:{id:product.id},data:{itc_hs_code:itcHs,hs_code:hs6,hs_code_source:'manually_verified',hs_nomenclature:'ITC-HS',hs_nomenclature_version:'2022',hs_classification_method:ProductClassificationMethod.manually_verified,hs_classification_status:ProductClassificationStatus.confirmed,hs_classification_confidence:.99,hs_classification_evidence:{source:'test'},hs_confirmed_by_id:agent.id,hs_confirmed_at:now,hs_classification_revision:1}});

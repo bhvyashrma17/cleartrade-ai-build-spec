@@ -45,6 +45,8 @@ function screeningSourceMode(): TradeSourceMode {
 
 const EXPORTER_ROLES: readonly UserRole[] = [UserRole.exporter_owner, UserRole.exporter_member];
 const AGENT_ROLES: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
+/** Who may spend a global screen's provider budget. Mirrors `runGlobalCountryScreening`. */
+const SCREENING_PRINCIPALS: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
 
 const ASSESSMENT_SELECT = {
   id: true, country_code: true, overall_score: true, confidence_score: true,
@@ -71,6 +73,8 @@ async function loadProduct(actor: Principal, exporterOrgId: string, productId: s
 export interface ProductDiscoveryState {
   product: { id: string; name: string; hs6: string | null };
   readiness: ProductReadiness;
+  /** True when THIS caller may start a screen. False for an exporter: ClearTrade runs it. */
+  viewer_can_start_screening: boolean;
   screening: {
     state: 'not_started' | 'queued' | 'running' | 'completed' | 'failed';
     job_id: string | null;
@@ -139,6 +143,7 @@ export async function productDiscoveryState(actor: Principal, exporterOrgId: str
   return {
     product: { id: product.id, name: product.name, hs6: classification?.hs6_code ?? null },
     readiness,
+    viewer_can_start_screening: SCREENING_PRINCIPALS.includes(actor.role),
     screening: {
       state: run ? 'completed' : screeningState(screeningJob?.status ?? null),
       job_id: screeningJob?.id ?? null,
@@ -172,6 +177,18 @@ export async function productDiscoveryState(actor: Principal, exporterOrgId: str
  */
 export async function startMarketDiscovery(actor: Principal, exporterOrgId: string, productId: string, correlationId: string) {
   assertCan(actor, 'demand_discovery.run');
+  // A global screen acquires one authoritative observation per reporting market — ~218 metered
+  // provider calls per run. Phase 1F made that a staff-initiated operation deliberately, and
+  // `runGlobalCountryScreening` re-checks the requesting actor's role when it executes.
+  //
+  // The check is repeated HERE so an exporter gets an immediate, legible answer instead of a
+  // job that is accepted, retried three times over the next hour and then fails with an
+  // internal message they never see. Widening the role set instead would hand every paid
+  // exporter an unmetered button on a quota the whole platform shares — that is a cost control,
+  // not an oversight, so it is enforced earlier rather than removed.
+  if (!SCREENING_PRINCIPALS.includes(actor.role)) {
+    throw forbidden('ClearTrade runs the global market scan for you. Your ClearTrade agent will start it for this product.');
+  }
   const { product, classification } = await loadProduct(actor, exporterOrgId, productId);
   if (!classification) {
     throw validationError([{ field: 'product_id', code: 'classification_required', message: 'This product needs a confirmed HS classification before markets can be compared.' }]);
@@ -423,8 +440,17 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
 // ---------------------------------------------------------------------------
 
 export interface ClassificationQuestionView {
-  /** `resolved` when one line is established, `questions` when answers would narrow it. */
-  state: 'not_applicable' | 'no_evidence_yet' | 'questions' | 'resolved';
+  /**
+   * `resolved` — one line is established.
+   * `questions` — answers about the goods would narrow it.
+   * `agent_classification_required` — refinement IS required, but ClearTrade cannot derive a
+   *   question a manufacturer could answer from the authority's own descriptions. This is a
+   *   distinct and honest state: telling the exporter there is "no evidence yet" when the
+   *   evidence exists and simply cannot be narrowed by questionnaire would be false, and would
+   *   leave them with no route forward.
+   * `no_evidence_yet` — no authoritative tariff snapshot has been gathered for the destination.
+   */
+  state: 'not_applicable' | 'no_evidence_yet' | 'questions' | 'agent_classification_required' | 'resolved';
   destination_country: string;
   /** How many candidate lines are still in scope after the answers already on file. */
   remaining: number;
@@ -495,7 +521,9 @@ export async function classificationQuestions(actor: Principal, exporterOrgId: s
 
   const questions = deriveRefinementQuestions(narrowed.remaining);
   return {
-    state: questions.length ? 'questions' : 'no_evidence_yet',
+    // More than one line still in scope and nothing to ask means an agent must classify it.
+    // Falling back to `no_evidence_yet` here would deny evidence that demonstrably exists.
+    state: questions.length ? 'questions' : 'agent_classification_required',
     destination_country: country,
     remaining: narrowed.remaining.length,
     candidate_total: candidates.length,

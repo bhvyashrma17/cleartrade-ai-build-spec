@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { JobStatus, OrgTier, ProductClassificationMethod, ProductClassificationStatus, UserRole } from '@prisma/client';
+import { JobStatus, JobType, OrgTier, ProductClassificationMethod, ProductClassificationStatus, UserRole } from '@prisma/client';
 import { afterAll, describe, expect, test } from 'vitest';
 import {
   agentCountryTruthWork,
@@ -127,11 +127,45 @@ describe('screening request', () => {
   test('an unclassified product is refused rather than screened', async () => {
     const marker = `disc-${randomUUID()}`;
     const org = await prisma.exporterOrg.create({ data: { display_name: marker, tier: OrgTier.paid } });
-    const owner = await prisma.user.create({ data: { email: `${marker}@example.test`, name: 'Owner', role: UserRole.exporter_owner, exporter_org_id: org.id } });
+    const agent = await prisma.user.create({ data: { email: `${marker}-agent@example.test`, name: 'Agent', role: UserRole.agent } });
+    await prisma.agentAssignment.create({ data: { agent_user_id: agent.id, exporter_org_id: org.id, status: 'active' } });
     const product = await prisma.product.create({ data: { exporter_org_id: org.id, name: 'Unclassified' } });
-    const principal = { id: owner.id, email: owner.email, name: owner.name, role: UserRole.exporter_owner, exporter_org_id: org.id, tier: OrgTier.paid };
+    // A permitted screening principal, so this exercises the CLASSIFICATION gate rather than
+    // stopping at the role gate the test above covers.
+    const principal: Principal = { id: agent.id, email: agent.email, name: agent.name ?? '', role: UserRole.agent, exporter_org_id: null, tier: OrgTier.paid };
     await expect(startMarketDiscovery(principal, org.id, product.id, randomUUID()))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  test('an exporter cannot spend a global screen\u2019s provider budget', async () => {
+    // Regression: Phase 1I let an exporter enqueue a screen whose handler then refused the actor
+    // as "no longer a permitted staff principal" — the job was accepted, retried three times and
+    // failed an hour later with a message the exporter never saw. The role check now runs at
+    // request time. It is NOT widened: a screen costs ~218 metered provider calls.
+    const f = await fixture();
+    await expect(startMarketDiscovery(f.ownerPrincipal, f.org.id, f.product.id, randomUUID()))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' });
+    // No job may have been created by the refused attempt.
+    expect(await prisma.job.count({ where: { type: JobType.country_screening, exporter_org_id: f.org.id } })).toBe(0);
+  });
+
+  test('the request-time role check matches the one the handler enforces', async () => {
+    const service = await import('node:fs').then((fs) => fs.readFileSync('src/lib/country-discovery/service.ts', 'utf8'));
+    const handler = await import('node:fs').then((fs) => fs.readFileSync('src/lib/job-handlers/country-screening.ts', 'utf8'));
+    // Both gate on exactly agent / ops_supervisor / admin. If one is widened the other must be.
+    expect(service).toContain('SCREENING_PRINCIPALS');
+    for (const role of ['agent', 'ops_supervisor', 'admin']) {
+      expect(service).toContain(role);
+      expect(handler).toContain(role);
+    }
+  });
+
+  test('the product state tells the UI whether this viewer may start a screen', async () => {
+    const f = await fixture();
+    const asExporter = await productDiscoveryState(f.ownerPrincipal, f.org.id, f.product.id);
+    expect(asExporter.viewer_can_start_screening).toBe(false);
+    const asAgent = await productDiscoveryState(f.agentPrincipal, f.org.id, f.product.id);
+    expect(asAgent.viewer_can_start_screening).toBe(true);
   });
 
   test('the request accepts no country input at any layer', async () => {

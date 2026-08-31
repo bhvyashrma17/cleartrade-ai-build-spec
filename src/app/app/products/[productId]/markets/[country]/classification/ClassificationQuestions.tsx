@@ -55,6 +55,16 @@ export function ClassificationQuestions({
     }
   }
 
+  if (view.state === 'agent_classification_required') {
+    return (
+      <EmptyState
+        title="A ClearTrade specialist will classify this"
+        description={`Your product could fall under ${view.remaining} different tariff lines in this destination, and the published descriptions do not contain a distinction we can fairly ask you about. Rather than have you guess — which would change the duty ClearTrade calculates — a specialist will establish the correct line.`}
+        action={<Link href={backHref} className={buttonClass('secondary', 'md')}>Back to market</Link>}
+      />
+    );
+  }
+
   if (view.state === 'no_evidence_yet' || view.state === 'not_applicable') {
     return (
       <EmptyState

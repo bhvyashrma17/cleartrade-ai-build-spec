@@ -61,22 +61,105 @@ export interface RefinementQuestion {
  * These are matched against the authority's own candidate descriptions — they never assert what
  * a tariff line means. If a term does not appear in the returned candidates, no question is
  * produced for it, which is why this cannot invent a distinction the source did not make.
+ *
+ * Signals are grouped by FAMILY, and the distinction between two of those families is the point
+ * of the grouping:
+ *
+ *   - `cross_chapter` families are nomenclature distinctions that recur throughout the tariff —
+ *     what a thing is made of, and whether it was made by hand. These are the generic pipeline.
+ *   - `chapter_specific` families encode processing states that only exist in one part of the
+ *     nomenclature (milling and parboiling are meaningful for cereals and meaningless for
+ *     carpets). These are deliberately narrow and are NOT a genericity defect.
+ *
+ * Phase 1 validation found the list was entirely chapter-10 rice vocabulary, so a brassware,
+ * glassware or carpet exporter facing a genuine multi-candidate classification was asked NOTHING
+ * and had no way forward. The cross-chapter families below close that: they are drawn from the
+ * standard material/construction language of the HS itself, so they fire for exactly the goods
+ * whose official descriptions actually make the distinction.
  */
+type SignalFamily = 'cross_chapter' | 'chapter_specific';
+
 const PRODUCT_ATTRIBUTE_SIGNALS: ReadonlyArray<{
   attribute: string;
+  family: SignalFamily;
   question: string;
   positive: RegExp;
   positiveLabel: string;
   negativeLabel: string;
 }> = Object.freeze([
-  { attribute: 'parboiled', question: 'Is the rice parboiled?', positive: /\bparboiled\b/i, positiveLabel: 'Yes — parboiled', negativeLabel: 'No — not parboiled' },
-  { attribute: 'basmati', question: 'Is this Basmati rice?', positive: /\bbasmati\b/i, positiveLabel: 'Yes — Basmati', negativeLabel: 'No — not Basmati' },
-  { attribute: 'aromatic', question: 'Is this an aromatic rice variety?', positive: /\baromatic\b/i, positiveLabel: 'Yes — aromatic', negativeLabel: 'No — not aromatic' },
-  { attribute: 'husked_brown', question: 'Is the rice husked (brown) rather than milled?', positive: /\bhusked\b|\bbrown rice\b/i, positiveLabel: 'Yes — husked/brown', negativeLabel: 'No — milled' },
-  { attribute: 'wholly_milled', question: 'Is the rice wholly milled rather than semi-milled?', positive: /\bwholly milled\b/i, positiveLabel: 'Yes — wholly milled', negativeLabel: 'No — semi-milled' },
-  { attribute: 'organic', question: 'Is the product certified organic?', positive: /\borganic\b/i, positiveLabel: 'Yes — certified organic', negativeLabel: 'No' },
-  { attribute: 'grain_length', question: 'What is the grain length category?', positive: /\blong grain\b/i, positiveLabel: 'Long grain', negativeLabel: 'Round or medium grain' },
-  { attribute: 'retail_pack_5kg_or_less', question: 'Is the product packed for retail in immediate packings of 5 kg or less?', positive: /not exceeding 5\s*kg/i, positiveLabel: 'Yes — 5 kg or less', negativeLabel: 'No — larger than 5 kg' },
+  // --- Cross-chapter: how the goods were made -------------------------------------------
+  {
+    attribute: 'hand_made', family: 'cross_chapter',
+    question: 'Is the product hand-made rather than machine-made?',
+    // Covers hand-knotted carpets, hand-gathered/hand-blown glass and hand-made metalware —
+    // the same commercial distinction, spelled differently by chapter.
+    positive: /hand-?\s?(made|knotted|woven|gathered|blown|hooked|tufted)/i,
+    positiveLabel: 'Yes — hand-made', negativeLabel: 'No — machine-made',
+  },
+  // --- Cross-chapter: what the goods are made of ----------------------------------------
+  {
+    attribute: 'material_wool', family: 'cross_chapter',
+    question: 'Is the product made of wool or fine animal hair?',
+    positive: /\bof wool\b|fine animal hair/i,
+    positiveLabel: 'Yes — wool or fine animal hair', negativeLabel: 'No — another material',
+  },
+  {
+    attribute: 'material_silk', family: 'cross_chapter',
+    question: 'Is the product made of silk?',
+    positive: /\bof silk\b|\bwaste silk\b/i,
+    positiveLabel: 'Yes — silk', negativeLabel: 'No — another material',
+  },
+  {
+    attribute: 'material_cotton', family: 'cross_chapter',
+    question: 'Is the product made of cotton?',
+    positive: /\bof cotton\b/i,
+    positiveLabel: 'Yes — cotton', negativeLabel: 'No — another material',
+  },
+  {
+    attribute: 'material_manmade_fibre', family: 'cross_chapter',
+    question: 'Is the product made of man-made (synthetic or artificial) fibres?',
+    positive: /man-?made (textile )?(material|fibre|fiber)s?|\bsynthetic\b|\bartificial\b/i,
+    positiveLabel: 'Yes — man-made fibres', negativeLabel: 'No — natural material',
+  },
+  {
+    attribute: 'material_copper_brass', family: 'cross_chapter',
+    question: 'Is the product made of copper or brass?',
+    positive: /\bof copper\b|\bof brass\b|copper alloy/i,
+    positiveLabel: 'Yes — copper or brass', negativeLabel: 'No — another metal',
+  },
+  {
+    attribute: 'lead_crystal', family: 'cross_chapter',
+    question: 'Is the product made of lead crystal?',
+    positive: /lead crystal/i,
+    positiveLabel: 'Yes — lead crystal', negativeLabel: 'No — ordinary glass',
+  },
+  {
+    attribute: 'plated_precious_metal', family: 'cross_chapter',
+    question: 'Is the product plated with a precious metal (silver or gold)?',
+    positive: /plated with precious metal|silver-?plated|gold-?plated/i,
+    positiveLabel: 'Yes — precious-metal plated', negativeLabel: 'No — not plated',
+  },
+  {
+    attribute: 'organic', family: 'cross_chapter',
+    question: 'Is the product certified organic?',
+    positive: /\borganic\b/i,
+    positiveLabel: 'Yes — certified organic', negativeLabel: 'No',
+  },
+  {
+    attribute: 'retail_pack_5kg_or_less', family: 'cross_chapter',
+    question: 'Is the product packed for retail in immediate packings of 5 kg or less?',
+    positive: /not exceeding 5\s*kg/i,
+    positiveLabel: 'Yes — 5 kg or less', negativeLabel: 'No — larger than 5 kg',
+  },
+  // --- Chapter-specific: cereal processing states (HS chapter 10) ------------------------
+  // Intentionally narrow. These words do not occur outside cereals, so the signals simply never
+  // fire elsewhere; they are a domain policy, not an accidental rice dependency.
+  { attribute: 'parboiled', family: 'chapter_specific', question: 'Is the rice parboiled?', positive: /\bparboiled\b/i, positiveLabel: 'Yes — parboiled', negativeLabel: 'No — not parboiled' },
+  { attribute: 'basmati', family: 'chapter_specific', question: 'Is this Basmati rice?', positive: /\bbasmati\b/i, positiveLabel: 'Yes — Basmati', negativeLabel: 'No — not Basmati' },
+  { attribute: 'aromatic', family: 'chapter_specific', question: 'Is this an aromatic rice variety?', positive: /\baromatic\b/i, positiveLabel: 'Yes — aromatic', negativeLabel: 'No — not aromatic' },
+  { attribute: 'husked_brown', family: 'chapter_specific', question: 'Is the rice husked (brown) rather than milled?', positive: /\bhusked\b|\bbrown rice\b/i, positiveLabel: 'Yes — husked/brown', negativeLabel: 'No — milled' },
+  { attribute: 'wholly_milled', family: 'chapter_specific', question: 'Is the rice wholly milled rather than semi-milled?', positive: /\bwholly milled\b/i, positiveLabel: 'Yes — wholly milled', negativeLabel: 'No — semi-milled' },
+  { attribute: 'grain_length', family: 'chapter_specific', question: 'What is the grain length category?', positive: /\blong grain\b/i, positiveLabel: 'Long grain', negativeLabel: 'Round or medium grain' },
 ]);
 
 const textOf = (line: CandidateLine) => [line.description, ...(line.description_path ?? [])].join(' | ');

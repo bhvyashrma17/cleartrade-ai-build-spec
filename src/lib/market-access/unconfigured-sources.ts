@@ -34,12 +34,14 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'European Commission — TARIC (Integrated Tariff of the European Union)',
     reason: 'bulk_distribution_only',
     determination:
-      'The Commission publishes TARIC through an interactive consultation site and a free bulk raw-data distribution on CIRCABC. It documents no public REST interface for measure lookup. The interactive site is explicitly out of scope: driving it would mean depending on undocumented private endpoints that carry no stability or availability commitment.',
+      'The Commission publishes TARIC through an interactive consultation site and a bulk raw-data distribution on CIRCABC. It documents no public REST interface for measure lookup. Re-verified empirically on 2026-08-31: the EU Open Data Portal names CIRCABC group 0e5f18c2-4b2f-42e9-aed4-dfe50ae1263b as the canonical distribution for both the "EU Customs Tariff (TARIC)" and "TARIC Consultation" datasets, and every CIRCABC API path — including /api/ and /api/swagger.json — returns HTTP 401 "Authentication failed" to an anonymous caller. Access therefore requires an EU Login account enrolled in the TARIC dissemination group; that is an access-provisioning act, not an engineering one, and no such credential exists in this repository or in the staging environment. Access2Markets serves HTML and exposes no documented API (/api/ returns 404). The interactive consultation site and the Access2Markets browser endpoints are both explicitly out of scope: driving them would mean depending on undocumented private endpoints that carry no stability or availability commitment.',
     references: [
       'https://taxation-customs.ec.europa.eu/customs/common-customs-tariff-cct/tariff-classification-goods/eu-customs-tariff-taric_en',
       'https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp',
+      'https://data.europa.eu/data/datasets/eu-customs-tariff-taric',
+      'https://circabc.europa.eu/ui/group/0e5f18c2-4b2f-42e9-aed4-dfe50ae1263b',
     ],
-    unblocked_by: 'Ingesting the CIRCABC TARIC bulk distribution as a versioned dataset snapshot, or obtaining access to a documented Commission measure API.',
+    unblocked_by: 'An EU Login credential enrolled in the CIRCABC TARIC dissemination group, after which the bulk distribution can be ingested as a versioned dataset snapshot; or a documented Commission measure API. Until then EU destinations are served by the authoritative-manual path, which produces real agent_verified evidence rather than an unavailable pillar.',
   },
   SA_ZATCA: {
     jurisdiction: 'SA',

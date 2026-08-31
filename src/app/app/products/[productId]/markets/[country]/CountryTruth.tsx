@@ -153,7 +153,7 @@ export function CountryTruth({
       </Card>
 
       {/* --- Classification ------------------------------------------------- */}
-      {classification.state === 'questions' || classification.state === 'resolved' ? (
+      {classification.state === 'questions' || classification.state === 'resolved' || classification.state === 'agent_classification_required' ? (
         <Card>
           <SectionHeading title="Product classification for this market" />
           {classification.state === 'resolved' ? (
@@ -165,6 +165,16 @@ export function CountryTruth({
               <p className="text-sm text-slate">{classification.resolved_line?.description}</p>
               <p className="text-xs text-muted">
                 Verification status: {classification.resolved_line?.verification}
+              </p>
+            </div>
+          ) : classification.state === 'agent_classification_required' ? (
+            <div className="mt-2 space-y-2">
+              <StatusChip label="ClearTrade action required" tone="info" icon="clock" size="sm" />
+              <p className="text-sm text-slate">
+                Your product could fall under {classification.remaining} different tariff lines in{' '}
+                {market.country}, and the destination&rsquo;s published descriptions do not contain a
+                distinction we can turn into a question for you. A ClearTrade specialist will establish
+                the correct line.
               </p>
             </div>
           ) : (

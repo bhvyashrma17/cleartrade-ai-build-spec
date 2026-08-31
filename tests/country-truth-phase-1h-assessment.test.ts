@@ -27,9 +27,17 @@ afterAll(() => prisma.$disconnect());
 const REQUESTED_AT = new Date('2026-08-24T00:00:00.000Z');
 const EVIDENCE_RETRIEVED_AT = new Date('2026-08-20T00:00:00.000Z');
 
+/**
+ * A collision-free HS6 per fixture — see the matching note in
+ * `country-truth-discovery-handler.test.ts`. This file drew from the same 1-in-1000 namespace,
+ * and the two together are what made the collision likely enough to fail runs.
+ */
+let fixtureHs6Counter = 0;
+const nextFixtureHs6 = () => String(980000 + (fixtureHs6Counter += 1)).padStart(6, '0');
+
 async function fixture() {
   const marker = `ct-1h-${randomUUID()}`;
-  const hs6 = String(100000 + (parseInt(marker.slice(-6).replace(/-/g, ''), 16) % 1000)).padStart(6, '0');
+  const hs6 = nextFixtureHs6();
   const itcHs = `${hs6}12`;
   const org = await prisma.exporterOrg.create({ data: { display_name: marker, tier: OrgTier.paid, country: 'IN' } });
   const agent = await prisma.user.create({ data: { email: `${marker}@example.test`, name: 'Agent', role: UserRole.agent } });
