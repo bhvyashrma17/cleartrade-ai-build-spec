@@ -106,6 +106,14 @@ describe('pillar projection', () => {
     expect(marketAccess.not_established_because).toMatch(/import duty that applies to Indian goods/i);
     expect(marketAccess.raw_exclusion_reason).toContain('India-preference applicability');
 
+    // Both authorities' wordings must translate. Staging UAT caught the US phrasing reaching the
+    // screen as raw engineering prose because the pattern only matched the UK's.
+    const usPhrasing = projectPillars({
+      market_access: { score: null, available: false, exclusion_reason: 'tariff: India preference applicability is unknown; ordinary duty cannot be assumed.' },
+    }).find((pillar) => pillar.key === 'market_access')!;
+    expect(usPhrasing.not_established_because).toMatch(/import duty that applies to Indian goods/i);
+    expect(usPhrasing.not_established_because).not.toMatch(/ordinary duty cannot be assumed/);
+
     const fit = pillars.find((pillar) => pillar.key === 'exporter_market_fit')!;
     expect(fit.not_established_because).toMatch(/product details are needed/i);
     expect(fit.not_established_because).not.toContain('insufficient_exporter_data');

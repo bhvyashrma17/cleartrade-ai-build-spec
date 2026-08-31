@@ -62,7 +62,11 @@ export const PILLAR_LABELS: Record<PillarKey, string> = {
 const EXCLUSION_PHRASES: Array<{ match: RegExp; phrase: string }> = [
   { match: /insufficient_exporter_data/i, phrase: 'Your product details are needed before this can be assessed.' },
   { match: /blocked_by_explicit_hard_gate/i, phrase: 'A hard requirement for this market is not met.' },
-  { match: /India-preference applicability is unavailable|India-preference applicability determination is unavailable/i, phrase: 'The import duty that applies to Indian goods has not been established yet.' },
+  // Matches every phrasing the Phase 1H market-access calculator publishes for this case:
+  // "...determination is unavailable" (UK) and "...applicability is unknown; ordinary duty cannot
+  // be assumed" (US) are the same fact to an exporter, and staging UAT caught the second one
+  // reaching the screen as raw engineering prose.
+  { match: /India[- ]preference applicability/i, phrase: 'The import duty that applies to Indian goods has not been established yet.' },
   { match: /classification|declarable line|national tariff line/i, phrase: 'The exact destination tariff line for this product has not been confirmed yet.' },
   { match: /No sufficient sourced export-economics input/i, phrase: 'Landed-cost inputs (your price, freight and handling quotes) are not on file yet.' },
   { match: /route-availability evidence/i, phrase: 'No shipping route evidence has been recorded for this destination yet.' },
