@@ -20,24 +20,27 @@ describe('Agent Country Truth surface', () => {
     expect(uiModule).not.toContain('COUNTRY_TRUTH_PILOT_COUNTRIES');
     expect(() => readFileSync('src/components/agent/CountryAnalysis.tsx', 'utf8')).toThrow();
     expect(page).not.toContain('CountryAnalysis');
-    // No country list is posted, and there is no control through which one could be chosen.
-    // (The component's header comment names the retired pilot markets to explain the history,
-    // so this asserts the absence of a PICKER rather than the absence of the words.)
+    // No country list is posted, and there is no control that CHOOSES markets. The surface does
+    // carry a "show backlog" checkbox and market/task filters after the Demand Discovery UI
+    // overhaul — those narrow what is displayed and cannot change which markets are analysed —
+    // so this asserts the absence of a market PICKER, not the absence of every input.
     expect(component).not.toContain('candidate_countries');
-    expect(component).not.toContain('type="checkbox"');
     expect(component).not.toContain('setCountries');
+    expect(component).not.toMatch(/countries\s*:\s*\[/);
   });
 
   test('deep analysis is requested by naming a completed screening run, never a country set', () => {
     expect(component).toContain('/deep-country-truth');
     expect(component).toContain('screening_run_id: view.screening.screening_run_id');
     expect(component).toContain('product_id: view.product.id');
-    // The shortlist is the frozen screen's, and the UI says so rather than implying it is editable.
-    expect(component).toContain('cannot be edited here');
+    // The request carries a product and a run, and nothing describing which markets to analyse.
+    expect(component).toContain('no country list');
   });
 
   test('only ClearTrade-owned work reaches the agent queue', () => {
-    expect(component).toContain('ClearTrade actions outstanding');
+    // The headline is now a prioritised count ("N need attention") rather than a raw total of
+    // every action across every market; the ownership filter it depends on is unchanged.
+    expect(component).toContain('WorkSummaryPanel');
     // The filter lives in the service; the component renders what it is given.
     const service = readFileSync('src/lib/country-discovery/service.ts', 'utf8');
     expect(service).toContain("if (action.owner !== 'cleartrade') continue;");

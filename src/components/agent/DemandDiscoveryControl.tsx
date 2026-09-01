@@ -260,6 +260,8 @@ export function DemandDiscoveryControl({
                   <MarketDecisionControls
                     assessmentId={row.assessment.id}
                     countryCode={row.assessment.country_code}
+                    bucket={row.bucket}
+                    currentAction={row.current?.action ?? null}
                   />
                 </td>
               </tr>

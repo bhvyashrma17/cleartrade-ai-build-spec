@@ -18,6 +18,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
+import { OverflowMenu } from '@/components/discovery';
+import { availableDecisions } from '@/lib/country-discovery/work-queue';
 
 type Action =
   | 'promote' | 'demote' | 'reject' | 'restore'
@@ -65,9 +67,15 @@ const ACTIONS: ActionSpec[] = [
 export function MarketDecisionControls({
   assessmentId,
   countryCode,
+  bucket,
+  currentAction,
 }: {
   assessmentId: string;
   countryCode: string;
+  /** Where the market currently sits, derived by `bucketFor` from the decision in force. */
+  bucket: 'active' | 'flagged' | 'terminal';
+  /** The action currently in force, if any. Decides which moves are still possible. */
+  currentAction: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState<Action | null>(null);
@@ -108,19 +116,33 @@ export function MarketDecisionControls({
   };
 
   if (!spec) {
+    // Only the moves that are actually possible right now. The previous surface rendered all
+    // nine unconditionally, so "Pause automation" sat beside "Resume automation" and "Reject"
+    // beside "Restore" — pairs that can never both apply. `availableDecisions` reads the state
+    // the decision model already derives rather than inventing new state.
+    const available = availableDecisions({ bucket, current_action: currentAction });
+    const specOf = (action: string) => ACTIONS.find((a) => a.action === action);
     return (
-      <div className="flex flex-wrap gap-1">
-        {ACTIONS.map((a) => (
-          <Button
-            key={a.action}
-            type="button"
-            variant="secondary"
-            onClick={() => { setOpen(a.action); setError(null); }}
-            className="min-h-0 rounded px-2 py-1 text-xs font-medium"
-          >
-            {a.label}
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {available.primary.map((action) => {
+          const a = specOf(action);
+          if (!a) return null;
+          return (
+            <Button
+              key={action} type="button" variant="secondary" size="sm"
+              onClick={() => { setOpen(a.action); setError(null); }}
+            >
+              {a.label}
+            </Button>
+          );
+        })}
+        <OverflowMenu
+          label={`More actions for ${countryCode}`}
+          items={available.overflow.flatMap((action) => {
+            const a = specOf(action);
+            return a ? [{ key: action, label: a.label, hint: a.hint, onSelect: () => { setOpen(a.action); setError(null); } }] : [];
+          })}
+        />
       </div>
     );
   }

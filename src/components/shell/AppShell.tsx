@@ -69,6 +69,7 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
   ],
   ops: [
     { label: 'Control Tower', href: '/ops', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
+    { label: 'Discovery', href: '/ops/discovery', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Assignments', href: '/ops/assignments', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Agents', href: '/ops/agents', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Exceptions', href: '/ops/exceptions', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },

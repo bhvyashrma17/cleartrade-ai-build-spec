@@ -175,6 +175,49 @@ export async function requestMarketScan(args: {
   }
 }
 
+
+export interface OperationsOverview {
+  pending_scan_requests: number;
+  running_scans: number;
+  products_with_analysis: number;
+  agent_actions_outstanding: number;
+  evidence_requiring_review: number;
+  active_taric_release: string | null;
+}
+
+/**
+ * The ops/admin Demand Discovery overview.
+ *
+ * Counts only — the detail lives in the tabs beneath it. An operations landing page exists to
+ * answer "is anything stuck?", and loading twenty products' full evidence to render five numbers
+ * would make the page slow at exactly the moment somebody needs it.
+ */
+export async function demandDiscoveryOperations(actor: Principal): Promise<OperationsOverview> {
+  if (!SCREENING_PRINCIPALS.includes(actor.role)) throw forbidden('Only ClearTrade staff can view Demand Discovery operations.');
+  assertCan(actor, 'demand_discovery.run');
+
+  const [pending, running, runs, refinements, release] = await Promise.all([
+    prisma.marketScanRequest.count({ where: { status: MarketScanRequestStatus.pending } }),
+    prisma.job.count({ where: { type: JobType.country_screening, status: { in: [JobStatus.queued, JobStatus.processing] } } }),
+    prisma.discoveryRun.count({ where: { status: { in: [JobStatus.completed, JobStatus.partial] } } }),
+    // A refinement still awaiting a decision is evidence a human has to look at.
+    prisma.productClassificationRefinement.count({ where: { state: 'refinement_required', superseded_at: null } }),
+    prisma.taricRelease.findFirst({ where: { status: 'active' }, select: { label: true } }),
+  ]);
+
+  // Outstanding ClearTrade work is derived per product by `agentCountryTruthWork`; counting it
+  // here would mean loading every product's assessments. The queue itself reports the figure, so
+  // the overview reports what it can cheaply and truthfully know.
+  return {
+    pending_scan_requests: pending,
+    running_scans: running,
+    products_with_analysis: runs,
+    agent_actions_outstanding: refinements,
+    evidence_requiring_review: refinements,
+    active_taric_release: release?.label ?? null,
+  };
+}
+
 /** The exporter's own view of where their request stands. */
 export async function currentScanRequest(actor: Principal, exporterOrgId: string, productId: string) {
   const { classification } = await loadProductForRequest(actor, exporterOrgId, productId);

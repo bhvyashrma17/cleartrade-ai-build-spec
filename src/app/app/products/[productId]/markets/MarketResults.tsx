@@ -14,7 +14,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { buttonClass, Card, EmptyState, SectionHeading, StatusChip } from '@/components/ui';
+import { Button, buttonClass, Card, EmptyState, SectionHeading, StatusChip } from '@/components/ui';
+import { SummaryHeader } from '@/components/discovery';
 import { CONFIDENCE_MEANING } from '@/lib/country-discovery/explanations';
 import type { MarketResultsView } from '@/lib/country-discovery/service';
 import type { ProductDiscoveryState } from '@/lib/country-discovery/service';
@@ -31,6 +32,8 @@ export function MarketResults({
   screening: ProductDiscoveryState['screening'];
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  // Five is enough to choose from; twenty is a database dump. The rest stay one click away.
+  const [showAll, setShowAll] = useState(false);
 
   function toggle(code: string) {
     setSelected((current) =>
@@ -60,12 +63,29 @@ export function MarketResults({
     );
   }
 
+  const visible = showAll ? results.markets : results.markets.slice(0, 5);
+  const top = results.markets[0];
+  const chosen = results.markets.find((market) => market.is_selected);
+
   return (
     <div className="space-y-4">
+      <SummaryHeader
+        title="Your recommended markets"
+        subtitle={
+          results.run
+            ? `Analysis generated ${new Date(results.run.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+            : undefined
+        }
+        stats={[
+          { label: 'Markets analysed', value: results.markets.length },
+          top ? { label: 'Best match', value: top.country, hint: `Attractiveness ${top.attractiveness ?? '—'}` } : { label: 'Best match', value: '—' },
+          { label: 'Evidence confidence', value: `${top?.evidence_confidence ?? 0}%`, hint: 'How much evidence is on file — not a prediction of success.' },
+          chosen ? { label: 'Your target market', value: chosen.country } : { label: 'Your target market', value: 'Not chosen yet' },
+        ]}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate">
-          {results.markets.length} {results.markets.length === 1 ? 'market' : 'markets'} analysed
-          {results.run ? ` · Analysis generated ${new Date(results.run.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+          {showAll ? `Showing all ${results.markets.length}` : `Showing the top ${visible.length} of ${results.markets.length}`}
         </p>
         {selected.length > 0 ? (
           <Link
@@ -80,7 +100,7 @@ export function MarketResults({
       </div>
 
       <ul className="space-y-3">
-        {results.markets.map((market) => {
+        {visible.map((market) => {
           const checked = selected.includes(market.country_code);
           const atLimit = !checked && selected.length >= MAX_COMPARE;
           return (
@@ -166,6 +186,12 @@ export function MarketResults({
           );
         })}
       </ul>
+
+      {results.markets.length > visible.length || showAll ? (
+        <Button variant="secondary" onClick={() => setShowAll((open) => !open)} aria-expanded={showAll}>
+          {showAll ? 'Show top 5 only' : `View all ${results.markets.length} markets`}
+        </Button>
+      ) : null}
 
       <p className="text-xs text-muted">{CONFIDENCE_MEANING}</p>
 

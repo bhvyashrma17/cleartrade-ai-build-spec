@@ -28,6 +28,57 @@ import {
   type MarketRowView,
 } from './market-view';
 import { assessProductReadiness, type ProductReadiness } from './readiness';
+import { buildWorkQueue, summariseWork, type MarketWorkInput, type WorkSummary, type WorkTask } from './work-queue';
+
+/**
+ * A market's one-line status for the summary table.
+ *
+ * Deliberately says what is MISSING rather than restating the score: an agent scanning twenty
+ * rows needs to know which one to open, and "needs a freight quote" answers that where "69"
+ * does not.
+ */
+function marketStatus(detail: MarketDetailView): { status: string; status_tone: 'ready' | 'needs_evidence' | 'needs_classification' | 'incomplete' } {
+  const missing = detail.pillars.filter((pillar) => pillar.state === 'not_established');
+  if (!missing.length) return { status: 'Ready', status_tone: 'ready' };
+  const marketAccess = missing.find((pillar) => pillar.key === 'market_access');
+  if (marketAccess) return { status: 'Classification needed', status_tone: 'needs_classification' };
+  if (missing.some((pillar) => pillar.key === 'export_economics' || pillar.key === 'logistics_feasibility')) {
+    return { status: 'Needs freight & cost evidence', status_tone: 'needs_evidence' };
+  }
+  if (missing.some((pillar) => pillar.key === 'exporter_market_fit')) {
+    return { status: 'Needs exporter information', status_tone: 'needs_evidence' };
+  }
+  return { status: 'Analysis incomplete', status_tone: 'incomplete' };
+}
+
+/**
+ * Which markets a human has already ruled on, read once per run.
+ *
+ * `marked` means an agent actively chose to pursue it (promoted, or given an operational
+ * priority); `excluded` means they removed it. Both come from the existing decision model.
+ */
+async function currentMarketDecisions(assessmentIds: readonly string[]) {
+  const { bucketFor } = await import('@/lib/demand-control');
+  const { effectiveState } = await import('@/lib/agent-decisions');
+  const map = new Map<string, { marked: boolean; excluded: boolean }>();
+  if (!assessmentIds.length) return map;
+  const rows = await prisma.agentDecision.findMany({
+    where: { market_assessment_id: { in: [...assessmentIds] } },
+    orderBy: { created_at: 'desc' },
+    include: { superseded_by: { select: { id: true } } },
+  });
+  const now = new Date();
+  for (const decision of rows) {
+    const subject = decision.market_assessment_id;
+    if (!subject || map.has(subject)) continue;   // newest-first: the first seen is the tip
+    if (effectiveState(decision, now) !== 'active') continue;
+    map.set(subject, {
+      marked: decision.action === 'promote' || decision.action === 'mark_selected' || decision.agent_priority != null,
+      excluded: bucketFor(decision) === 'terminal',
+    });
+  }
+  return map;
+}
 
 /**
  * Which provider mode a screen this process starts must be recorded under.
@@ -399,6 +450,22 @@ export interface AgentProductView {
   /** Non-null when a completed screen exists and deep Country Truth can be requested. */
   deep_request_ready: boolean;
   tasks: AgentCountryTask[];
+  /** The prioritised ClearTrade work queue for this product. */
+  queue: WorkTask[];
+  queue_summary: WorkSummary;
+  /** Compact product header: where this product stands, before any list. */
+  summary: {
+    markets_analysed: number;
+    top_market: { country_code: string; country: string; attractiveness: number | null; confidence: number } | null;
+    selected_market: { country_code: string; country: string } | null;
+    exporter_inputs_missing: number;
+  };
+  /** The leading markets, for the summary table. Full list lives on the market route. */
+  top_markets: Array<{
+    country_code: string; country: string; rank: number;
+    attractiveness: number | null; confidence: number;
+    status: string; status_tone: 'ready' | 'needs_evidence' | 'needs_classification' | 'incomplete';
+  }>;
 }
 
 /**
@@ -421,15 +488,22 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
   for (const product of products) {
     const state = await productDiscoveryState(actor, exporterOrgId, product.id);
     const tasks: AgentCountryTask[] = [];
+    const workInputs: MarketWorkInput[] = [];
+    const topMarkets: AgentProductView['top_markets'] = [];
+    let selectedMarket: { country_code: string; country: string } | null = null;
     const run = await prisma.discoveryRun.findFirst({
       where: { exporter_org_id: exporterOrgId, product_id: product.id, status: { in: [JobStatus.completed, JobStatus.partial] } },
       orderBy: { created_at: 'desc' },
     });
     if (run) {
       const rows = await prisma.marketAssessment.findMany({ where: { run_id: run.id }, select: ASSESSMENT_SELECT });
-      for (const row of rankMarkets(rows as AssessmentRecord[])) {
-        const detail = projectMarketDetail(row, 0);
-        const readiness = assessProductReadiness(product, product.classification_history[0] ?? null);
+      const ranked = rankMarkets(rows as AssessmentRecord[]);
+      // One read of the agent decisions for the whole run, so a 20-market product does not issue
+      // twenty queries to discover which markets a human has already ruled on.
+      const decisions = await currentMarketDecisions(ranked.map((row) => row.id));
+      const readiness = assessProductReadiness(product, product.classification_history[0] ?? null);
+      for (const [index, row] of ranked.entries()) {
+        const detail = projectMarketDetail(row, index + 1);
         const plan = buildImprovementPlan(detail.pillars, detail.evidence_confidence, {
           product_id: product.id, country_code: row.country_code, open_classification_questions: 0, readiness,
         });
@@ -444,14 +518,40 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
             unlocks: action.unlocks,
           });
         }
+        const decision = decisions.get(row.id) ?? null;
+        if (row.is_selected) selectedMarket = { country_code: row.country_code, country: detail.country };
+        workInputs.push({
+          country_code: row.country_code, country: detail.country, rank: index + 1,
+          is_selected: row.is_selected,
+          is_marked: decision?.marked ?? false,
+          is_excluded: decision?.excluded ?? false,
+          actions: plan.actions,
+        });
+        topMarkets.push({
+          country_code: row.country_code, country: detail.country, rank: index + 1,
+          attractiveness: detail.attractiveness, confidence: detail.evidence_confidence,
+          ...marketStatus(detail),
+        });
       }
     }
+    const queue = buildWorkQueue(workInputs);
     views.push({
       product: { id: product.id, name: product.name, hs6: product.classification_history[0]?.hs6_code ?? null },
       screening: state.screening,
       deep_analysis: state.deep_analysis,
       deep_request_ready: Boolean(state.screening.screening_run_id) && state.screening.state === 'completed',
       tasks,
+      queue,
+      queue_summary: summariseWork(queue),
+      summary: {
+        markets_analysed: topMarkets.length ? state.deep_analysis.assessed : 0,
+        top_market: topMarkets[0]
+          ? { country_code: topMarkets[0].country_code, country: topMarkets[0].country, attractiveness: topMarkets[0].attractiveness, confidence: topMarkets[0].confidence }
+          : null,
+        selected_market: selectedMarket,
+        exporter_inputs_missing: state.readiness.missing_now,
+      },
+      top_markets: topMarkets.slice(0, 5),
     });
   }
   return views;
