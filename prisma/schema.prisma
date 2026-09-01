@@ -876,6 +876,8 @@ model User {
   market_scan_requests_made      MarketScanRequest[]               @relation("MarketScanRequester")
   market_scan_requests_decided   MarketScanRequest[]               @relation("MarketScanDecider")
 
+  taric_releases_imported        TaricRelease[]                    @relation("TaricReleaseImporter")
+
   @@index([exporter_org_id])
   @@index([role])
 }
@@ -5165,4 +5167,57 @@ model MarketScanRequest {
   @@index([exporter_org_id, status, requested_at])
   @@index([status, requested_at])
   @@index([product_classification_id, status])
+}
+
+/// Lifecycle of an uploaded official TARIC extraction.
+enum TaricReleaseStatus {
+  /// Uploaded and validated, but not yet the release evidence is read from.
+  imported
+  /// The release new ingests resolve against.
+  active
+  /// Superseded by a newer release. Retained: assessments cite the release they used.
+  superseded
+  /// Validation failed; the artifact is kept so the failure is inspectable.
+  rejected
+}
+
+/// One official European Commission TARIC monthly extraction, as uploaded by ClearTrade staff.
+///
+/// Immutable once imported. A new monthly extraction is a NEW release with its own identity, so
+/// an assessment can always answer "which exact TARIC release produced this?". The byte checksum
+/// is unique, which is what stops the same bundle being imported twice into rival active releases.
+model TaricRelease {
+  id String @id @default(cuid())
+
+  /// Operator-facing label, e.g. "TARIC 2026-09".
+  label String
+  /// The Commission's reference date: the first day of the extraction month.
+  reference_date DateTime
+  source_authority String
+  /// CIRCABC group the extraction is published in.
+  source_distribution String
+
+  /// SHA-256 of the uploaded archive. Unique: the same bytes are the same release.
+  bundle_sha256    String  @unique
+  bundle_size_bytes Int
+  /// Where the original artifact is retained, through the existing secure storage layer.
+  artifact_object_key String
+  /// Per-file name/sha256/size, so a single altered table is detectable after the fact.
+  file_manifest    Json
+
+  reader_version String
+  parser_version String
+  status         TaricReleaseStatus @default(imported)
+  /// Validation detail, including the failure reason when `status` is `rejected`.
+  validation     Json
+
+  imported_by_id String
+  imported_at    DateTime @default(now())
+  activated_at   DateTime?
+  superseded_at  DateTime?
+  correlation_id String?
+
+  imported_by User @relation("TaricReleaseImporter", fields: [imported_by_id], references: [id])
+
+  @@index([status, reference_date])
 }

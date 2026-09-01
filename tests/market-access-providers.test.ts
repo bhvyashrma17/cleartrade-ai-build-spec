@@ -4,6 +4,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 import { persistMarketAccessIngest, type MarketAccessIngestResult, type MarketAccessLineRecord, type MarketAccessRequirementRecord } from '../src/lib/market-access/contract';
 import { buildManualAuthoritativeMarketAccess } from '../src/lib/market-access/manual-authoritative';
 import { UNCONFIGURED_MARKET_ACCESS_SOURCES, unconfiguredSourceForCountry } from '../src/lib/market-access/unconfigured-sources';
+import { isEuTaricDestination } from '../src/lib/market-access/taric/service';
 import { parseDutyExpression, resolveNationalTariffLine, type CandidateTariffLine } from '../src/lib/market-access/tariff-semantics';
 import { CONFIG_DEFAULTS } from '../src/lib/config';
 import { selectCountryTruthFacts } from '../src/lib/country-truth/fact-selection';
@@ -281,10 +282,20 @@ describe('authoritative manual capture', () => {
 });
 
 describe('unconfigured authoritative sources', () => {
-  test('EU, Saudi and WTO each carry an explicit determination rather than silence', () => {
-    expect(unconfiguredSourceForCountry('DE')?.jurisdiction).toBe('EU');
-    // Germany applies the EU tariff; there is no German national schedule to build separately.
-    expect(unconfiguredSourceForCountry('DE')?.authority).toMatch(/TARIC/);
+  test('EU is no longer unconfigured — it has an authoritative TARIC provider', () => {
+    // Phase 1 final: the Commission's official monthly extraction is machine-read, so EU member
+    // states must NOT fall through to the unconfigured/manual path any more.
+    for (const member of ['DE', 'FR', 'NL', 'IT', 'ES']) {
+      expect(unconfiguredSourceForCountry(member)).toBeNull();
+      expect(isEuTaricDestination(member)).toBe(true);
+    }
+    // A non-EU destination must never be served EU TARIC evidence.
+    for (const outside of ['GB', 'US', 'SA', 'IN', 'CH', 'NO']) {
+      expect(isEuTaricDestination(outside)).toBe(false);
+    }
+  });
+
+  test('Saudi and WTO each carry an explicit determination rather than silence', () => {
     expect(unconfiguredSourceForCountry('SA')?.reason).toBe('no_documented_machine_interface');
     expect(UNCONFIGURED_MARKET_ACCESS_SOURCES.WTO!.reason).toBe('license_pending');
     // WTO licensing is not treated as approved anywhere.

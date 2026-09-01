@@ -13,6 +13,7 @@ import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { fetchUkMarketAccess } from '@/lib/market-access/uk-tariff';
 import { fetchUsMarketAccess } from '@/lib/market-access/us-hts';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
+import { fetchEuTaricMarketAccess, isEuTaricDestination } from '@/lib/market-access/taric/service';
 
 type Fetcher = (hs6: string, options: { now?: Date }) => Promise<Awaited<ReturnType<typeof fetchUkMarketAccess>>>;
 
@@ -28,6 +29,32 @@ export async function runMarketAccessIngest(ctx: JobContext): Promise<JobOutcome
   const hs6 = (payload.hs_code ?? '').trim();
   if (!/^[A-Z]{2}$/.test(country)) return { status: JobStatus.failed, result: { error: 'Market access ingest requires an ISO alpha-2 destination.' } };
   if (!/^\d{6}$/.test(hs6)) return { status: JobStatus.failed, result: { error: 'Market access ingest requires an exact HS6.' } };
+
+  // Every EU member state applies the EU common customs tariff, so they all resolve against the
+  // one active TARIC release rather than needing a provider each. The destination stays its own
+  // scope in the resulting evidence.
+  if (isEuTaricDestination(country)) {
+    const result = await fetchEuTaricMarketAccess(hs6, { destination_country: country });
+    const snapshot = await persistMarketAccessIngest(result, { source_run_id: ctx.job_id });
+    return {
+      status: JobStatus.completed,
+      result: {
+        country_code: country, hs_code: hs6, snapshot_id: snapshot.id,
+        provider_state: 'authoritative_public',
+        provider: result.provider, source_authority: result.source_authority,
+        source_dataset_version: result.source_dataset_version,
+        classification_resolution: result.resolution.resolution,
+        candidate_line_count: result.resolution.candidate_count,
+        resolved_national_code: result.resolution.resolved_line?.national_tariff_code ?? null,
+        general_duty_expression: result.general_duty?.expression ?? null,
+        general_duty_kind: result.general_duty?.kind ?? null,
+        india_preference_applicability: result.india_preference.applicability,
+        regulatory_coverage_complete: result.regulatory_coverage_complete,
+        tariff_line_count: snapshot.tariff_lines.length,
+        evidence_count: snapshot.evidence.length,
+      },
+    };
+  }
 
   const fetcher = AUTOMATED_SOURCES[country];
   if (!fetcher) {

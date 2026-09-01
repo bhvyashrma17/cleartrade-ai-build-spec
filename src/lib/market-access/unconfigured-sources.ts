@@ -26,23 +26,12 @@ export interface UnconfiguredSource {
   unblocked_by: string;
 }
 
+/**
+ * EU TARIC was here until Phase 1 final. It is now an automated authoritative provider: ClearTrade
+ * staff upload the Commission's official monthly extraction and `taric/parser.ts` machine-reads it.
+ * See `src/lib/market-access/taric/` and docs/18-taric-bundle-schema-map.md.
+ */
 export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, UnconfiguredSource>> = Object.freeze({
-  EU_TARIC: {
-    jurisdiction: 'EU',
-    // Germany applies the EU common customs tariff; there is no German national tariff schedule.
-    country_codes: ['DE', 'FR', 'NL', 'IT', 'ES', 'BE', 'PL', 'SE', 'DK', 'FI', 'IE', 'AT', 'PT', 'CZ', 'GR', 'HU', 'RO', 'SK', 'BG', 'HR', 'SI', 'LT', 'LV', 'EE', 'LU', 'CY', 'MT'],
-    authority: 'European Commission — TARIC (Integrated Tariff of the European Union)',
-    reason: 'bulk_distribution_only',
-    determination:
-      'The Commission publishes TARIC through an interactive consultation site and a bulk raw-data distribution on CIRCABC. It documents no public REST interface for measure lookup. Re-verified empirically on 2026-08-31: the EU Open Data Portal names CIRCABC group 0e5f18c2-4b2f-42e9-aed4-dfe50ae1263b as the canonical distribution for both the "EU Customs Tariff (TARIC)" and "TARIC Consultation" datasets, and every CIRCABC API path — including /api/ and /api/swagger.json — returns HTTP 401 "Authentication failed" to an anonymous caller. Access therefore requires an EU Login account enrolled in the TARIC dissemination group; that is an access-provisioning act, not an engineering one, and no such credential exists in this repository or in the staging environment. Access2Markets serves HTML and exposes no documented API (/api/ returns 404). The interactive consultation site and the Access2Markets browser endpoints are both explicitly out of scope: driving them would mean depending on undocumented private endpoints that carry no stability or availability commitment.',
-    references: [
-      'https://taxation-customs.ec.europa.eu/customs/common-customs-tariff-cct/tariff-classification-goods/eu-customs-tariff-taric_en',
-      'https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp',
-      'https://data.europa.eu/data/datasets/eu-customs-tariff-taric',
-      'https://circabc.europa.eu/ui/group/0e5f18c2-4b2f-42e9-aed4-dfe50ae1263b',
-    ],
-    unblocked_by: 'An EU Login credential enrolled in the CIRCABC TARIC dissemination group, after which the bulk distribution can be ingested as a versioned dataset snapshot; or a documented Commission measure API. Until then EU destinations are served by the authoritative-manual path, which produces real agent_verified evidence rather than an unavailable pillar.',
-  },
   SA_ZATCA: {
     jurisdiction: 'SA',
     country_codes: ['SA'],
