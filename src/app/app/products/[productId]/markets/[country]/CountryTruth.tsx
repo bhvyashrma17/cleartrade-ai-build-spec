@@ -13,6 +13,7 @@
 
 import Link from 'next/link';
 import { buttonClass, Card, SectionHeading, StatusChip } from '@/components/ui';
+import { InfoTooltip } from '@/components/discovery';
 import { ATTRACTIVENESS_MEANING, CONFIDENCE_MEANING } from '@/lib/country-discovery/explanations';
 import type { CountryDetailView } from '@/lib/country-discovery/service';
 import { SelectMarket } from './SelectMarket';
@@ -32,10 +33,13 @@ export function CountryTruth({
   productId,
   exporterOrgId,
   detail,
+  basePath = '/app/products',
 }: {
   productId: string;
   exporterOrgId: string;
   detail: CountryDetailView;
+  /** Lets the agent surface reuse this component under its own route tree. */
+  basePath?: string;
 }) {
   const { market, classification, improve } = detail;
 
@@ -51,7 +55,7 @@ export function CountryTruth({
                 analysis as it stood on {formatDate(market.generated_at)}.
               </p>
             </div>
-            <Link href={`/app/products/${productId}`} className={buttonClass('secondary', 'sm')}>
+            <Link href={`${basePath}/${productId}`} className={buttonClass('secondary', 'sm')}>
               Refresh analysis
             </Link>
           </div>
@@ -72,7 +76,10 @@ export function CountryTruth({
             <p className="mt-1 text-xs text-muted">{ATTRACTIVENESS_MEANING}</p>
           </div>
           <div>
-            <p className="text-xs text-muted">Evidence confidence</p>
+            <span className="flex items-center gap-1.5 text-xs text-muted">
+              Evidence coverage
+              <InfoTooltip label="What evidence coverage means">{CONFIDENCE_MEANING}</InfoTooltip>
+            </span>
             <p className="text-3xl font-medium text-bone">{market.evidence_confidence}%</p>
             <p className="mt-1 text-xs text-muted">{CONFIDENCE_MEANING}</p>
           </div>
@@ -136,7 +143,7 @@ export function CountryTruth({
                   <p className="mt-1 text-sm text-slate">{pillar.not_established_because}</p>
                 ) : (
                   <p className="mt-1 text-xs text-muted">
-                    Evidence confidence for this pillar: {pillar.confidence}%
+                    Evidence coverage for this pillar: {pillar.confidence}%
                   </p>
                 )}
               </div>
@@ -155,9 +162,24 @@ export function CountryTruth({
       {/* --- Classification ------------------------------------------------- */}
       {classification.state === 'questions' || classification.state === 'resolved' || classification.state === 'agent_classification_required' ? (
         <Card>
-          <SectionHeading title="Product classification for this market" />
+          <SectionHeading title="Tariff & classification" />
+          {/*
+            The distinction this section exists to hold: the general/third-country duty can be
+            understood from official data (every declarable line in this destination carrying the
+            same treatment, or one line already established) even while the EXACT customs line for
+            THIS product is still unresolved. Showing only the classification gap would read as
+            "Market Access has no evidence at all" when in fact the tariff itself is known and only
+            the product-specific line remains open.
+          */}
+          {classification.source ? (
+            <div className="mt-2 flex items-center gap-2">
+              <StatusChip label="Tariff treatment available" tone="positive" icon="check" size="sm" />
+              <span className="text-xs text-muted">from official {classification.source.authority} data</span>
+            </div>
+          ) : null}
+
           {classification.state === 'resolved' ? (
-            <div className="mt-2 space-y-2">
+            <div className="mt-3 space-y-2">
               <StatusChip label="Product classification narrowed" tone="positive" icon="check" size="sm" />
               <p className="text-sm text-bone">
                 ClearTrade has identified the destination tariff line for your product.
@@ -168,7 +190,8 @@ export function CountryTruth({
               </p>
             </div>
           ) : classification.state === 'agent_classification_required' ? (
-            <div className="mt-2 space-y-2">
+            <div className="mt-3 space-y-2">
+              <p className="text-sm font-medium text-bone">Complete product classification</p>
               <StatusChip label="ClearTrade action required" tone="info" icon="clock" size="sm" />
               <p className="text-sm text-slate">
                 Your product could fall under {classification.remaining} different tariff lines in{' '}
@@ -178,13 +201,15 @@ export function CountryTruth({
               </p>
             </div>
           ) : (
-            <div className="mt-2 space-y-3">
+            <div className="mt-3 space-y-3">
+              <p className="text-sm font-medium text-bone">Complete product classification</p>
               <p className="text-sm text-slate">
-                Your product could fall under {classification.remaining} different tariff lines in{' '}
-                {market.country}. Answering a few questions about the goods narrows this down.
+                ClearTrade needs {classification.questions.length}{' '}
+                {classification.questions.length === 1 ? 'product detail' : 'product details'} before the
+                exact customs classification in {market.country} can be confirmed.
               </p>
               <Link
-                href={`/app/products/${productId}/markets/${market.country_code}/classification`}
+                href={`${basePath}/${productId}/markets/${market.country_code}/classification`}
                 className={buttonClass('primary', 'sm')}
               >
                 Answer {classification.questions.length}{' '}
@@ -200,7 +225,7 @@ export function CountryTruth({
         <Card>
           <SectionHeading
             title="Improve this analysis"
-            description={`Evidence confidence is ${improve.evidence_confidence}%. These are the specific things that would raise it.`}
+            description={`Evidence coverage is ${improve.evidence_confidence}%. These are the specific things that would raise it.`}
           />
           <ul className="mt-3 space-y-2">
             {improve.actions.map((action) => (

@@ -20,13 +20,11 @@ import { MessageForm } from '@/components/agent/MessageForm';
 import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
-import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
 import { CountryTruthWork } from '@/components/agent/CountryTruthWork';
 import { MarketScanQueue } from '@/components/agent/MarketScanQueue';
 import { buyerControlRows } from '@/lib/buyer-control';
 import { activeOnly as activeOnlyCandidates } from '@/lib/demand-control';
-import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/demand-control';
 import { requirePrincipal } from '@/lib/auth';
 import { loadExporterAccountScoped } from '@/lib/agent-accounts';
 import { permits } from '@/lib/permissions';
@@ -158,13 +156,6 @@ export default async function ExporterAccountPage({
   const readiness = org.readiness_assessments[0] ?? null;
   const blockers = (readiness?.blockers ?? []) as { code: string; severity: string; summary: string }[];
 
-  // Only queried for the tab that renders it — the overview must not pay for the control
-  // surface's reads on every visit.
-  const demandRows = activeTab === 'demand' && latestDiscoveryRun
-    ? sortByOperationalOrder(await marketControlRows(latestDiscoveryRun.id))
-    : [];
-  const visibleDemandRows = showAll ? demandRows : activeOnly(demandRows);
-
   // Tenant- and assignment-safe: buyerControlRows asserts org access through the same helper
   // every other org-scoped read uses, so this cannot surface an unassigned exporter's buyers.
   const buyerRows = activeTab === 'buyers' ? await buyerControlRows(principal, exporterOrgId) : [];
@@ -215,21 +206,11 @@ export default async function ExporterAccountPage({
       {activeTab === 'demand' ? (
         <div className="space-y-4">
         <MarketScanQueue />
+        {/* The full AI-vs-decision table for all markets moved behind "Manage market decisions"
+            on each product — it is also now scoped to THAT product's own run rather than the
+            org's most recently run product, which is what `latestDiscoveryRun` gave every
+            product before this. See CountryTruthWork and the per-product `markets/manage` route. */}
         <CountryTruthWork exporterOrgId={org.id} />
-        <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-          <h2 className="text-lg font-semibold text-primary">Demand Discovery control</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-            The model&rsquo;s recommendation and your decision, shown separately. Agent decisions
-            never change the AI score.
-          </p>
-          <div className="mt-4">
-            <DemandDiscoveryControl
-              rows={visibleDemandRows}
-              showAll={showAll}
-              runId={latestDiscoveryRun?.id ?? null}
-            />
-          </div>
-        </section>
         </div>
       ) : activeTab === 'buyers' ? (
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">

@@ -79,13 +79,19 @@ describe('work queue prioritisation', () => {
     expect(queue.every((task) => CLEARTRADE_ACTIONS.some((a) => a.label === task.label))).toBe(true);
   });
 
-  test('the summary groups by task type for the header counts', () => {
+  test('the category breakdown sums to what is prioritised, not to the raw total', () => {
+    // This is the Part 3 fix: a category row reading "20" beside a headline of "20 need
+    // attention" while 60 more of that category sit in the backlog is the exact ambiguity that
+    // made "80 outstanding" unreadable. `by_category` must sum to `needs_attention`.
     const summary = summariseWork(buildWorkQueue(TWENTY));
     const labels = summary.by_category.map((entry) => entry.label);
     expect(labels).toEqual(expect.arrayContaining([
       'Tariff & classification', 'Freight & handling quotes', 'Certification checks', 'Route confirmations',
     ]));
-    expect(summary.by_category.reduce((sum, entry) => sum + entry.count, 0)).toBe(summary.total);
+    expect(summary.by_category.reduce((sum, entry) => sum + entry.count, 0)).toBe(summary.needs_attention);
+    expect(summary.by_category.reduce((sum, entry) => sum + entry.count, 0)).not.toBe(summary.total);
+    // The backlog-inclusive breakdown is still available, just separately labelled.
+    expect(summary.by_category_all.reduce((sum, entry) => sum + entry.count, 0)).toBe(summary.total);
   });
 
   test('ordering is total and stable', () => {

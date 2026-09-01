@@ -35,6 +35,7 @@ const PRIORITY_TONE: Record<WorkPriority, { tone: 'positive' | 'info' | 'neutral
 };
 
 export function CountryTruthWork({ exporterOrgId }: { exporterOrgId: string }) {
+  const basePath = `/agent/exporters/${exporterOrgId}/products`;
   const [views, setViews] = useState<AgentProductView[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export function CountryTruthWork({ exporterOrgId }: { exporterOrgId: string }) {
         <ProductPanel
           key={view.product.id}
           view={view}
+          basePath={basePath}
           busy={busy === view.product.id}
           onRequestDeep={() => requestDeep(view)}
         />
@@ -85,7 +87,7 @@ export function CountryTruthWork({ exporterOrgId }: { exporterOrgId: string }) {
   );
 }
 
-function ProductPanel({ view, busy, onRequestDeep }: { view: AgentProductView; busy: boolean; onRequestDeep: () => void }) {
+function ProductPanel({ view, basePath, busy, onRequestDeep }: { view: AgentProductView; basePath: string; busy: boolean; onRequestDeep: () => void }) {
   const [showQueue, setShowQueue] = useState(false);
   const { summary, queue_summary: work } = view;
 
@@ -93,7 +95,7 @@ function ProductPanel({ view, busy, onRequestDeep }: { view: AgentProductView; b
     ...market,
     action: (
       <Link
-        href={`/app/products/${view.product.id}/markets/${market.country_code}`}
+        href={`${basePath}/${view.product.id}/markets/${market.country_code}`}
         className="text-sm text-slate hover:text-bone hover:underline"
       >
         Open
@@ -114,7 +116,7 @@ function ProductPanel({ view, busy, onRequestDeep }: { view: AgentProductView; b
             ? {
                 label: 'Top market',
                 value: summary.top_market.country,
-                hint: `Attractiveness ${summary.top_market.attractiveness ?? '—'} · ${summary.top_market.confidence}% evidence confidence`,
+                hint: `Attractiveness ${summary.top_market.attractiveness ?? '—'} · ${summary.top_market.confidence}% evidence coverage`,
               }
             : { label: 'Top market', value: '—' },
         ]}
@@ -131,11 +133,12 @@ function ProductPanel({ view, busy, onRequestDeep }: { view: AgentProductView; b
         <StatusChip label={`Exporter selected ${summary.selected_market.country}`} tone="positive" icon="check" size="sm" />
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4">
         <WorkSummaryPanel
           total={work.total}
           needsAttention={work.needs_attention}
           byCategory={work.by_category}
+          byCategoryBacklog={work.by_category_all}
           action={
             work.total > 0 ? (
               <Button size="sm" variant="secondary" onClick={() => setShowQueue((open) => !open)} aria-expanded={showQueue}>
@@ -144,16 +147,6 @@ function ProductPanel({ view, busy, onRequestDeep }: { view: AgentProductView; b
             ) : null
           }
         />
-        <Card as="section">
-          <h3 className="text-sm font-medium text-bone">Exporter inputs</h3>
-          <p className="mt-1 text-2xl font-medium text-bone">
-            {summary.exporter_inputs_missing} <span className="text-sm font-normal text-slate">missing</span>
-          </p>
-          <p className="mt-2 text-xs text-muted">
-            These belong to the exporter and are requested on their own product page. They are listed
-            here for context, not as ClearTrade work.
-          </p>
-        </Card>
       </div>
 
       {marketRows.length ? (
@@ -165,17 +158,39 @@ function ProductPanel({ view, busy, onRequestDeep }: { view: AgentProductView; b
           <div className="mt-3">
             <MarketTable rows={marketRows} caption={`Top markets for ${view.product.name}`} />
           </div>
-          {summary.markets_analysed > marketRows.length ? (
-            <div className="mt-3">
-              <Link href={`/app/products/${view.product.id}/markets`} className={buttonClass('ghost', 'sm')}>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {summary.markets_analysed > marketRows.length ? (
+              <Link href={`${basePath}/${view.product.id}/markets`} className={buttonClass('ghost', 'sm')}>
                 View all {summary.markets_analysed} markets
               </Link>
-            </div>
-          ) : null}
+            ) : null}
+            {summary.markets_analysed > 0 ? (
+              <Link href={`${basePath}/${view.product.id}/markets/manage`} className={buttonClass('ghost', 'sm')}>
+                Manage market decisions
+              </Link>
+            ) : null}
+          </div>
         </Card>
       ) : null}
 
-      {showQueue ? <WorkQueue tasks={view.queue} productId={view.product.id} /> : null}
+      <Card as="section">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium text-bone">Exporter information</h3>
+            <p className="mt-1 text-sm text-slate">
+              {summary.exporter_inputs_missing > 0
+                ? `${summary.exporter_inputs_missing} ${summary.exporter_inputs_missing === 1 ? 'detail' : 'details'} missing.`
+                : 'Complete.'}{' '}
+              These are the exporter&rsquo;s own declarations, however they reach ClearTrade.
+            </p>
+          </div>
+          <Link href={`${basePath}/${view.product.id}/facts`} className={buttonClass('secondary', 'sm')}>
+            {summary.exporter_inputs_missing > 0 ? 'Add exporter information' : 'Edit exporter information'}
+          </Link>
+        </div>
+      </Card>
+
+      {showQueue ? <WorkQueue tasks={view.queue} productId={view.product.id} basePath={basePath} /> : null}
     </div>
   );
 }
@@ -194,7 +209,7 @@ function StageValue({ state }: { state: string }) {
  * dishonest — but presenting it as due alongside the selected market is what made the original
  * surface unusable.
  */
-function WorkQueue({ tasks, productId }: { tasks: readonly WorkTask[]; productId: string }) {
+function WorkQueue({ tasks, productId, basePath }: { tasks: readonly WorkTask[]; productId: string; basePath: string }) {
   const [market, setMarket] = useState('all');
   const [category, setCategory] = useState<'all' | WorkCategory>('all');
   const [showBacklog, setShowBacklog] = useState(false);
@@ -287,7 +302,7 @@ function WorkQueue({ tasks, productId }: { tasks: readonly WorkTask[]; productId
                     </td>
                     <td className="py-3 align-top text-xs text-slate">{task.unlocks.join(', ')}</td>
                     <td className="py-3 text-right align-top">
-                      <Link href={`/app/products/${productId}/markets/${task.country_code}`} className="text-sm text-slate hover:text-bone hover:underline">
+                      <Link href={`${basePath}/${productId}/markets/${task.country_code}`} className="text-sm text-slate hover:text-bone hover:underline">
                         Open
                       </Link>
                     </td>
@@ -311,7 +326,7 @@ function WorkQueue({ tasks, productId }: { tasks: readonly WorkTask[]; productId
                 </div>
                 <p className="mt-1 text-sm text-bone">{task.label}</p>
                 <p className="text-xs text-muted">{task.detail}</p>
-                <Link href={`/app/products/${productId}/markets/${task.country_code}`} className="mt-1 inline-block text-sm text-slate hover:text-bone hover:underline">
+                <Link href={`${basePath}/${productId}/markets/${task.country_code}`} className="mt-1 inline-block text-sm text-slate hover:text-bone hover:underline">
                   Open {task.country}
                 </Link>
               </li>

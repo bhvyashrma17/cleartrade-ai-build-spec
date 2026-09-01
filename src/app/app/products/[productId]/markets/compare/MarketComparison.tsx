@@ -49,7 +49,12 @@ function pillarCell(market: MarketDetailView, key: PillarKey) {
   return <Missing>{pillar.not_established_because}</Missing>;
 }
 
-export function MarketComparison({ markets, productId }: { markets: MarketDetailView[]; productId: string }) {
+export function MarketComparison({ markets, productId, basePath = '/app/products' }: {
+  markets: MarketDetailView[];
+  productId: string;
+  /** Lets the agent surface reuse this component under its own route tree. */
+  basePath?: string;
+}) {
   return (
     <div className="space-y-4">
       {/* Wide layout: one column per market. */}
@@ -63,7 +68,7 @@ export function MarketComparison({ markets, productId }: { markets: MarketDetail
               </th>
               {markets.map((market) => (
                 <th key={market.country_code} scope="col" className="border-b border-line py-2 text-left text-sm font-medium text-bone">
-                  <Link href={`/app/products/${productId}/markets/${market.country_code}`} className="hover:underline">
+                  <Link href={`${basePath}/${productId}/markets/${market.country_code}`} className="hover:underline">
                     {market.country}
                   </Link>
                   <span className="block text-xs font-normal text-muted">Rank #{market.rank}</span>
@@ -102,7 +107,7 @@ export function MarketComparison({ markets, productId }: { markets: MarketDetail
         {markets.map((market) => (
           <Card key={market.country_code} as="article">
             <h2 className="text-base font-medium text-bone">
-              <Link href={`/app/products/${productId}/markets/${market.country_code}`}>{market.country}</Link>
+              <Link href={`${basePath}/${productId}/markets/${market.country_code}`}>{market.country}</Link>
               <span className="ml-2 text-xs font-normal text-muted">Rank #{market.rank}</span>
             </h2>
             <dl className="mt-3 space-y-2 text-sm">
@@ -124,7 +129,7 @@ export function MarketComparison({ markets, productId }: { markets: MarketDetail
       </div>
 
       <p className="text-xs text-muted">{CONFIDENCE_MEANING}</p>
-      <Link href={`/app/products/${productId}/markets`} className={buttonClass('secondary', 'md')}>
+      <Link href={`${basePath}/${productId}/markets`} className={buttonClass('secondary', 'md')}>
         Back to all markets
       </Link>
     </div>

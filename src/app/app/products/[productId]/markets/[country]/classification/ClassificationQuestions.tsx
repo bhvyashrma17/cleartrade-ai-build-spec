@@ -24,17 +24,20 @@ export function ClassificationQuestions({
   productId,
   countryCode,
   initial,
+  basePath = '/app/products',
 }: {
   exporterOrgId: string;
   productId: string;
   countryCode: string;
   initial: ClassificationQuestionView;
+  /** Lets the agent surface reuse this component under its own route tree. */
+  basePath?: string;
 }) {
   const [view, setView] = useState(initial);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const backHref = `/app/products/${productId}/markets/${countryCode}`;
+  const backHref = `${basePath}/${productId}/markets/${countryCode}`;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

@@ -15,7 +15,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button, buttonClass, Card, EmptyState, SectionHeading, StatusChip } from '@/components/ui';
-import { SummaryHeader } from '@/components/discovery';
+import { InfoTooltip, SummaryHeader } from '@/components/discovery';
 import { CONFIDENCE_MEANING } from '@/lib/country-discovery/explanations';
 import type { MarketResultsView } from '@/lib/country-discovery/service';
 import type { ProductDiscoveryState } from '@/lib/country-discovery/service';
@@ -26,10 +26,13 @@ export function MarketResults({
   productId,
   results,
   screening,
+  basePath = '/app/products',
 }: {
   productId: string;
   results: MarketResultsView;
   screening: ProductDiscoveryState['screening'];
+  /** Lets the agent surface reuse this component under its own route tree. */
+  basePath?: string;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   // Five is enough to choose from; twenty is a database dump. The rest stay one click away.
@@ -55,7 +58,7 @@ export function MarketResults({
             : 'Run a market scan from the product page to see recommended markets.'
         }
         action={
-          <Link href={`/app/products/${productId}`} className={buttonClass('primary', 'md')}>
+          <Link href={`${basePath}/${productId}`} className={buttonClass('primary', 'md')}>
             Back to product
           </Link>
         }
@@ -79,7 +82,7 @@ export function MarketResults({
         stats={[
           { label: 'Markets analysed', value: results.markets.length },
           top ? { label: 'Best match', value: top.country, hint: `Attractiveness ${top.attractiveness ?? '—'}` } : { label: 'Best match', value: '—' },
-          { label: 'Evidence confidence', value: `${top?.evidence_confidence ?? 0}%`, hint: 'How much evidence is on file — not a prediction of success.' },
+          { label: 'Evidence coverage', value: `${top?.evidence_confidence ?? 0}%`, hint: 'How much evidence is on file — not a prediction of success.' },
           chosen ? { label: 'Your target market', value: chosen.country } : { label: 'Your target market', value: 'Not chosen yet' },
         ]}
       />
@@ -89,7 +92,7 @@ export function MarketResults({
         </p>
         {selected.length > 0 ? (
           <Link
-            href={`/app/products/${productId}/markets/compare?countries=${selected.join(',')}`}
+            href={`${basePath}/${productId}/markets/compare?countries=${selected.join(',')}`}
             className={buttonClass('primary', 'sm')}
           >
             Compare {selected.length} {selected.length === 1 ? 'market' : 'markets'}
@@ -114,7 +117,7 @@ export function MarketResults({
                     </div>
                     <div className="min-w-0 flex-1">
                       <h2 className="text-base font-medium text-bone">
-                        <Link href={`/app/products/${productId}/markets/${market.country_code}`} className="hover:underline">
+                        <Link href={`${basePath}/${productId}/markets/${market.country_code}`} className="hover:underline">
                           {market.country}
                         </Link>
                       </h2>
@@ -163,8 +166,11 @@ export function MarketResults({
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted">Evidence confidence</p>
-                      <p className="text-sm text-bone" title={CONFIDENCE_MEANING}>
+                      <span className="flex items-center justify-end gap-1 text-xs text-muted">
+                        Evidence coverage
+                        <InfoTooltip label="What evidence coverage means">{CONFIDENCE_MEANING}</InfoTooltip>
+                      </span>
+                      <p className="text-sm text-bone">
                         {market.evidence_confidence}%
                       </p>
                     </div>

@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Shared Demand Discovery presentation.
  *
@@ -16,6 +18,7 @@
  *     every row on the page.
  */
 import Link from 'next/link';
+import { useId, useState } from 'react';
 import { Card, StatusChip } from '@/components/ui';
 import type { StatusTone, StatusIconName } from '@/types';
 
@@ -62,6 +65,52 @@ export function SummaryHeader({ title, subtitle, stats, actions }: {
         ))}
       </dl>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Info affordance
+// ---------------------------------------------------------------------------
+
+/**
+ * A small, keyboard-reachable explanation attached to a label.
+ *
+ * Native `title` alone is not reliably reachable by keyboard or announced consistently by
+ * screen readers, so this pairs a focusable button with `aria-describedby` pointing at a
+ * visually-hidden-until-shown description — the explanation is always in the DOM and always
+ * programmatically associated, whether or not it happens to be visibly open.
+ */
+export function InfoTooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={id}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-line-strong text-[10px] leading-none text-muted hover:text-bone focus-visible:outline focus-visible:outline-2"
+      >
+        i
+      </button>
+      <span
+        id={id}
+        role="tooltip"
+        className={
+          open
+            ? 'absolute bottom-full left-1/2 z-30 mb-1.5 w-56 -translate-x-1/2 rounded-md border border-line-strong bg-surface-2 p-2 text-xs text-slate shadow-lg'
+            : 'sr-only'
+        }
+      >
+        {children}
+      </span>
+    </span>
   );
 }
 
@@ -128,7 +177,7 @@ export function MarketTable({ rows, href, caption }: {
               <th scope="col" className="w-16 py-2.5 text-left text-xs font-medium text-muted">Rank</th>
               <th scope="col" className="py-2.5 text-left text-xs font-medium text-muted">Market</th>
               <th scope="col" className="w-32 py-2.5 text-right text-xs font-medium text-muted">Attractiveness</th>
-              <th scope="col" className="w-28 py-2.5 text-right text-xs font-medium text-muted">Confidence</th>
+              <th scope="col" className="w-32 py-2.5 text-right text-xs font-medium text-muted">Evidence coverage</th>
               <th scope="col" className="py-2.5 text-left text-xs font-medium text-muted">Status</th>
               <th scope="col" className="w-24 py-2.5 text-right text-xs font-medium text-muted">
                 <span className="sr-only">Actions</span>
@@ -148,7 +197,7 @@ export function MarketTable({ rows, href, caption }: {
                     ? <span className="text-sm text-slate">Not rankable</span>
                     : <span className="text-lg font-medium text-bone">{row.attractiveness}</span>}
                 </td>
-                <td className="py-3 text-right align-middle text-sm text-slate">{row.confidence}%</td>
+                <td className="py-3 text-right align-middle text-sm text-slate">{row.confidence}% coverage</td>
                 <td className="py-3 align-middle"><MarketStatus status={row.status} tone={row.status_tone} /></td>
                 <td className="py-3 text-right align-middle">{row.action}</td>
               </tr>
@@ -171,7 +220,7 @@ export function MarketTable({ rows, href, caption }: {
                   {row.attractiveness == null
                     ? <p className="text-sm text-slate">Not rankable</p>
                     : <p className="text-xl font-medium text-bone">{row.attractiveness}</p>}
-                  <p className="text-xs text-muted">{row.confidence}% confidence</p>
+                  <p className="text-xs text-muted">{row.confidence}% evidence coverage</p>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -246,40 +295,65 @@ export function OverflowMenu({ label = 'More actions', items }: { label?: string
  * truthful statement about what is due while "80 outstanding" is a statement about how much
  * data exists. The total stays visible so nothing is hidden.
  */
-export function WorkSummaryPanel({ total, needsAttention, byCategory, action }: {
+export function WorkSummaryPanel({ total, needsAttention, byCategory, byCategoryBacklog, action }: {
   total: number;
   needsAttention: number;
+  /** Category breakdown of the PRIORITISED count only — must sum to `needsAttention`, not `total`. */
   byCategory: ReadonlyArray<{ label: string; count: number }>;
+  /** The remaining category totals, backlog included — only shown once the backlog is revealed. */
+  byCategoryBacklog?: ReadonlyArray<{ label: string; count: number }>;
   action?: React.ReactNode;
 }) {
+  const backlog = total - needsAttention;
   return (
     <Card as="section">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-medium text-bone">ClearTrade actions</h3>
+          <h3 className="text-sm font-medium text-bone">ClearTrade work</h3>
+          {/* Every number here is labelled with what it counts, so "20" and "60" are never read
+              as two versions of the same total — one is what to do now, the other is deferred. */}
           <p className="mt-1 text-2xl font-medium text-bone">
-            {needsAttention} <span className="text-sm font-normal text-slate">need attention</span>
+            {needsAttention} <span className="text-sm font-normal text-slate">prioritised {needsAttention === 1 ? 'task' : 'tasks'}</span>
           </p>
-          {total > needsAttention ? (
-            <p className="mt-0.5 text-xs text-muted">
-              {total - needsAttention} more in the backlog, for markets nobody has prioritised yet.
+          {backlog > 0 ? (
+            <p className="mt-0.5 text-sm text-slate">
+              {backlog} in <span className="font-medium text-bone">backlog</span>
+              <span className="text-xs text-muted"> — for markets nobody has prioritised yet</span>
             </p>
           ) : null}
         </div>
         {action}
       </div>
       {byCategory.length ? (
-        <dl className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-          {byCategory.map((entry) => (
-            <div key={entry.label} className="flex items-baseline justify-between gap-3 border-b border-line pb-1.5">
-              <dt className="text-sm text-slate">{entry.label}</dt>
-              <dd className="text-sm font-medium text-bone">{entry.count}</dd>
-            </div>
-          ))}
-        </dl>
+        <>
+          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted">Prioritised now</p>
+          <dl className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {byCategory.map((entry) => (
+              <div key={entry.label} className="flex items-baseline justify-between gap-3 border-b border-line pb-1.5">
+                <dt className="text-sm text-slate">{entry.label}</dt>
+                <dd className="text-sm font-medium text-bone">{entry.count}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
       ) : (
-        <p className="mt-3 text-sm text-slate">Nothing outstanding for ClearTrade on this product.</p>
+        <p className="mt-3 text-sm text-slate">Nothing prioritised for ClearTrade on this product yet.</p>
       )}
+      {byCategoryBacklog?.length ? (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted marker:content-none">
+            All markets, including backlog ({total})
+          </summary>
+          <dl className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {byCategoryBacklog.map((entry) => (
+              <div key={entry.label} className="flex items-baseline justify-between gap-3 border-b border-line pb-1.5">
+                <dt className="text-sm text-slate">{entry.label}</dt>
+                <dd className="text-sm font-medium text-bone">{entry.count}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      ) : null}
     </Card>
   );
 }

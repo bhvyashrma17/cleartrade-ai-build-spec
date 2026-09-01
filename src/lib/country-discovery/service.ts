@@ -28,7 +28,7 @@ import {
   type MarketRowView,
 } from './market-view';
 import { assessProductReadiness, type ProductReadiness } from './readiness';
-import { buildWorkQueue, summariseWork, type MarketWorkInput, type WorkSummary, type WorkTask } from './work-queue';
+import { buildWorkQueue, summariseWork, TOP_RANKED_CUTOFF, type MarketWorkInput, type WorkSummary, type WorkTask } from './work-queue';
 
 /**
  * A market's one-line status for the summary table.
@@ -37,11 +37,25 @@ import { buildWorkQueue, summariseWork, type MarketWorkInput, type WorkSummary, 
  * rows needs to know which one to open, and "needs a freight quote" answers that where "69"
  * does not.
  */
-function marketStatus(detail: MarketDetailView): { status: string; status_tone: 'ready' | 'needs_evidence' | 'needs_classification' | 'incomplete' } {
+export function marketStatus(detail: MarketDetailView, classification?: ClassificationQuestionView | null): { status: string; status_tone: 'ready' | 'needs_evidence' | 'needs_classification' | 'incomplete' } {
   const missing = detail.pillars.filter((pillar) => pillar.state === 'not_established');
   if (!missing.length) return { status: 'Ready', status_tone: 'ready' };
   const marketAccess = missing.find((pillar) => pillar.key === 'market_access');
-  if (marketAccess) return { status: 'Classification needed', status_tone: 'needs_classification' };
+  if (marketAccess) {
+    // The actual refinement state, not a generic placeholder — "Classification needed" told an
+    // agent nothing they could act on. Never names a tariff code either way.
+    if (classification?.state === 'questions') {
+      const n = classification.questions.length;
+      return { status: `Classification needs ${n} ${n === 1 ? 'answer' : 'answers'}`, status_tone: 'needs_classification' };
+    }
+    if (classification?.state === 'agent_classification_required') {
+      return { status: 'Needs ClearTrade classification', status_tone: 'needs_classification' };
+    }
+    if (classification?.state === 'no_evidence_yet') {
+      return { status: 'Awaiting tariff evidence', status_tone: 'needs_evidence' };
+    }
+    return { status: 'Classification needed', status_tone: 'needs_classification' };
+  }
   if (missing.some((pillar) => pillar.key === 'export_economics' || pillar.key === 'logistics_feasibility')) {
     return { status: 'Needs freight & cost evidence', status_tone: 'needs_evidence' };
   }
@@ -527,10 +541,15 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
           is_excluded: decision?.excluded ?? false,
           actions: plan.actions,
         });
+        // The real refinement state, not a generic placeholder — bounded to the leading markets
+        // since each lookup is a DB read and only the top few are ever shown in the summary.
+        const classificationDetail = index < TOP_RANKED_CUTOFF
+          ? await classificationQuestions(actor, exporterOrgId, product.id, row.country_code).catch(() => null)
+          : null;
         topMarkets.push({
           country_code: row.country_code, country: detail.country, rank: index + 1,
           attractiveness: detail.attractiveness, confidence: detail.evidence_confidence,
-          ...marketStatus(detail),
+          ...marketStatus(detail, classificationDetail),
         });
       }
     }

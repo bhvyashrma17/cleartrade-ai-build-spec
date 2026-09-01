@@ -94,10 +94,16 @@ export function ProductFactsForm({
   exporterOrgId,
   productId,
   initial,
+  basePath = '/app/products',
+  provenanceNote,
 }: {
   exporterOrgId: string;
   productId: string;
   initial: Facts;
+  /** Lets the agent surface reuse this component under its own route tree. */
+  basePath?: string;
+  /** Agent-facing only: who last recorded these facts and when. */
+  provenanceNote?: React.ReactNode;
 }) {
   const [facts, setFacts] = useState<Facts>(initial);
   const [open, setOpen] = useState<string | null>(GROUPS[0]!.key);
@@ -133,6 +139,7 @@ export function ProductFactsForm({
 
   return (
     <div className="space-y-4">
+      {provenanceNote}
       {saved ? <StatusChip label="Saved" tone="positive" icon="check" /> : null}
       {GROUPS.map((group) => {
         const expanded = open === group.key;
@@ -197,7 +204,7 @@ export function ProductFactsForm({
         ClearTrade handles exchange rates, customs valuation, duty rates, freight quotes and its own fee.
         You are never asked to supply those.
       </p>
-      <Link href={`/app/products/${productId}`} className={buttonClass('secondary', 'md')}>
+      <Link href={`${basePath}/${productId}`} className={buttonClass('secondary', 'md')}>
         Back to product
       </Link>
     </div>

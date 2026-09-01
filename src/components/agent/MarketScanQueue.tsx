@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, EmptyState, Input, SectionHeading, StatusChip } from '@/components/ui';
+import { Button, Card, Input, SectionHeading, StatusChip } from '@/components/ui';
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import type { StaffQueueEntry } from '@/lib/country-discovery/scan-requests';
 
@@ -63,6 +63,19 @@ export function MarketScanQueue() {
 
   if (!entries) return <p className="text-sm text-slate">Loading market scan requests…</p>;
 
+  // An empty queue is the common case and is not itself information worth a card's worth of
+  // vertical space — a filled-out heading, description and bordered empty-state box for "there
+  // is nothing here" pushed everything below it off the first screen. Collapse to one line;
+  // expand back to the full card the moment there is something to review.
+  if (entries.length === 0) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2">
+        <span className="text-sm text-slate">Market scan requests</span>
+        <StatusChip label="None pending" tone="neutral" icon="dot" size="sm" />
+      </div>
+    );
+  }
+
   return (
     <Card as="section">
       <SectionHeading
@@ -72,12 +85,7 @@ export function MarketScanQueue() {
       {notice ? <div className="mt-3"><StatusChip label={notice} tone="positive" icon="check" size="sm" /></div> : null}
       {error ? <p className="mt-3 text-sm text-[var(--crit)]" role="alert">{error}</p> : null}
 
-      {entries.length === 0 ? (
-        <div className="mt-3">
-          <EmptyState title="Nothing waiting for review" description="Approved and completed scans are visible on each product." bordered />
-        </div>
-      ) : (
-        <ul className="mt-3 space-y-3">
+      <ul className="mt-3 space-y-3">
           {entries.map((entry) => (
             <li key={entry.id} className="border-b border-line pb-3 last:border-0 last:pb-0">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -149,7 +157,6 @@ export function MarketScanQueue() {
             </li>
           ))}
         </ul>
-      )}
     </Card>
   );
 }

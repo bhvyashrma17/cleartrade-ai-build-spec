@@ -137,8 +137,24 @@ export interface WorkSummary {
   total: number;
   /** Tasks a human has already prioritised — the honest "needs attention" figure. */
   needs_attention: number;
+  /**
+   * Category breakdown of the PRIORITISED tasks only. This must sum to `needs_attention`, never
+   * to `total` — a category row reading "20" beside a headline of "20 need attention" while 60
+   * more of that same category sit in the backlog is exactly the ambiguity that made "80
+   * outstanding" unreadable. Backlog-inclusive counts live in `by_category_all`, shown only
+   * behind an explicit disclosure.
+   */
   by_category: Array<{ category: WorkCategory; label: string; count: number }>;
+  /** The same breakdown across every task, backlog included. */
+  by_category_all: Array<{ category: WorkCategory; label: string; count: number }>;
   by_priority: Array<{ priority: WorkPriority; label: string; count: number }>;
+}
+
+function categoryCounts(tasks: readonly WorkTask[]) {
+  const byCategory = new Map<WorkCategory, number>();
+  for (const task of tasks) byCategory.set(task.category, (byCategory.get(task.category) ?? 0) + 1);
+  return [...byCategory].map(([category, count]) => ({ category, label: CATEGORY_LABELS[category], count }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 }
 
 /**
@@ -149,17 +165,14 @@ export interface WorkSummary {
  * made the previous surface unusable.
  */
 export function summariseWork(tasks: readonly WorkTask[]): WorkSummary {
-  const byCategory = new Map<WorkCategory, number>();
   const byPriority = new Map<WorkPriority, number>();
-  for (const task of tasks) {
-    byCategory.set(task.category, (byCategory.get(task.category) ?? 0) + 1);
-    byPriority.set(task.priority, (byPriority.get(task.priority) ?? 0) + 1);
-  }
+  for (const task of tasks) byPriority.set(task.priority, (byPriority.get(task.priority) ?? 0) + 1);
+  const prioritised = tasks.filter((task) => task.priority !== 'backlog');
   return {
     total: tasks.length,
-    needs_attention: tasks.filter((task) => task.priority !== 'backlog').length,
-    by_category: [...byCategory].map(([category, count]) => ({ category, label: CATEGORY_LABELS[category], count }))
-      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
+    needs_attention: prioritised.length,
+    by_category: categoryCounts(prioritised),
+    by_category_all: categoryCounts(tasks),
     by_priority: (['selected', 'marked', 'top_ranked', 'backlog'] as const)
       .map((priority) => ({ priority, label: PRIORITY_LABELS[priority], count: byPriority.get(priority) ?? 0 }))
       .filter((entry) => entry.count > 0),
