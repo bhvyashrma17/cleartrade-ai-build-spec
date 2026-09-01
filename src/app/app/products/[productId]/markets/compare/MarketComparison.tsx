@@ -26,7 +26,7 @@ const HEADLINE_ROWS: Row[] = [
         ? <span className="text-slate">Not rankable</span>
         : <span className="text-lg font-medium text-bone">{market.attractiveness}</span>,
   },
-  { label: 'Evidence confidence', value: (market) => `${market.evidence_confidence}%` },
+  { label: 'Evidence coverage', value: (market) => `${market.evidence_confidence}%` },
   { label: 'Import market', value: (market) => market.market_size.display ?? <Missing>Not established</Missing> },
   {
     label: 'Growth (past)',

@@ -29,6 +29,7 @@ import {
 } from './market-view';
 import { assessProductReadiness, type ProductReadiness } from './readiness';
 import { buildWorkQueue, summariseWork, TOP_RANKED_CUTOFF, type MarketWorkInput, type WorkSummary, type WorkTask } from './work-queue';
+import { buildConfidenceGapLedger, type ConfidenceGapLedger } from './confidence-ledger';
 
 /**
  * A market's one-line status for the summary table.
@@ -359,6 +360,8 @@ export interface CountryDetailView {
   run: { id: string; generated_at: string; status: string };
   /** True when evidence has changed since this assessment was generated. */
   refresh_available: boolean;
+  /** Exact canonical-confidence forensics. Staff only; exporters never receive this payload. */
+  confidence_ledger: ConfidenceGapLedger | null;
 }
 
 /** The country detail page. */
@@ -386,6 +389,14 @@ export async function countryDetail(actor: Principal, exporterOrgId: string, pro
     open_classification_questions: questions.questions.length,
     readiness,
   });
+  const staffDiagnostic = actor.role === UserRole.agent || actor.role === UserRole.ops_supervisor || actor.role === UserRole.admin
+    ? buildConfidenceGapLedger({
+        field_provenance: ranked[index]!.field_provenance,
+        stored_confidence: ranked[index]!.confidence_score,
+        readiness,
+        open_classification_questions: questions.questions.length,
+      })
+    : null;
 
   // Evidence recorded after the assessment was frozen is not in it. Saying so is what stops a
   // stale analysis reading as current after the exporter has just filled in their price.
@@ -402,6 +413,7 @@ export async function countryDetail(actor: Principal, exporterOrgId: string, pro
     classification: questions,
     run: { id: run.id, generated_at: run.created_at.toISOString(), status: run.status },
     refresh_available: Boolean(newerFact),
+    confidence_ledger: staffDiagnostic,
   };
 }
 

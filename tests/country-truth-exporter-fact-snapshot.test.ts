@@ -72,6 +72,8 @@ function fixture(): CountryTruthExporterFactSnapshotInput {
         code: 'brc',
         name: 'BRCGS Food Safety',
         status: 'not_started',
+        declared_absent: true,
+        declaration_state: 'declared_absent',
         updated_at: new Date('2026-08-28T13:00:00.000Z'),
       },
     ],
@@ -204,6 +206,23 @@ describe('Country Truth exporter fact snapshot', () => {
       unlisted_certifications_state: 'unknown',
       items: [],
     });
+
+    const undeclared = fixture();
+    undeclared.certifications = [{
+      id: 'cert_unknown', product_id: 'product_1', code: 'UNKNOWN CERT', name: 'Unknown certificate',
+      status: 'not_started', updated_at: new Date('2026-08-28T13:00:00.000Z'),
+    }];
+    expect(buildCountryTruthExporterFactSnapshot(undeclared).snapshot.certifications.items[0]!.holding)
+      .toEqual({ state: 'unknown', value: null });
+
+    const heldInProgress = fixture();
+    heldInProgress.certifications = [{
+      id: 'cert_progress', product_id: 'product_1', code: 'HACCP', name: 'HACCP',
+      status: 'in_progress', declaration_state: 'declared_held', updated_at: new Date('2026-08-28T13:00:00.000Z'),
+    }];
+    const progressFact = buildCountryTruthExporterFactSnapshot(heldInProgress).snapshot.certifications.items[0]!;
+    expect(progressFact.declaration_state).toMatchObject({ state: 'present', value: 'declared_held' });
+    expect(progressFact.holding).toEqual({ state: 'unknown', value: null });
 
     const zero = fixture();
     zero.product.price_target_amount = 0;

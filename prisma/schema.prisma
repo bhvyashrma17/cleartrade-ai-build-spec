@@ -981,6 +981,11 @@ model Product {
   price_target_quantity_unit String?
   price_target_incoterm      String?  @db.VarChar(3)
 
+  /// The product's normal commercial quantity identity. This is a label, never permission to
+  /// convert a mass into a count, area, volume, package or any other dimension.
+  commercial_quantity_unit String?
+  piece_unit_name          String?
+
   /// Exporter-market-fit inputs. All nullable: absence lowers score confidence; it is
   /// never replaced by a guessed/default commercial capability.
   lead_time_days                  Int?
@@ -991,8 +996,13 @@ model Product {
   logistics_constraints_confirmed Boolean  @default(false)
   desired_order_size_amount       Decimal? @db.Decimal(18, 4)
   desired_order_size_currency     String?  @db.VarChar(3)
+  desired_order_quantity_value    Decimal? @db.Decimal(18, 4)
+  desired_order_quantity_unit     String?
   customization_capability        String?
   packaging_capability            String?
+  customization_available         Boolean?
+  private_label_available         Boolean?
+  packaging_customization_available Boolean?
 
   packaging String?
 
@@ -1002,21 +1012,50 @@ model Product {
   packaging_format        String?
   pack_size_value         Decimal? @db.Decimal(18, 4)
   pack_size_unit          String?
+  units_per_package       Int?
+  package_weight_value    Decimal? @db.Decimal(18, 4)
+  package_weight_unit     String?
+  package_volume_value    Decimal? @db.Decimal(18, 4)
+  package_volume_unit     String?
   /// Consumer packs inside one carton/master pack.
   units_per_carton        Int?
   cartons_per_pallet      Int?
   palletized              Boolean?
+  carton_configuration    String?
+  pallet_configuration    String?
   /// Container/load types this pack is compatible with, e.g. 20FT_DRY, 40FT_HC, REEFER_40FT.
   container_compatibility String[] @default([])
+  /// Ocean is not the default. Air, road, rail, courier and multimodal compatibility can be
+  /// declared independently and remain unknown when this list is empty.
+  transport_mode_compatibility String[] @default([])
   special_handling_codes  String[] @default([])
   /// Required storage/transport temperature band, when the product needs one at all.
   temperature_min_celsius Decimal? @db.Decimal(6, 2)
   temperature_max_celsius Decimal? @db.Decimal(6, 2)
   /// Null = unknown. False = exporter explicitly declared no temperature control is required.
   temperature_controlled  Boolean?
+  fragile                 Boolean?
+  perishable              Boolean?
+  hazardous               Boolean?
+  dangerous_goods_un_number String?
+  dangerous_goods_hazard_class String?
+
+  /// Per commercial unit physical facts. Every number keeps its own dimension; no field here
+  /// is derived from another and no cross-dimensional conversion is allowed.
+  unit_net_weight_value   Decimal? @db.Decimal(18, 4)
+  unit_net_weight_unit    String?
+  unit_gross_weight_value Decimal? @db.Decimal(18, 4)
+  unit_gross_weight_unit  String?
+  unit_length_value       Decimal? @db.Decimal(18, 4)
+  unit_width_value        Decimal? @db.Decimal(18, 4)
+  unit_height_value       Decimal? @db.Decimal(18, 4)
+  unit_dimension_unit     String?
+  unit_volume_value       Decimal? @db.Decimal(18, 4)
+  unit_volume_unit        String?
 
   /// Capacity actually free for new orders, as distinct from installed monthly capacity.
   available_capacity_value Decimal? @db.Decimal(18, 4)
+  available_capacity_unit  String?
   capacity_period          String?
 
   /// The exporter's standard export shipment. Declared rather than inferred, because it is what
@@ -1110,6 +1149,7 @@ model ProductCertification {
   /// Who issued it, and the certificate's own reference. Both recorded, never inferred.
   issuer                String?
   certificate_reference String?
+  issue_date            DateTime?
   valid_from            DateTime?
   /// unverified | agent_verified. An exporter can never move its own row to agent_verified;
   /// only an assigned agent's review does, and it records who and when.
@@ -1119,6 +1159,8 @@ model ProductCertification {
   /// Null = unknown (the default and the safe reading). True = the exporter has explicitly
   /// declared it does NOT hold this certification, which is a fact and not the same as silence.
   declared_absent       Boolean?
+  /// unknown | declared_held | declared_absent. Separate from lifecycle and verification.
+  declaration_state     String    @default("unknown")
   /// Supporting document, when one has been uploaded.
   document_id           String?
 

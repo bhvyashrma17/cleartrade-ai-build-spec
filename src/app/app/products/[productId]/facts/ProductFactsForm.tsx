@@ -17,6 +17,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Button, buttonClass, Card, Input, SectionHeading, StatusChip } from '@/components/ui';
 import { ApiClientError, apiPatch } from '@/lib/api-client';
+import { dependenciesForProductFact } from '@/lib/product-profile';
 
 type Facts = Record<string, string>;
 
@@ -26,6 +27,8 @@ interface Field {
   placeholder?: string;
   /** Sent as a number rather than a decimal string. */
   numeric?: boolean;
+  boolean?: boolean;
+  csv?: boolean;
 }
 
 interface Group {
@@ -45,6 +48,12 @@ const GROUPS: Group[] = [
       { name: 'price_target_currency', label: 'Currency', placeholder: 'USD' },
       { name: 'price_target_quantity_unit', label: 'Per unit of', placeholder: 'kg' },
       { name: 'price_target_incoterm', label: 'Incoterm', placeholder: 'FOB' },
+      { name: 'commercial_quantity_unit', label: 'Normal commercial quantity unit', placeholder: 'piece, kg, tonne, litre, m2, m3…' },
+      { name: 'piece_unit_name', label: 'Piece / unit name (if relevant)', placeholder: 'pump, bat, roll…' },
+      { name: 'desired_order_size_amount', label: 'Preferred order value' },
+      { name: 'desired_order_size_currency', label: 'Preferred order currency', placeholder: 'USD' },
+      { name: 'desired_order_quantity_value', label: 'Preferred order quantity' },
+      { name: 'desired_order_quantity_unit', label: 'Preferred order quantity unit', placeholder: 'piece, kg, m2…' },
     ],
   },
   {
@@ -56,10 +65,28 @@ const GROUPS: Group[] = [
       { name: 'capacity_unit', label: 'Capacity unit', placeholder: 'kg' },
       { name: 'capacity_period', label: 'Per period', placeholder: 'month' },
       { name: 'available_capacity_value', label: 'Capacity free for new orders' },
+      { name: 'available_capacity_unit', label: 'Available capacity unit', placeholder: 'kg' },
       { name: 'moq_value', label: 'Minimum order quantity' },
       { name: 'moq_unit', label: 'MOQ unit', placeholder: 'kg' },
       { name: 'lead_time_days', label: 'Production lead time (days)', numeric: true },
       { name: 'delivery_commitment_days', label: 'Delivery commitment (days)', numeric: true },
+    ],
+  },
+  {
+    key: 'physical',
+    title: 'Physical unit',
+    why: 'Weights, dimensions and volume are kept in the units you declare. ClearTrade never converts a piece into mass, area or volume automatically.',
+    fields: [
+      { name: 'unit_net_weight_value', label: 'Net weight per commercial unit' },
+      { name: 'unit_net_weight_unit', label: 'Net weight unit', placeholder: 'kg' },
+      { name: 'unit_gross_weight_value', label: 'Gross weight per commercial unit' },
+      { name: 'unit_gross_weight_unit', label: 'Gross weight unit', placeholder: 'kg' },
+      { name: 'unit_length_value', label: 'Length' },
+      { name: 'unit_width_value', label: 'Width' },
+      { name: 'unit_height_value', label: 'Height' },
+      { name: 'unit_dimension_unit', label: 'Dimension unit', placeholder: 'cm' },
+      { name: 'unit_volume_value', label: 'Volume per commercial unit' },
+      { name: 'unit_volume_unit', label: 'Volume unit', placeholder: 'm3' },
     ],
   },
   {
@@ -68,8 +95,36 @@ const GROUPS: Group[] = [
     why: 'Some destinations set packaging rules, and pack size can decide which tariff line — and therefore which duty — applies to your goods.',
     fields: [
       { name: 'packaging_format', label: 'Packaging format', placeholder: 'Jute bags' },
+      { name: 'packaging', label: 'Packaging description' },
       { name: 'pack_size_value', label: 'Pack size' },
       { name: 'pack_size_unit', label: 'Pack size unit', placeholder: 'kg' },
+      { name: 'units_per_package', label: 'Commercial units per package', numeric: true },
+      { name: 'package_weight_value', label: 'Package weight' },
+      { name: 'package_weight_unit', label: 'Package weight unit', placeholder: 'kg' },
+      { name: 'package_volume_value', label: 'Package volume' },
+      { name: 'package_volume_unit', label: 'Package volume unit', placeholder: 'm3 or litre' },
+      { name: 'units_per_carton', label: 'Units per carton', numeric: true },
+      { name: 'carton_configuration', label: 'Carton configuration' },
+      { name: 'cartons_per_pallet', label: 'Cartons per pallet', numeric: true },
+      { name: 'pallet_configuration', label: 'Pallet configuration' },
+      { name: 'palletized', label: 'Palletized', boolean: true },
+      { name: 'container_compatibility', label: 'Compatible containers', placeholder: '20FT_DRY, 40FT_HC', csv: true },
+    ],
+  },
+  {
+    key: 'handling',
+    title: 'Handling',
+    why: 'Handling requirements remain unknown until declared. Extra detail is required only when a relevant requirement, such as dangerous goods or temperature control, is declared.',
+    fields: [
+      { name: 'fragile', label: 'Fragile', boolean: true },
+      { name: 'perishable', label: 'Perishable', boolean: true },
+      { name: 'temperature_controlled', label: 'Temperature controlled', boolean: true },
+      { name: 'temperature_min_celsius', label: 'Minimum temperature (°C)' },
+      { name: 'temperature_max_celsius', label: 'Maximum temperature (°C)' },
+      { name: 'hazardous', label: 'Hazardous / dangerous goods', boolean: true },
+      { name: 'dangerous_goods_un_number', label: 'UN number', placeholder: 'UN 1234' },
+      { name: 'dangerous_goods_hazard_class', label: 'Hazard class' },
+      { name: 'special_handling_codes', label: 'Special handling codes', placeholder: 'FRAGILE, KEEP_DRY', csv: true },
     ],
   },
   {
@@ -80,10 +135,23 @@ const GROUPS: Group[] = [
       { name: 'shipment_quantity_value', label: 'Typical shipment quantity' },
       { name: 'shipment_quantity_unit', label: 'Shipment unit', placeholder: 'kg' },
       { name: 'shipment_container_type', label: 'Container type', placeholder: '20FT_DRY' },
+      { name: 'transport_mode_compatibility', label: 'Compatible transport modes', placeholder: 'ocean, air, road, rail', csv: true },
       { name: 'origin_city', label: 'Origin city' },
       { name: 'origin_state', label: 'Origin state' },
       { name: 'origin_country', label: 'Origin country', placeholder: 'IN' },
       { name: 'origin_gateway_code', label: 'Departure port / airport', placeholder: 'INNSA' },
+    ],
+  },
+  {
+    key: 'capabilities',
+    title: 'Customer options',
+    why: 'These are compared only with destination or buyer requirements that ClearTrade can source. A declaration is not treated as verified capability.',
+    fields: [
+      { name: 'customization_available', label: 'Product customization available', boolean: true },
+      { name: 'private_label_available', label: 'Private label available', boolean: true },
+      { name: 'packaging_customization_available', label: 'Packaging customization available', boolean: true },
+      { name: 'customization_capability', label: 'Customization details' },
+      { name: 'packaging_capability', label: 'Packaging capability details' },
     ],
   },
 ];
@@ -120,10 +188,18 @@ export function ProductFactsForm({
     try {
       // Only this group's fields are sent, and an empty box is sent as null — an explicit
       // "I do not have this" rather than a silent skip that would leave a stale value in place.
-      const body: Record<string, string | number | null> = {};
+      const body: Record<string, string | number | boolean | string[] | null> = {};
       for (const field of group.fields) {
         const value = facts[field.name]?.trim() ?? '';
-        body[field.name] = value === '' ? null : field.numeric ? Number(value) : value;
+        body[field.name] = field.csv
+          ? value.split(',').map((item) => item.trim()).filter(Boolean)
+          : value === ''
+            ? null
+            : field.numeric
+            ? Number(value)
+            : field.boolean
+              ? value === 'yes'
+              : value;
       }
       await apiPatch(`/api/v1/exporters/${exporterOrgId}/products/${productId}/operational-facts`, body);
       setSaved(true);
@@ -172,16 +248,39 @@ export function ProductFactsForm({
                     return (
                       <div key={field.name}>
                         <label htmlFor={field.name} className="block text-xs text-muted">{field.label}</label>
-                        <Input
-                          id={field.name}
-                          name={field.name}
-                          value={facts[field.name] ?? ''}
-                          placeholder={field.placeholder}
-                          inputMode={NUMERIC_FIELDS.has(field.name) ? 'numeric' : undefined}
-                          aria-invalid={errorId ? true : undefined}
-                          aria-describedby={errorId}
-                          onChange={(event) => setFacts((current) => ({ ...current, [field.name]: event.target.value }))}
-                        />
+                        {field.boolean ? (
+                          <select
+                            id={field.name}
+                            name={field.name}
+                            value={facts[field.name] ?? ''}
+                            aria-invalid={errorId ? true : undefined}
+                            aria-describedby={errorId}
+                            onChange={(event) => setFacts((current) => ({ ...current, [field.name]: event.target.value }))}
+                            className="mt-1 min-h-10 w-full rounded-md border border-line bg-surface px-3 text-sm text-bone"
+                          >
+                            <option value="">Unknown</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        ) : (
+                          <Input
+                            id={field.name}
+                            name={field.name}
+                            value={facts[field.name] ?? ''}
+                            placeholder={field.placeholder}
+                            inputMode={NUMERIC_FIELDS.has(field.name) ? 'numeric' : undefined}
+                            aria-invalid={errorId ? true : undefined}
+                            aria-describedby={errorId}
+                            onChange={(event) => setFacts((current) => ({ ...current, [field.name]: event.target.value }))}
+                          />
+                        )}
+                        {(facts[field.name] ?? '').trim() === '' ? (
+                          dependenciesForProductFact(field.name).length ? (
+                            <p className="mt-1 text-xs text-muted">Helps: {dependenciesForProductFact(field.name).join(', ')}</p>
+                          ) : (
+                            <p className="mt-1 text-xs text-muted">Used for execution planning; does not change current market evidence coverage.</p>
+                          )
+                        ) : null}
                         {errorId ? (
                           <p id={errorId} className="mt-1 text-xs text-[var(--crit)]">{fieldErrors[field.name]}</p>
                         ) : null}

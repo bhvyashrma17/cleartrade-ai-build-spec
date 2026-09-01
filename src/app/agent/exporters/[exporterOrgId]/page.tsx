@@ -260,6 +260,7 @@ export default async function ExporterAccountPage({
                   ) : null}
                   <div className="mt-2">
                     <ProductQuickEditForm
+                      exporterOrgId={org.id}
                       productId={p.id}
                       initial={{
                         capacity_value: p.capacity_value?.toString() ?? '',

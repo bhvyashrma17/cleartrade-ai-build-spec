@@ -159,6 +159,65 @@ export function CountryTruth({
         </ul>
       </Card>
 
+      {/* Staff-only canonical confidence audit. `countryDetail` omits it for exporters. */}
+      {detail.confidence_ledger ? (
+        <Card>
+          <SectionHeading
+            title="Evidence coverage audit"
+            description={`${detail.confidence_ledger.coverage_before_freshness}% coverage × ${detail.confidence_ledger.freshness_multiplier.toFixed(4)} freshness = ${detail.confidence_ledger.calculated_confidence}%. Stored: ${detail.confidence_ledger.stored_confidence}%.`}
+          />
+          <div className="mt-3 overflow-x-auto" tabIndex={0} role="region" aria-label="Evidence coverage contribution ledger">
+            <table className="w-full min-w-[720px] text-left text-xs">
+              <thead className="border-b border-line text-muted">
+                <tr>
+                  <th className="py-2 pr-3">Component</th>
+                  <th className="py-2 pr-3 text-right">Base</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3 text-right">Coverage</th>
+                  <th className="py-2 pr-3 text-right">Freshness</th>
+                  <th className="py-2 text-right">Contribution</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.confidence_ledger.components.map((component) => (
+                  <tr key={component.key} className="border-b border-line align-top last:border-0">
+                    <td className="py-2 pr-3">
+                      <span className="font-medium text-bone">{component.label}</span>
+                      {component.exact_missing_evidence.length ? (
+                        <ul className="mt-1 space-y-1 text-muted">
+                          {component.exact_missing_evidence.map((missing) => (
+                            <li key={missing.code}>− {missing.label} ({missing.owners.join(', ').replaceAll('_', ' ')})</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </td>
+                    <td className="py-2 pr-3 text-right">{component.base_weight}</td>
+                    <td className="py-2 pr-3">{component.status}</td>
+                    <td className="py-2 pr-3 text-right">{component.evidence_coverage}%</td>
+                    <td className="py-2 pr-3 text-right">{component.freshness_multiplier.toFixed(4)}</td>
+                    <td className="py-2 text-right">{component.effective_contribution}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 rounded-md border border-line bg-surface-2 p-3 text-xs text-slate">
+            <p className="font-medium text-bone">Exporter-data ceiling</p>
+            <p className="mt-1">
+              Currently {detail.confidence_ledger.exporter_data_ceiling.current}%. Missing exporter facts potentially unlock up to{' '}
+              {detail.confidence_ledger.exporter_data_ceiling.potentially_unlocks_up_to_weight} weight (conditional upper bound{' '}
+              {detail.confidence_ledger.exporter_data_ceiling.conditional_upper_bound}%).
+            </p>
+            <p className="mt-1 text-muted">{detail.confidence_ledger.exporter_data_ceiling.explanation}</p>
+          </div>
+          {!detail.confidence_ledger.reconciles ? (
+            <p className="mt-3 text-sm text-[var(--color-critical-text)]" role="alert">
+              Stored confidence does not reconcile with the frozen component ledger.
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* --- Classification ------------------------------------------------- */}
       {classification.state === 'questions' || classification.state === 'resolved' || classification.state === 'agent_classification_required' ? (
         <Card>

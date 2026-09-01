@@ -34,6 +34,7 @@ export type ProductFactField =
   | 'capacity_value'
   | 'capacity_unit'
   | 'available_capacity_value'
+  | 'available_capacity_unit'
   | 'capacity_period'
   | 'moq_value'
   | 'moq_unit'
@@ -87,6 +88,7 @@ export interface ProductFactSource {
   capacity_value?: DecimalInput | null;
   capacity_unit?: string | null;
   available_capacity_value?: DecimalInput | null;
+  available_capacity_unit?: string | null;
   capacity_period?: string | null;
   moq_value?: DecimalInput | null;
   moq_unit?: string | null;
@@ -128,7 +130,13 @@ export interface ProductCertificationFactSource {
   name: string;
   status: CertificationLifecycleStatus;
   evidence_ref?: string | null;
+  issuer?: string | null;
+  certificate_reference?: string | null;
+  document_id?: string | null;
+  issue_date?: DateInput | null;
   valid_until?: DateInput | null;
+  declared_absent?: boolean | null;
+  declaration_state?: string | null;
   updated_at: DateInput;
   /** Who recorded the mutable master-data declaration; this never makes it verified. */
   attribution?: FactAttributionInput | null;
@@ -204,7 +212,12 @@ export interface CountryTruthCertificationFact {
   lifecycle_status: CountryTruthFact<CertificationLifecycleStatus>;
   /** Whether a currently held certification is affirmatively known. */
   holding: CountryTruthFact<'held'>;
+  declaration_state: CountryTruthFact<'declared_held' | 'declared_absent'>;
+  issuer: CountryTruthFact<string>;
+  certificate_reference: CountryTruthFact<string>;
+  issue_date: CountryTruthFact<string>;
   evidence_ref: CountryTruthFact<string>;
+  document_id: CountryTruthFact<string>;
   valid_until: CountryTruthFact<string>;
 }
 
@@ -522,10 +535,16 @@ function certificationFact(
   if (!normalizedName) throw new Error(`Certification ${certificationId} name must be non-empty.`);
   const certProvenance = certificationProvenance(certification);
   const evidenceRef = optionalText(certification.evidence_ref);
+  const issuer = optionalText(certification.issuer);
+  const certificateReference = optionalText(certification.certificate_reference);
+  const documentId = optionalText(certification.document_id);
+  const issueDate = optionalIsoDate(certification.issue_date, `certification ${certificationId} issue_date`);
   const validUntil = optionalIsoDate(certification.valid_until, `certification ${certificationId} valid_until`);
+  const explicitlyAbsent = certification.declared_absent === true || certification.declaration_state === 'declared_absent';
+  const explicitlyHeld = certification.declaration_state === 'declared_held' || (certification.status === 'held' && !explicitlyAbsent);
   const holding = certification.status === 'held'
     ? presentFact<'held'>('held', certProvenance)
-    : certification.status === 'not_started'
+    : explicitlyAbsent
       ? confirmedAbsentFact<'held'>(certProvenance)
       : unknownFact<'held'>();
 
@@ -536,7 +555,16 @@ function certificationFact(
     source_updated_at: isoDate(certification.updated_at, `certification ${certificationId} updated_at`),
     lifecycle_status: presentFact(certification.status, certProvenance),
     holding,
+    declaration_state: explicitlyAbsent
+      ? presentFact<'declared_absent'>('declared_absent', certProvenance)
+      : explicitlyHeld
+        ? presentFact<'declared_held'>('declared_held', certProvenance)
+        : unknownFact<'declared_held' | 'declared_absent'>(),
+    issuer: issuer == null ? unknownFact<string>() : presentFact(issuer, certProvenance),
+    certificate_reference: certificateReference == null ? unknownFact<string>() : presentFact(certificateReference, certProvenance),
+    issue_date: issueDate == null ? unknownFact<string>() : presentFact(issueDate, certProvenance),
     evidence_ref: evidenceRef == null ? unknownFact<string>() : presentFact(evidenceRef, certProvenance),
+    document_id: documentId == null ? unknownFact<string>() : presentFact(documentId, certProvenance),
     valid_until: validUntil == null ? unknownFact<string>() : presentFact(validUntil, certProvenance),
   };
 }
@@ -717,7 +745,9 @@ export function buildCountryTruthExporterFactSnapshot(
       },
       available_capacity: {
         value: declaredFact(optionalDecimal(input.product.available_capacity_value, 'product.available_capacity_value'), productAttribution('available_capacity_value')),
-        unit: declaredFact(unit(input.product.capacity_unit), productAttribution('capacity_unit')),
+        unit: input.product.available_capacity_unit != null
+          ? declaredFact(unit(input.product.available_capacity_unit), productAttribution('available_capacity_unit'))
+          : declaredFact(unit(input.product.capacity_unit), productAttribution('capacity_unit')),
         period: declaredFact(optionalText(input.product.capacity_period), productAttribution('capacity_period')),
       },
       minimum_order_quantity: {

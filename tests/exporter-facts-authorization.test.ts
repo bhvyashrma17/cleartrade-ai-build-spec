@@ -3,6 +3,7 @@ import { CertificationStatus, EvidenceOrigin, LogisticsTransportMode, OrgTier, P
 import { afterAll, describe, expect, test } from 'vitest';
 import {
   declareProductOperationalFacts,
+  declareProductCertification,
   recordOperationalQuote,
   recordRouteEvidence,
   verifyProductCertification,
@@ -58,6 +59,20 @@ describe('exporter fact authorization', () => {
     expect(audit.after_summary).toMatchObject({ provenance: 'exporter_declared' });
   });
 
+  test('a browser cannot launder an agent-entered declaration into agent_verified provenance', async () => {
+    const t = await tenant();
+    const updated = await declareProductOperationalFacts({
+      actor: t.agent, exporter_org_id: t.org.id, product_id: t.product.id, correlation_id: randomUUID(),
+      // Runtime callers can add keys TypeScript never promised. The service must still ignore
+      // the requested provenance and choose the epistemic class itself.
+      facts: { origin_city: 'Karnal', origin_country: 'IN', origin_provenance: 'agent_verified', verification_state: 'agent_verified' } as never,
+    });
+    expect(updated.origin_provenance).toBe('exporter_declared');
+    const audit = await prisma.auditEvent.findFirstOrThrow({ where: { object_type: 'product_operational_facts', object_id: t.product.id }, orderBy: { timestamp: 'desc' } });
+    expect(audit.after_summary).toMatchObject({ provenance: 'exporter_declared' });
+    expect(JSON.stringify(audit.after_summary)).not.toContain('agent_verified');
+  });
+
   test('editing an unrelated declaration does not downgrade separately verified origin data', async () => {
     const t = await tenant();
     await prisma.product.update({ where: { id: t.product.id }, data: { origin_city: 'Karnal', origin_country: 'IN', origin_provenance: 'agent_verified' } });
@@ -78,6 +93,26 @@ describe('exporter fact authorization', () => {
     const verified = await verifyProductCertification({ actor: t.agent, exporter_org_id: t.org.id, product_id: t.product.id, certification_id: t.certification.id, correlation_id: randomUUID() });
     expect(verified).toMatchObject({ verification_state: 'agent_verified', verified_by_id: t.agent.id });
     expect(verified.verified_at).not.toBeNull();
+  });
+
+  test('agent-entered certification remains exporter-declared and expired evidence is never active', async () => {
+    const t = await tenant();
+    const declared = await declareProductCertification({
+      actor: t.agent, exporter_org_id: t.org.id, product_id: t.product.id, correlation_id: randomUUID(),
+      certification: { code: 'haccp', name: 'HACCP', declaration_state: 'declared_held', certificate_reference: 'H-1', issue_date: new Date('2019-01-01T00:00:00Z'), valid_until: new Date('2020-01-01T00:00:00Z') },
+    });
+    expect(declared).toMatchObject({ code: 'HACCP', status: CertificationStatus.expired, declaration_state: 'declared_held', verification_state: 'unverified', verified_by_id: null });
+    const audit = await prisma.auditEvent.findFirstOrThrow({ where: { object_type: 'product_certification_declaration', object_id: declared.id }, orderBy: { timestamp: 'desc' } });
+    expect(audit).toMatchObject({ actor_user_id: t.agent.id, after_summary: expect.objectContaining({ provenance: 'exporter_declared' }) });
+  });
+
+  test('only an explicit absence becomes a certification absence fact', async () => {
+    const t = await tenant();
+    const absent = await declareProductCertification({
+      actor: t.owner, exporter_org_id: t.org.id, product_id: t.product.id, correlation_id: randomUUID(),
+      certification: { code: 'BRC', name: 'BRCGS', declaration_state: 'declared_absent' },
+    });
+    expect(absent).toMatchObject({ declared_absent: true, declaration_state: 'declared_absent', status: CertificationStatus.not_started, verification_state: 'unverified' });
   });
 
   test('an expired certificate cannot be verified as current, and one without a reference cannot be verified at all', async () => {

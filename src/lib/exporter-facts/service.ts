@@ -7,13 +7,22 @@
  * verifies their own declaration, because a declaration that can verify itself is just a
  * declaration wearing a better label.
  */
-import { EvidenceAssertionClass, EvidenceOrigin, LogisticsTransportMode, Prisma, UserRole } from '@prisma/client';
+import { CertificationStatus, EvidenceAssertionClass, EvidenceOrigin, LogisticsTransportMode, Prisma, UserRole } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { assertCan, assertOrgAccess } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { EXPORT_COST_COMPONENTS, type ExportCostComponentCode } from '@/lib/country-truth/phase-1h-calculations';
 import type { OperationalQuoteType, OperationalRateBasis } from '@/lib/country-truth/operational-evidence';
+import {
+  COMMERCIAL_QUANTITY_UNITS,
+  LENGTH_UNITS,
+  MASS_UNITS,
+  TRANSPORT_MODES,
+  VOLUME_UNITS,
+  canonicalProductUnit,
+  unitIsOneOf,
+} from '@/lib/product-profile';
 import type { Principal } from '@/types';
 
 const AGENT_ROLES: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
@@ -34,25 +43,61 @@ export interface ProductOperationalFactsInput {
   price_target_currency?: string | null;
   price_target_quantity_unit?: string | null;
   price_target_incoterm?: string | null;
+  commercial_quantity_unit?: string | null;
+  piece_unit_name?: string | null;
   capacity_value?: string | null;
   capacity_unit?: string | null;
   available_capacity_value?: string | null;
+  available_capacity_unit?: string | null;
   capacity_period?: string | null;
   moq_value?: string | null;
   moq_unit?: string | null;
+  desired_order_size_amount?: string | null;
+  desired_order_size_currency?: string | null;
+  desired_order_quantity_value?: string | null;
+  desired_order_quantity_unit?: string | null;
   lead_time_days?: number | null;
   delivery_commitment_days?: number | null;
+  customization_available?: boolean | null;
+  private_label_available?: boolean | null;
+  packaging_customization_available?: boolean | null;
+  customization_capability?: string | null;
+  packaging_capability?: string | null;
+  packaging?: string | null;
   packaging_format?: string | null;
   pack_size_value?: string | null;
   pack_size_unit?: string | null;
+  units_per_package?: number | null;
+  package_weight_value?: string | null;
+  package_weight_unit?: string | null;
+  package_volume_value?: string | null;
+  package_volume_unit?: string | null;
   units_per_carton?: number | null;
   cartons_per_pallet?: number | null;
   palletized?: boolean | null;
+  carton_configuration?: string | null;
+  pallet_configuration?: string | null;
   container_compatibility?: string[];
+  transport_mode_compatibility?: string[];
   special_handling_codes?: string[];
+  fragile?: boolean | null;
+  perishable?: boolean | null;
+  hazardous?: boolean | null;
+  dangerous_goods_un_number?: string | null;
+  dangerous_goods_hazard_class?: string | null;
   temperature_controlled?: boolean | null;
   temperature_min_celsius?: string | null;
   temperature_max_celsius?: string | null;
+  unit_net_weight_value?: string | null;
+  unit_net_weight_unit?: string | null;
+  unit_gross_weight_value?: string | null;
+  unit_gross_weight_unit?: string | null;
+  unit_length_value?: string | null;
+  unit_width_value?: string | null;
+  unit_height_value?: string | null;
+  unit_dimension_unit?: string | null;
+  unit_volume_value?: string | null;
+  unit_volume_unit?: string | null;
   shipment_quantity_value?: string | null;
   shipment_quantity_unit?: string | null;
   shipment_container_count?: number | null;
@@ -66,6 +111,92 @@ export interface ProductOperationalFactsInput {
 }
 
 const INCOTERMS = ['EXW', 'FCA', 'FAS', 'FOB', 'CFR', 'CPT', 'CIF', 'CIP', 'DAP', 'DPU', 'DDP'];
+
+type ProductFactValidationError = { field: string; code: string; message: string };
+
+/** Pure validation used by the service and the product-generality suite. */
+export function validateProductOperationalFacts(
+  facts: ProductOperationalFactsInput,
+  current?: { hazardous?: boolean | null; dangerous_goods_un_number?: string | null; dangerous_goods_hazard_class?: string | null },
+): ProductFactValidationError[] {
+  const fields: ProductFactValidationError[] = [];
+  const touched = (key: keyof ProductOperationalFactsInput) => facts[key] !== undefined;
+  const pair = (valueKey: keyof ProductOperationalFactsInput, unitKey: keyof ProductOperationalFactsInput, label: string) => {
+    if (!touched(valueKey) && !touched(unitKey)) return;
+    if (!touched(valueKey) || !touched(unitKey) || (facts[valueKey] == null) !== (facts[unitKey] == null)) {
+      fields.push({ field: String(valueKey), code: 'incomplete', message: `${label} needs both a quantity and its unit; changing either requires sending both.` });
+    }
+  };
+
+  if (facts.price_target_incoterm && !INCOTERMS.includes(facts.price_target_incoterm.toUpperCase())) fields.push({ field: 'price_target_incoterm', code: 'invalid', message: `Incoterm must be one of ${INCOTERMS.join(', ')}.` });
+  const priceKeys: Array<keyof ProductOperationalFactsInput> = ['price_target_amount', 'price_target_currency', 'price_target_quantity_unit', 'price_target_incoterm'];
+  if (priceKeys.some(touched)) {
+    const present = priceKeys.map((key) => facts[key] != null);
+    if (present.some(Boolean) && !present.every(Boolean)) fields.push({ field: 'price_target_amount', code: 'incomplete', message: 'A price needs its amount, currency, quantity unit and Incoterm together.' });
+  }
+  pair('capacity_value', 'capacity_unit', 'Production capacity');
+  pair('available_capacity_value', 'available_capacity_unit', 'Available capacity');
+  pair('moq_value', 'moq_unit', 'Minimum order quantity');
+  pair('desired_order_size_amount', 'desired_order_size_currency', 'Preferred order value');
+  pair('desired_order_quantity_value', 'desired_order_quantity_unit', 'Preferred order quantity');
+  pair('pack_size_value', 'pack_size_unit', 'Pack size');
+  pair('package_weight_value', 'package_weight_unit', 'Package weight');
+  pair('package_volume_value', 'package_volume_unit', 'Package volume');
+  pair('unit_net_weight_value', 'unit_net_weight_unit', 'Net weight');
+  pair('unit_gross_weight_value', 'unit_gross_weight_unit', 'Gross weight');
+  pair('unit_volume_value', 'unit_volume_unit', 'Unit volume');
+  pair('shipment_quantity_value', 'shipment_quantity_unit', 'Standard shipment');
+
+  const positiveDecimals: Array<keyof ProductOperationalFactsInput> = [
+    'price_target_amount', 'capacity_value', 'available_capacity_value', 'moq_value',
+    'desired_order_size_amount', 'desired_order_quantity_value', 'pack_size_value',
+    'package_weight_value', 'package_volume_value', 'unit_net_weight_value',
+    'unit_gross_weight_value', 'unit_length_value', 'unit_width_value', 'unit_height_value',
+    'unit_volume_value', 'shipment_quantity_value',
+  ];
+  for (const field of positiveDecimals) {
+    const value = facts[field];
+    if (value != null && !(Number(value) > 0)) fields.push({ field: String(field), code: 'invalid', message: 'Quantities and prices must be positive.' });
+  }
+
+  const commercialUnits: Array<keyof ProductOperationalFactsInput> = [
+    'commercial_quantity_unit', 'price_target_quantity_unit', 'capacity_unit', 'available_capacity_unit',
+    'moq_unit', 'desired_order_quantity_unit', 'shipment_quantity_unit', 'pack_size_unit',
+  ];
+  for (const field of commercialUnits) {
+    const value = facts[field];
+    if (typeof value === 'string' && !unitIsOneOf(value, COMMERCIAL_QUANTITY_UNITS)) fields.push({ field: String(field), code: 'invalid_unit', message: `Use a supported commercial unit: ${COMMERCIAL_QUANTITY_UNITS.join(', ')}.` });
+  }
+  for (const field of ['package_weight_unit', 'unit_net_weight_unit', 'unit_gross_weight_unit'] as const) {
+    if (facts[field] && !unitIsOneOf(facts[field], MASS_UNITS)) fields.push({ field, code: 'invalid_dimension', message: 'A weight must use a mass unit.' });
+  }
+  for (const field of ['package_volume_unit', 'unit_volume_unit'] as const) {
+    if (facts[field] && !unitIsOneOf(facts[field], VOLUME_UNITS)) fields.push({ field, code: 'invalid_dimension', message: 'A volume must use a volume unit.' });
+  }
+  const dimensionsTouched = ['unit_length_value', 'unit_width_value', 'unit_height_value'].some((key) => facts[key as keyof ProductOperationalFactsInput] != null);
+  if (dimensionsTouched && !facts.unit_dimension_unit) fields.push({ field: 'unit_dimension_unit', code: 'required', message: 'Physical dimensions need a length unit.' });
+  if (facts.unit_dimension_unit && !unitIsOneOf(facts.unit_dimension_unit, LENGTH_UNITS)) fields.push({ field: 'unit_dimension_unit', code: 'invalid_dimension', message: 'Physical dimensions must use a length unit.' });
+
+  if (facts.origin_country && !/^[A-Z]{2}$/.test(facts.origin_country.toUpperCase())) fields.push({ field: 'origin_country', code: 'invalid', message: 'Origin country must be an ISO alpha-2 code.' });
+  for (const mode of facts.transport_mode_compatibility ?? []) if (!TRANSPORT_MODES.includes(mode.trim().toLowerCase() as (typeof TRANSPORT_MODES)[number])) fields.push({ field: 'transport_mode_compatibility', code: 'invalid', message: `Transport modes must be one of ${TRANSPORT_MODES.join(', ')}.` });
+
+  const nextHazardous = facts.hazardous !== undefined ? facts.hazardous : current?.hazardous;
+  const nextUnNumber = facts.dangerous_goods_un_number !== undefined ? facts.dangerous_goods_un_number : current?.dangerous_goods_un_number;
+  const nextHazardClass = facts.dangerous_goods_hazard_class !== undefined ? facts.dangerous_goods_hazard_class : current?.dangerous_goods_hazard_class;
+  if (nextHazardous === true && !nextUnNumber && !nextHazardClass && !(facts.special_handling_codes ?? []).some((code) => /HAZ|DANGEROUS/i.test(code))) {
+    fields.push({ field: 'hazardous', code: 'handling_required', message: 'Hazardous goods need a UN number, hazard class, or dangerous-goods handling code.' });
+  }
+  if (nextHazardous === false && (nextUnNumber || nextHazardClass)) fields.push({ field: 'hazardous', code: 'conflict', message: 'A product with dangerous-goods classification cannot be declared non-hazardous.' });
+  if (facts.temperature_controlled === false && (facts.temperature_min_celsius != null || facts.temperature_max_celsius != null)) fields.push({ field: 'temperature_controlled', code: 'conflict', message: 'A temperature band cannot be supplied when temperature control is declared unnecessary.' });
+
+  const netUnit = canonicalProductUnit(facts.unit_net_weight_unit);
+  const grossUnit = canonicalProductUnit(facts.unit_gross_weight_unit);
+  if (facts.unit_net_weight_value != null && facts.unit_gross_weight_value != null) {
+    if (netUnit !== grossUnit) fields.push({ field: 'unit_gross_weight_unit', code: 'incompatible_unit', message: 'Net and gross weight must use the same unit; ClearTrade does not convert them automatically.' });
+    else if (Number(facts.unit_gross_weight_value) < Number(facts.unit_net_weight_value)) fields.push({ field: 'unit_gross_weight_value', code: 'invalid', message: 'Gross weight cannot be less than net weight.' });
+  }
+  return fields;
+}
 
 /**
  * An exporter declares its own product's operational facts.
@@ -84,46 +215,55 @@ export async function declareProductOperationalFacts(args: {
   assertCan(args.actor, 'exporter_master_data.edit');
   const product = await productForTenant(args.actor, args.exporter_org_id, args.product_id);
   const facts = args.facts;
-  const fields: Array<{ field: string; code: string; message: string }> = [];
-
-  if (facts.price_target_incoterm && !INCOTERMS.includes(facts.price_target_incoterm.toUpperCase())) fields.push({ field: 'price_target_incoterm', code: 'invalid', message: `Incoterm must be one of ${INCOTERMS.join(', ')}.` });
-  // A price without its currency, quantity unit and delivery basis is not comparable to anything,
-  // so the four travel together or not at all.
-  const priceParts = [facts.price_target_amount, facts.price_target_currency, facts.price_target_quantity_unit, facts.price_target_incoterm];
-  if (priceParts.some((part) => part != null) && priceParts.some((part) => part == null)) {
-    fields.push({ field: 'price_target_amount', code: 'incomplete', message: 'A price needs its amount, currency, quantity unit and Incoterm together.' });
-  }
-  const shipmentParts = [facts.shipment_quantity_value, facts.shipment_quantity_unit];
-  if (shipmentParts.some((part) => part != null) && shipmentParts.some((part) => part == null)) {
-    fields.push({ field: 'shipment_quantity_value', code: 'incomplete', message: 'A standard shipment needs both a quantity and its unit.' });
-  }
-  for (const [field, value] of [['capacity_value', facts.capacity_value], ['moq_value', facts.moq_value], ['shipment_quantity_value', facts.shipment_quantity_value], ['available_capacity_value', facts.available_capacity_value]] as const) {
-    if (value != null && !(Number(value) > 0)) fields.push({ field, code: 'invalid', message: 'Quantities must be positive.' });
-  }
-  if (facts.origin_country && !/^[A-Z]{2}$/.test(facts.origin_country.toUpperCase())) fields.push({ field: 'origin_country', code: 'invalid', message: 'Origin country must be an ISO alpha-2 code.' });
+  const fields = validateProductOperationalFacts(facts, product);
   if (fields.length) throw validationError(fields);
 
   const decimal = (value: string | null | undefined) => (value == null ? null : new Prisma.Decimal(value));
+  const unit = (value: string | null | undefined) => canonicalProductUnit(value);
   const touchesOrigin = facts.origin_city !== undefined || facts.origin_location_code !== undefined;
   return prisma.$transaction(async (tx) => {
     const updated = await tx.product.update({
       where: { id: product.id },
       data: {
-      ...(facts.price_target_amount !== undefined ? { price_target_amount: decimal(facts.price_target_amount), price_target_currency: facts.price_target_currency?.toUpperCase() ?? null, price_target_quantity_unit: facts.price_target_quantity_unit ?? null, price_target_incoterm: facts.price_target_incoterm?.toUpperCase() ?? null } : {}),
-      ...(facts.capacity_value !== undefined ? { capacity_value: decimal(facts.capacity_value), capacity_unit: facts.capacity_unit ?? null } : {}),
-      ...(facts.available_capacity_value !== undefined ? { available_capacity_value: decimal(facts.available_capacity_value), capacity_period: facts.capacity_period ?? null } : {}),
-      ...(facts.moq_value !== undefined ? { moq_value: decimal(facts.moq_value), moq_unit: facts.moq_unit ?? null } : {}),
+      ...(facts.price_target_amount !== undefined ? { price_target_amount: decimal(facts.price_target_amount), price_target_currency: facts.price_target_currency?.toUpperCase() ?? null, price_target_quantity_unit: unit(facts.price_target_quantity_unit), price_target_incoterm: facts.price_target_incoterm?.toUpperCase() ?? null } : {}),
+      ...(facts.commercial_quantity_unit !== undefined ? { commercial_quantity_unit: unit(facts.commercial_quantity_unit), piece_unit_name: facts.piece_unit_name ?? null } : {}),
+      ...(facts.capacity_value !== undefined ? { capacity_value: decimal(facts.capacity_value), capacity_unit: unit(facts.capacity_unit) } : {}),
+      ...(facts.available_capacity_value !== undefined ? { available_capacity_value: decimal(facts.available_capacity_value), available_capacity_unit: unit(facts.available_capacity_unit), capacity_period: facts.capacity_period ?? null } : {}),
+      ...(facts.moq_value !== undefined ? { moq_value: decimal(facts.moq_value), moq_unit: unit(facts.moq_unit) } : {}),
+      ...(facts.desired_order_size_amount !== undefined ? { desired_order_size_amount: decimal(facts.desired_order_size_amount), desired_order_size_currency: facts.desired_order_size_currency?.toUpperCase() ?? null } : {}),
+      ...(facts.desired_order_quantity_value !== undefined ? { desired_order_quantity_value: decimal(facts.desired_order_quantity_value), desired_order_quantity_unit: unit(facts.desired_order_quantity_unit) } : {}),
       ...(facts.lead_time_days !== undefined ? { lead_time_days: facts.lead_time_days } : {}),
       ...(facts.delivery_commitment_days !== undefined ? { delivery_commitment_days: facts.delivery_commitment_days } : {}),
+      ...(facts.customization_available !== undefined ? { customization_available: facts.customization_available } : {}),
+      ...(facts.private_label_available !== undefined ? { private_label_available: facts.private_label_available } : {}),
+      ...(facts.packaging_customization_available !== undefined ? { packaging_customization_available: facts.packaging_customization_available } : {}),
+      ...(facts.customization_capability !== undefined ? { customization_capability: facts.customization_capability } : {}),
+      ...(facts.packaging_capability !== undefined ? { packaging_capability: facts.packaging_capability } : {}),
+      ...(facts.packaging !== undefined ? { packaging: facts.packaging } : {}),
       ...(facts.packaging_format !== undefined ? { packaging_format: facts.packaging_format?.toUpperCase() ?? null } : {}),
-      ...(facts.pack_size_value !== undefined ? { pack_size_value: decimal(facts.pack_size_value), pack_size_unit: facts.pack_size_unit ?? null } : {}),
+      ...(facts.pack_size_value !== undefined ? { pack_size_value: decimal(facts.pack_size_value), pack_size_unit: unit(facts.pack_size_unit) } : {}),
+      ...(facts.units_per_package !== undefined ? { units_per_package: facts.units_per_package } : {}),
+      ...(facts.package_weight_value !== undefined ? { package_weight_value: decimal(facts.package_weight_value), package_weight_unit: unit(facts.package_weight_unit) } : {}),
+      ...(facts.package_volume_value !== undefined ? { package_volume_value: decimal(facts.package_volume_value), package_volume_unit: unit(facts.package_volume_unit) } : {}),
       ...(facts.units_per_carton !== undefined ? { units_per_carton: facts.units_per_carton } : {}),
       ...(facts.cartons_per_pallet !== undefined ? { cartons_per_pallet: facts.cartons_per_pallet } : {}),
       ...(facts.palletized !== undefined ? { palletized: facts.palletized } : {}),
+      ...(facts.carton_configuration !== undefined ? { carton_configuration: facts.carton_configuration } : {}),
+      ...(facts.pallet_configuration !== undefined ? { pallet_configuration: facts.pallet_configuration } : {}),
       ...(facts.container_compatibility !== undefined ? { container_compatibility: facts.container_compatibility.map((code) => code.trim().toUpperCase()).filter(Boolean) } : {}),
+      ...(facts.transport_mode_compatibility !== undefined ? { transport_mode_compatibility: facts.transport_mode_compatibility.map((mode) => mode.trim().toLowerCase()).filter(Boolean) } : {}),
       ...(facts.special_handling_codes !== undefined ? { special_handling_codes: facts.special_handling_codes.map((code) => code.trim().toUpperCase()).filter(Boolean) } : {}),
+      ...(facts.fragile !== undefined ? { fragile: facts.fragile } : {}),
+      ...(facts.perishable !== undefined ? { perishable: facts.perishable } : {}),
+      ...(facts.hazardous !== undefined ? { hazardous: facts.hazardous } : {}),
+      ...(facts.dangerous_goods_un_number !== undefined ? { dangerous_goods_un_number: facts.dangerous_goods_un_number?.toUpperCase() ?? null } : {}),
+      ...(facts.dangerous_goods_hazard_class !== undefined ? { dangerous_goods_hazard_class: facts.dangerous_goods_hazard_class ?? null } : {}),
       ...(facts.temperature_controlled !== undefined ? { temperature_controlled: facts.temperature_controlled, temperature_min_celsius: decimal(facts.temperature_min_celsius), temperature_max_celsius: decimal(facts.temperature_max_celsius) } : {}),
-      ...(facts.shipment_quantity_value !== undefined ? { shipment_quantity_value: decimal(facts.shipment_quantity_value), shipment_quantity_unit: facts.shipment_quantity_unit ?? null } : {}),
+      ...(facts.unit_net_weight_value !== undefined ? { unit_net_weight_value: decimal(facts.unit_net_weight_value), unit_net_weight_unit: unit(facts.unit_net_weight_unit) } : {}),
+      ...(facts.unit_gross_weight_value !== undefined ? { unit_gross_weight_value: decimal(facts.unit_gross_weight_value), unit_gross_weight_unit: unit(facts.unit_gross_weight_unit) } : {}),
+      ...(['unit_length_value', 'unit_width_value', 'unit_height_value', 'unit_dimension_unit'].some((field) => facts[field as keyof ProductOperationalFactsInput] !== undefined) ? { unit_length_value: decimal(facts.unit_length_value), unit_width_value: decimal(facts.unit_width_value), unit_height_value: decimal(facts.unit_height_value), unit_dimension_unit: unit(facts.unit_dimension_unit) } : {}),
+      ...(facts.unit_volume_value !== undefined ? { unit_volume_value: decimal(facts.unit_volume_value), unit_volume_unit: unit(facts.unit_volume_unit) } : {}),
+      ...(facts.shipment_quantity_value !== undefined ? { shipment_quantity_value: decimal(facts.shipment_quantity_value), shipment_quantity_unit: unit(facts.shipment_quantity_unit) } : {}),
       ...(facts.shipment_container_count !== undefined ? { shipment_container_count: facts.shipment_container_count, shipment_container_type: facts.shipment_container_type ?? null } : {}),
       ...(facts.origin_city !== undefined ? { origin_city: facts.origin_city, origin_state: facts.origin_state ?? null, origin_country: facts.origin_country?.toUpperCase() ?? null, origin_postal_code: facts.origin_postal_code ?? null } : {}),
       ...(facts.origin_location_code !== undefined ? { origin_location_code: facts.origin_location_code, origin_gateway_code: facts.origin_gateway_code ?? null } : {}),
@@ -134,6 +274,74 @@ export async function declareProductOperationalFacts(args: {
     });
     await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_operational_facts', object_id: product.id, exporter_org_id: args.exporter_org_id, after_summary: { fields: Object.keys(facts), provenance: 'exporter_declared' }, correlation_id: args.correlation_id, db: tx });
     return updated;
+  });
+}
+
+export interface ProductCertificationDeclarationInput {
+  code: string;
+  name: string;
+  declaration_state: 'declared_held' | 'declared_absent';
+  status?: CertificationStatus;
+  issuer?: string | null;
+  certificate_reference?: string | null;
+  issue_date?: Date | null;
+  valid_until?: Date | null;
+  evidence_ref?: string | null;
+  document_id?: string | null;
+}
+
+/** Record what the exporter says about a certification; verification is deliberately separate. */
+export async function declareProductCertification(args: {
+  actor: Principal;
+  exporter_org_id: string;
+  product_id: string;
+  certification: ProductCertificationDeclarationInput;
+  correlation_id: string;
+}) {
+  if (!EXPORTER_ROLES.includes(args.actor.role) && !AGENT_ROLES.includes(args.actor.role)) throw forbidden('Only the exporter or its assigned agent may record certification information.');
+  assertCan(args.actor, 'exporter_master_data.edit');
+  await productForTenant(args.actor, args.exporter_org_id, args.product_id);
+  const input = args.certification;
+  const code = input.code.trim().toUpperCase();
+  const name = input.name.trim();
+  const fields: ProductFactValidationError[] = [];
+  if (!code) fields.push({ field: 'code', code: 'required', message: 'Certification type is required.' });
+  if (!name) fields.push({ field: 'name', code: 'required', message: 'Certification name is required.' });
+  if (input.issue_date && input.valid_until && input.valid_until <= input.issue_date) fields.push({ field: 'valid_until', code: 'invalid', message: 'Expiry must be after the issue date.' });
+  if (input.declaration_state === 'declared_absent' && (input.certificate_reference || input.issue_date || input.valid_until || input.document_id || input.evidence_ref)) fields.push({ field: 'declaration_state', code: 'conflict', message: 'An explicitly absent certification cannot carry certificate evidence.' });
+  if (fields.length) throw validationError(fields);
+  const expired = input.valid_until != null && input.valid_until.getTime() <= Date.now();
+  const status = input.declaration_state === 'declared_absent'
+    ? CertificationStatus.not_started
+    : expired
+      ? CertificationStatus.expired
+      : input.status ?? CertificationStatus.held;
+
+  return prisma.$transaction(async (tx) => {
+    const certification = await tx.productCertification.upsert({
+      where: { product_id_code: { product_id: args.product_id, code } },
+      create: {
+        product_id: args.product_id, code, name, status,
+        issuer: input.issuer ?? null, certificate_reference: input.certificate_reference ?? null,
+        issue_date: input.issue_date ?? null, valid_until: input.valid_until ?? null,
+        evidence_ref: input.evidence_ref ?? null, document_id: input.document_id ?? null,
+        declaration_state: input.declaration_state,
+        declared_absent: input.declaration_state === 'declared_absent',
+        verification_state: 'unverified',
+      },
+      update: {
+        name, status,
+        issuer: input.issuer ?? null, certificate_reference: input.certificate_reference ?? null,
+        issue_date: input.issue_date ?? null, valid_until: input.valid_until ?? null,
+        evidence_ref: input.evidence_ref ?? null, document_id: input.document_id ?? null,
+        declaration_state: input.declaration_state,
+        declared_absent: input.declaration_state === 'declared_absent',
+        // A changed declaration is new evidence. A prior verification never transfers silently.
+        verification_state: 'unverified', verified_by_id: null, verified_at: null,
+      },
+    });
+    await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_certification_declaration', object_id: certification.id, exporter_org_id: args.exporter_org_id, after_summary: { code, declaration_state: input.declaration_state, lifecycle_status: status, provenance: 'exporter_declared' }, correlation_id: args.correlation_id, db: tx });
+    return certification;
   });
 }
 
@@ -150,6 +358,7 @@ export async function verifyProductCertification(args: {
   certification_id: string;
   issuer?: string | null;
   certificate_reference?: string | null;
+  issue_date?: Date | null;
   valid_from?: Date | null;
   valid_until?: Date | null;
   correlation_id: string;
@@ -172,9 +381,11 @@ export async function verifyProductCertification(args: {
         verification_state: 'agent_verified', verified_by_id: args.actor.id, verified_at: new Date(),
         issuer: args.issuer ?? certification.issuer,
         certificate_reference: reference,
+        issue_date: args.issue_date ?? certification.issue_date,
         valid_from: args.valid_from ?? certification.valid_from,
         valid_until: validUntil,
         declared_absent: false,
+        declaration_state: 'declared_held',
       },
     });
     await writeAuditEvent({ actor: args.actor, action: AUDIT_ACTIONS.update, object_type: 'product_certification_verification', object_id: certification.id, exporter_org_id: args.exporter_org_id, after_summary: { code: certification.code, verification_state: 'agent_verified', certificate_reference: reference }, correlation_id: args.correlation_id, db: tx });
