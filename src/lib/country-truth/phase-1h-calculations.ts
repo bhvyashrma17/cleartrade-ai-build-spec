@@ -14,6 +14,11 @@ export type AssertionClass =
   | 'partner_quote'
   /** Computed by ClearTrade from its own versioned policy, e.g. the ClearTrade fee. */
   | 'system_derived'
+  /**
+   * Licensed commercial trade content attributing a fact to a customs authority ClearTrade did
+   * not query directly. Admissible only under an approval in `market-access/licensed-providers`.
+   */
+  | 'licensed_authoritative_content'
   | 'unknown_legacy';
 
 export type FactState = 'present' | 'missing' | 'unknown' | 'confirmed_absent';

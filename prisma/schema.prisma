@@ -3804,6 +3804,13 @@ enum EvidenceAssertionClass {
   /// FeePolicy). Not an observation of the world, so it is not authoritative_public; not a
   /// claim by a party, so it is not a declaration or a quote.
   system_derived
+  /// Supplied under commercial licence by a specialist trade-content provider that attributes the
+  /// fact to a customs authority or treaty, but which ClearTrade did not obtain from that
+  /// authority directly. The vendor is a secondary distributor, so this is never
+  /// authoritative_public no matter how faithful the reproduction or how much it cost. Usable
+  /// only where `licensed-providers.ts` records an approval covering the provider, dataset,
+  /// destination and assertion type.
+  licensed_authoritative_content
   unknown_legacy
 }
 

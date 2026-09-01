@@ -37,6 +37,11 @@ import type {
   TariffFactValue,
 } from './phase-1h-calculations';
 import type { CountryTruthExporterFactSnapshot, CountryTruthFact } from './exporter-fact-snapshot';
+import {
+  isLicensedProvider,
+  licensedAdmissionRejection,
+  type LicensedAssertionType,
+} from '@/lib/market-access/licensed-providers';
 
 /**
  * v2: India-preference applicability is read from the provider's explicit determination instead
@@ -76,6 +81,14 @@ export interface MarketAccessSnapshotRow {
   tariff_coverage: boolean;
   regulatory_coverage: boolean;
   evidence_origin: string;
+  /**
+   * Who supplied the retrieval, as distinct from `source_authority`, whose data it originally is.
+   * A commercial distributor and the customs authority it reproduces are not the same assertion.
+   * Absent on rows written before licensed content had a vocabulary; those stay authoritative,
+   * because silently reclassifying frozen evidence would rewrite what past assessments meant.
+   */
+  provider?: string | null;
+  source_dataset?: string | null;
 }
 
 export interface MarketAccessEvidenceRow {
@@ -412,11 +425,47 @@ function retrievedBefore(retrievedAt: Date, asOf: number) {
   return retrievedAt.getTime() <= asOf;
 }
 
+/** Where a market-access retrieval came from, as opposed to whose data it reproduces. */
+export interface MarketAccessSourceIdentity {
+  provider?: string | null;
+  source_dataset?: string | null;
+}
+
+/**
+ * Decide how a market-access row may be asserted, and whether it may be used at all.
+ *
+ * A row from a commercial distributor is `licensed_authoritative_content` and is admissible only
+ * where an approval covers exactly this provider, dataset, destination and assertion type.
+ * Everything else keeps the authoritative reading it has always had, so no frozen evidence
+ * changes meaning. Rejections return a reason so they surface in the excluded-fact record rather
+ * than disappearing.
+ */
+function marketAccessAssertion(
+  identity: MarketAccessSourceIdentity,
+  countryCode: string,
+  assertionType: LicensedAssertionType,
+  asOf: number,
+): { assertion_class: AssertionClass } | { rejected: string } {
+  if (!isLicensedProvider(identity.provider)) {
+    return { assertion_class: 'authoritative_public' };
+  }
+  const rejection = licensedAdmissionRejection({
+    provider: identity.provider!,
+    dataset: identity.source_dataset ?? null,
+    country_code: countryCode,
+    assertion_type: assertionType,
+    as_of: new Date(asOf),
+  });
+  return rejection ? { rejected: rejection } : { assertion_class: 'licensed_authoritative_content' };
+}
+
 function selectTariffsAndRequirements(
   rows: readonly MarketAccessEvidenceRow[],
   scope: CountryTruthSelectionScope,
   asOf: number,
   recorder: Recorder,
+  /** Retrieval identity per snapshot. An evidence row inherits who supplied its snapshot. */
+  sources: ReadonlyMap<string, MarketAccessSourceIdentity> = new Map(),
 ) {
   const tariffs: ScopedFact<TariffFactValue>[] = [];
   const requirements: ScopedFact<MarketAccessRequirementValue>[] = [];
@@ -443,8 +492,21 @@ function selectTariffsAndRequirements(
       recorder.reject('market_access_evidence', row.id, 'hs_scope_does_not_cover_product');
       continue;
     }
+    // A tariff assertion and a regulatory one are covered by different approvals, so the row's
+    // rule type decides which permission is required.
+    const isTariffRule = row.rule_type === 'destination_tariff' || row.rule_type === 'preferential_tariff_india';
+    const assertion = marketAccessAssertion(
+      sources.get(row.snapshot_id) ?? {},
+      scope.country_code,
+      isTariffRule ? 'tariff' : 'regulatory',
+      asOf,
+    );
+    if ('rejected' in assertion) {
+      recorder.reject('market_access_evidence', row.id, assertion.rejected);
+      continue;
+    }
     const provenance = {
-      assertion_class: 'authoritative_public' as const,
+      assertion_class: assertion.assertion_class,
       source: row.source_authority,
       source_reference: row.source_reference,
       retrieved_at: iso(row.retrieved_at),
@@ -542,7 +604,7 @@ function selectRegulatoryCoverage(
   asOf: number,
   recorder: Recorder,
 ): ScopedFact<RegulatoryCoverageValue> | null {
-  const candidates: Array<{ row: MarketAccessSnapshotRow; match: string }> = [];
+  const candidates: Array<{ row: MarketAccessSnapshotRow; match: string; assertion: AssertionClass }> = [];
   for (const row of [...rows].sort((left, right) => left.id.localeCompare(right.id))) {
     if (row.country_code.toUpperCase() !== scope.country_code) {
       recorder.reject('market_access_snapshot', row.id, 'destination_country_mismatch');
@@ -557,10 +619,21 @@ function selectRegulatoryCoverage(
       recorder.reject('market_access_snapshot', row.id, 'hs_scope_does_not_cover_product');
       continue;
     }
-    candidates.push({ row, match });
+    const assertion = marketAccessAssertion(row, scope.country_code, 'regulatory', asOf);
+    if ('rejected' in assertion) {
+      recorder.reject('market_access_snapshot', row.id, assertion.rejected);
+      continue;
+    }
+    candidates.push({ row, match, assertion: assertion.assertion_class });
   }
-  // The narrowest, then newest, retrieval is the strongest completeness claim for this product.
+  // Source precedence first: the destination's own authority outranks a commercial distributor
+  // reproducing it, so a later vendor retrieval can never displace a current authority snapshot.
+  // Only within the same class does the narrowest, then newest, retrieval win.
+  const directFirst = (entry: { assertion: AssertionClass }) =>
+    entry.assertion === 'licensed_authoritative_content' ? 1 : 0;
   const selected = candidates.sort((left, right) => {
+    const authority = directFirst(left) - directFirst(right);
+    if (authority) return authority;
     const specificity =
       (right.match === 'exact' ? 1 : 0) - (left.match === 'exact' ? 1 : 0);
     if (specificity) return specificity;
@@ -579,7 +652,7 @@ function selectRegulatoryCoverage(
     state: 'present',
     scope: scopeFor(scope, false),
     provenance: {
-      assertion_class: 'authoritative_public',
+      assertion_class: selected.assertion,
       source: row.source_authority,
       source_reference: row.source_reference,
       retrieved_at: iso(row.retrieved_at),
@@ -1413,6 +1486,12 @@ export function selectCountryTruthFacts(args: {
     scope,
     asOf,
     recorder,
+    new Map(
+      args.evidence.market_access_snapshots.map((snapshot) => [
+        snapshot.id,
+        { provider: snapshot.provider, source_dataset: snapshot.source_dataset },
+      ]),
+    ),
   );
   const regulatoryCoverage = selectRegulatoryCoverage(args.evidence.market_access_snapshots, scope, asOf, recorder);
   const classificationRefinement = selectClassificationRefinement(args.evidence.classification_refinements ?? [], scope, args.exporter_snapshot, asOf, recorder);

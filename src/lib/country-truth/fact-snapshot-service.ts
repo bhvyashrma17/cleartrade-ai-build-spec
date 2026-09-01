@@ -284,6 +284,8 @@ async function loadEvidenceRows(
       tariff_coverage: row.tariff_coverage,
       regulatory_coverage: row.regulatory_coverage,
       evidence_origin: row.evidence_origin,
+      provider: row.provider,
+      source_dataset: row.source_dataset,
     })),
     market_access_evidence: evidence.map((row) => ({
       id: row.id,

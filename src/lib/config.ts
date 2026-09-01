@@ -499,6 +499,18 @@ const PHASE_1H_ASSERTION_CONFIDENCE: Record<AssertionClass, number> = {
   agent_verified: 0.9,
   partner_quote: 0.8,
   exporter_declared: 0.7,
+  // Deliberately 1, not a discount. The multipliers above grade how likely an assertion is to be
+  // WRONG about the world: an exporter describing its own capacity (0.7) can be mistaken in a way
+  // a government API response (1) cannot. Licensed content is not a weaker observation — it is the
+  // authority's own published value, relayed under contract. The ways it actually degrades are
+  // already modelled precisely elsewhere: staleness by the freshness policy, unproven regulatory
+  // completeness by `completeness_status`, and HS6-only content by classification resolution.
+  // Applying an invented 0.8 or 0.9 on top would double-count those, and would understate
+  // confidence we genuinely have, which is its own dishonesty. The real control is binary and
+  // lives in `licensed-providers.ts`: either an approval covers this provider, dataset,
+  // destination and assertion type, or the fact is never admitted at all. If a provider's
+  // transcription error rate is ever measured, a multiplier can be introduced from that evidence.
+  licensed_authoritative_content: 1,
   unknown_legacy: 0,
 };
 
@@ -552,7 +564,11 @@ const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
     unresolved_obtainability_penalty: 10,
     maximum_requirement_age_days: 180,
     maximum_coverage_age_days: 30,
-    allowed_assertion_classes: ['authoritative_public'],
+    // Licensed content is listed for Market Access only, and listing is not trust. A fact in that
+    // class is created solely when `licensed-providers.ts` records an approval covering the
+    // provider, dataset, destination and assertion type; with the registry empty no such fact can
+    // exist, so this entry admits nothing today. The registry is the gate, this is the vocabulary.
+    allowed_assertion_classes: ['authoritative_public', 'licensed_authoritative_content'],
   },
   export_economics: {
     formula_version: 'export-economics-v3',
