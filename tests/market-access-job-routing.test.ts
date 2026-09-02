@@ -19,6 +19,7 @@ const fetchEuTaricMarketAccess = vi.fn();
 const fetchCanadaMarketAccess = vi.fn();
 const fetchNzMarketAccess = vi.fn();
 const fetchJapanMarketAccess = vi.fn();
+const fetchAustraliaMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
@@ -30,6 +31,7 @@ vi.mock('@/lib/market-access/taric/service', async () => {
 vi.mock('@/lib/market-access/providers/canada-service', () => ({ fetchCanadaMarketAccess }));
 vi.mock('@/lib/market-access/providers/nz-service', () => ({ fetchNzMarketAccess }));
 vi.mock('@/lib/market-access/providers/japan-service', () => ({ fetchJapanMarketAccess }));
+vi.mock('@/lib/market-access/providers/australia-service', () => ({ fetchAustraliaMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -66,6 +68,7 @@ afterEach(() => {
   fetchCanadaMarketAccess.mockReset();
   fetchNzMarketAccess.mockReset();
   fetchJapanMarketAccess.mockReset();
+  fetchAustraliaMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -132,6 +135,16 @@ describe('market-access ingest routing', () => {
     expect(fetchNzMarketAccess).not.toHaveBeenCalled();
   });
 
+  test('AU routes to the ABF composite chapter adapter', async () => {
+    fetchAustraliaMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'AU', jurisdiction: 'AU', provider: 'au_abf_working_tariff' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-au', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'AU', hs_code: '610120' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchAustraliaMarketAccess).toHaveBeenCalledWith('610120', { now: undefined, origin_country: undefined });
+    expect(fetchJapanMarketAccess).not.toHaveBeenCalled();
+    expect(fetchNzMarketAccess).not.toHaveBeenCalled();
+  });
+
   test('an authority acquisition failure creates no canonical market evidence', async () => {
     fetchCanadaMarketAccess.mockRejectedValue(new Error('CBSA unavailable'));
     await expect(runMarketAccessIngest(ctx({ country_code: 'CA', hs_code: '090111' }))).rejects.toThrow('CBSA unavailable');
@@ -148,7 +161,7 @@ describe('market-access ingest routing', () => {
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
   });
 
-  test.each(['SA', 'AE', 'BR', 'KR'])('%s is a completed source/licence-or-credential determination, never evidence', async (country) => {
+  test.each(['SA', 'AE', 'BR', 'KR', 'IL', 'PH'])('%s is a completed source/licence-or-credential determination, never evidence', async (country) => {
     const outcome = await runMarketAccessIngest(ctx({ country_code: country, hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('provider_unconfigured_or_license_pending');
@@ -159,6 +172,7 @@ describe('market-access ingest routing', () => {
     expect(fetchCanadaMarketAccess).not.toHaveBeenCalled();
     expect(fetchNzMarketAccess).not.toHaveBeenCalled();
     expect(fetchJapanMarketAccess).not.toHaveBeenCalled();
+    expect(fetchAustraliaMarketAccess).not.toHaveBeenCalled();
     expect(persistMarketAccessIngest).not.toHaveBeenCalled();
   });
 

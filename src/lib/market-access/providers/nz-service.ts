@@ -8,6 +8,7 @@ import {
   loadAuthorityReleaseArtifact,
   type AuthorityReleaseSource,
 } from '@/lib/market-access/authority-releases';
+import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import type { Principal } from '@/types';
@@ -90,7 +91,12 @@ export function activeNzRelease() {
   return activeAuthorityRelease(NZ_SOURCE_FAMILY, NZ_SOURCE_AUTHORITY);
 }
 
-const bundleCache = new Map<string, NzAuthorityBundle>();
+/**
+ * NZ publishes one nightly whole-country archive, so only one release is active at a time; the
+ * bound exists so a long-lived worker crossing nightly release boundaries retires the superseded
+ * decode instead of accumulating one per night.
+ */
+const bundleCache = new BoundedBundleCache<NzAuthorityBundle>(2);
 
 async function loadNzBundle(releaseId?: string) {
   const release = releaseId

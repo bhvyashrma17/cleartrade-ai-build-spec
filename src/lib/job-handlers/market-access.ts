@@ -22,6 +22,7 @@ import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-s
 import { EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess } from '@/lib/market-access/taric/service';
 import { fetchCanadaMarketAccess } from '@/lib/market-access/providers/canada-service';
 import { fetchNzMarketAccess } from '@/lib/market-access/providers/nz-service';
+import { fetchAustraliaMarketAccess } from '@/lib/market-access/providers/australia-service';
 import { fetchJapanMarketAccess } from '@/lib/market-access/providers/japan-service';
 
 export interface MarketAccessAdapterRequest {
@@ -73,6 +74,14 @@ const NZ_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const AUSTRALIA_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'au_abf_working_tariff',
+  fetch: (request) => fetchAustraliaMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
 const JAPAN_ADAPTER: MarketAccessAdapter = {
   provider_key: 'japan_customs_tariff_schedule',
   fetch: (request) => fetchJapanMarketAccess(request.hs6, {
@@ -93,6 +102,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   CA: CANADA_ADAPTER,
   NZ: NZ_ADAPTER,
   JP: JAPAN_ADAPTER,
+  AU: AUSTRALIA_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 

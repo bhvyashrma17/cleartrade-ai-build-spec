@@ -45,6 +45,24 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
   // explicitly permits commercial use, and the schedule's numerical/tabular content is stated to
   // be free of copyright protection outright. Japan is now an automated authoritative provider —
   // see src/lib/market-access/providers/japan-*.ts.
+  IL_TAX_AUTHORITY: {
+    jurisdiction: 'IL',
+    country_codes: ['IL'],
+    authority: 'Israel Tax Authority — Customs Book / customs and purchase tax tariff (gov.il, shaarolami)',
+    reason: 'no_documented_machine_interface',
+    determination: 'UNRESOLVED, and deliberately not upgraded. Two independent blockers, neither of which a public-visibility argument can clear. (1) No dataset-specific reuse licence was located from a primary Israeli government source: gov.il publishes the tariff as a lookup service and downloadable rate files, but no licence, terms-of-use or copyright statement covering commercial reuse, redistribution or derived display of that dataset was found. (2) The gov.il host returns HTTP 403 to automated retrieval, including a plain identifying client — the site is actively declining automated access. Working around that block (rotating user agents, or driving the shaarolami query UI) would be circumventing an access control, not acquiring an authorised source, so it was not attempted.',
+    references: ['https://www.gov.il/en/service/2customs-tariff', 'https://www.gov.il/en/service/customs-system-tables', 'https://shaarolami-query.customs.mof.gov.il/CustomspilotWeb/en/CustomsBook/Import/OrderFrame'],
+    unblocked_by: 'An Israel Tax Authority statement of reuse terms for the customs tariff dataset (or a data.gov.il entry carrying an explicit licence), together with an access path that does not require defeating the 403 — for example a published bulk file endpoint or an authorised API credential.',
+  },
+  PH_TARIFF_COMMISSION: {
+    jurisdiction: 'PH',
+    country_codes: ['PH'],
+    authority: 'Philippine Tariff Commission — Philippine Tariff Finder (MFN, AIFTA and other FTA schedules, AHTN 2022)',
+    reason: 'no_documented_machine_interface',
+    determination: 'Rights are probably permissive but the interface is the blocker, and the two must not be conflated. On rights: the Tariff Finder carries the standard GOVPH footer "All content is in the public domain unless otherwise stated", which is site-wide boilerplate rather than a dataset-specific grant, and its "unless otherwise stated" qualifier is doing real work. That is suggestive, not sufficient. On interface: the Finder publishes no bulk download and no documented API — its schedules are served to the page by an internal JSON endpoint intended for its own front end. Consuming that endpoint would be reverse-engineering a private browser API without authority support, which is exactly what this project declines to do, so PH stops here rather than on a licence question.',
+    references: ['https://finder.tariffcommission.gov.ph/about', 'https://tariffcommission.gov.ph/', 'https://finder.tariffcommission.gov.ph/robots.txt'],
+    unblocked_by: 'A documented Tariff Commission bulk dataset or public API for the AHTN 2022 MFN and AIFTA schedules, plus a dataset-specific reuse statement that does not rest solely on the site-wide GOVPH footer.',
+  },
   KR_DATA_GO_KR: {
     jurisdiction: 'KR',
     country_codes: ['KR'],

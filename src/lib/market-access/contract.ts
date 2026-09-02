@@ -24,7 +24,8 @@ export type NationalCodeSystem =
   | 'GCC_INTEGRATED'
   | 'CA_CUSTOMS_TARIFF'
   | 'NZ_TARIFF_ITEM'
-  | 'JP_STATISTICAL_CODE';
+  | 'JP_STATISTICAL_CODE'
+  | 'AU_TARIFF_ITEM';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.
