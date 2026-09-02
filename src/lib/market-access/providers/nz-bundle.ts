@@ -52,16 +52,17 @@ export interface NzTariffDetailRow {
   code: string;
   section: string;
   statistical_unit: string | null;
-  start_date: Date | null;
-  expiry_date: Date | null;
+  /** Epoch milliseconds, not a `Date` — see the comment on `parseNzDateMs` for why. */
+  start_date: number | null;
+  expiry_date: number | null;
   description: string;
 }
 
 export interface NzTariffRateRow {
   code: string;
   rate_group: string;
-  start_date: Date | null;
-  expiry_date: Date | null;
+  start_date: number | null;
+  expiry_date: number | null;
   formula: number | null;
   factor_a: number | null;
   factor_b: number | null;
@@ -69,8 +70,16 @@ export interface NzTariffRateRow {
   factor_d: number | null;
 }
 
-/** "Jan  1 2002 12:00AM" — a fixed-width month/day/year/time format, variable inner spacing. */
-function parseNzDate(value: string): Date | null {
+/**
+ * "Jan  1 2002 12:00AM" — a fixed-width month/day/year/time format, variable inner spacing.
+ *
+ * Returns epoch milliseconds (a plain number) rather than a `Date` object. The real CusMod
+ * archive carries ~945K date-bearing rows across both files; constructing a `Date` per date
+ * field at load time (observed: ~1.9M `Date` instances) pushed retained heap to ~460MB and RSS
+ * to ~1GB against this worker's 1GB container limit, and crashed it. Callers convert to `Date`
+ * only for the handful of rows that survive filtering into an actual result.
+ */
+function parseNzDateMs(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const match = /^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2})(AM|PM)$/.exec(trimmed);
@@ -80,8 +89,8 @@ function parseNzDate(value: string): Date | null {
   if (month == null) return null;
   let hour = Number.parseInt(match[4]!, 10) % 12;
   if (match[6] === 'PM') hour += 12;
-  const date = new Date(Date.UTC(Number.parseInt(match[3]!, 10), month, Number.parseInt(match[2]!, 10), hour, Number.parseInt(match[5]!, 10)));
-  return Number.isNaN(date.getTime()) ? null : date;
+  const ms = Date.UTC(Number.parseInt(match[3]!, 10), month, Number.parseInt(match[2]!, 10), hour, Number.parseInt(match[5]!, 10));
+  return Number.isNaN(ms) ? null : ms;
 }
 
 function parseCsv(text: string, expectedColumns: readonly string[], errorCode: string): string[][] {
@@ -139,16 +148,16 @@ export function readNzAuthorityBundle(args: {
     code: code(cells.slice(0, 5)),
     section: cells[6] ?? '',
     statistical_unit: cells[7]?.trim() || null,
-    start_date: parseNzDate(cells[12] ?? ''),
-    expiry_date: parseNzDate(cells[13] ?? ''),
+    start_date: parseNzDateMs(cells[12] ?? ''),
+    expiry_date: parseNzDateMs(cells[13] ?? ''),
     description: (cells[14] ?? '').trim(),
   }));
 
   const rates: NzTariffRateRow[] = rateRows.map((cells) => ({
     code: code(cells.slice(0, 5)),
     rate_group: (cells[5] ?? '').trim(),
-    start_date: parseNzDate(cells[6] ?? ''),
-    expiry_date: parseNzDate(cells[7] ?? ''),
+    start_date: parseNzDateMs(cells[6] ?? ''),
+    expiry_date: parseNzDateMs(cells[7] ?? ''),
     formula: num(cells[9] ?? ''),
     factor_a: num(cells[10] ?? ''),
     factor_b: num(cells[11] ?? ''),

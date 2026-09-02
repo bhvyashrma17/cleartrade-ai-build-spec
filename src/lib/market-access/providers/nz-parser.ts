@@ -49,10 +49,13 @@ function buildDuty(row: NzTariffRateRow): ParsedDuty {
   }
 }
 
-function currentRows<T extends { start_date: Date | null; expiry_date: Date | null }>(rows: readonly T[], at: Date): T[] {
-  return rows.filter((row) => (row.start_date == null || row.start_date.getTime() <= at.getTime())
-    && (row.expiry_date == null || row.expiry_date.getTime() >= at.getTime()));
+function currentRows<T extends { start_date: number | null; expiry_date: number | null }>(rows: readonly T[], at: Date): T[] {
+  const atMs = at.getTime();
+  return rows.filter((row) => (row.start_date == null || row.start_date <= atMs)
+    && (row.expiry_date == null || row.expiry_date >= atMs));
 }
+
+const toDate = (ms: number | null): Date | null => (ms == null ? null : new Date(ms));
 
 function latestDetail(details: readonly NzTariffDetailRow[], code: string, at: Date): NzTariffDetailRow | null {
   const matching = currentRows(details.filter((detail) => detail.code === code), at);
@@ -88,8 +91,8 @@ export function buildNzMarketAccess(args: {
           national_tariff_code: code,
           description: detail.description,
           declarable: true,
-          effective_from: detail.start_date,
-          effective_to: detail.expiry_date,
+          effective_from: toDate(detail.start_date),
+          effective_to: toDate(detail.expiry_date),
           general_duty: buildDuty(nml),
           control_codes: [],
           preference_area_ids: rateRowsForCode.filter((rate) => rate.rate_group !== 'NML').map((rate) => rate.rate_group),
@@ -132,8 +135,8 @@ export function buildNzMarketAccess(args: {
       applies_to_origin_country: null,
       duty: buildDuty(preference.rate),
       conditions: { rate_group: preference.rate.rate_group, beneficiary_eligibility_required: true, not_asserted_for_india: preference.rate.rate_group !== 'IN' },
-      effective_from: preference.rate.start_date,
-      effective_to: preference.rate.expiry_date,
+      effective_from: toDate(preference.rate.start_date),
+      effective_to: toDate(preference.rate.expiry_date),
       source_reference: `NZ Customs CusMod ${args.bundle.release_identifier} · tariff item ${preference.code} (${preference.rate.rate_group})`,
       raw_measure: { code: preference.code, rate_group: preference.rate.rate_group, formula: preference.rate.formula, factor_a: preference.rate.factor_a },
     });
