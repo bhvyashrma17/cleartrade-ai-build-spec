@@ -323,8 +323,7 @@ describe('current confidence is untouched by this vocabulary', () => {
   });
 
   test('licensed content carries no invented confidence discount', () => {
-    const multipliers = CONFIG_DEFAULTS['country_truth.phase_1h'].assertion_class_multipliers
-      ?? CONFIG_DEFAULTS['country_truth.phase_1h'].market_access.assertion_class_multipliers;
+    const multipliers = CONFIG_DEFAULTS['country_truth.phase_1h'].market_access.assertion_class_multipliers;
     expect(multipliers.licensed_authoritative_content).toBe(1);
     // The existing graded classes are unchanged.
     expect(multipliers.authoritative_public).toBe(1);
