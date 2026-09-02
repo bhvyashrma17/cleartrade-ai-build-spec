@@ -1,0 +1,869 @@
+{
+  "schema_version": "customs-atlas-destination-universe-v1",
+  "generated": "2026-09-02",
+  "note": "Every destination maps to a source_family (see source-families.md / authority-registry.json for the family or national record) or stands alone. research_status here is a summary pointer, not a re-statement of the full record; see authority-registry.json for anything beyond 'unresolved'.",
+  "total_destinations": 123,
+  "destinations": [
+    {
+      "destination_country": "United Kingdom",
+      "destination_iso2": "GB",
+      "destination_iso3": "GBR",
+      "source_family": "national",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "United States",
+      "destination_iso2": "US",
+      "destination_iso3": "USA",
+      "source_family": "national",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Austria",
+      "destination_iso2": "AT",
+      "destination_iso3": "AUT",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Belgium",
+      "destination_iso2": "BE",
+      "destination_iso3": "BEL",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Bulgaria",
+      "destination_iso2": "BG",
+      "destination_iso3": "BGR",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Croatia",
+      "destination_iso2": "HR",
+      "destination_iso3": "HRV",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Cyprus",
+      "destination_iso2": "CY",
+      "destination_iso3": "CYP",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Czechia",
+      "destination_iso2": "CZ",
+      "destination_iso3": "CZE",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Denmark",
+      "destination_iso2": "DK",
+      "destination_iso3": "DNK",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Estonia",
+      "destination_iso2": "EE",
+      "destination_iso3": "EST",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Finland",
+      "destination_iso2": "FI",
+      "destination_iso3": "FIN",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "France",
+      "destination_iso2": "FR",
+      "destination_iso3": "FRA",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Germany",
+      "destination_iso2": "DE",
+      "destination_iso3": "DEU",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Greece",
+      "destination_iso2": "GR",
+      "destination_iso3": "GRC",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Hungary",
+      "destination_iso2": "HU",
+      "destination_iso3": "HUN",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Ireland",
+      "destination_iso2": "IE",
+      "destination_iso3": "IRL",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Italy",
+      "destination_iso2": "IT",
+      "destination_iso3": "ITA",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Latvia",
+      "destination_iso2": "LV",
+      "destination_iso3": "LVA",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Lithuania",
+      "destination_iso2": "LT",
+      "destination_iso3": "LTU",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Luxembourg",
+      "destination_iso2": "LU",
+      "destination_iso3": "LUX",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Malta",
+      "destination_iso2": "MT",
+      "destination_iso3": "MLT",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Netherlands",
+      "destination_iso2": "NL",
+      "destination_iso3": "NLD",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Poland",
+      "destination_iso2": "PL",
+      "destination_iso3": "POL",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Portugal",
+      "destination_iso2": "PT",
+      "destination_iso3": "PRT",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Romania",
+      "destination_iso2": "RO",
+      "destination_iso3": "ROU",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Slovakia",
+      "destination_iso2": "SK",
+      "destination_iso3": "SVK",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Slovenia",
+      "destination_iso2": "SI",
+      "destination_iso3": "SVN",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Spain",
+      "destination_iso2": "ES",
+      "destination_iso3": "ESP",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Sweden",
+      "destination_iso2": "SE",
+      "destination_iso3": "SWE",
+      "source_family": "EU_TARIC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Saudi Arabia",
+      "destination_iso2": "SA",
+      "destination_iso3": "SAU",
+      "source_family": "GCC",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "United Arab Emirates",
+      "destination_iso2": "AE",
+      "destination_iso3": "ARE",
+      "source_family": "GCC",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Kuwait",
+      "destination_iso2": "KW",
+      "destination_iso3": "KWT",
+      "source_family": "GCC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Qatar",
+      "destination_iso2": "QA",
+      "destination_iso3": "QAT",
+      "source_family": "GCC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Bahrain",
+      "destination_iso2": "BH",
+      "destination_iso3": "BHR",
+      "source_family": "GCC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Oman",
+      "destination_iso2": "OM",
+      "destination_iso3": "OMN",
+      "source_family": "GCC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Brazil",
+      "destination_iso2": "BR",
+      "destination_iso3": "BRA",
+      "source_family": "MERCOSUR",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Argentina",
+      "destination_iso2": "AR",
+      "destination_iso3": "ARG",
+      "source_family": "MERCOSUR",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Paraguay",
+      "destination_iso2": "PY",
+      "destination_iso3": "PRY",
+      "source_family": "MERCOSUR",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Uruguay",
+      "destination_iso2": "UY",
+      "destination_iso3": "URY",
+      "source_family": "MERCOSUR",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Singapore",
+      "destination_iso2": "SG",
+      "destination_iso3": "SGP",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Malaysia",
+      "destination_iso2": "MY",
+      "destination_iso3": "MYS",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Philippines",
+      "destination_iso2": "PH",
+      "destination_iso3": "PHL",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Vietnam",
+      "destination_iso2": "VN",
+      "destination_iso3": "VNM",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Thailand",
+      "destination_iso2": "TH",
+      "destination_iso3": "THA",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Indonesia",
+      "destination_iso2": "ID",
+      "destination_iso3": "IDN",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Brunei",
+      "destination_iso2": "BN",
+      "destination_iso3": "BRN",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Cambodia",
+      "destination_iso2": "KH",
+      "destination_iso3": "KHM",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Laos",
+      "destination_iso2": "LA",
+      "destination_iso3": "LAO",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Myanmar",
+      "destination_iso2": "MM",
+      "destination_iso3": "MMR",
+      "source_family": "ASEAN_AHTN",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Kenya",
+      "destination_iso2": "KE",
+      "destination_iso3": "KEN",
+      "source_family": "EAC",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Tanzania",
+      "destination_iso2": "TZ",
+      "destination_iso3": "TZA",
+      "source_family": "EAC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Uganda",
+      "destination_iso2": "UG",
+      "destination_iso3": "UGA",
+      "source_family": "EAC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Rwanda",
+      "destination_iso2": "RW",
+      "destination_iso3": "RWA",
+      "source_family": "EAC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Burundi",
+      "destination_iso2": "BI",
+      "destination_iso3": "BDI",
+      "source_family": "EAC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "South Sudan",
+      "destination_iso2": "SS",
+      "destination_iso3": "SSD",
+      "source_family": "EAC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "DR Congo",
+      "destination_iso2": "CD",
+      "destination_iso3": "COD",
+      "source_family": "EAC",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "South Africa",
+      "destination_iso2": "ZA",
+      "destination_iso3": "ZAF",
+      "source_family": "SACU",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Botswana",
+      "destination_iso2": "BW",
+      "destination_iso3": "BWA",
+      "source_family": "SACU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Eswatini",
+      "destination_iso2": "SZ",
+      "destination_iso3": "SWZ",
+      "source_family": "SACU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Lesotho",
+      "destination_iso2": "LS",
+      "destination_iso3": "LSO",
+      "source_family": "SACU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Namibia",
+      "destination_iso2": "NA",
+      "destination_iso3": "NAM",
+      "source_family": "SACU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Nigeria",
+      "destination_iso2": "NG",
+      "destination_iso3": "NGA",
+      "source_family": "ECOWAS",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Ghana",
+      "destination_iso2": "GH",
+      "destination_iso3": "GHA",
+      "source_family": "ECOWAS",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Côte d'Ivoire",
+      "destination_iso2": "CI",
+      "destination_iso3": "CIV",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Senegal",
+      "destination_iso2": "SN",
+      "destination_iso3": "SEN",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Mali",
+      "destination_iso2": "ML",
+      "destination_iso3": "MLI",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Burkina Faso",
+      "destination_iso2": "BF",
+      "destination_iso3": "BFA",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Niger",
+      "destination_iso2": "NE",
+      "destination_iso3": "NER",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Togo",
+      "destination_iso2": "TG",
+      "destination_iso3": "TGO",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Benin",
+      "destination_iso2": "BJ",
+      "destination_iso3": "BEN",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Guinea-Bissau",
+      "destination_iso2": "GW",
+      "destination_iso3": "GNB",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Gambia",
+      "destination_iso2": "GM",
+      "destination_iso3": "GMB",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Liberia",
+      "destination_iso2": "LR",
+      "destination_iso3": "LBR",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Sierra Leone",
+      "destination_iso2": "SL",
+      "destination_iso3": "SLE",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Cabo Verde",
+      "destination_iso2": "CV",
+      "destination_iso3": "CPV",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Guinea",
+      "destination_iso2": "GN",
+      "destination_iso3": "GIN",
+      "source_family": "ECOWAS",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Russia",
+      "destination_iso2": "RU",
+      "destination_iso3": "RUS",
+      "source_family": "EAEU",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Kazakhstan",
+      "destination_iso2": "KZ",
+      "destination_iso3": "KAZ",
+      "source_family": "EAEU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Belarus",
+      "destination_iso2": "BY",
+      "destination_iso3": "BLR",
+      "source_family": "EAEU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Armenia",
+      "destination_iso2": "AM",
+      "destination_iso3": "ARM",
+      "source_family": "EAEU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Kyrgyzstan",
+      "destination_iso2": "KG",
+      "destination_iso3": "KGZ",
+      "source_family": "EAEU",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Canada",
+      "destination_iso2": "CA",
+      "destination_iso3": "CAN",
+      "source_family": "national",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Japan",
+      "destination_iso2": "JP",
+      "destination_iso3": "JPN",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Australia",
+      "destination_iso2": "AU",
+      "destination_iso3": "AUS",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "New Zealand",
+      "destination_iso2": "NZ",
+      "destination_iso3": "NZL",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Norway",
+      "destination_iso2": "NO",
+      "destination_iso3": "NOR",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Switzerland",
+      "destination_iso2": "CH",
+      "destination_iso3": "CHE",
+      "source_family": "national",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "South Korea",
+      "destination_iso2": "KR",
+      "destination_iso3": "KOR",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Israel",
+      "destination_iso2": "IL",
+      "destination_iso3": "ISR",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Türkiye",
+      "destination_iso2": "TR",
+      "destination_iso3": "TUR",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Mexico",
+      "destination_iso2": "MX",
+      "destination_iso3": "MEX",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "China",
+      "destination_iso2": "CN",
+      "destination_iso3": "CHN",
+      "source_family": "national",
+      "research_status": "partial"
+    },
+    {
+      "destination_country": "Bangladesh",
+      "destination_iso2": "BD",
+      "destination_iso3": "BGD",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Sri Lanka",
+      "destination_iso2": "LK",
+      "destination_iso3": "LKA",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Nepal",
+      "destination_iso2": "NP",
+      "destination_iso3": "NPL",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Pakistan",
+      "destination_iso2": "PK",
+      "destination_iso3": "PAK",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Egypt",
+      "destination_iso2": "EG",
+      "destination_iso3": "EGY",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Morocco",
+      "destination_iso2": "MA",
+      "destination_iso3": "MAR",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Tunisia",
+      "destination_iso2": "TN",
+      "destination_iso3": "TUN",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Algeria",
+      "destination_iso2": "DZ",
+      "destination_iso3": "DZA",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Iraq",
+      "destination_iso2": "IQ",
+      "destination_iso3": "IRQ",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Jordan",
+      "destination_iso2": "JO",
+      "destination_iso3": "JOR",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Lebanon",
+      "destination_iso2": "LB",
+      "destination_iso3": "LBN",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Iran",
+      "destination_iso2": "IR",
+      "destination_iso3": "IRN",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Hong Kong",
+      "destination_iso2": "HK",
+      "destination_iso3": "HKG",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Taiwan",
+      "destination_iso2": "TW",
+      "destination_iso3": "TWN",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Fiji",
+      "destination_iso2": "FJ",
+      "destination_iso3": "FJI",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Papua New Guinea",
+      "destination_iso2": "PG",
+      "destination_iso3": "PNG",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Iceland",
+      "destination_iso2": "IS",
+      "destination_iso3": "ISL",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Ukraine",
+      "destination_iso2": "UA",
+      "destination_iso3": "UKR",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Serbia",
+      "destination_iso2": "RS",
+      "destination_iso3": "SRB",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Ethiopia",
+      "destination_iso2": "ET",
+      "destination_iso3": "ETH",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Mauritius",
+      "destination_iso2": "MU",
+      "destination_iso3": "MUS",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Zimbabwe",
+      "destination_iso2": "ZW",
+      "destination_iso3": "ZWE",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Zambia",
+      "destination_iso2": "ZM",
+      "destination_iso3": "ZMB",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Angola",
+      "destination_iso2": "AO",
+      "destination_iso3": "AGO",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Mozambique",
+      "destination_iso2": "MZ",
+      "destination_iso3": "MOZ",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Chile",
+      "destination_iso2": "CL",
+      "destination_iso3": "CHL",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Peru",
+      "destination_iso2": "PE",
+      "destination_iso3": "PER",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Colombia",
+      "destination_iso2": "CO",
+      "destination_iso3": "COL",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Panama",
+      "destination_iso2": "PA",
+      "destination_iso3": "PAN",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Costa Rica",
+      "destination_iso2": "CR",
+      "destination_iso3": "CRI",
+      "source_family": "national",
+      "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Dominican Republic",
+      "destination_iso2": "DO",
+      "destination_iso3": "DOM",
+      "source_family": "national",
+      "research_status": "unresolved"
+    }
+  ]
+}
