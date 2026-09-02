@@ -16,6 +16,7 @@ import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getDocumentStorage } from '@/lib/document-storage';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
+import { releaseQualificationVerdict, requiresBulkQualification } from '@/lib/market-access/bulk-release-gate';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -51,6 +52,12 @@ export interface ImportAuthorityReleaseArgs {
   retrieved_at?: Date;
   source_url: string;
   activate?: boolean;
+  /**
+   * Deliberate, audited override allowing a bulk-archive family to be activated on import without
+   * a real-archive qualification. Exists so an operator can act in an emergency, not so callers can
+   * routinely skip the gate — the override is recorded on the activation audit event.
+   */
+  acknowledge_unqualified?: boolean;
   correlation_id: string;
   validate(bytes: Buffer): Promise<AuthorityReleaseValidation>;
 }
@@ -125,6 +132,18 @@ export async function importAuthorityRelease(args: ImportAuthorityReleaseArgs) {
   }
   if (Number.isNaN(args.reference_date.getTime())) {
     throw validationError([{ field: 'reference_date', code: 'invalid', message: 'The authority release reference date is invalid.' }]);
+  }
+
+  // A bulk-archive family may not go straight from import to active. Qualification measures the
+  // retained artifact, which only exists once the import has stored it, so the safe order is
+  // import -> qualify -> activate. Refusing here (before any bytes are stored) keeps that ordering
+  // enforceable without leaving a half-created release behind when it is violated.
+  if (args.activate && requiresBulkQualification(sourceFamily) && !args.acknowledge_unqualified) {
+    throw validationError([{
+      field: 'activate',
+      code: 'qualification_required',
+      message: `${sourceFamily} is a bulk-archive family: import it first, run scripts/qualify-bulk-release.ts against the retained artifact, then activate. Activating on import would make an unmeasured archive live on a 1GB worker.`,
+    }]);
   }
 
   const checksum = createHash('sha256').update(args.bytes).digest('hex');
@@ -227,12 +246,26 @@ export async function activateAuthorityRelease(args: {
   actor: Principal;
   release_id: string;
   correlation_id: string;
+  /** Deliberate, audited override when a bulk release must be activated without qualification. */
+  acknowledge_unqualified?: boolean;
 }) {
   assertImporter(args.actor);
   const release = await prisma.authorityRelease.findUnique({ where: { id: args.release_id } });
   if (!release) throw notFound('That authority release does not exist.');
   if (release.status === AuthorityReleaseStatus.rejected) {
     throw validationError([{ field: 'status', code: 'rejected', message: 'A rejected release cannot become the source of evidence.' }]);
+  }
+  // Operational qualification is enforced here rather than in CI: activation is the moment a
+  // release becomes the one a 1GB worker actually decodes, so it is the point where an unmeasured
+  // bulk archive stops being a theoretical risk. Non-bulk families are exempt by declaration, and
+  // `--force-unqualified` exists for a deliberate, audited operator override.
+  const verdict = await releaseQualificationVerdict(release);
+  if (!verdict.trusted && !args.acknowledge_unqualified) {
+    throw validationError([{
+      field: 'operational_qualification',
+      code: verdict.reason,
+      message: `${verdict.detail} Activation is blocked until a passing real-archive qualification exists, or an operator explicitly acknowledges the gap.`,
+    }]);
   }
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
@@ -257,7 +290,11 @@ export async function activateAuthorityRelease(args: {
     object_id: release.id,
     exporter_org_id: null,
     before_summary: { status: release.status },
-    after_summary: { status: updated.status },
+    after_summary: {
+      status: updated.status,
+      operational_qualification: verdict.reason,
+      qualification_acknowledged_unqualified: !verdict.trusted,
+    },
     correlation_id: args.correlation_id,
   });
   return updated;

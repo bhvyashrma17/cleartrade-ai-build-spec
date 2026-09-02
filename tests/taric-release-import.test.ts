@@ -114,13 +114,30 @@ describe('release identity and immutability', () => {
   test('activation supersedes the previous active release, never runs two at once', async () => {
     const actor = await principal(UserRole.admin);
     const first = await importTaricRelease({ actor, bytes: await bundleBytes(randomUUID()), reference_month: '2026-08', correlation_id: randomUUID() });
-    await activateTaricRelease({ actor, release_id: first.release.id, correlation_id: randomUUID() });
+    // TARIC is a bulk family, so activation now requires a real-archive memory qualification. This
+    // test is about supersession, not qualification, and its fixtures are tiny rather than the real
+    // multi-hundred-megabyte extraction — so it takes the audited override explicitly. The gate's
+    // own behaviour is pinned by "refuses to activate a bulk release that was never qualified".
+    await activateTaricRelease({ actor, release_id: first.release.id, correlation_id: randomUUID(), acknowledge_unqualified: true });
     const second = await importTaricRelease({ actor, bytes: await bundleBytes(randomUUID()), reference_month: '2026-09', correlation_id: randomUUID() });
-    await activateTaricRelease({ actor, release_id: second.release.id, correlation_id: randomUUID() });
+    await activateTaricRelease({ actor, release_id: second.release.id, correlation_id: randomUUID(), acknowledge_unqualified: true });
     expect(await prisma.authorityRelease.count({ where: { source_family: 'EU_TARIC', status: AuthorityReleaseStatus.active } })).toBe(1);
     const superseded = await prisma.authorityRelease.findUniqueOrThrow({ where: { id: first.release.id } });
     expect(superseded.status).toBe(AuthorityReleaseStatus.superseded);
     expect(superseded.superseded_at).not.toBeNull();
+  });
+});
+
+describe('the bulk operational qualification gate', () => {
+  test('refuses to activate a bulk release that was never qualified', async () => {
+    const actor = await principal(UserRole.admin);
+    const { release } = await importTaricRelease({ actor, bytes: await bundleBytes(randomUUID()), reference_month: '2026-10', correlation_id: randomUUID() });
+    // No qualification has been recorded for these bytes, so activation must be refused rather
+    // than quietly making an unmeasured archive the one a 1GB worker decodes.
+    await expect(activateTaricRelease({ actor, release_id: release.id, correlation_id: randomUUID() }))
+      .rejects.toThrow(/Some details need attention/);
+    const after = await prisma.authorityRelease.findUniqueOrThrow({ where: { id: release.id } });
+    expect(after.status).not.toBe(AuthorityReleaseStatus.active);
   });
 });
 

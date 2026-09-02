@@ -9,6 +9,7 @@
 import { UserRole } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { notFound, validationError } from '@/lib/errors';
+import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest, type MarketAccessIngestResult } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import {
@@ -120,7 +121,7 @@ export async function importTaricRelease(args: ImportTaricReleaseArgs) {
 }
 
 /** Promote an imported release to active. */
-export async function activateTaricRelease(args: { actor: Principal; release_id: string; correlation_id: string }) {
+export async function activateTaricRelease(args: { actor: Principal; release_id: string; correlation_id: string; acknowledge_unqualified?: boolean }) {
   return activateAuthorityRelease(args);
 }
 
@@ -132,8 +133,16 @@ export async function listTaricReleases() {
   return listAuthorityReleases(TARIC_RELEASE_SOURCE.source_family);
 }
 
-/** Cached parsed bundles, keyed by checksum: parsing 146k measure rows is not free. */
-const bundleCache = new Map<string, TaricBundle>();
+/**
+ * Cached parsed bundles, keyed by checksum: parsing 146k measure rows is not free.
+ *
+ * Bounded, for the same reason Japan's was: an unevicting map retains one decoded bundle per
+ * release a long-lived worker has ever served. TARIC is the largest source in the Atlas (bundles
+ * are capped at 200MB and decode to a full measure/nomenclature graph), so retaining even a couple
+ * of superseded decodes is the most expensive version of that mistake. Two keeps the active
+ * release resident across a rollover without accumulating history.
+ */
+const bundleCache = new BoundedBundleCache<TaricBundle>(2);
 
 async function loadTaricBundle(releaseId?: string) {
   const release = releaseId

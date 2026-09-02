@@ -5252,6 +5252,40 @@ enum AuthorityReleaseChange {
 /// One immutable raw release from a customs/tariff authority. This is the safely-generalised
 /// former TaricRelease model: it remains mapped to the same physical table, preserving every
 /// historical TARIC row while allowing Canada and future bulk packs to share one lifecycle.
+/// Append-only record of a bulk adapter's REAL-ARCHIVE operational qualification.
+///
+/// Semantic correctness is proven by tests; this proves the other half — that decoding the actual
+/// retained archive fits the worker it runs on. It cannot live on AuthorityRelease because that row
+/// is immutable by trigger (including `validation`), and qualification is genuinely re-derived: a
+/// new parser version or a materially larger archive invalidates the previous result. Rows are
+/// appended, never updated, so a regression is visible as history rather than overwritten.
+model AuthorityReleaseQualification {
+  id String @id @default(cuid())
+
+  release_id String
+  source_family String
+  release_identifier String
+  /// Qualification is only valid for the parser version it was measured against.
+  parser_version String
+  /// Ties the result to exact bytes; a different archive is a different subject.
+  archive_checksum String
+
+  row_count Int
+  peak_rss_bytes BigInt
+  ceiling_bytes BigInt
+  /// How many bulk decodes shared the process during measurement. 1 = per-adapter ceiling.
+  concurrency Int @default(1)
+  /// passed | warned | failed
+  status String
+
+  qualified_at DateTime @default(now())
+
+  release AuthorityRelease @relation(fields: [release_id], references: [id], onDelete: Restrict)
+
+  @@index([release_id, qualified_at], map: "AuthorityReleaseQualification_release_idx")
+  @@index([source_family, qualified_at], map: "AuthorityReleaseQualification_family_idx")
+}
+
 model AuthorityRelease {
   id String @id @default(cuid())
 
@@ -5296,6 +5330,7 @@ model AuthorityRelease {
   previous_release AuthorityRelease? @relation("AuthorityReleaseHistory", fields: [previous_release_id], references: [id], onDelete: Restrict)
   later_releases AuthorityRelease[] @relation("AuthorityReleaseHistory")
   evidence_snapshots MarketAccessEvidenceSnapshot[]
+  qualifications AuthorityReleaseQualification[]
 
   @@unique([source_family, authority, release_identifier, checksum], map: "AuthorityRelease_logical_acquisition_key")
   @@index([source_family, authority, status, reference_date], map: "AuthorityRelease_source_status_reference_idx")
