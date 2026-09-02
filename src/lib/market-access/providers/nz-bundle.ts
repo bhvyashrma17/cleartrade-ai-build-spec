@@ -93,18 +93,43 @@ function parseNzDateMs(value: string): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-function parseCsv(text: string, expectedColumns: readonly string[], errorCode: string): string[][] {
-  const lines = text.split(/\r\n|\n/).filter((line) => line.length > 0);
-  if (!lines.length) throw new NzBundleError(errorCode, 'The NZ Customs CSV file is empty.');
-  const header = lines[0]!.split('~');
-  if (header.length !== expectedColumns.length || header.some((column, index) => column !== expectedColumns[index])) {
-    throw new NzBundleError(errorCode, 'The NZ Customs CSV column order changed; refusing to parse the wrong fields.');
+/**
+ * Splits, validates and builds typed rows in one pass rather than materializing an intermediate
+ * `string[][]` of every raw row before mapping it. The real archive has ~945K rows across both
+ * files; holding a full array-of-arrays of split cells alive alongside the typed rows being built
+ * from it (a plain local `const` has no proven-dead point before the function returns, in a
+ * cold/unoptimized run) measurably doubled peak memory during load — see the sibling fix for
+ * `parseNzDateMs` on why real-scale memory here is a real, not theoretical, concern.
+ */
+function parseCsvRows<T>(text: string, expectedColumns: readonly string[], errorCode: string, build: (cells: string[]) => T): T[] {
+  let start = 0;
+  let rowIndex = 0;
+  const rows: T[] = [];
+  const len = text.length;
+  while (start <= len) {
+    let end = text.indexOf('\n', start);
+    if (end === -1) end = len;
+    let lineEnd = end;
+    if (lineEnd > start && text.charCodeAt(lineEnd - 1) === 13 /* \r */) lineEnd -= 1;
+    if (lineEnd > start) {
+      const cells = text.slice(start, lineEnd).split('~');
+      if (rowIndex === 0) {
+        if (cells.length !== expectedColumns.length || cells.some((column, index) => column !== expectedColumns[index])) {
+          throw new NzBundleError(errorCode, 'The NZ Customs CSV column order changed; refusing to parse the wrong fields.');
+        }
+      } else {
+        rows.push(build(cells));
+      }
+      rowIndex += 1;
+    }
+    start = end + 1;
   }
-  return lines.slice(1).map((line) => line.split('~'));
+  if (rowIndex === 0) throw new NzBundleError(errorCode, 'The NZ Customs CSV file is empty.');
+  return rows;
 }
 
-function code(levels: string[]): string {
-  return levels.join('');
+function code(cells: string[]): string {
+  return (cells[0] ?? '') + (cells[1] ?? '') + (cells[2] ?? '') + (cells[3] ?? '') + (cells[4] ?? '');
 }
 
 export interface NzAuthorityBundle {
@@ -137,24 +162,18 @@ export function readNzAuthorityBundle(args: {
     if (!files.has(name)) throw new NzBundleError('unexpected_bundle_files', `The NZ Customs authority bundle is missing the official ${name} file.`);
   }
 
-  const detailRows = parseCsv(files.get('Tariff_Details.csv')!.toString('utf8'), TARIFF_DETAILS_COLUMNS, 'unexpected_details_schema');
-  const rateRows = parseCsv(files.get('Tariff_Rates.csv')!.toString('utf8'), TARIFF_RATES_COLUMNS, 'unexpected_rates_schema');
-  if (!detailRows.length) throw new NzBundleError('empty_details', 'The NZ Customs Tariff_Details.csv file is empty.');
-  if (!rateRows.length) throw new NzBundleError('empty_rates', 'The NZ Customs Tariff_Rates.csv file is empty.');
-
   const num = (value: string) => (value.trim() === '' ? null : Number.parseFloat(value));
 
-  const details: NzTariffDetailRow[] = detailRows.map((cells) => ({
-    code: code(cells.slice(0, 5)),
+  const details = parseCsvRows(files.get('Tariff_Details.csv')!.toString('utf8'), TARIFF_DETAILS_COLUMNS, 'unexpected_details_schema', (cells): NzTariffDetailRow => ({
+    code: code(cells),
     section: cells[6] ?? '',
     statistical_unit: cells[7]?.trim() || null,
     start_date: parseNzDateMs(cells[12] ?? ''),
     expiry_date: parseNzDateMs(cells[13] ?? ''),
     description: (cells[14] ?? '').trim(),
   }));
-
-  const rates: NzTariffRateRow[] = rateRows.map((cells) => ({
-    code: code(cells.slice(0, 5)),
+  const rates = parseCsvRows(files.get('Tariff_Rates.csv')!.toString('utf8'), TARIFF_RATES_COLUMNS, 'unexpected_rates_schema', (cells): NzTariffRateRow => ({
+    code: code(cells),
     rate_group: (cells[5] ?? '').trim(),
     start_date: parseNzDateMs(cells[6] ?? ''),
     expiry_date: parseNzDateMs(cells[7] ?? ''),
@@ -164,6 +183,12 @@ export function readNzAuthorityBundle(args: {
     factor_c: num(cells[12] ?? ''),
     factor_d: num(cells[13] ?? ''),
   }));
+
+  // Both files' headers are validated (inside parseCsvRows) before either is checked for having
+  // zero data rows, matching the original precedence: a schema mismatch is reported over an
+  // incidentally-empty file, regardless of which file is empty vs malformed.
+  if (!details.length) throw new NzBundleError('empty_details', 'The NZ Customs Tariff_Details.csv file is empty.');
+  if (!rates.length) throw new NzBundleError('empty_rates', 'The NZ Customs Tariff_Rates.csv file is empty.');
 
   const file = (name: string, data: Buffer, role: string) => ({
     name, sha256: createHash('sha256').update(data).digest('hex'), size_bytes: data.length, role,
