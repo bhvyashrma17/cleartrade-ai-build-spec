@@ -17,6 +17,8 @@ const fetchUkMarketAccess = vi.fn();
 const fetchUsMarketAccess = vi.fn();
 const fetchEuTaricMarketAccess = vi.fn();
 const fetchCanadaMarketAccess = vi.fn();
+const fetchNzMarketAccess = vi.fn();
+const fetchJapanMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
@@ -26,6 +28,8 @@ vi.mock('@/lib/market-access/taric/service', async () => {
   return { EU_TARIC_DESTINATIONS: actual.EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess };
 });
 vi.mock('@/lib/market-access/providers/canada-service', () => ({ fetchCanadaMarketAccess }));
+vi.mock('@/lib/market-access/providers/nz-service', () => ({ fetchNzMarketAccess }));
+vi.mock('@/lib/market-access/providers/japan-service', () => ({ fetchJapanMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -60,6 +64,8 @@ afterEach(() => {
   fetchUsMarketAccess.mockReset();
   fetchEuTaricMarketAccess.mockReset();
   fetchCanadaMarketAccess.mockReset();
+  fetchNzMarketAccess.mockReset();
+  fetchJapanMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -107,6 +113,25 @@ describe('market-access ingest routing', () => {
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
   });
 
+  test('NZ routes to the CusMod authority-release adapter', async () => {
+    fetchNzMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'NZ', jurisdiction: 'NZ', provider: 'nz_customs_cusmod' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-nz', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'NZ', hs_code: '090111' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchNzMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, origin_country: undefined });
+    expect(fetchCanadaMarketAccess).not.toHaveBeenCalled();
+    expect(fetchJapanMarketAccess).not.toHaveBeenCalled();
+  });
+
+  test('JP routes to the dated-chapter authority-release adapter', async () => {
+    fetchJapanMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'JP', jurisdiction: 'JP', provider: 'japan_customs_tariff_schedule' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-jp', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'JP', hs_code: '090111' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchJapanMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, origin_country: undefined });
+    expect(fetchNzMarketAccess).not.toHaveBeenCalled();
+  });
+
   test('an authority acquisition failure creates no canonical market evidence', async () => {
     fetchCanadaMarketAccess.mockRejectedValue(new Error('CBSA unavailable'));
     await expect(runMarketAccessIngest(ctx({ country_code: 'CA', hs_code: '090111' }))).rejects.toThrow('CBSA unavailable');
@@ -123,7 +148,7 @@ describe('market-access ingest routing', () => {
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
   });
 
-  test.each(['SA', 'JP', 'AE', 'BR'])('%s is a completed source/licence determination, never evidence', async (country) => {
+  test.each(['SA', 'AE', 'BR', 'KR'])('%s is a completed source/licence-or-credential determination, never evidence', async (country) => {
     const outcome = await runMarketAccessIngest(ctx({ country_code: country, hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('provider_unconfigured_or_license_pending');
@@ -132,7 +157,14 @@ describe('market-access ingest routing', () => {
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
     expect(fetchCanadaMarketAccess).not.toHaveBeenCalled();
+    expect(fetchNzMarketAccess).not.toHaveBeenCalled();
+    expect(fetchJapanMarketAccess).not.toHaveBeenCalled();
     expect(persistMarketAccessIngest).not.toHaveBeenCalled();
+  });
+
+  test('KR is stopped on a credential gap, distinct in reason from a licence-pending stop', async () => {
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'KR', hs_code: '090111' }));
+    expect((outcome.result as Record<string, unknown>).reason).toBe('credential_not_provisioned');
   });
 
   test('a genuinely unknown destination fails rather than guessing a source', async () => {

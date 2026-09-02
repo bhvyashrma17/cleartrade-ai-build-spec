@@ -22,7 +22,9 @@ export type NationalCodeSystem =
   | 'EU_TARIC'
   | 'US_HTS'
   | 'GCC_INTEGRATED'
-  | 'CA_CUSTOMS_TARIFF';
+  | 'CA_CUSTOMS_TARIFF'
+  | 'NZ_TARIFF_ITEM'
+  | 'JP_STATISTICAL_CODE';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

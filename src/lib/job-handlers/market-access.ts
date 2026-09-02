@@ -21,6 +21,8 @@ import { fetchUsMarketAccess } from '@/lib/market-access/us-hts';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 import { EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess } from '@/lib/market-access/taric/service';
 import { fetchCanadaMarketAccess } from '@/lib/market-access/providers/canada-service';
+import { fetchNzMarketAccess } from '@/lib/market-access/providers/nz-service';
+import { fetchJapanMarketAccess } from '@/lib/market-access/providers/japan-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -63,6 +65,22 @@ const CANADA_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const NZ_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'nz_customs_cusmod',
+  fetch: (request) => fetchNzMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
+const JAPAN_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'japan_customs_tariff_schedule',
+  fetch: (request) => fetchJapanMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
  * from each source's own destination list rather than duplicating that list here. Two sources
@@ -73,6 +91,8 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   GB: UK_ADAPTER,
   US: US_ADAPTER,
   CA: CANADA_ADAPTER,
+  NZ: NZ_ADAPTER,
+  JP: JAPAN_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 
