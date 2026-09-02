@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { OrgTier, TaricReleaseStatus, UserRole } from '@prisma/client';
+import { AuthorityReleaseStatus, OrgTier, UserRole } from '@prisma/client';
 import { afterAll, describe, expect, test } from 'vitest';
 import JSZip from 'jszip';
 import { activateTaricRelease, importTaricRelease, TARIC_IMPORT_PRINCIPALS } from '@/lib/market-access/taric/service';
@@ -58,7 +58,7 @@ describe('who may import a TARIC release', () => {
       await expect(importTaricRelease({ actor, bytes, reference_month: '2026-09', correlation_id: randomUUID() }))
         .rejects.toMatchObject({ code: 'FORBIDDEN' });
     }
-    expect(await prisma.taricRelease.count({ where: { bundle_sha256: { not: '' } }, take: undefined as never }).catch(() => 0)).toBeGreaterThanOrEqual(0);
+    expect(await prisma.authorityRelease.count({ where: { checksum: { not: '' } } }).catch(() => 0)).toBeGreaterThanOrEqual(0);
   });
 
   test('an admin can, and the release records its full source identity', async () => {
@@ -68,9 +68,11 @@ describe('who may import a TARIC release', () => {
     expect(created).toBe(true);
     expect(release.label).toBe('TARIC 2026-09');
     expect(release.reference_date.toISOString()).toBe('2026-09-01T00:00:00.000Z');
-    expect(release.source_authority).toMatch(/European Commission/);
+    expect(release.authority).toMatch(/European Commission/);
     expect(release.source_distribution).toMatch(/CIRCABC/);
-    expect(release.bundle_sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(release.checksum).toMatch(/^[0-9a-f]{64}$/);
+    expect(release.source_family).toBe('EU_TARIC');
+    expect(release.destination_scope).toContain('DE');
     expect(release.parser_version).toBe('taric-parser-v1');
     expect(Array.isArray(release.file_manifest)).toBe(true);
     expect(release.imported_by_id).toBe(actor.id);
@@ -85,7 +87,8 @@ describe('release identity and immutability', () => {
     const second = await importTaricRelease({ actor, bytes, reference_month: '2026-09', correlation_id: randomUUID() });
     expect(second.created).toBe(false);
     expect(second.release.id).toBe(first.release.id);
-    expect(await prisma.taricRelease.count({ where: { bundle_sha256: first.release.bundle_sha256 } })).toBe(1);
+    expect(second.change).toBe('UNCHANGED');
+    expect(await prisma.authorityRelease.count({ where: { checksum: first.release.checksum } })).toBe(1);
   });
 
   test('a modified file under the same label is a DIFFERENT release', async () => {
@@ -95,15 +98,17 @@ describe('release identity and immutability', () => {
     // Same operator label, different bytes: the checksum is the identity, so these cannot merge.
     expect(a.release.label).toBe(b.release.label);
     expect(b.release.id).not.toBe(a.release.id);
-    expect(b.release.bundle_sha256).not.toBe(a.release.bundle_sha256);
+    expect(b.release.checksum).not.toBe(a.release.checksum);
+    expect(b.change).toBe('CHANGED');
+    expect(b.release.previous_release_id).toBe(a.release.id);
   });
 
   test('an imported release cannot be mutated or deleted', async () => {
     const actor = await principal(UserRole.admin);
     const { release } = await importTaricRelease({ actor, bytes: await bundleBytes(randomUUID()), reference_month: '2026-09', correlation_id: randomUUID() });
-    await expect(prisma.taricRelease.update({ where: { id: release.id }, data: { bundle_sha256: 'f'.repeat(64) } })).rejects.toThrow();
-    await expect(prisma.taricRelease.update({ where: { id: release.id }, data: { reference_date: new Date('2020-01-01') } })).rejects.toThrow();
-    await expect(prisma.taricRelease.delete({ where: { id: release.id } })).rejects.toThrow();
+    await expect(prisma.authorityRelease.update({ where: { id: release.id }, data: { checksum: 'f'.repeat(64) } })).rejects.toThrow();
+    await expect(prisma.authorityRelease.update({ where: { id: release.id }, data: { reference_date: new Date('2020-01-01') } })).rejects.toThrow();
+    await expect(prisma.authorityRelease.delete({ where: { id: release.id } })).rejects.toThrow();
   });
 
   test('activation supersedes the previous active release, never runs two at once', async () => {
@@ -112,9 +117,9 @@ describe('release identity and immutability', () => {
     await activateTaricRelease({ actor, release_id: first.release.id, correlation_id: randomUUID() });
     const second = await importTaricRelease({ actor, bytes: await bundleBytes(randomUUID()), reference_month: '2026-09', correlation_id: randomUUID() });
     await activateTaricRelease({ actor, release_id: second.release.id, correlation_id: randomUUID() });
-    expect(await prisma.taricRelease.count({ where: { status: TaricReleaseStatus.active } })).toBe(1);
-    const superseded = await prisma.taricRelease.findUniqueOrThrow({ where: { id: first.release.id } });
-    expect(superseded.status).toBe(TaricReleaseStatus.superseded);
+    expect(await prisma.authorityRelease.count({ where: { source_family: 'EU_TARIC', status: AuthorityReleaseStatus.active } })).toBe(1);
+    const superseded = await prisma.authorityRelease.findUniqueOrThrow({ where: { id: first.release.id } });
+    expect(superseded.status).toBe(AuthorityReleaseStatus.superseded);
     expect(superseded.superseded_at).not.toBeNull();
   });
 });
@@ -149,7 +154,7 @@ describe('what an import refuses', () => {
   test('a rejected release can never become the source of evidence', async () => {
     const actor = await principal(UserRole.admin);
     const { release } = await importTaricRelease({ actor, bytes: await bundleBytes(randomUUID()), reference_month: '2026-09', correlation_id: randomUUID() });
-    await prisma.taricRelease.update({ where: { id: release.id }, data: { status: TaricReleaseStatus.rejected } });
+    await prisma.authorityRelease.update({ where: { id: release.id }, data: { status: AuthorityReleaseStatus.rejected } });
     await expect(activateTaricRelease({ actor, release_id: release.id, correlation_id: randomUUID() }))
       .rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });

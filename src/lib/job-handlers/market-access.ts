@@ -20,6 +20,7 @@ import { fetchUkMarketAccess } from '@/lib/market-access/uk-tariff';
 import { fetchUsMarketAccess } from '@/lib/market-access/us-hts';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 import { EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess } from '@/lib/market-access/taric/service';
+import { fetchCanadaMarketAccess } from '@/lib/market-access/providers/canada-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -54,15 +55,24 @@ const EU_TARIC_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const CANADA_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'canada_cbsa_customs_tariff',
+  fetch: (request) => fetchCanadaMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
  * from each source's own destination list rather than duplicating that list here. Two sources
  * claiming the same destination would silently overwrite one another in this object — there is
  * no such overlap today, and this is where a future one would first become visible.
  */
-const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>> = Object.freeze({
+export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>> = Object.freeze({
   GB: UK_ADAPTER,
   US: US_ADAPTER,
+  CA: CANADA_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 

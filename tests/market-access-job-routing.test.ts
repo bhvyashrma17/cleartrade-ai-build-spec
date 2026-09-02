@@ -16,6 +16,7 @@ import type { MarketAccessIngestResult } from '@/lib/market-access/contract';
 const fetchUkMarketAccess = vi.fn();
 const fetchUsMarketAccess = vi.fn();
 const fetchEuTaricMarketAccess = vi.fn();
+const fetchCanadaMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
@@ -24,6 +25,7 @@ vi.mock('@/lib/market-access/taric/service', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/taric/service')>('@/lib/market-access/taric/service');
   return { EU_TARIC_DESTINATIONS: actual.EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess };
 });
+vi.mock('@/lib/market-access/providers/canada-service', () => ({ fetchCanadaMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -57,6 +59,7 @@ afterEach(() => {
   fetchUkMarketAccess.mockReset();
   fetchUsMarketAccess.mockReset();
   fetchEuTaricMarketAccess.mockReset();
+  fetchCanadaMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -93,6 +96,23 @@ describe('market-access ingest routing', () => {
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
   });
 
+  test('CA routes to the retained CBSA authority-release adapter', async () => {
+    fetchCanadaMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'CA', jurisdiction: 'CA', provider: 'canada_cbsa_customs_tariff' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-ca', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'CA', hs_code: '090111' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchCanadaMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, origin_country: undefined });
+    expect(fetchUkMarketAccess).not.toHaveBeenCalled();
+    expect(fetchUsMarketAccess).not.toHaveBeenCalled();
+    expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
+  });
+
+  test('an authority acquisition failure creates no canonical market evidence', async () => {
+    fetchCanadaMarketAccess.mockRejectedValue(new Error('CBSA unavailable'));
+    await expect(runMarketAccessIngest(ctx({ country_code: 'CA', hs_code: '090111' }))).rejects.toThrow('CBSA unavailable');
+    expect(persistMarketAccessIngest).not.toHaveBeenCalled();
+  });
+
   test.each(['DE', 'FR', 'IE', 'NL'])('%s routes to the EU TARIC adapter, passing the exact destination', async (country) => {
     fetchEuTaricMarketAccess.mockResolvedValue(ingestFixture({ country_code: country, jurisdiction: 'EU', provider: 'eu_taric' }));
     persistMarketAccessIngest.mockResolvedValue({ id: `snap-${country}`, tariff_lines: [], evidence: [] });
@@ -103,19 +123,20 @@ describe('market-access ingest routing', () => {
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
   });
 
-  test('an authoritative-but-unconfigured destination is a completed determination, never evidence', async () => {
-    const outcome = await runMarketAccessIngest(ctx({ country_code: 'SA', hs_code: '090111' }));
+  test.each(['SA', 'JP', 'AE', 'BR'])('%s is a completed source/licence determination, never evidence', async (country) => {
+    const outcome = await runMarketAccessIngest(ctx({ country_code: country, hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('provider_unconfigured_or_license_pending');
     expect((outcome.result as Record<string, unknown>).snapshot_id).toBeNull();
     expect(fetchUkMarketAccess).not.toHaveBeenCalled();
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
+    expect(fetchCanadaMarketAccess).not.toHaveBeenCalled();
     expect(persistMarketAccessIngest).not.toHaveBeenCalled();
   });
 
   test('a genuinely unknown destination fails rather than guessing a source', async () => {
-    const outcome = await runMarketAccessIngest(ctx({ country_code: 'BR', hs_code: '090111' }));
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'ZZ', hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.failed);
     expect(JSON.stringify(outcome.result)).toMatch(/No authoritative market-access source/);
   });

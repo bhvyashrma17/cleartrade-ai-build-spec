@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { EvidenceOrigin, OrgTier, UserRole } from '@prisma/client';
+import { AuthorityReleaseChange, EvidenceOrigin, OrgTier, UserRole } from '@prisma/client';
 import { afterAll, describe, expect, test } from 'vitest';
 import { persistMarketAccessIngest, type MarketAccessIngestResult, type MarketAccessLineRecord, type MarketAccessRequirementRecord } from '../src/lib/market-access/contract';
 import { buildManualAuthoritativeMarketAccess } from '../src/lib/market-access/manual-authoritative';
@@ -34,6 +34,42 @@ function ingest(over: Partial<MarketAccessIngestResult> = {}): MarketAccessInges
 }
 
 describe('market access persistence', () => {
+  test('one release/request/parser identity is idempotent and a reparse appends immutable evidence', async () => {
+    const marker = randomUUID();
+    const admin = await prisma.user.create({ data: { email: `authority-${marker}@example.test`, name: 'Authority importer', role: UserRole.admin } });
+    const release = await prisma.authorityRelease.create({ data: {
+      label: `CBSA ${marker}`, source_family: 'CA_CBSA', authority: 'Canada Border Services Agency (CBSA)',
+      destination_scope: ['CA'], source_url: 'https://www.cbsa-asfc.gc.ca/test', release_identifier: `T-${marker}`,
+      reference_date: new Date('2026-09-01T00:00:00Z'), source_distribution: 'test retained authority release',
+      retrieved_at: new Date('2026-09-02T00:00:00Z'), source_format: 'zip+accdb+html', checksum: marker.replaceAll('-', '').padEnd(64, 'a').slice(0, 64),
+      size_bytes: 10, artifact_object_key: `test/${marker}`, file_manifest: [], reader_version: 'reader-v1', parser_version: 'parser-v1',
+      validation: { fixture: true }, change_classification: AuthorityReleaseChange.NEW_RELEASE, change_basis: { fixture: true }, imported_by_id: admin.id,
+    } });
+    const v1 = ingest({
+      jurisdiction: 'CA', country_code: 'CA', national_code_system: 'CA_CUSTOMS_TARIFF', provider: 'canada_cbsa_customs_tariff',
+      source_dataset_version: release.release_identifier, source_release_id: release.id, request_identity: 'origin=IN;as_of=2026-09-02', parser_version: 'parser-v1',
+    });
+    const first = await persistMarketAccessIngest(v1);
+    const repeat = await persistMarketAccessIngest(v1);
+    expect(repeat.id).toBe(first.id);
+    expect(await prisma.marketAccessEvidenceSnapshot.count({ where: { authority_release_id: release.id } })).toBe(1);
+
+    const reparsed = await persistMarketAccessIngest({ ...v1, parser_version: 'parser-v2' });
+    expect(reparsed.id).not.toBe(first.id);
+    expect(await prisma.marketAccessEvidenceSnapshot.count({ where: { authority_release_id: release.id } })).toBe(2);
+    const changedRelease = await prisma.authorityRelease.create({ data: {
+      label: `${release.label} changed`, source_family: release.source_family, authority: release.authority,
+      destination_scope: release.destination_scope as never, source_url: release.source_url, release_identifier: release.release_identifier,
+      reference_date: release.reference_date, source_distribution: release.source_distribution, retrieved_at: new Date('2026-09-02T01:00:00Z'),
+      source_format: release.source_format, checksum: 'b'.repeat(64), size_bytes: 11, artifact_object_key: `test/${marker}-changed`,
+      file_manifest: [], reader_version: release.reader_version, parser_version: release.parser_version, validation: { fixture: true },
+      change_classification: AuthorityReleaseChange.CHANGED, change_basis: { previous: release.id }, previous_release_id: release.id, imported_by_id: admin.id,
+    } });
+    const changedSnapshot = await persistMarketAccessIngest({ ...v1, source_release_id: changedRelease.id });
+    expect(changedSnapshot.id).not.toBe(first.id);
+    await expect(prisma.marketAccessEvidenceSnapshot.update({ where: { id: first.id }, data: { parser_version: 'rewritten' } })).rejects.toThrow(/immutable/i);
+  });
+
   test('a specific duty is stored verbatim and carries no invented percentage', async () => {
     const snapshot = await persistMarketAccessIngest(ingest());
     const tariff = snapshot.evidence.find((row) => row.rule_type === 'destination_tariff');

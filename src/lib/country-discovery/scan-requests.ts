@@ -202,7 +202,10 @@ export async function demandDiscoveryOperations(actor: Principal): Promise<Opera
     prisma.discoveryRun.count({ where: { status: { in: [JobStatus.completed, JobStatus.partial] } } }),
     // A refinement still awaiting a decision is evidence a human has to look at.
     prisma.productClassificationRefinement.count({ where: { state: 'refinement_required', superseded_at: null } }),
-    prisma.taricRelease.findFirst({ where: { status: 'active' }, select: { label: true } }),
+    prisma.authorityRelease.findFirst({
+      where: { source_family: 'EU_TARIC', status: 'active' },
+      select: { label: true },
+    }),
   ]);
 
   // Outstanding ClearTrade work is derived per product by `agentCountryTruthWork`; counting it

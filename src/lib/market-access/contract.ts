@@ -17,7 +17,12 @@ import {
   type ParsedDuty,
 } from './tariff-semantics';
 
-export type NationalCodeSystem = 'UK_COMMODITY' | 'EU_TARIC' | 'US_HTS' | 'GCC_INTEGRATED';
+export type NationalCodeSystem =
+  | 'UK_COMMODITY'
+  | 'EU_TARIC'
+  | 'US_HTS'
+  | 'GCC_INTEGRATED'
+  | 'CA_CUSTOMS_TARIFF';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.
@@ -67,6 +72,10 @@ export interface MarketAccessIngestResult {
   source_reference: string;
   national_code_system: NationalCodeSystem;
   parser_version: string;
+  /** Retained bulk/file release supplying the bytes. Lookup/API providers omit it. */
+  source_release_id?: string | null;
+  /** Origin and any other request context that distinguishes legitimate reads of one release. */
+  request_identity?: string | null;
   retrieved_at: Date;
   evidence_class: 'authoritative_public' | 'agent_verified';
   recorded_by_id: string | null;
@@ -114,6 +123,24 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
   const resolved = result.resolution.resolved_line;
   const grade = gradeFor(result);
   const complete = result.regulatory_coverage_complete && (result.resolution.resolution === 'exact' || result.resolution.resolution === 'all_children_equivalent');
+  const ingestIdentity = result.source_release_id
+    ? createHash('sha256').update(JSON.stringify({
+      source_release_id: result.source_release_id,
+      provider: result.provider,
+      country_code: result.country_code,
+      hs6: result.hs6,
+      parser_version: result.parser_version,
+      request_identity: result.request_identity ?? null,
+    })).digest('hex')
+    : null;
+
+  if (ingestIdentity) {
+    const existing = await prisma.marketAccessEvidenceSnapshot.findUnique({
+      where: { ingest_identity: ingestIdentity },
+      include: { evidence: true, tariff_lines: true },
+    });
+    if (existing) return existing;
+  }
 
   const evidence: Array<Omit<Prisma.MarketAccessEvidenceCreateManyInput, 'snapshot_id'>> = [];
 
@@ -126,6 +153,7 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
       rule_type: MarketAccessRuleType.destination_tariff,
       source_authority: result.source_authority, source_reference: result.source_reference,
       retrieved_at: result.retrieved_at, status: MarketAccessEvidenceStatus.verified, confidence: new Prisma.Decimal(1),
+      effective_at: resolved.effective_from ?? null, expires_at: resolved.effective_to ?? null,
       evidence_origin: origin,
       // Only a purely ad-valorem duty has a percentage. A specific or compound duty leaves this
       // null and travels as its verbatim expression instead.
@@ -143,6 +171,7 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
     rule_type: MarketAccessRuleType.preferential_tariff_india,
     source_authority: result.source_authority, source_reference: result.source_reference,
     retrieved_at: result.retrieved_at,
+    effective_at: resolved?.effective_from ?? null, expires_at: resolved?.effective_to ?? null,
     status: calculatorPreferenceStatus(preference.applicability),
     confidence: new Prisma.Decimal(preference.applicability === 'confirmed_applicable' ? 1 : 0.5),
     evidence_origin: origin,
@@ -200,9 +229,11 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
   // Prisma's `createMany`) are legitimately large and pay real network round-trips beyond
   // Prisma's 5s default. 30s leaves ample margin above the ~6.3-6.6s this took in production
   // reproduction while still failing closed well short of a stuck/deadlocked transaction.
-  const snapshotId = await prisma.$transaction(async (tx) => {
-    const snapshot = await tx.marketAccessEvidenceSnapshot.create({
-      data: {
+  let snapshotId: string;
+  try {
+    snapshotId = await prisma.$transaction(async (tx) => {
+      const snapshot = await tx.marketAccessEvidenceSnapshot.create({
+        data: {
         jurisdiction: result.jurisdiction, country_code: result.country_code, hs_code_scope: result.hs6, hs6_code: result.hs6,
         national_code_system: result.national_code_system,
         classification_resolution: result.resolution.resolution,
@@ -225,17 +256,19 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
         } as unknown as Prisma.InputJsonValue,
         source_authority: result.source_authority, source_reference: result.source_reference,
         source_version: result.source_dataset_version, retrieved_at: result.retrieved_at,
+        effective_at: resolved?.effective_from ?? null, expires_at: resolved?.effective_to ?? null,
         completeness_status: complete ? EvidenceCompletenessStatus.COMPLETE : EvidenceCompletenessStatus.PARTIAL,
         tariff_coverage: Boolean(resolved && result.general_duty),
         regulatory_coverage: result.regulatory_coverage_complete,
         parser_version: result.parser_version, evidence_origin: origin, provider: result.provider,
         source_dataset: result.source_dataset, source_run_id: options.source_run_id ?? null,
+        ingest_identity: ingestIdentity, authority_release_id: result.source_release_id ?? null,
         raw_response_checksum: checksum, raw_evidence: result.raw_evidence as Prisma.InputJsonValue,
-      },
-    });
-    if (result.lines.length) {
-      await tx.marketAccessTariffLine.createMany({
-        data: result.lines.map((line) => ({
+        },
+      });
+      if (result.lines.length) {
+        await tx.marketAccessTariffLine.createMany({
+          data: result.lines.map((line) => ({
           snapshot_id: snapshot.id, jurisdiction: result.jurisdiction, country_code: result.country_code,
           hs6_code: result.hs6, hs_revision: result.hs_revision,
           national_tariff_code: line.national_tariff_code, national_code_system: result.national_code_system,
@@ -249,12 +282,21 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
           conditions: line.conditions as Prisma.InputJsonValue,
           effective_from: line.effective_from, effective_to: line.effective_to,
           source_reference: line.source_reference, raw_measure: line.raw_measure as Prisma.InputJsonValue,
-        })),
-      });
-    }
-    if (evidence.length) await tx.marketAccessEvidence.createMany({ data: evidence.map((row) => ({ ...row, snapshot_id: snapshot.id })) });
-    return snapshot.id;
-  }, { timeout: 30_000, maxWait: 10_000 });
+          })),
+        });
+      }
+      if (evidence.length) await tx.marketAccessEvidence.createMany({ data: evidence.map((row) => ({ ...row, snapshot_id: snapshot.id })) });
+      return snapshot.id;
+    }, { timeout: 30_000, maxWait: 10_000 });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002' || !ingestIdentity) throw error;
+    const raced = await prisma.marketAccessEvidenceSnapshot.findUnique({
+      where: { ingest_identity: ingestIdentity },
+      include: { evidence: true, tariff_lines: true },
+    });
+    if (!raced) throw error;
+    return raced;
+  }
 
   // Reached only once every write above has durably committed (a thrown/rolled-back transaction
   // never returns, so this line never runs against a partial snapshot).

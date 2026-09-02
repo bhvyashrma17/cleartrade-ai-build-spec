@@ -404,10 +404,12 @@ export function buildTaricIngest(args: {
   release_reference_date: Date;
   retrieved_at: Date;
   origin_country: string;
+  parser_version?: string;
 }): MarketAccessIngestResult {
   const { resolution } = args;
   const destination = args.destination_country.trim().toUpperCase();
   const resolved = resolveNationalTariffLine(resolution.candidates);
+  const parserVersion = args.parser_version ?? TARIC_PARSER_VERSION;
 
   const lines: MarketAccessLineRecord[] = resolution.measures.map((measure) => ({
     national_tariff_code: measure.goods_code,
@@ -465,7 +467,7 @@ export function buildTaricIngest(args: {
     source_dataset_version: args.release_label,
     source_reference: `CIRCABC TARIC monthly extraction ${args.release_label} (bundle sha256 ${args.bundle.bundle_sha256})`,
     national_code_system: 'EU_TARIC',
-    parser_version: TARIC_PARSER_VERSION,
+    parser_version: parserVersion,
     retrieved_at: args.retrieved_at,
     evidence_class: 'authoritative_public',
     recorded_by_id: null,
@@ -481,7 +483,7 @@ export function buildTaricIngest(args: {
       reference_date: args.release_reference_date.toISOString(),
       bundle_sha256: args.bundle.bundle_sha256,
       files: args.bundle.files,
-      parser_version: TARIC_PARSER_VERSION,
+      parser_version: parserVersion,
       reader_version: args.bundle.reader_version,
       origin_country: args.origin_country,
       origin_groups: resolution.india_groups,

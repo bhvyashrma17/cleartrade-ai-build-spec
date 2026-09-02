@@ -1,5 +1,10 @@
 # Authority packs, implementation waves, and canary selection
 
+> **Implementation checkpoint (02 Sep 2026):** P1-CC4 implemented and locally qualified Canada
+> against CBSA T2026-2. Japan, UAE and Brazil stopped before acquisition on the registry's unresolved
+> rights/source-contract findings. The original predictions below are retained unchanged. See
+> `p1-cc4-wave1-implementation.md` for prediction-versus-actual details.
+
 Ranking is `coverage-optimizer.md`'s output, filtered to remove every `D_blocked` source
 regardless of its raw score (Switzerland, Saudi, Kuwait, the GCC and EAEU family rollups) — a
 blocked source is not "low priority," it is not buildable at all until its licence question is

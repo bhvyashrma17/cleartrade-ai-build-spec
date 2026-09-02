@@ -19,7 +19,7 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json(
       list(releases.map((r) => ({
         id: r.id, label: r.label, reference_date: r.reference_date, status: r.status,
-        bundle_sha256: r.bundle_sha256, bundle_size_bytes: r.bundle_size_bytes,
+        bundle_sha256: r.checksum, bundle_size_bytes: r.size_bytes,
         parser_version: r.parser_version, imported_at: r.imported_at,
       })), { ...pageMeta({ page: 1, per_page: releases.length || 1, total: releases.length }) }),
       { headers: { 'x-correlation-id': correlationId } },
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       single({
         id: release.id, label: release.label, status: release.status,
-        bundle_sha256: release.bundle_sha256, reference_date: release.reference_date,
+        bundle_sha256: release.checksum, reference_date: release.reference_date,
         file_manifest: release.file_manifest, created,
       }),
       { status: created ? 201 : 200, headers: { 'x-correlation-id': correlationId } },

@@ -45,6 +45,7 @@
     "retention:imports": "tsx --env-file=.env.local scripts/enforce-import-retention.ts",
     "storage:migrate": "tsx --env-file=.env.local scripts/migrate-document-storage.ts",
     "ingest:market-access": "tsx --env-file=.env.local scripts/ingest-market-access.ts",
+    "ingest:authority-release": "tsx --env-file-if-exists=.env.local scripts/ingest-authority-release.ts",
     "verify:cbp": "tsx --env-file=.env.local scripts/verify-cbp-manifest-ingest.ts",
     "verify:buyer-intelligence": "tsx --env-file=.env.local scripts/verify-buyer-intelligence.ts",
     "buyers:build": "tsx --env-file=.env.local scripts/run-buyer-intelligence.ts"
@@ -62,6 +63,7 @@
     "date-fns": "^4.1.0",
     "docx": "^9.7.1",
     "i18n-iso-countries": "^7.14.0",
+    "mdb-reader": "^3.2.0",
     "next": "^15.3.0",
     "next-auth": "^5.0.0-beta.25",
     "pdf-lib": "^1.17.1",

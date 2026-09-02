@@ -876,7 +876,7 @@ model User {
   market_scan_requests_made      MarketScanRequest[]               @relation("MarketScanRequester")
   market_scan_requests_decided   MarketScanRequest[]               @relation("MarketScanDecider")
 
-  taric_releases_imported        TaricRelease[]                    @relation("TaricReleaseImporter")
+  authority_releases_imported    AuthorityRelease[]                @relation("AuthorityReleaseImporter")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -1385,6 +1385,13 @@ model MarketAccessEvidenceSnapshot {
   provider                  String                     @default("unknown_legacy")
   source_dataset            String?
   source_run_id             String?
+  /// Stable identity of one logical authority/release/request/parser result. Null on historical
+  /// rows. A repeat acquisition reuses the existing immutable snapshot; a changed release or a
+  /// newer parser version produces a distinct identity and therefore a new snapshot.
+  ingest_identity           String?                    @unique
+  /// Generic retained authority release that supplied the raw bytes, when this was a bulk/file
+  /// source. Lookup/API providers legitimately leave this null.
+  authority_release_id      String?
   raw_response_checksum     String?
   raw_evidence              Json
   /// The HS6 the snapshot was requested FOR, kept apart from `hs_code_scope`, which may be a
@@ -1401,9 +1408,11 @@ model MarketAccessEvidenceSnapshot {
   resolution_detail         Json?
   evidence                  MarketAccessEvidence[]
   tariff_lines              MarketAccessTariffLine[]
+  authority_release         AuthorityRelease?          @relation(fields: [authority_release_id], references: [id], onDelete: Restrict)
 
   @@index([country_code, hs_code_scope, retrieved_at])
   @@index([country_code, hs6_code, retrieved_at])
+  @@index([authority_release_id])
 }
 
 /// One national tariff line beneath a requested HS6, exactly as the authority publishes it.
@@ -5218,8 +5227,9 @@ model MarketScanRequest {
   @@index([product_classification_id, status])
 }
 
-/// Lifecycle of an uploaded official TARIC extraction.
-enum TaricReleaseStatus {
+/// Lifecycle shared by every retained official bulk/file authority release. The database enum
+/// keeps its historical TARIC name through @map so applied migrations and old rows are untouched.
+enum AuthorityReleaseStatus {
   /// Uploaded and validated, but not yet the release evidence is read from.
   imported
   /// The release new ingests resolve against.
@@ -5228,27 +5238,40 @@ enum TaricReleaseStatus {
   superseded
   /// Validation failed; the artifact is kept so the failure is inspectable.
   rejected
+
+  @@map("TaricReleaseStatus")
 }
 
-/// One official European Commission TARIC monthly extraction, as uploaded by ClearTrade staff.
-///
-/// Immutable once imported. A new monthly extraction is a NEW release with its own identity, so
-/// an assessment can always answer "which exact TARIC release produced this?". The byte checksum
-/// is unique, which is what stops the same bundle being imported twice into rival active releases.
-model TaricRelease {
+enum AuthorityReleaseChange {
+  NEW_RELEASE
+  CHANGED
+
+  @@map("AuthorityReleaseChange")
+}
+
+/// One immutable raw release from a customs/tariff authority. This is the safely-generalised
+/// former TaricRelease model: it remains mapped to the same physical table, preserving every
+/// historical TARIC row while allowing Canada and future bulk packs to share one lifecycle.
+model AuthorityRelease {
   id String @id @default(cuid())
 
-  /// Operator-facing label, e.g. "TARIC 2026-09".
+  /// Operator-facing label, e.g. "TARIC 2026-09" or "CBSA T2026-2".
   label String
-  /// The Commission's reference date: the first day of the extraction month.
+  source_family String
+  authority String @map("source_authority")
+  /// Exact destinations the release is authoritative for; never inferred from a customs union.
+  destination_scope Json
+  source_url String
+  release_identifier String
   reference_date DateTime
-  source_authority String
-  /// CIRCABC group the extraction is published in.
   source_distribution String
+  retrieved_at DateTime
+  source_format String
 
-  /// SHA-256 of the uploaded archive. Unique: the same bytes are the same release.
-  bundle_sha256    String  @unique
-  bundle_size_bytes Int
+  /// SHA-256 of the retained source bundle. It is deliberately not globally unique: identical
+  /// bytes may be published under different release identities or source contexts.
+  checksum String @map("bundle_sha256")
+  size_bytes Int @map("bundle_size_bytes")
   /// Where the original artifact is retained, through the existing secure storage layer.
   artifact_object_key String
   /// Per-file name/sha256/size, so a single altered table is detectable after the fact.
@@ -5256,9 +5279,12 @@ model TaricRelease {
 
   reader_version String
   parser_version String
-  status         TaricReleaseStatus @default(imported)
+  status         AuthorityReleaseStatus @default(imported)
   /// Validation detail, including the failure reason when `status` is `rejected`.
   validation     Json
+  change_classification AuthorityReleaseChange
+  change_basis Json
+  previous_release_id String?
 
   imported_by_id String
   imported_at    DateTime @default(now())
@@ -5266,7 +5292,13 @@ model TaricRelease {
   superseded_at  DateTime?
   correlation_id String?
 
-  imported_by User @relation("TaricReleaseImporter", fields: [imported_by_id], references: [id])
+  imported_by User @relation("AuthorityReleaseImporter", fields: [imported_by_id], references: [id])
+  previous_release AuthorityRelease? @relation("AuthorityReleaseHistory", fields: [previous_release_id], references: [id], onDelete: Restrict)
+  later_releases AuthorityRelease[] @relation("AuthorityReleaseHistory")
+  evidence_snapshots MarketAccessEvidenceSnapshot[]
 
-  @@index([status, reference_date])
+  @@unique([source_family, authority, release_identifier, checksum], map: "AuthorityRelease_logical_acquisition_key")
+  @@index([source_family, authority, status, reference_date], map: "AuthorityRelease_source_status_reference_idx")
+  @@index([previous_release_id], map: "AuthorityRelease_previous_release_id_idx")
+  @@map("TaricRelease")
 }

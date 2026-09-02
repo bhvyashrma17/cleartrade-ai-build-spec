@@ -32,6 +32,33 @@ export interface UnconfiguredSource {
  * See `src/lib/market-access/taric/` and docs/18-taric-bundle-schema-map.md.
  */
 export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, UnconfiguredSource>> = Object.freeze({
+  JP_CUSTOMS: {
+    jurisdiction: 'JP',
+    country_codes: ['JP'],
+    authority: 'Japan Customs — Customs and Tariff Bureau, Ministry of Finance',
+    reason: 'license_pending',
+    determination: 'Japan Customs publishes dated tariff schedules, but the committed Customs Atlas registry found no commercial-use, automated-access, raw-retention, customer-display or redistribution permission. P1-CC4 stops this adapter until those rights are confirmed.',
+    references: ['https://www.customs.go.jp/english/tariff/index.htm'],
+    unblocked_by: 'Recorded permission covering automated acquisition, retention and customer-facing derived use of the dated tariff schedules.',
+  },
+  AE_DUBAI_CUSTOMS: {
+    jurisdiction: 'AE',
+    country_codes: ['AE'],
+    authority: 'Dubai Customs / Dubai Pulse — Customs Agreements, Commodity and Tariff',
+    reason: 'license_pending',
+    determination: 'The UAE Federal Open Data License is commercially permissive at platform level, but the committed registry did not verify that the specific customs-tariff dataset carries that licence. Platform openness is not dataset permission.',
+    references: ['https://www.dubaipulse.gov.ae/data/dubai-customs-customs-agreements-commodity-and-tariff'],
+    unblocked_by: 'Dataset-specific licence confirmation for automated retrieval, raw retention and customer display.',
+  },
+  BR_SISCOMEX: {
+    jurisdiction: 'BR',
+    country_codes: ['BR'],
+    authority: 'Receita Federal / Portal Único de Comércio Exterior (Siscomex)',
+    reason: 'license_pending',
+    determination: 'The committed registry did not confirm the Portal Único tariff API scope, authentication model or reuse rights. Brazil also requires authoritative LETEC/national-exception semantics; a TEC-only implementation would be unsafe.',
+    references: ['https://www.gov.br/siscomex/'],
+    unblocked_by: 'Confirmed API contract and reuse rights plus an authority-backed national override/LETEC source.',
+  },
   SA_ZATCA: {
     jurisdiction: 'SA',
     country_codes: ['SA'],
