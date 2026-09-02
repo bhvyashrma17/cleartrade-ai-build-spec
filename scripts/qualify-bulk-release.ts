@@ -29,6 +29,7 @@ import { loadAuthorityReleaseArtifact } from '@/lib/market-access/authority-rele
 import { readCanadaAuthorityBundle } from '@/lib/market-access/providers/canada-bundle';
 import { readJapanAuthorityBundle } from '@/lib/market-access/providers/japan-bundle';
 import { readNzAuthorityBundle } from '@/lib/market-access/providers/nz-bundle';
+import { readTaricBundle } from '@/lib/market-access/taric/bundle';
 import { recordReleaseQualification } from '@/lib/market-access/bulk-release-gate';
 import { prisma } from '@/lib/prisma';
 
@@ -66,6 +67,15 @@ const DECODERS: Record<string, (bytes: Buffer, release: { release_identifier: st
       rows: bundle.details.length + bundle.rates.length,
       decompressed: bundle.files.reduce((sum, f) => sum + f.size_bytes, 0),
     };
+  },
+  EU_TARIC: async (bytes) => {
+    // `parseSheets: true` forces the full decode the query path actually performs; measuring a
+    // lazy read would understate the memory the worker really commits.
+    const bundle = await readTaricBundle(bytes, { parseSheets: true });
+    const rows = bundle.files.reduce((sum, file) => {
+      try { return sum + bundle.sheet(file.name).length; } catch { return sum; }
+    }, 0);
+    return { rows, decompressed: bundle.files.reduce((sum, f) => sum + f.size_bytes, 0) };
   },
   JP_CUSTOMS: async (bytes, release) => {
     const [label, chapter] = release.release_identifier.split('-ch');

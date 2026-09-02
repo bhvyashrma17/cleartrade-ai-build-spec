@@ -136,13 +136,20 @@ export async function listTaricReleases() {
 /**
  * Cached parsed bundles, keyed by checksum: parsing 146k measure rows is not free.
  *
- * Bounded, for the same reason Japan's was: an unevicting map retains one decoded bundle per
- * release a long-lived worker has ever served. TARIC is the largest source in the Atlas (bundles
- * are capped at 200MB and decode to a full measure/nomenclature graph), so retaining even a couple
- * of superseded decodes is the most expensive version of that mistake. Two keeps the active
- * release resident across a rollover without accumulating history.
+ * Bounded at ONE, and the number is measured rather than chosen. Real-archive qualification of the
+ * September 2026 extraction (410,161 rows) recorded ~681MB of retained heap for a single decoded
+ * bundle against a 1GiB worker. Caching two — the bound used for Canada and NZ, whose decodes are
+ * an order of magnitude smaller — would mean ~1.36GB during a release rollover, i.e. a guaranteed
+ * OOM rather than a risk of one. A capacity of one keeps the active release resident and evicts the
+ * superseded decode the moment a new release is served.
+ *
+ * TARIC's decode itself currently FAILS the operational ceiling (931MB peak, 91% of the worker,
+ * a 23.5x retention ratio against a 31MB source) because the reader materialises every sheet as
+ * string[][] up front. That is a known, recorded breach — see the qualification row and
+ * docs/customs-atlas/p1-cc4-wave1c1-implementation.md; this bound contains the blast radius but is
+ * not a fix for it.
  */
-const bundleCache = new BoundedBundleCache<TaricBundle>(2);
+const bundleCache = new BoundedBundleCache<TaricBundle>(1);
 
 async function loadTaricBundle(releaseId?: string) {
   const release = releaseId
