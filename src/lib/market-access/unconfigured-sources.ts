@@ -45,6 +45,33 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
   // explicitly permits commercial use, and the schedule's numerical/tabular content is stated to
   // be free of copyright protection outright. Japan is now an automated authoritative provider —
   // see src/lib/market-access/providers/japan-*.ts.
+  CH_BAZG_TARES: {
+    jurisdiction: 'CH',
+    country_codes: ['CH'],
+    authority: 'Federal Office for Customs and Border Security (BAZG/FOCBS) — Tares customs tariff',
+    reason: 'license_pending',
+    determination: 'Prior Customs Atlas research recorded that commercial reuse of Tares requires written permission from BAZG. This pass looked for primary evidence that would overturn that and found none: BAZG publishes Tares free of charge for consultation, but no dataset-level statement granting commercial reuse, redistribution or derived SaaS display of the tariff data was located, and no machine-readable Tares dataset with attached reuse terms was found on the federal open-data portal. A prior restriction is not downgraded merely because the tariff remains publicly viewable.',
+    references: ['https://www.bazg.admin.ch/en/customs-tariff-tares-services-companies', 'https://www.bazg.admin.ch/en/introduction-to-customs-tariff-tares'],
+    unblocked_by: 'Written permission from BAZG covering commercial use, automated retrieval, caching and derived customer-facing display of Tares data, or publication of Tares as an openly licensed dataset.',
+  },
+  SG_CUSTOMS_STCCED: {
+    jurisdiction: 'SG',
+    country_codes: ['SG'],
+    authority: 'Singapore Customs — Singapore Trade Classification, Customs and Excise Duties (STCCED)',
+    reason: 'no_documented_machine_interface',
+    determination: 'Unresolved at dataset level, and deliberately not upgraded. Singapore operates a strong general Open Data Licence, but that licence attaches to datasets published on data.gov.sg, and a search of the data.gov.sg dataset API for tariff content did not surface an STCCED or customs-duty dataset. The tariff itself is served through Singapore Customs\' interactive Tariff Finder, which publishes no documented bulk file or API. Consuming that interface would mean driving a private endpoint, which this project declines to do. The general portal licence therefore cannot be transferred onto a dataset that is not published under it.',
+    references: ['https://www.customs.gov.sg/', 'https://data.gov.sg/'],
+    unblocked_by: 'Publication of STCCED (or the customs duty schedule) as a documented dataset or API under the Singapore Open Data Licence, or an equivalent dataset-specific reuse statement from Singapore Customs.',
+  },
+  TH_CUSTOMS: {
+    jurisdiction: 'TH',
+    country_codes: ['TH'],
+    authority: 'Thai Customs Department — integrated tariff / ASEAN Harmonised Tariff Nomenclature schedules',
+    reason: 'no_documented_machine_interface',
+    determination: 'Not established in this pass, and stopped rather than guessed. Thailand\'s national open-data portal (data.go.th) refused automated retrieval outright (HTTP 403) to a plainly identified client, so no dataset-level licence or machine interface for the customs tariff could be confirmed from primary evidence. Defeating that block would be circumventing an access control rather than acquiring an authorised source. No determination is claimed about Thailand\'s underlying reuse rights, which remain unresearched rather than refused.',
+    references: ['https://data.go.th/', 'https://www.customs.go.th/'],
+    unblocked_by: 'A reachable, documented Thai Customs tariff dataset or API with dataset-specific reuse terms, or an authorised access path to data.go.th.',
+  },
   IL_TAX_AUTHORITY: {
     jurisdiction: 'IL',
     country_codes: ['IL'],

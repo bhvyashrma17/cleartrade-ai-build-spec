@@ -25,7 +25,8 @@ export type NationalCodeSystem =
   | 'CA_CUSTOMS_TARIFF'
   | 'NZ_TARIFF_ITEM'
   | 'JP_STATISTICAL_CODE'
-  | 'AU_TARIFF_ITEM';
+  | 'AU_TARIFF_ITEM'
+  | 'NO_VARENUMMER';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.
