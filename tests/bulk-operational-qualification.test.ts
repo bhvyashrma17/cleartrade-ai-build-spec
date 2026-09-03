@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
+import { BoundedBundleCache, SharedBudgetBundleCache, __bundleCacheBudget__ } from '@/lib/market-access/bundle-cache';
 import {
   gradeBulkQualification,
   measureBulkDecode,
@@ -127,5 +127,68 @@ describe('decoded bundles are cached with a hard bound', () => {
     expect(() => new BoundedBundleCache(0)).toThrow(/positive integer capacity/);
     expect(() => new BoundedBundleCache(-1)).toThrow(/positive integer capacity/);
     expect(() => new BoundedBundleCache(1.5)).toThrow(/positive integer capacity/);
+  });
+});
+
+describe('the process-wide cache budget bounds co-residency across families', () => {
+  /**
+   * Regression for a real staging OOM. Each family's cache was individually bounded, but nothing
+   * bounded their sum: TARIC's bundle (~150MB) and Canada's (~80MB) were both resident when an NZ
+   * decode started, and the worker died at Runtime_AllocateInYoungGeneration. The same NZ job run
+   * alone against the restarted worker completed normally, which is what identified co-residency
+   * rather than any single adapter as the cause.
+   */
+  test('a large family evicts another large family rather than both staying resident', () => {
+    __bundleCacheBudget__.reset();
+    const taric = new SharedBudgetBundleCache<string>('EU_TARIC', 150 * 1024 * 1024);
+    const nz = new SharedBudgetBundleCache<string>('NZ_CUSTOMS', 148 * 1024 * 1024);
+
+    taric.set('t1', 'TARIC');
+    expect(taric.get('t1')).toBe('TARIC');
+    nz.set('n1', 'NZ');
+
+    // 150 + 148 = 298MB exceeds the budget, so the older TARIC entry is gone.
+    expect(nz.get('n1')).toBe('NZ');
+    expect(taric.get('t1')).toBeUndefined();
+    expect(__bundleCacheBudget__.usedBytes()).toBeLessThanOrEqual(__bundleCacheBudget__.budget_bytes);
+  });
+
+  test('small per-chapter entries coexist and are not evicted by each other', () => {
+    __bundleCacheBudget__.reset();
+    const jp = new SharedBudgetBundleCache<string>('JP_CUSTOMS', 9 * 1024 * 1024);
+    for (let i = 0; i < 10; i += 1) jp.set(`ch${i}`, `chapter-${i}`);
+    // 10 x 9MB = 90MB, inside the budget, so every chapter is still resident.
+    expect(jp.size).toBe(10);
+    expect(jp.get('ch0')).toBe('chapter-0');
+    expect(__bundleCacheBudget__.usedBytes()).toBeLessThanOrEqual(__bundleCacheBudget__.budget_bytes);
+  });
+
+  test('total retained weight never exceeds the budget, whatever the mix', () => {
+    __bundleCacheBudget__.reset();
+    const taric = new SharedBudgetBundleCache<string>('EU_TARIC', 150 * 1024 * 1024);
+    const nz = new SharedBudgetBundleCache<string>('NZ_CUSTOMS', 148 * 1024 * 1024);
+    const ca = new SharedBudgetBundleCache<string>('CA_CBSA', 80 * 1024 * 1024);
+    const jp = new SharedBudgetBundleCache<string>('JP_CUSTOMS', 9 * 1024 * 1024);
+    for (let i = 0; i < 40; i += 1) {
+      taric.set(`t${i}`, 't'); nz.set(`n${i}`, 'n'); ca.set(`c${i}`, 'c'); jp.set(`j${i}`, 'j');
+      expect(__bundleCacheBudget__.usedBytes()).toBeLessThanOrEqual(__bundleCacheBudget__.budget_bytes);
+    }
+  });
+
+  test('clear releases only that family\'s weight', () => {
+    __bundleCacheBudget__.reset();
+    const jp = new SharedBudgetBundleCache<string>('JP_CUSTOMS', 9 * 1024 * 1024);
+    const ca = new SharedBudgetBundleCache<string>('CA_CBSA', 80 * 1024 * 1024);
+    jp.set('a', 'a'); ca.set('b', 'b');
+    const before = __bundleCacheBudget__.usedBytes();
+    jp.clear();
+    expect(jp.size).toBe(0);
+    expect(ca.get('b')).toBe('b');
+    expect(__bundleCacheBudget__.usedBytes()).toBe(before - 9 * 1024 * 1024);
+  });
+
+  test('rejects a nonsensical weight rather than silently counting an entry as free', () => {
+    expect(() => new SharedBudgetBundleCache('X', 0)).toThrow(/positive per-entry weight/);
+    expect(() => new SharedBudgetBundleCache('X', -1)).toThrow(/positive per-entry weight/);
   });
 });

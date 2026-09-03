@@ -8,7 +8,7 @@ import {
   loadAuthorityReleaseArtifact,
   type AuthorityReleaseSource,
 } from '@/lib/market-access/authority-releases';
-import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
+import { SharedBudgetBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import type { Principal } from '@/types';
@@ -92,11 +92,11 @@ export function activeNzRelease() {
 }
 
 /**
- * NZ publishes one nightly whole-country archive, so only one release is active at a time; the
- * bound exists so a long-lived worker crossing nightly release boundaries retires the superseded
- * decode instead of accumulating one per night.
+ * NZ publishes one nightly whole-country archive. The weight is the measured ~148MB a decoded
+ * bundle retains — the largest in the Atlas alongside TARIC, and the reason the shared budget
+ * exists: an NZ decode peaks near 660MB, so very little else can be resident while it runs.
  */
-const bundleCache = new BoundedBundleCache<NzAuthorityBundle>(2);
+const bundleCache = new SharedBudgetBundleCache<NzAuthorityBundle>('NZ_CUSTOMS', 148 * 1024 * 1024);
 
 async function loadNzBundle(releaseId?: string) {
   const release = releaseId

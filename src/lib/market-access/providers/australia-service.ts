@@ -8,7 +8,7 @@ import {
   loadAuthorityReleaseArtifact,
   type AuthorityReleaseSource,
 } from '@/lib/market-access/authority-releases';
-import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
+import { SharedBudgetBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import type { Principal } from '@/types';
@@ -117,8 +117,11 @@ export function activeAustraliaChapterRelease(chapter: string) {
   return activeAuthorityRelease(AUSTRALIA_SOURCE_FAMILY, `${AUSTRALIA_SOURCE_AUTHORITY} — Chapter ${padded}`);
 }
 
-/** Per-chapter releases, so the same bound that protects Japan applies here. */
-const bundleCache = new BoundedBundleCache<AustraliaAuthorityBundle>(12);
+/**
+ * Per-chapter releases like Japan's, and the same measured ~9MB per decoded chapter. Residency is
+ * governed by the shared process-wide budget.
+ */
+const bundleCache = new SharedBudgetBundleCache<AustraliaAuthorityBundle>('AU_ABF', 9 * 1024 * 1024);
 
 async function loadAustraliaBundle(chapter: string, releaseId?: string) {
   const release = releaseId

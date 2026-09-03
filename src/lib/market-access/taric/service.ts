@@ -9,7 +9,7 @@
 import { UserRole } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { notFound, validationError } from '@/lib/errors';
-import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
+import { SharedBudgetBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest, type MarketAccessIngestResult } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import {
@@ -136,20 +136,12 @@ export async function listTaricReleases() {
 /**
  * Cached parsed bundles, keyed by checksum: parsing 146k measure rows is not free.
  *
- * Bounded at ONE, and the number is measured rather than chosen. Real-archive qualification of the
- * September 2026 extraction (410,161 rows) recorded ~681MB of retained heap for a single decoded
- * bundle against a 1GiB worker. Caching two — the bound used for Canada and NZ, whose decodes are
- * an order of magnitude smaller — would mean ~1.36GB during a release rollover, i.e. a guaranteed
- * OOM rather than a risk of one. A capacity of one keeps the active release resident and evicts the
- * superseded decode the moment a new release is served.
- *
- * TARIC's decode itself currently FAILS the operational ceiling (931MB peak, 91% of the worker,
- * a 23.5x retention ratio against a 31MB source) because the reader materialises every sheet as
- * string[][] up front. That is a known, recorded breach — see the qualification row and
- * docs/customs-atlas/p1-cc4-wave1c1-implementation.md; this bound contains the blast radius but is
- * not a fix for it.
+ * The weight is the measured ~150MB a decoded TARIC bundle retains after the streaming/interning
+ * reader (was ~500MB before it). Residency is decided by the shared process-wide budget rather
+ * than a per-family capacity, because co-residency across families — not any single family — is
+ * what OOM'd a worker.
  */
-const bundleCache = new BoundedBundleCache<TaricBundle>(1);
+const bundleCache = new SharedBudgetBundleCache<TaricBundle>('EU_TARIC', 150 * 1024 * 1024);
 
 async function loadTaricBundle(releaseId?: string) {
   const release = releaseId

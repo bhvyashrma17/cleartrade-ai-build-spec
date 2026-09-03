@@ -104,11 +104,13 @@ common EU tariff truth, destination identity preserved separately.
 
 ## Cache policy
 
-Unchanged at **capacity 1**, deliberately. Retention per decoded bundle fell from ~505 MB to
-~148 MB, which would make a capacity of 2 survivable — but capacity 1 is sufficient for a source
-with one active release at a time, and the task's rule stands: do not raise a bound merely because
-the reader got smaller. Two retained decodes would put ~300 MB of purely optional cache against a
-1 GiB worker for no measured benefit.
+Initially left at **capacity 1**: retention per decoded bundle fell from ~505 MB to ~148 MB, which
+would have made a capacity of 2 survivable, but a bound is not raised merely because the reader got
+smaller.
+
+That policy was then **superseded by the staging canaries** — see the co-residency section below.
+Per-family capacities are replaced by a single process-wide byte budget, because the failure that
+actually occurred was the sum across families, not any one family's capacity.
 
 ## Limitations
 
@@ -118,3 +120,63 @@ the reader got smaller. Two retained decodes would put ~300 MB of purely optiona
 - Decode is ~25% slower. Acceptable once per release; it would not be if it ran per query.
 - The gate's retention heuristic is tuned for whole-source materialisation and would not catch a
   future regression that stayed under 8× while still growing.
+
+---
+
+# What the staging canaries then found: cross-family cache co-residency
+
+TARIC closure was verified on staging (425 MB, PASSED, no override). The canary batch run
+immediately afterwards **crashed the worker**, and the cause was not TARIC.
+
+## The incident
+
+Exact sequence from the deploy log:
+
+| Time | Event |
+|---|---|
+| 05:41:12–05:41:17 | eight EU (TARIC) canaries complete; TARIC bundle resident in its cache |
+| 05:41:17 | Canada canary completes; Canada bundle resident in its cache |
+| 05:41:19 | **NZ decode starts** |
+| 05:41:27 | **OOM**, `Runtime_AllocateInYoungGeneration`, JS stacktrace, no `job_finished` |
+| 05:41:29 | worker restarts |
+
+**Discriminating test:** the same NZ job, enqueued alone against the freshly restarted worker,
+completed normally (306 lines, `classification_refinement_required`). NZ is not individually
+at fault, and neither is TARIC — whose own decode had just passed at 41.5%.
+
+## Root cause
+
+Every family's decoded-bundle cache was individually bounded. **Their sum was not.** Approximate
+arithmetic at the moment of the crash, against a 1 GiB limit:
+
+| Component | Cost |
+|---|---|
+| Worker baseline | ~130 MB |
+| TARIC cache (capacity 1) | ~150 MB |
+| Canada cache | ~80 MB |
+| NZ decode peak | ~590 MB attributed |
+| **Total** | **~950 MB+** |
+
+Each adapter had passed its ceiling in isolation. Nothing measured co-residency — and the gap gets
+strictly worse with every pack added, since each new family brought its own independent cache.
+
+## Fix
+
+`SharedBudgetBundleCache`: one process-wide byte budget shared by every provider, replacing five
+independent per-family capacities. Eviction is LRU across all families rather than within one.
+
+The budget is bytes, not entries, because entries differ by more than an order of magnitude
+(TARIC ~150 MB, a Japan chapter ~9 MB) and an entry count cannot bound what matters. Weights are
+the measured retained cost per family, declared at the call site — honest about being an estimate,
+since Node cannot cheaply size a retained object graph.
+
+**160 MB**, derived from the worst case that must survive rather than from convenience: NZ's decode
+peaks near 660 MB on a ~130 MB baseline, leaving roughly 230 MB before the kernel intervenes. The
+accepted cost is that alternating between two large bulk families evicts and re-decodes (~3.5 s) —
+the right trade against a crash that strands a job.
+
+## Residual limitation
+
+This bounds cache co-residency; it does not shrink NZ. An NZ decode still peaks near 660 MB (64% of
+the worker), so very little can be resident while it runs. NZ, not TARIC, is now the adapter with
+the least headroom, and a materially larger bulk source than NZ would not fit on this worker at all.

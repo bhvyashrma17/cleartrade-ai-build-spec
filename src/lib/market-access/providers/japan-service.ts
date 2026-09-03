@@ -8,7 +8,7 @@ import {
   loadAuthorityReleaseArtifact,
   type AuthorityReleaseSource,
 } from '@/lib/market-access/authority-releases';
-import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
+import { SharedBudgetBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import type { Principal } from '@/types';
@@ -111,11 +111,12 @@ export function activeJapanChapterRelease(chapter: string) {
 
 /**
  * Japan scopes a release to one (date, chapter) pair, so a worker serving the full 96-chapter
- * schedule would otherwise retain every decoded chapter — ~9MB each against a 1GB worker. Twelve
- * keeps the realistically hot chapters resident (a query set clusters in a handful of chapters)
- * at a bounded ~110MB ceiling instead of an unbounded ~860MB one.
+ * schedule would otherwise retain every decoded chapter. The weight is the measured ~9MB a decoded
+ * chapter retains; how many stay resident is decided by the process-wide budget rather than a
+ * per-family count, because it was the SUM across families that killed a worker, not any one of
+ * them. Small entries like these are naturally the last evicted.
  */
-const bundleCache = new BoundedBundleCache<JapanAuthorityBundle>(12);
+const bundleCache = new SharedBudgetBundleCache<JapanAuthorityBundle>('JP_CUSTOMS', 9 * 1024 * 1024);
 
 async function loadJapanBundle(chapter: string, releaseId?: string) {
   const release = releaseId

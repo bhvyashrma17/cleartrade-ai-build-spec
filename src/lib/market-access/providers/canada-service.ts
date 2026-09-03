@@ -8,7 +8,7 @@ import {
   loadAuthorityReleaseArtifact,
   type AuthorityReleaseSource,
 } from '@/lib/market-access/authority-releases';
-import { BoundedBundleCache } from '@/lib/market-access/bundle-cache';
+import { SharedBudgetBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import type { Principal } from '@/types';
@@ -105,11 +105,10 @@ export function activeCanadaRelease() {
 }
 
 /**
- * Canada publishes one whole-country bundle per release, so only one is active at a time; the
- * bound retires a superseded decode when a new release is activated rather than keeping every
- * release a long-lived worker has ever served.
+ * Canada publishes one whole-country bundle per release. The weight is its measured retained cost;
+ * residency is decided by the shared process-wide budget.
  */
-const bundleCache = new BoundedBundleCache<CanadaAuthorityBundle>(2);
+const bundleCache = new SharedBudgetBundleCache<CanadaAuthorityBundle>('CA_CBSA', 80 * 1024 * 1024);
 
 async function loadCanadaBundle(releaseId?: string) {
   const release = releaseId
