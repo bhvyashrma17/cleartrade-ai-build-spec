@@ -21,7 +21,14 @@
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 
-export const TARIC_BUNDLE_READER_VERSION = 'taric-bundle-reader-v1' as const;
+/**
+ * v2: streaming worksheet reader with cell interning. Output is byte-identical to v1 — verified
+ * cell-for-cell across all 4.4M cells of the real September 2026 extraction, and end-to-end across
+ * 48 destination x HS6 canonical results — but the implementation changed materially, so the
+ * version moves. Memory behaviour is a property of the reader, and provenance should record which
+ * reader produced a release rather than implying v1 and v2 are the same program.
+ */
+export const TARIC_BUNDLE_READER_VERSION = 'taric-bundle-reader-v2' as const;
 
 /**
  * Files the parser actually joins. `Duties Import 01-99` carries the measures, which is why the
@@ -105,14 +112,142 @@ function cellText(value: unknown): string {
 }
 
 /**
- * Minimal xlsx reader.
+ * Parse the cells of ONE `<row>...</row>` fragment.
  *
- * The bundle is plain SpreadsheetML with a shared-string table and no formulas, so a full
- * spreadsheet engine would be a large dependency for a narrow job. This reads exactly what the
- * extraction contains: inline and shared strings, by column position, in row order.
+ * Extracted from the former whole-document reader unchanged, because its exact behaviour is
+ * load-bearing and was arrived at against the real bundle:
+ *
+ *  - A blank cell is written self-closing (`<c r="B2"/>`). The attribute class must exclude `/`
+ *    and the self-closing form must be part of the SAME alternation, or `<c([^>]*)>` matches the
+ *    self-closing tag and then scans to the next `</c>`, swallowing the cells in between and
+ *    shifting every later column. That bug silently moved the measure start date out of position,
+ *    which would have disabled effective-date filtering entirely.
+ *  - The `r` attribute is the A1 reference; blank cells are omitted entirely, so the column index
+ *    has to come from the reference or positions silently shift.
+ */
+function parseRowCells(rowInner: string, shared: readonly string[], intern: Map<string, string>): string[] {
+  const cells: string[] = [];
+  for (const cellMatch of rowInner.matchAll(/<c([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    const attrs = cellMatch[1] ?? '';
+    const body = cellMatch[2] ?? '';
+    const ref = /r="([A-Z]+)\d+"/.exec(attrs)?.[1];
+    const index = ref ? columnIndex(ref) : cells.length;
+    const type = /t="([^"]+)"/.exec(attrs)?.[1];
+    const raw = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? '';
+    let text: string;
+    if (type === 's') text = shared[Number(raw)] ?? '';
+    else if (type === 'inlineStr') {
+      let inline = '';
+      for (const m of body.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) inline += m[1] ?? '';
+      text = decodeXml(inline);
+    } else text = decodeXml(raw);
+    // Intern the cell.
+    //
+    // TARIC is columnar and overwhelmingly repetitive: the same dates ('01-01-2021'), origin
+    // codes, measure-type codes and duty expressions recur across hundreds of thousands of rows.
+    // Without interning, every occurrence is a distinct JavaScript string object, and the object
+    // headers — not the characters — dominate what the decoded bundle retains. Measured on the
+    // real September 2026 extraction: 4.4M cells retaining ~505MB post-GC, i.e. ~1.2KB per row for
+    // rows of about ten short fields. Interning returns the canonical instance for an equal value,
+    // so semantics are byte-identical while the object count collapses to the distinct-value count.
+    const existing = intern.get(text);
+    if (existing === undefined) intern.set(text, text);
+    else text = existing;
+    while (cells.length < index) cells.push('');
+    cells[index] = text;
+  }
+  return cells;
+}
+
+/**
+ * Stream one worksheet, emitting rows as they complete.
+ *
+ * Why streaming rather than `zip.file(sheet).async('string')`: profiling the real September 2026
+ * extraction showed the dominant allocation was never the decoded rows. `Duties Import 01-99`'s
+ * worksheet is 96.9MB of XML, which as a single JavaScript string is ~194MB (2 bytes/char), and
+ * `matchAll` over it then allocates a match object and substrings for every one of its 1.75M
+ * cells. That one transient — not the retained `string[][]`, which measured only ~99MB of heap for
+ * all 469K rows across every sheet — is what drove peak RSS to 931MB on a 1GiB worker.
+ *
+ * So this holds only the tail of the current row rather than the document. Rows are emitted to a
+ * callback, and the consumed prefix is released on every iteration.
+ */
+async function streamSheetRows(
+  entry: JSZip.JSZipObject,
+  shared: readonly string[],
+  intern: Map<string, string>,
+  onRow: (cells: string[]) => void,
+): Promise<void> {
+  const { StringDecoder } = await import('node:string_decoder');
+  // A chunk boundary can fall inside a multi-byte character; StringDecoder holds the partial
+  // sequence rather than emitting a replacement character mid-description.
+  const decoder = new StringDecoder('utf8');
+  let buffer = '';
+  // A cursor rather than re-slicing per row. Slicing the buffer after every row copies the whole
+  // remainder each time, which on a worksheet with 146K rows generates enormous transient garbage
+  // — the very thing this reader exists to avoid. The consumed prefix is dropped once, per chunk.
+  let cursor = 0;
+
+  const consume = (final: boolean) => {
+    for (;;) {
+      const start = buffer.indexOf('<row', cursor);
+      if (start === -1) {
+        // Nothing pending, but '<row' itself may straddle the boundary: keep a short tail.
+        cursor = final ? buffer.length : Math.max(cursor, buffer.length - 8);
+        break;
+      }
+      const tagEnd = buffer.indexOf('>', start);
+      if (tagEnd === -1) { cursor = start; break; }
+      // `<row r="5"/>` is a legitimately empty row and has no closing tag to look for.
+      if (buffer[tagEnd - 1] === '/') {
+        onRow([]);
+        cursor = tagEnd + 1;
+        continue;
+      }
+      const end = buffer.indexOf('</row>', tagEnd);
+      if (end === -1) { cursor = start; break; }
+      onRow(parseRowCells(buffer.slice(tagEnd + 1, end), shared, intern));
+      cursor = end + 6;
+    }
+    // Compact once per chunk instead of once per row.
+    if (cursor > 0) { buffer = buffer.slice(cursor); cursor = 0; }
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const stream = entry.nodeStream('nodebuffer');
+    stream.on('data', (chunk: Buffer) => {
+      buffer += decoder.write(chunk);
+      consume(false);
+    });
+    stream.on('error', reject);
+    stream.on('end', () => {
+      buffer += decoder.end();
+      consume(true);
+      resolve();
+    });
+  });
+}
+
+/**
+ * Minimal xlsx reader, streaming.
+ *
+ * The bundle is plain SpreadsheetML with no formulas, so a full spreadsheet engine would be a
+ * large dependency for a narrow job. This reads exactly what the extraction contains: inline and
+ * shared strings, by column position, in row order — without materialising the worksheet document.
  */
 async function readSheet(bytes: Buffer): Promise<string[][]> {
+  const rows: string[][] = [];
+  await streamSheet(bytes, (cells) => { rows.push(cells); });
+  return rows;
+}
+
+/** Streams one workbook's rows to `onRow` without materialising its worksheet document. */
+async function streamSheet(bytes: Buffer, onRow: (cells: string[]) => void): Promise<void> {
   const zip = await JSZip.loadAsync(bytes);
+
+  // The September 2026 extraction writes every cell as `inlineStr` and ships no shared-string
+  // table at all, but older extractions did, so the table is still honoured when present. It is
+  // small relative to a worksheet and is read whole.
   const sharedFile = zip.file('xl/sharedStrings.xml');
   const shared: string[] = [];
   if (sharedFile) {
@@ -128,38 +263,9 @@ async function readSheet(bytes: Buffer): Promise<string[][]> {
 
   const sheetName = Object.keys(zip.files).find((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
   if (!sheetName) throw new TaricBundleError('malformed_workbook', 'Workbook contains no worksheet.');
-  const xml = await zip.file(sheetName)!.async('string');
-
-  const rows: string[][] = [];
-  for (const rowMatch of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
-    const cells: string[] = [];
-    // A blank cell is written self-closing (`<c r="B2"/>`). The attribute class must exclude `/`
-    // and the self-closing form must be part of the SAME alternation, or `<c([^>]*)>` matches the
-    // self-closing tag and then scans to the next `</c>`, swallowing the cells in between and
-    // shifting every later column. Caught against the real bundle: it silently moved the measure
-    // start date out of position, which would have disabled effective-date filtering entirely.
-    for (const cellMatch of (rowMatch[1] ?? '').matchAll(/<c([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const attrs = cellMatch[1] ?? '';
-      const body = cellMatch[2] ?? '';
-      // The `r` attribute is the A1 reference; blank cells are omitted entirely, so the column
-      // index has to come from the reference or positions silently shift.
-      const ref = /r="([A-Z]+)\d+"/.exec(attrs)?.[1];
-      const index = ref ? columnIndex(ref) : cells.length;
-      const type = /t="([^"]+)"/.exec(attrs)?.[1];
-      const raw = /<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? '';
-      let text: string;
-      if (type === 's') text = shared[Number(raw)] ?? '';
-      else if (type === 'inlineStr') {
-        let inline = '';
-        for (const m of body.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)) inline += m[1] ?? '';
-        text = decodeXml(inline);
-      } else text = decodeXml(raw);
-      while (cells.length < index) cells.push('');
-      cells[index] = text;
-    }
-    rows.push(cells);
-  }
-  return rows;
+  // One intern table per worksheet: its keys are the sheet's distinct values, which is orders of
+  // magnitude smaller than its cell count, and it is released with the sheet.
+  await streamSheetRows(zip.file(sheetName)!, shared, new Map<string, string>(), onRow);
 }
 
 function columnIndex(ref: string): number {
