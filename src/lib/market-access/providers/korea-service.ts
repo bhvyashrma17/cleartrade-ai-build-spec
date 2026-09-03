@@ -27,7 +27,7 @@ import { SharedBudgetBundleCache } from '@/lib/market-access/bundle-cache';
 import { persistMarketAccessIngest } from '@/lib/market-access/contract';
 import { assertCan } from '@/lib/permissions';
 import type { Principal } from '@/types';
-import { KOREA_BUNDLE_READER_VERSION, KoreaBundleError, readKoreaAuthorityBundle, type KoreaAuthorityBundle } from './korea-bundle';
+import { KOREA_BUNDLE_READER_VERSION, KoreaBundleError, readKoreaAuthorityBundle, verifyKoreaSnapshotSuperset, type KoreaAuthorityBundle } from './korea-bundle';
 import { buildKoreaMarketAccess, KOREA_PARSER_VERSION, KOREA_SOURCE_AUTHORITY } from './korea-parser';
 
 const KOREA_SOURCE_FAMILY = 'KR_KCS';
@@ -64,9 +64,18 @@ export async function importKoreaRelease(args: ImportKoreaReleaseArgs) {
     source: KOREA_RELEASE_SOURCE,
     label: `KCS 품목번호별 관세율표 ${args.release_identifier.trim()}`,
     validate: async (bytes) => {
+      // Import time is the one moment this expensive, whole-workbook check is worth its cost: it
+      // runs once per unique release (by checksum), not on every subsequent query-time decode —
+      // see korea-bundle.ts's module doc for the real memory measurements that make this the right
+      // split. A `sheet_superset_row_removed` here correctly refuses the import outright, the same
+      // as any other validation failure.
       let bundle: KoreaAuthorityBundle;
+      let superset: Awaited<ReturnType<typeof verifyKoreaSnapshotSuperset>>;
       try {
-        bundle = await readKoreaAuthorityBundle({ bytes, release_identifier: args.release_identifier.trim() });
+        [bundle, superset] = await Promise.all([
+          readKoreaAuthorityBundle({ bytes, release_identifier: args.release_identifier.trim() }),
+          verifyKoreaSnapshotSuperset(bytes),
+        ]);
       } catch (error) {
         if (error instanceof KoreaBundleError) {
           throw validationError([{ field: 'bundle', code: error.code, message: error.message }]);
@@ -84,9 +93,12 @@ export async function importKoreaRelease(args: ImportKoreaReleaseArgs) {
           item_count: bundle.item_rates.size,
           canonical_sheet: bundle.canonical_sheet,
           canonical_sheet_row_count: bundle.canonical_sheet_row_count,
-          cross_check_sheet: bundle.cross_check_sheet,
-          cross_check_sheet_row_count: bundle.cross_check_sheet_row_count,
           distinct_rate_type_code_count: bundle.distinct_rate_type_codes.size,
+          cross_check_sheet_row_count: superset.cross_check_sheet_row_count,
+          added_since_cross_check_count: superset.added_count,
+          added_since_cross_check: superset.added,
+          corrected_since_cross_check_count: superset.corrected_count,
+          corrected_since_cross_check: superset.corrected,
         },
       };
     },
@@ -98,23 +110,25 @@ export function activeKoreaRelease() {
 }
 
 /**
- * One release at a time. Weight (156MB) is declared from a real, forced-GC measurement of this
- * exact reader against the 2026-02-11 archive (RSS retained after decode, post-GC, minus
- * baseline: ~155MB — see scripts/qualify-bulk-release.ts output for this family for the full
- * qualification record). A process-wide budget, not an independent Korea cache, for the same
- * reason every other bulk family shares one: co-residency across families, not any single family
- * alone, is what previously OOM'd a worker.
+ * One release at a time. Weight (112MB) is declared from `scripts/qualify-bulk-release.ts
+ * --family=KR_KCS` run against the real staging release AFTER the reader/verification split
+ * documented in korea-bundle.ts's module comment — retained heap 102MB immediately post-decode,
+ * rounded up. An earlier version of this reader ran the expensive 1.1/2.12 cross-check on every
+ * decode and measured 287MB retained heap / 560MB peak RSS for the SAME file; splitting the
+ * cross-check out to import-time-only (verifyKoreaSnapshotSuperset) brought this query-time path
+ * back down close to the original single-sheet reader's cost (85MB retained heap, pre-registry).
+ * A process-wide budget, not an independent Korea cache, for the same reason every other bulk
+ * family shares one: co-residency across families, not any single family alone, is what
+ * previously OOM'd a worker.
  *
  * Disclosed architecture pressure: the shared budget (`GLOBAL_BUNDLE_CACHE_BUDGET_BYTES`,
- * bundle-cache.ts) is 160MB. Korea's real 156MB weight leaves only ~4MB of headroom in that
- * budget, so Korea and Norway (120MB) can no longer both stay cache-resident — inserting one now
- * evicts the other, where before Korea's addition every existing family fit together. This is not
- * a memory-safety problem (eviction just means a re-decode next query, not a crash), but it is a
- * real scaling signal: the 160MB budget was sized for the families that existed at the time, and
- * this pack alone leaves it functionally single-tenant. Left as a documented finding rather than
- * silently raising the shared constant, per the instruction not to change thresholds in this task.
+ * bundle-cache.ts) is 160MB. Korea's 112MB weight plus Norway's 120MB (232MB) still exceeds it, so
+ * the two cannot both stay cache-resident — inserting one evicts the other, a real cost (a multi-
+ * second re-decode on the next query against the evicted family) but not a crash. Left as a
+ * documented finding rather than silently raising the shared constant, per the instruction not to
+ * change thresholds in this task.
  */
-const bundleCache = new SharedBudgetBundleCache<KoreaAuthorityBundle>('KR_KCS', 156 * 1024 * 1024);
+const bundleCache = new SharedBudgetBundleCache<KoreaAuthorityBundle>('KR_KCS', 112 * 1024 * 1024);
 
 async function loadKoreaBundle(releaseId?: string) {
   const release = releaseId

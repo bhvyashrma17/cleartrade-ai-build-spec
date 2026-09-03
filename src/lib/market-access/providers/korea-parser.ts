@@ -3,21 +3,20 @@
  *
  * ## What is confirmed vs. retained-but-unresolved
  *
- * The dataset's own data.go.kr catalogue description confirms exactly two 관세율구분 (rate-type)
- * code meanings: `A` = 기본세율 (basic/statutory rate) and `C` = WTO 협정에 의한 양허관세 (WTO-
- * agreement-bound concession tariff). Everything else — every `F`-prefixed FTA/EPA code (including
- * `FIN1`, `FCEPA1` and `FID1`, all plausible-but-unconfirmed candidates for India-related
- * treatment), `R`, `U`, `E1`-`E3`, `T2` (observed on rice, Korea's well-known WTO-tariffication
- * line) and `P1` — is retained verbatim with its raw code, and its country/agreement identity is
- * never inferred from the letters. The dataset's own cited authority for the full code legend
- * (UNIPASS, `unipass.customs.go.kr/csp/index.do?tgMenuId=MYC_MNU_00000337`) is a JS-rendered page
- * this project's tooling cannot read, and no other primary KCS source resolved it either — see
- * docs/customs-atlas for the research trail. `A` is used as the general/third-country duty because
- * it is the one code confirmed to mean a general statutory rate; `C` and every other code are
- * carried as `tariff_preference`/`other` lines with their raw code as the area identifier, not
- * folded into the general duty.
+ * Every 관세율구분 (rate-type) code this parser has ever observed in a real KCS release resolves
+ * against `korea-rate-programs.ts` — a registry built verbatim from Korea Customs Service's own
+ * 관세법령정보포털 CLIP portal (see that file's header). `A` (기본세율) is the confirmed general
+ * statutory rate; `C` (WTO협정세율) is the confirmed WTO-bound rate, kept distinct — the legal
+ * interaction between the two (e.g. whichever binds lower) is not documented in this dataset and is
+ * not assumed. `FIN1`-`FIN4` are the CONFIRMED Korea-India FTA/CEPA rate codes (CLIP's own label:
+ * "한ㆍ인도 FTA협정세율"); `FCEPA1`-`FCEPA8`, despite the name, are CONFIRMED to be Korea-Central
+ * America FTA, Panama's schedule ("한ㆍ중미 FTA협정세율_파나마") — NOT India, correcting this
+ * parser's earlier (appropriately cautious, but now superseded) treatment of `FCEPA1` as an
+ * unresolved India candidate. A code that appears in a future release but not in the registry is
+ * still retained verbatim and flagged unresolved, never guessed from its letters.
  */
-import type { MarketAccessIngestResult, MarketAccessLineRecord } from '@/lib/market-access/contract';
+import { MarketAccessRuleType } from '@prisma/client';
+import type { MarketAccessIngestResult, MarketAccessLineRecord, MarketAccessRequirementRecord } from '@/lib/market-access/contract';
 import {
   determineIndiaPreference,
   resolveNationalTariffLine,
@@ -25,28 +24,24 @@ import {
   type ParsedDuty,
 } from '@/lib/market-access/tariff-semantics';
 import type { KoreaAuthorityBundle, KoreaRateRow } from './korea-bundle';
+import {
+  GENERAL_RATE_CODE,
+  INDIA_FTA_RATE_CODES,
+  resolveKoreaRateProgram,
+  type KoreaRateProgram,
+} from './korea-rate-programs';
 
-export const KOREA_PARSER_VERSION = 'kcs-tariff-parser-v1' as const;
+export const KOREA_PARSER_VERSION = 'kcs-tariff-parser-v2' as const;
 export const KOREA_PROVIDER = 'kr_kcs_customs_tariff' as const;
 export const KOREA_SOURCE_AUTHORITY = 'Korea Customs Service (관세청)' as const;
 export const KOREA_SOURCE_DATASET = '관세청_품목번호별 관세율표 (data.go.kr dataset 15051179)' as const;
 
-/** Confirmed from the dataset's own catalogue description: 기본세율, the general statutory rate. */
-const GENERAL_RATE_TYPE = 'A';
-/** Confirmed from the dataset's own catalogue description: WTO 협정에 의한 양허관세. Not folded
- *  into the general duty — the legal relationship between A and C (e.g. whichever binds lower) is
- *  not documented in this dataset and is not assumed here. */
-const WTO_BOUND_RATE_TYPE = 'C';
-/**
- * Plausible India-related candidates by naming pattern only — `FIN1`/`FID1` match the F+ISO2+1
- * convention every other confirmed bilateral FTA code follows (FUS1=US, FCA1=Canada, FVN1=Vietnam,
- * etc.), and `FCEPA1` matches the agreement TYPE Korea uses for both its India and Indonesia
- * economic-partnership agreements. None is confirmed, and a low-confidence secondary claim found
- * during research (asserting FCEPA1 = Panama, a partner with no CEPA-branded agreement with Korea)
- * was explicitly discounted rather than trusted. All three are passed to the shared India-
- * preference logic as UNRESOLVED symbols, never as a direct India measure.
- */
-const INDIA_CANDIDATE_CODES = ['FIN1', 'FCEPA1', 'FID1'] as const;
+/** Korean tariff duty amounts are denominated in KRW as a matter of Korean tariff law itself (the
+ *  Customs Act's own rate tables are won-denominated) — confirmed independently of this dataset,
+ *  which is why this is asserted for every compound row rather than left null like the unit is.
+ *  The per-line QUANTITY UNIT (kg, piece, ...) is NOT published in this dataset (no unit column)
+ *  and is NOT hardcoded — see parseKoreaDuty's note on rows where unit_amount is populated. */
+const SPECIFIC_DUTY_CURRENCY = 'KRW' as const;
 
 const EMPTY = (kind: ParsedDuty['kind'], expression: string, note: string | null = null): ParsedDuty => ({
   kind, ad_valorem_rate_percent: null, specific_amount: null, specific_currency: null,
@@ -72,20 +67,20 @@ function isEffective(row: KoreaRateRow, at: Date): boolean {
 /**
  * One KCS rate row → a canonical duty.
  *
- * `관세율` (rate_value) is treated as an ad-valorem percentage when it is the only populated
- * numeric field — the dataset names it "관세율" (tariff RATE) in contrast to "단위당세액" (per-
- * UNIT tax AMOUNT), and the one reference-price row observed for rice (T2, item 1006100000,
- * rate_value 513) matches Korea's independently well-known WTO-tariffication rice rate of 513% ad
- * valorem, which corroborates the reading rather than assumes it. When `단위당세액` is ALSO
- * populated, the row publishes more than a single scalar and is retained as `compound` with both
- * components verbatim — this dataset does not publish the currency or unit for 단위당세액, and
- * that is stated in the note rather than guessed.
+ * `관세율` (rate_value) is ad valorem when unaccompanied by a unit amount — corroborated (not just
+ * assumed) by the T2/1006100000 rice row (513%), matching Korea's independently well-known WTO-
+ * tariffication rice rate. `단위당세액`, when also populated, makes the row a compound duty: KRW
+ * currency is asserted (Korean tariff law is won-denominated), but the quantity UNIT is not
+ * published in this dataset and is retained unresolved rather than guessed — see module doc.
+ * `기준가격` (T2's price-based special-safeguard reference price) is NEVER computed into a duty:
+ * calculating the actual SSG surcharge requires the shipment's own import price, which this
+ * dataset — a published schedule, not a transaction record — cannot supply.
  */
 export function parseKoreaDuty(row: KoreaRateRow): ParsedDuty {
   const parts: string[] = [];
   if (row.rate_value !== null) parts.push(`${row.rate_value}% (관세율)`);
-  if (row.unit_amount !== null) parts.push(`${row.unit_amount} (단위당세액, currency/unit not published)`);
-  if (row.reference_price !== null) parts.push(`reference price ${row.reference_price} (기준가격, functional role not documented)`);
+  if (row.unit_amount !== null) parts.push(`${row.unit_amount} ${SPECIFIC_DUTY_CURRENCY} per unit (단위당세액, quantity unit not published)`);
+  if (row.reference_price !== null) parts.push(`reference price ${row.reference_price} (기준가격 — price-based special safeguard trigger, Customs Act Enforcement Decree Art. 90)`);
   const expression = parts.join(' + ') || '(no rate published)';
 
   if (row.rate_value === null && row.unit_amount === null) {
@@ -93,17 +88,22 @@ export function parseKoreaDuty(row: KoreaRateRow): ParsedDuty {
   }
 
   if (row.unit_amount !== null) {
-    return EMPTY(
-      'compound',
+    return {
+      kind: 'compound',
+      ad_valorem_rate_percent: null,
+      specific_amount: row.unit_amount,
+      specific_currency: SPECIFIC_DUTY_CURRENCY,
+      specific_unit: null,
+      specific_unit_quantity: null,
       expression,
-      'Both 관세율 and 단위당세액 are published for this row. The dataset does not document the currency, unit, or combination rule (e.g. sum, or greater-of) for 단위당세액, so both components are retained verbatim rather than combined into a single figure.',
-    );
+      note: 'Both 관세율 and 단위당세액 are published for this row. The combination rule (e.g. sum, or greater-of) is not documented in this dataset, so the ad-valorem and specific components are retained separately rather than combined into one figure, and the specific component\'s quantity unit (kg, piece, ...) — not published in this dataset — is left unresolved rather than assumed.',
+    };
   }
 
-  // rate_value populated, unit_amount not: treated as a plain ad-valorem percentage (see function
-  // doc). reference_price, if also present, is retained in the note but never treated as a duty.
+  // rate_value populated, unit_amount not: ad-valorem percentage. reference_price, if also
+  // present, is retained in the note but never used to compute a duty (see function doc).
   const note = row.reference_price !== null
-    ? 'A reference price (기준가격) also accompanies this rate; its functional role (e.g. a TRQ-tier reference) is not documented in this dataset and is not used in computing the rate above.'
+    ? 'A reference price (기준가격) also accompanies this rate. This is the trigger price for KCS\'s price-based agricultural special safeguard (특별긴급관세, Customs Act Enforcement Decree Art. 90): it is NOT itself a duty, and the safeguard surcharge cannot be computed without the shipment\'s actual import price, which this published schedule does not carry.'
     : null;
   return {
     kind: 'ad_valorem',
@@ -115,6 +115,39 @@ export function parseKoreaDuty(row: KoreaRateRow): ParsedDuty {
 
 function effectiveRowsFor(bundle: KoreaAuthorityBundle, item: string, code: string, at: Date): KoreaRateRow[] {
   return (bundle.item_rates.get(item) ?? []).filter((row) => row.rate_type_code === code && isEffective(row, at));
+}
+
+/** measure_kind per contract.ts's fixed vocabulary, derived from the registry's program_class —
+ *  never from the raw symbol string. */
+function measureKindFor(code: string, program: KoreaRateProgram | null): MarketAccessLineRecord['measure_kind'] {
+  if (code === GENERAL_RATE_CODE) return 'third_country_duty';
+  if (!program) return 'other';
+  if (program.is_quota) return 'tariff_quota';
+  if (program.program_class === 'trade_remedy' || program.program_class === 'special_safeguard') return 'additional_duty';
+  if (program.is_preferential) return 'tariff_preference';
+  return 'other';
+}
+
+function conditionsFor(row: KoreaRateRow, program: KoreaRateProgram | null) {
+  return {
+    rate_type_code: row.rate_type_code,
+    country_scope: row.country_scope,
+    purpose_code: row.purpose_code,
+    // A non-null purpose_code marks this row as potentially subject to 용도세율 (a conditional
+    // end-use rate requiring 사후관리 post-clearance monitoring for up to 3 years — Customs Act
+    // Arts. 83/97-98). Never treated as unconditional: the flag is preserved on the line, not
+    // resolved into a plain rate.
+    purpose_conditional: row.purpose_code !== null,
+    program_resolved: program !== null,
+    program_class: program?.program_class ?? null,
+    agreement: program?.agreement ?? null,
+    partner: program?.partner ?? null,
+    selection_number: program?.selection_number ?? null,
+    is_quota: program?.is_quota ?? false,
+    is_recommendation_conditional: program?.is_recommendation_conditional ?? false,
+    recommendation_required: program?.recommendation_required ?? null,
+    kcs_label_ko: program?.kcs_label_ko ?? null,
+  };
 }
 
 export function buildKoreaMarketAccess(args: {
@@ -137,28 +170,31 @@ export function buildKoreaMarketAccess(args: {
   const built: Array<{
     candidate: CandidateTariffLine;
     generalRow: KoreaRateRow | null;
-    indiaCandidateRows: Array<{ code: string; row: KoreaRateRow }>;
+    indiaRows: Array<{ code: string; row: KoreaRateRow }>;
   }> = [];
 
   for (const item of items) {
     const rows = bundle.item_rates.get(item)!;
-    const generalRows = effectiveRowsFor(bundle, item, GENERAL_RATE_TYPE, at);
+    const generalRows = effectiveRowsFor(bundle, item, GENERAL_RATE_CODE, at);
     // More than one currently-effective `A` row for the same item would itself be an authority
     // ambiguity this reader has not observed; taking the first keeps behaviour defined rather than
     // silently picking the last, and is a real gap to revisit if it is ever actually seen.
     const generalRow = generalRows[0] ?? null;
 
-    const indiaCandidateRows: Array<{ code: string; row: KoreaRateRow }> = [];
-    for (const code of INDIA_CANDIDATE_CODES) {
-      const effective = effectiveRowsFor(bundle, item, code, at);
-      if (effective.length) indiaCandidateRows.push({ code, row: effective[0]! });
-    }
+    // India-origin duty applies only when the importer's origin is actually India — an origin
+    // input other than IN never surfaces a Korea-India FTA measure, matching the discipline that a
+    // preference is conditional on the shipment's real origin, not just on the schedule publishing
+    // one. The India-preference DETERMINATION for a non-IN origin request still runs (India-CEPA
+    // measures are irrelevant to it) and correctly resolves as not applicable to that origin.
+    const indiaRows: Array<{ code: string; row: KoreaRateRow }> = origin === 'IN'
+      ? INDIA_FTA_RATE_CODES.flatMap((code) => effectiveRowsFor(bundle, item, code, at).map((row) => ({ code, row })))
+      : [];
 
     // Every OTHER currently-effective code beyond the general rate is this item's preferential/
     // programme coverage, recorded as raw authority codes — never as a claim about which country
-    // or agreement each one names.
+    // or agreement each one names beyond what the registry itself confirms.
     const preferenceAreas = [...new Set(
-      rows.filter((row) => row.rate_type_code !== GENERAL_RATE_TYPE && isEffective(row, at)).map((row) => row.rate_type_code),
+      rows.filter((row) => row.rate_type_code !== GENERAL_RATE_CODE && isEffective(row, at)).map((row) => row.rate_type_code),
     )].sort();
 
     const anyRowForValidity = generalRow ?? rows[0]!;
@@ -171,57 +207,80 @@ export function buildKoreaMarketAccess(args: {
         effective_to: parseYyyymmdd(anyRowForValidity.effective_to),
         general_duty: generalRow
           ? parseKoreaDuty(generalRow)
-          : EMPTY('none', '', `KCS publishes no currently-effective ${GENERAL_RATE_TYPE} (기본세율) row for this item at the assessment date.`),
+          : EMPTY('none', '', `KCS publishes no currently-effective ${GENERAL_RATE_CODE} (기본세율) row for this item at the assessment date.`),
         control_codes: [],
         preference_area_ids: preferenceAreas,
       },
       generalRow,
-      indiaCandidateRows,
+      indiaRows,
     });
   }
 
   const resolution = resolveNationalTariffLine(built.map((entry) => entry.candidate));
 
   const lines: MarketAccessLineRecord[] = [];
+  const requirements: MarketAccessRequirementRecord[] = [];
   for (const entry of built) {
     const item = entry.candidate.national_tariff_code;
     if (entry.generalRow) {
+      const program = resolveKoreaRateProgram(GENERAL_RATE_CODE);
       lines.push({
         national_tariff_code: item,
         description: entry.candidate.description,
         declarable: true,
         measure_kind: 'third_country_duty',
-        origin_geographic_area_id: GENERAL_RATE_TYPE,
+        origin_geographic_area_id: GENERAL_RATE_CODE,
         origin_scope: 'erga_omnes',
         applies_to_origin_country: null,
         duty: entry.candidate.general_duty,
-        conditions: { rate_type_code: GENERAL_RATE_TYPE, country_scope: entry.generalRow.country_scope, purpose_code: entry.generalRow.purpose_code },
+        conditions: conditionsFor(entry.generalRow, program.resolved ? program.program : null),
         effective_from: entry.candidate.effective_from ?? null,
         effective_to: entry.candidate.effective_to ?? null,
-        source_reference: `KCS 품목번호별 관세율표 ${bundle.release_identifier} · ${item} (${GENERAL_RATE_TYPE})`,
-        raw_measure: { item, rate_type_code: GENERAL_RATE_TYPE, row: entry.generalRow },
+        source_reference: `KCS 품목번호별 관세율표 ${bundle.release_identifier} · ${item} (${GENERAL_RATE_CODE})`,
+        raw_measure: { item, rate_type_code: GENERAL_RATE_CODE, row: entry.generalRow },
       });
     }
 
     for (const row of bundle.item_rates.get(item) ?? []) {
-      if (row.rate_type_code === GENERAL_RATE_TYPE || !isEffective(row, at)) continue;
+      if (row.rate_type_code === GENERAL_RATE_CODE || !isEffective(row, at)) continue;
+      const resolution2 = resolveKoreaRateProgram(row.rate_type_code);
+      const program = resolution2.resolved ? resolution2.program : null;
+      const isIndiaLine = origin === 'IN' && (INDIA_FTA_RATE_CODES as readonly string[]).includes(row.rate_type_code);
       lines.push({
         national_tariff_code: item,
         description: entry.candidate.description,
         declarable: true,
-        measure_kind: row.rate_type_code === WTO_BOUND_RATE_TYPE ? 'other' : 'tariff_preference',
+        measure_kind: measureKindFor(row.rate_type_code, program),
         origin_geographic_area_id: row.rate_type_code,
         origin_scope: 'programme',
-        // Never asserted for any code, confirmed or not: no code in this dataset has a confirmed
-        // country/origin mapping, so this stays null rather than guessed from the code string.
-        applies_to_origin_country: null,
+        // Only asserted where the registry itself confirms the code names India, and only when the
+        // request's own origin is India — never inferred from the code string alone.
+        applies_to_origin_country: isIndiaLine ? 'IN' : null,
         duty: parseKoreaDuty(row),
-        conditions: { rate_type_code: row.rate_type_code, country_scope: row.country_scope, purpose_code: row.purpose_code, code_meaning_confirmed: row.rate_type_code === WTO_BOUND_RATE_TYPE },
+        conditions: conditionsFor(row, program),
         effective_from: parseYyyymmdd(row.effective_from),
         effective_to: parseYyyymmdd(row.effective_to),
         source_reference: `KCS 품목번호별 관세율표 ${bundle.release_identifier} · ${item} (${row.rate_type_code})`,
         raw_measure: { item, rate_type_code: row.rate_type_code, row },
       });
+
+      // A quota/recommendation-conditional programme is a real, documented conditionality — surface
+      // it as a requirement record too (rule_type 'other': this project's requirement vocabulary
+      // has no dedicated quota/recommendation type), so an operator sees the gate even where the
+      // tariff-line evidence alone might be read as an unconditional rate.
+      if (program?.is_quota || program?.recommendation_required) {
+        requirements.push({
+          rule_type: MarketAccessRuleType.material_non_tariff_requirement,
+          requirement_code: row.rate_type_code,
+          requirement_description: `${program.kcs_label_ko} — ${program.program_class === 'quota' || program.program_class === 'agricultural_concession' ? 'quota-tariff rate' : 'conditional rate'}${program.recommendation_required ? ', requires an import recommendation (추천) from the responsible authority' : ''}. Not an unconditional rate.`,
+          requirement_obtainable: null,
+          national_tariff_code: item,
+          effective_from: parseYyyymmdd(row.effective_from),
+          effective_to: parseYyyymmdd(row.effective_to),
+          source_reference: `KCS 품목번호별 관세율표 ${bundle.release_identifier} · ${item} (${row.rate_type_code})`,
+          raw: { rate_type_code: row.rate_type_code, program },
+        });
+      }
     }
   }
 
@@ -229,19 +288,35 @@ export function buildKoreaMarketAccess(args: {
     ? built.find((entry) => entry.candidate.national_tariff_code === resolution.resolved_line!.national_tariff_code)
     : null;
 
-  const indiaPreference = resolvedEntry
-    ? determineIndiaPreference({
-      direct_india_measures: [],
-      proven_group_measures: [],
-      beneficiary_enumeration_is_complete: false,
-      unresolved_program_symbols: resolvedEntry.indiaCandidateRows.map((c) => c.code),
-    })
-    : {
-      applicability: 'unknown' as const,
+  // India-India CEPA: FIN1-4 are CONFIRMED (korea-rate-programs.ts, sourced from CLIP) to be the
+  // Korea-India FTA/CEPA rate. A published FIN-row is therefore a direct India measure — but
+  // determineIndiaPreference's own rule still caps this at
+  // potentially_applicable_requires_origin_proof, never confirmed_applicable: a schedule entry is
+  // not proof that a given shipment actually qualifies under the agreement's rules of origin.
+  const indiaPreference = origin !== 'IN'
+    ? {
+      applicability: 'not_applicable' as const,
       duty: null,
       geographic_area_id: null,
-      basis: 'No single Korean tariff item resolved for this HS6, so no line-specific India treatment can be stated.',
-    };
+      basis: `The requested origin is ${origin}, not India — the Korea-India FTA/CEPA rate (FIN1-4) applies only to India-origin goods, so it is not a candidate treatment for this request regardless of what the schedule publishes.`,
+    }
+    : resolvedEntry
+      ? determineIndiaPreference({
+        direct_india_measures: resolvedEntry.indiaRows.map(({ row }) => ({
+          geographic_area_id: row.rate_type_code,
+          duty: parseKoreaDuty(row),
+          is_quota: false,
+        })),
+        proven_group_measures: [],
+        beneficiary_enumeration_is_complete: false,
+        unresolved_program_symbols: [],
+      })
+      : {
+        applicability: 'unknown' as const,
+        duty: null,
+        geographic_area_id: null,
+        basis: 'No single Korean tariff item resolved for this HS6, so no line-specific India treatment can be stated.',
+      };
 
   const parserVersion = args.parser_version ?? KOREA_PARSER_VERSION;
   return {
@@ -265,9 +340,11 @@ export function buildKoreaMarketAccess(args: {
     general_duty: resolution.resolved_line ? resolution.resolved_line.general_duty : null,
     india_preference: indiaPreference,
     lines,
-    requirements: [],
-    // This dataset carries only duty-rate rows. KCS publishes import bans/permits/quotas as
-    // separate resources this release does not carry, so nothing here proves regulatory coverage.
+    requirements,
+    // This dataset carries duty-rate rows (including quota-tariff and special-safeguard RATES).
+    // KCS publishes import bans/permits as a wholly separate resource this release does not carry,
+    // so nothing here proves complete regulatory coverage — the quota/recommendation requirement
+    // records above are a byproduct of the tariff rows themselves, not a claim of full coverage.
     regulatory_coverage_complete: false,
     raw_evidence: {
       authority_release_id: args.release_id,
@@ -277,12 +354,14 @@ export function buildKoreaMarketAccess(args: {
       parser_version: parserVersion,
       origin_country: origin,
       candidate_items: built.map((entry) => entry.candidate.national_tariff_code),
-      india_candidate_codes_considered: [...INDIA_CANDIDATE_CODES],
+      india_fta_rate_codes: [...INDIA_FTA_RATE_CODES],
       distinct_rate_type_codes_in_release: [...bundle.distinct_rate_type_codes].sort(),
       canonical_sheet: bundle.canonical_sheet,
       canonical_sheet_row_count: bundle.canonical_sheet_row_count,
-      cross_check_sheet: bundle.cross_check_sheet,
-      cross_check_sheet_row_count: bundle.cross_check_sheet_row_count,
+      // The 1.1-vs-2.12 superset/correction cross-check runs once at import time (see
+      // korea-bundle.ts's verifyKoreaSnapshotSuperset and its own module doc for why), and its
+      // result is recorded on the AuthorityRelease's own `validation` field rather than here —
+      // this per-query evidence snapshot does not re-decode the earlier sheet.
     },
   };
 }
