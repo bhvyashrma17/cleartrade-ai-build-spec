@@ -29,6 +29,7 @@ import {
 import { loadAuthorityReleaseArtifact } from '@/lib/market-access/authority-releases';
 import { readCanadaAuthorityBundle } from '@/lib/market-access/providers/canada-bundle';
 import { readJapanAuthorityBundle } from '@/lib/market-access/providers/japan-bundle';
+import { readKoreaAuthorityBundle } from '@/lib/market-access/providers/korea-bundle';
 import { readNorwayAuthorityBundle } from '@/lib/market-access/providers/norway-bundle';
 import { readNzAuthorityBundle } from '@/lib/market-access/providers/nz-bundle';
 import { readTaricBundle } from '@/lib/market-access/taric/bundle';
@@ -92,6 +93,10 @@ const DECODERS: Record<string, (bytes: Buffer, release: { release_identifier: st
       bytes, chapter: chapter ?? '', effective_date_label: label ?? '', source_url: release.source_url,
     });
     return { rows: bundle.rows.length, decompressed: null };
+  },
+  KR_KCS: async (bytes, release) => {
+    const bundle = await readKoreaAuthorityBundle({ bytes, release_identifier: release.release_identifier });
+    return { rows: bundle.canonical_sheet_row_count, decompressed: null };
   },
 };
 

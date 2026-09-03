@@ -65,6 +65,9 @@ export const BULK_QUALIFICATION_REQUIRED: Readonly<Record<string, boolean>> = Ob
   // Norway ships one whole-country bundle of four JSON datasets (~41MB of rates alone), so it is a
   // bulk archive by the same test as Canada and NZ.
   NO_TOLLETATEN: true,
+  // Korea ships one ~22MB XLSX of ~380K rate rows across ~11K tariff items — a bulk archive by the
+  // same test, not a per-request lookup API.
+  KR_KCS: true,
 });
 
 export function requiresBulkQualification(sourceFamily: string): boolean {

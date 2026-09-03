@@ -21,6 +21,7 @@ const fetchNzMarketAccess = vi.fn();
 const fetchJapanMarketAccess = vi.fn();
 const fetchAustraliaMarketAccess = vi.fn();
 const fetchNorwayMarketAccess = vi.fn();
+const fetchKoreaMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
@@ -34,6 +35,7 @@ vi.mock('@/lib/market-access/providers/nz-service', () => ({ fetchNzMarketAccess
 vi.mock('@/lib/market-access/providers/japan-service', () => ({ fetchJapanMarketAccess }));
 vi.mock('@/lib/market-access/providers/australia-service', () => ({ fetchAustraliaMarketAccess }));
 vi.mock('@/lib/market-access/providers/norway-service', () => ({ fetchNorwayMarketAccess }));
+vi.mock('@/lib/market-access/providers/korea-service', () => ({ fetchKoreaMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -158,6 +160,21 @@ describe('market-access ingest routing', () => {
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
   });
 
+  // KR moved from the unconfigured-source bucket to a real adapter (Wave 3 activation, manual
+  // XLSX AuthorityRelease acquisition): it now routes exactly like every other authority-release
+  // source rather than falling through to `unconfiguredSourceForCountry`. The API-credential path
+  // (korea-acquisition.ts) is unaffected and stays covered by
+  // tests/korea-acquisition-credential-gate.test.ts.
+  test('KR routes to the KCS authority-release adapter', async () => {
+    fetchKoreaMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'KR', jurisdiction: 'KR', provider: 'kr_kcs_customs_tariff' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-kr', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'KR', hs_code: '854449' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchKoreaMarketAccess).toHaveBeenCalledWith('854449', { now: undefined, origin_country: undefined });
+    expect(fetchNorwayMarketAccess).not.toHaveBeenCalled();
+    expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
+  });
+
   test('an authority acquisition failure creates no canonical market evidence', async () => {
     fetchCanadaMarketAccess.mockRejectedValue(new Error('CBSA unavailable'));
     await expect(runMarketAccessIngest(ctx({ country_code: 'CA', hs_code: '090111' }))).rejects.toThrow('CBSA unavailable');
@@ -174,7 +191,7 @@ describe('market-access ingest routing', () => {
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
   });
 
-  test.each(['SA', 'AE', 'BR', 'KR', 'IL', 'PH', 'CH', 'SG', 'TH'])('%s is a completed source/licence-or-credential determination, never evidence', async (country) => {
+  test.each(['SA', 'AE', 'BR', 'IL', 'PH', 'CH', 'SG', 'TH'])('%s is a completed source/licence-or-credential determination, never evidence', async (country) => {
     const outcome = await runMarketAccessIngest(ctx({ country_code: country, hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('provider_unconfigured_or_license_pending');
@@ -187,12 +204,8 @@ describe('market-access ingest routing', () => {
     expect(fetchJapanMarketAccess).not.toHaveBeenCalled();
     expect(fetchAustraliaMarketAccess).not.toHaveBeenCalled();
     expect(fetchNorwayMarketAccess).not.toHaveBeenCalled();
+    expect(fetchKoreaMarketAccess).not.toHaveBeenCalled();
     expect(persistMarketAccessIngest).not.toHaveBeenCalled();
-  });
-
-  test('KR is stopped on a credential gap, distinct in reason from a licence-pending stop', async () => {
-    const outcome = await runMarketAccessIngest(ctx({ country_code: 'KR', hs_code: '090111' }));
-    expect((outcome.result as Record<string, unknown>).reason).toBe('credential_not_provisioned');
   });
 
   test('a genuinely unknown destination fails rather than guessing a source', async () => {

@@ -90,14 +90,21 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://finder.tariffcommission.gov.ph/about', 'https://tariffcommission.gov.ph/', 'https://finder.tariffcommission.gov.ph/robots.txt'],
     unblocked_by: 'A documented Tariff Commission bulk dataset or public API for the AHTN 2022 MFN and AIFTA schedules, plus a dataset-specific reuse statement that does not rest solely on the site-wide GOVPH footer.',
   },
+  // KR_DATA_GO_KR is retained as history, not as a routing gap: KR now has a real adapter (see
+  // providers/korea-service.ts) built from the same dataset's official XLSX release, imported as a
+  // manual authoritative AuthorityRelease rather than through this API. This entry is unreachable
+  // for routing (DESTINATION_ADAPTERS.KR is checked first) and documents only the API's own
+  // remaining gap: the odcloud.kr REST API is still a credentialed, currently-unprovisioned route
+  // that would let refreshes become automated rather than manually re-uploaded, once someone
+  // registers for `KCS_DATA_GO_KR_SERVICE_KEY`.
   KR_DATA_GO_KR: {
     jurisdiction: 'KR',
     country_codes: ['KR'],
     authority: 'Korea Customs Service — 관세청_품목번호별 관세율표 (data.go.kr dataset 15051179)',
     reason: 'credential_not_provisioned',
-    determination: 'Rights are cleared: the dataset\'s own data.go.kr catalogue metadata records "공공저작물 : 출처표시 (제1유형)" — KOGL Type 1, the fully permissive tier (commercial use and modification permitted, attribution only) — confirmed against this specific dataset, not inferred from the platform. A real, documented REST API exists at api.odcloud.kr for this dataset. It requires a registered service key (query parameter `serviceKey` or an `Authorization` header); an unauthenticated call returns "인증키는 필수 항목 입니다" (an authentication key is required). No key is configured in this environment. This is an operational gate, not a rights or interface gap.',
+    determination: 'Rights are cleared: the dataset\'s own data.go.kr catalogue metadata records "공공저작물 : 출처표시 (제1유형)" — KOGL Type 1, the fully permissive tier (commercial use and modification permitted, attribution only) — confirmed against this specific dataset, not inferred from the platform. A real, documented REST API exists at api.odcloud.kr for this dataset. It requires a registered service key (query parameter `serviceKey` or an `Authorization` header); an unauthenticated call returns "인증키는 필수 항목 입니다" (an authentication key is required). No key is configured in this environment. This is an operational gate, not a rights or interface gap — and it is no longer the only acquisition route: the same dataset\'s official XLSX download is imported manually as an AuthorityRelease, so KR is operational for MFN today without this credential (see korea-service.ts).',
     references: ['https://www.data.go.kr/data/15051179/fileData.do', 'https://www.data.go.kr/catalog/15051179/fileData.json'],
-    unblocked_by: 'A ClearTrade operator registers for a free data.go.kr account, requests API access to dataset 15051179, and provisions the resulting service key as an environment variable the acquisition layer reads.',
+    unblocked_by: 'A ClearTrade operator registers for a free data.go.kr account, requests API access to dataset 15051179, and provisions the resulting service key as an environment variable the acquisition layer reads — upgrading refresh from manual re-upload to an automated pull.',
   },
   AE_DUBAI_CUSTOMS: {
     jurisdiction: 'AE',
