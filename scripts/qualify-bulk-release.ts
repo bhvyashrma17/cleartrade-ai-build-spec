@@ -28,6 +28,7 @@ import {
 import { loadAuthorityReleaseArtifact } from '@/lib/market-access/authority-releases';
 import { readCanadaAuthorityBundle } from '@/lib/market-access/providers/canada-bundle';
 import { readJapanAuthorityBundle } from '@/lib/market-access/providers/japan-bundle';
+import { readNorwayAuthorityBundle } from '@/lib/market-access/providers/norway-bundle';
 import { readNzAuthorityBundle } from '@/lib/market-access/providers/nz-bundle';
 import { readTaricBundle } from '@/lib/market-access/taric/bundle';
 import { recordReleaseQualification } from '@/lib/market-access/bulk-release-gate';
@@ -76,6 +77,13 @@ const DECODERS: Record<string, (bytes: Buffer, release: { release_identifier: st
       try { return sum + bundle.sheet(file.name).length; } catch { return sum; }
     }, 0);
     return { rows, decompressed: bundle.files.reduce((sum, f) => sum + f.size_bytes, 0) };
+  },
+  NO_TOLLETATEN: async (bytes, release) => {
+    const bundle = await readNorwayAuthorityBundle({ bytes, release_identifier: release.release_identifier });
+    return {
+      rows: bundle.rates.size,
+      decompressed: bundle.files.reduce((sum, f) => sum + f.size_bytes, 0),
+    };
   },
   JP_CUSTOMS: async (bytes, release) => {
     const [label, chapter] = release.release_identifier.split('-ch');
