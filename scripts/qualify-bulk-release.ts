@@ -15,6 +15,7 @@
  *   railway run npx tsx scripts/qualify-bulk-release.ts --family=CA_CBSA
  *   railway run npx tsx scripts/qualify-bulk-release.ts --all
  *   railway run npx tsx scripts/qualify-bulk-release.ts --all --concurrency=2
+ *   railway run npx tsx scripts/qualify-bulk-release.ts --family=NO_TOLLETATEN --release-id=<id>
  *
  * Requires database and object-storage access, so it runs against staging via `railway run`.
  * Exit code 1 if any measured release FAILS its ceiling.
@@ -98,12 +99,17 @@ async function subjectsFor(families: string[]): Promise<Subject[]> {
   const subjects: Subject[] = [];
   for (const family of families) {
     if (!DECODERS[family]) throw new Error(`No bulk decoder registered for source family ${family}.`);
-    // Largest active release per family is the worst case, which is what a ceiling should be set by.
-    const releases = await prisma.authorityRelease.findMany({
-      where: { source_family: family, status: 'active' },
-      orderBy: { size_bytes: 'desc' },
-      take: 1,
-    });
+    // Active releases first — the largest is the worst case a ceiling should be set by. But a
+    // bulk family cannot be activated until it has been qualified, so a release still sitting in
+    // `imported` is exactly the subject this command exists to measure. Looking only at `active`
+    // made the mandated import -> qualify -> activate order impossible to actually follow.
+    const explicit = arg('release-id');
+    const releases = explicit
+      ? await prisma.authorityRelease.findMany({ where: { id: explicit, source_family: family } })
+      : (await prisma.authorityRelease.findMany({
+        where: { source_family: family, status: { in: ['active', 'imported'] } },
+        orderBy: [{ status: 'asc' }, { size_bytes: 'desc' }],
+      })).slice(0, 1);
     for (const release of releases) {
       subjects.push({
         release_id: release.id,
