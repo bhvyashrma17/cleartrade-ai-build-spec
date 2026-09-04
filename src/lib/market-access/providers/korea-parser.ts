@@ -96,7 +96,7 @@ export function parseKoreaDuty(row: KoreaRateRow): ParsedDuty {
       specific_unit: null,
       specific_unit_quantity: null,
       expression,
-      note: 'Both 관세율 and 단위당세액 are published for this row. The combination rule (e.g. sum, or greater-of) is not documented in this dataset, so the ad-valorem and specific components are retained separately rather than combined into one figure, and the specific component\'s quantity unit (kg, piece, ...) — not published in this dataset — is left unresolved rather than assumed.',
+      note: 'Both 관세율 and 단위당세액 are published for this row. Korea\'s Customs Act Enforcement Rule (관세법 시행규칙) documents a "선택관세" (elective) mechanism for designated ad-valorem/specific goods — apply whichever of the two yields the HIGHER amount — distinct from a true "복합관세" (compound: both applied together, additive). The rows carrying this shape in the real release cluster in HS chapters 3/4/7/8 (fish, dairy/honey, vegetables, fruit), the classic Korean agricultural-protection compound-duty category where 선택관세 is the well-established pattern — but this has NOT been confirmed per HS line from a source naming the exact operator for each one, so no operator is asserted in the parsed value: both components are retained separately, and the specific component\'s quantity unit (kg, piece, ...) — not published in this dataset — is left unresolved rather than assumed.',
     };
   }
 
@@ -133,11 +133,14 @@ function conditionsFor(row: KoreaRateRow, program: KoreaRateProgram | null) {
     rate_type_code: row.rate_type_code,
     country_scope: row.country_scope,
     purpose_code: row.purpose_code,
-    // A non-null purpose_code marks this row as potentially subject to 용도세율 (a conditional
-    // end-use rate requiring 사후관리 post-clearance monitoring for up to 3 years — Customs Act
-    // Arts. 83/97-98). Never treated as unconditional: the flag is preserved on the line, not
-    // resolved into a plain rate.
+    // A non-null purpose_code marks this row as subject to 용도세율 (a conditional end-use rate
+    // requiring prior approval and 사후관리 post-clearance monitoring for up to 3 years — Customs
+    // Act Arts. 83/97-98). The dataset's own primary description states this field shares its code
+    // values with 관세율구분 (`A`=기본세율-anchored, `C`=WTO협정세율-anchored) — confirmed which
+    // BASE category the conditional rate is administered against, never treated as unconditional:
+    // approval and post-entry monitoring remain real gates a schedule entry cannot certify.
     purpose_conditional: row.purpose_code !== null,
+    purpose_code_anchor: row.purpose_code === 'A' ? 'basic_rate' : row.purpose_code === 'C' ? 'wto_bound_rate' : null,
     program_resolved: program !== null,
     program_class: program?.program_class ?? null,
     agreement: program?.agreement ?? null,

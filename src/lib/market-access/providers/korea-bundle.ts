@@ -113,10 +113,17 @@ export interface KoreaRateRow {
    *  retained verbatim regardless. */
   country_scope: string;
   /** 용도세율구분 — purpose/end-use rate flag. Confirmed as a real Korean customs mechanism (용도세율:
-   *  a conditionally reduced rate for goods committed to a declared end-use, subject to 사후관리
-   *  post-clearance monitoring for up to 3 years — Customs Act Arts. 83/97-98). The precise meaning
-   *  of this field's own `A`/`C` values (vs. the top-level rate-type codes of the same letters) is
-   *  not confirmed from a primary source and is retained verbatim, never treated as unconditional. */
+   *  a conditionally reduced rate for goods committed to a declared end-use, requiring prior
+   *  approval and subject to 사후관리 post-clearance monitoring for up to 3 years — Customs Act
+   *  Arts. 83/97-98, corroborated by KCS's own public notice on easing the 용도세율 전용물품
+   *  approval process). The dataset's own primary catalogue description states this field shares
+   *  ITS OWN CODE VALUES with 관세율구분 — "A(기본세율), C(WTO 협정에 의한 양허관세)" is given as a
+   *  joint description covering both fields — so a non-null value here means the row's conditional
+   *  end-use rate is administered against that same base-rate category (`A`=기본세율-anchored,
+   *  `C`=WTO협정세율-anchored), not a distinct, unrelated code space. Only 2 values (`A`, `C`) are
+   *  observed active in the real 2026-02-11 release, matching this reading exactly. Still never
+   *  treated as unconditional: approval and post-entry monitoring remain real gates a schedule
+   *  entry cannot certify were satisfied. */
   purpose_code: string | null;
   /** 적용개시일 / 적용만료일 — YYYYMMDD strings, exactly as published. */
   effective_from: string;

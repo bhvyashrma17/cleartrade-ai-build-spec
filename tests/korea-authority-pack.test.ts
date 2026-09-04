@@ -313,6 +313,21 @@ describe('용도세율 (purpose/end-use) conditionality', () => {
     expect(line).toBeDefined();
     expect(line!.conditions).toMatchObject({ purpose_code: 'A', purpose_conditional: true });
   });
+
+  test('purpose_code A/C resolve to the base-rate category they are anchored to, per the dataset\'s own primary description', async () => {
+    // The catalogue description groups 관세율구분 and 용도세율구분 under the SAME A/C vocabulary
+    // ("A(기본세율), C(WTO 협정에 의한 양허관세)"), so a purpose_code of A or C names which base
+    // category the conditional end-use rate is administered against — not an unrelated code space.
+    const result = await ingest('240110');
+    const line = result.lines.find((l) => l.origin_geographic_area_id === 'A' && l.national_tariff_code === '2401103000');
+    expect(line!.conditions).toMatchObject({ purpose_code_anchor: 'basic_rate' });
+  });
+
+  test('a null purpose_code resolves no anchor, never defaulted to one of the two categories', async () => {
+    const result = await ingest('010121');
+    const line = result.lines.find((l) => l.origin_geographic_area_id === 'A' && l.national_tariff_code === '0101211000');
+    expect(line!.conditions).toMatchObject({ purpose_code: null, purpose_conditional: false, purpose_code_anchor: null });
+  });
 });
 
 describe('KR is not a routing gap in the unconfigured-sources registry', () => {
