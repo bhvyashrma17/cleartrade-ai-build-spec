@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { KoreaBundleError, readKoreaAuthorityBundle, verifyKoreaSnapshotSuperset } from '@/lib/market-access/providers/korea-bundle';
 import { buildKoreaMarketAccess, parseKoreaDuty } from '@/lib/market-access/providers/korea-parser';
 import { allKoreaRatePrograms, INDIA_FTA_RATE_CODES, resolveKoreaRateProgram } from '@/lib/market-access/providers/korea-rate-programs';
+import { allKoreaTariffUnits, resolveKoreaTariffUnit } from '@/lib/market-access/providers/korea-tariff-units';
 import { runTechnicalQualification } from '@/lib/market-access/vendor-qualification';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 
@@ -149,39 +150,89 @@ describe('Korea rate-program registry (built from KCS CLIP, verified 2026-09-03)
 
 describe('Korean duty semantics (parseKoreaDuty, pure)', () => {
   test('관세율 alone is ad valorem', () => {
-    const duty = parseKoreaDuty({ rate_type_code: 'A', rate_value: 8, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+    const duty = parseKoreaDuty('0101211000', { rate_type_code: 'A', rate_value: 8, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
     expect(duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 8 });
   });
 
   test('rice-shaped rate: a populated 기준가격 is retained as safeguard evidence, never computed into the duty', () => {
-    const duty = parseKoreaDuty({ rate_type_code: 'T2', rate_value: 513, unit_amount: null, reference_price: 145, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+    const duty = parseKoreaDuty('1006100000', { rate_type_code: 'T2', rate_value: 513, unit_amount: null, reference_price: 145, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
     expect(duty.kind).toBe('ad_valorem');
     expect(duty.ad_valorem_rate_percent).toBe(513);
     expect(duty.note).toMatch(/special safeguard/i);
     expect(duty.note).toMatch(/cannot be computed without the shipment's actual import price/);
   });
 
-  test('a populated 단위당세액 alongside 관세율 is compound: KRW currency asserted, quantity unit left unresolved', () => {
-    const duty = parseKoreaDuty({ rate_type_code: 'A', rate_value: 30, unit_amount: 134, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+  test('a populated 단위당세액 for a weight-only item resolves KG unambiguously, from the real KCS unit dataset', () => {
+    // Matches the real release: item 0706101000 (carrots), code A, rate 30, unit_amount 134 — and
+    // dataset 15049722 publishes ONLY a weight unit (KG) for this item, no quantity-unit code.
+    const duty = parseKoreaDuty('0706101000', { rate_type_code: 'A', rate_value: 30, unit_amount: 134, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
     expect(duty.kind).toBe('compound');
     expect(duty.ad_valorem_rate_percent).toBeNull();
     expect(duty.specific_amount).toBe(134);
     expect(duty.specific_currency).toBe('KRW');
-    expect(duty.specific_unit).toBeNull();
+    expect(duty.specific_unit).toBe('KG');
+    expect(duty.specific_unit_quantity).toBe(1);
     expect(duty.expression).toContain('30%');
     expect(duty.expression).toContain('134');
-    expect(duty.note).toMatch(/quantity unit.*not published|left unresolved/);
+    expect(duty.expression).toContain('kilogram');
+    expect(duty.note).toMatch(/unambiguous/);
+  });
+
+  test('a populated 단위당세액 for a two-candidate item resolves from the item\'s own official name, flagged at lower confidence', () => {
+    // Matches the real release: item 3706100000 (photographic film, "폭이 35밀리미터 이상인 것" —
+    // width 35mm or more), code C2, rate 6.5, unit_amount 1560. Dataset 15049722 publishes BOTH a
+    // quantity unit (M) and a weight unit (KG) for this item; the item's own width-based name is
+    // the deciding evidence for M, not an external guess.
+    const duty = parseKoreaDuty('3706100000', { rate_type_code: 'C2', rate_value: 6.5, unit_amount: 1560, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+    expect(duty.kind).toBe('compound');
+    expect(duty.specific_unit).toBe('M');
+    expect(duty.note).toMatch(/item's own official name/);
+    expect(duty.note).toContain('KG');
+  });
+
+  test('a populated 단위당세액 for an item outside the unit table is left unresolved, never guessed', () => {
+    const duty = parseKoreaDuty('9999999999', { rate_type_code: 'A', rate_value: 10, unit_amount: 50, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+    expect(duty.kind).toBe('compound');
+    expect(duty.specific_unit).toBeNull();
+    expect(duty.specific_unit_quantity).toBeNull();
+    expect(duty.note).toMatch(/NOT resolved/);
+    expect(duty.note).toMatch(/Not guessed/);
   });
 
   test('no rate at all is none, not zero', () => {
-    const duty = parseKoreaDuty({ rate_type_code: 'A', rate_value: null, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+    const duty = parseKoreaDuty('0101211000', { rate_type_code: 'A', rate_value: null, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
     expect(duty.kind).toBe('none');
   });
 
   test('an observed zero rate is real evidence of duty-free treatment, not absence', () => {
-    const duty = parseKoreaDuty({ rate_type_code: 'A', rate_value: 0, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
+    const duty = parseKoreaDuty('0101211000', { rate_type_code: 'A', rate_value: 0, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231' });
     expect(duty.kind).toBe('ad_valorem');
     expect(duty.ad_valorem_rate_percent).toBe(0);
+  });
+});
+
+describe('Korea tariff-unit registry (korea-tariff-units.ts, built from dataset 15049722)', () => {
+  test('resolves 105 unambiguous (weight-only) and 3 probable (from item description) items — zero guessed', () => {
+    const all = allKoreaTariffUnits();
+    expect(all.length).toBe(108);
+    expect(all.filter((u) => u.confidence === 'unambiguous').length).toBe(105);
+    expect(all.filter((u) => u.confidence === 'probable_from_item_description').length).toBe(3);
+  });
+
+  test('the 3 two-candidate items retain the un-chosen alternative, never discard it', () => {
+    for (const item of ['3706100000', '3706900000', '8523292020']) {
+      const r = resolveKoreaTariffUnit(item);
+      expect(r.resolved).toBe(true);
+      if (r.resolved) {
+        expect(r.unit.confidence).toBe('probable_from_item_description');
+        expect(r.unit.alternative_candidate_unit).toBe('KG');
+      }
+    }
+  });
+
+  test('an item never observed with a compound row resolves nothing', () => {
+    const r = resolveKoreaTariffUnit('0101211000');
+    expect(r.resolved).toBe(false);
   });
 });
 

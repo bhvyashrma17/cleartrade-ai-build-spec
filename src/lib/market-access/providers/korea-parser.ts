@@ -30,6 +30,7 @@ import {
   resolveKoreaRateProgram,
   type KoreaRateProgram,
 } from './korea-rate-programs';
+import { resolveKoreaTariffUnit } from './korea-tariff-units';
 
 export const KOREA_PARSER_VERSION = 'kcs-tariff-parser-v2' as const;
 export const KOREA_PROVIDER = 'kr_kcs_customs_tariff' as const;
@@ -70,16 +71,29 @@ function isEffective(row: KoreaRateRow, at: Date): boolean {
  * `관세율` (rate_value) is ad valorem when unaccompanied by a unit amount — corroborated (not just
  * assumed) by the T2/1006100000 rice row (513%), matching Korea's independently well-known WTO-
  * tariffication rice rate. `단위당세액`, when also populated, makes the row a compound duty: KRW
- * currency is asserted (Korean tariff law is won-denominated), but the quantity UNIT is not
- * published in this dataset and is retained unresolved rather than guessed — see module doc.
- * `기준가격` (T2's price-based special-safeguard reference price) is NEVER computed into a duty:
- * calculating the actual SSG surcharge requires the shipment's own import price, which this
- * dataset — a published schedule, not a transaction record — cannot supply.
+ * currency is asserted (Korean tariff law is won-denominated), and the quantity UNIT is resolved
+ * from `korea-tariff-units.ts` (built from dataset 15049722, KCS's own HS-line unit table) — for
+ * the 105 of 108 real compound items where that table has exactly one candidate unit, the
+ * resolution is unambiguous; for the 3 with two candidates (photographic film, recorded video),
+ * it is resolved from the item's own official name but flagged at a distinct, lower confidence.
+ * An item not in that table (a future release's new compound line this table hasn't been extended
+ * to cover) is NOT guessed — the unit stays null with an explicit note, exactly the same discipline
+ * this dataset's own gaps have always been held to. `기준가격` (T2's price-based special-safeguard
+ * reference price) is NEVER computed into a duty: calculating the actual SSG surcharge requires
+ * the shipment's own import price, which this dataset — a published schedule, not a transaction
+ * record — cannot supply.
  */
-export function parseKoreaDuty(row: KoreaRateRow): ParsedDuty {
+export function parseKoreaDuty(item: string, row: KoreaRateRow): ParsedDuty {
+  const unitResolution = row.unit_amount !== null ? resolveKoreaTariffUnit(item) : null;
+
   const parts: string[] = [];
   if (row.rate_value !== null) parts.push(`${row.rate_value}% (관세율)`);
-  if (row.unit_amount !== null) parts.push(`${row.unit_amount} ${SPECIFIC_DUTY_CURRENCY} per unit (단위당세액, quantity unit not published)`);
+  if (row.unit_amount !== null) {
+    const unitPart = unitResolution?.resolved
+      ? `${SPECIFIC_DUTY_CURRENCY} ${row.unit_amount} per ${unitResolution.unit.unit_label} (단위당세액)`
+      : `${row.unit_amount} ${SPECIFIC_DUTY_CURRENCY} per unit (단위당세액, quantity unit not resolved for this item)`;
+    parts.push(unitPart);
+  }
   if (row.reference_price !== null) parts.push(`reference price ${row.reference_price} (기준가격 — price-based special safeguard trigger, Customs Act Enforcement Decree Art. 90)`);
   const expression = parts.join(' + ') || '(no rate published)';
 
@@ -88,15 +102,21 @@ export function parseKoreaDuty(row: KoreaRateRow): ParsedDuty {
   }
 
   if (row.unit_amount !== null) {
+    const operatorNote = 'Korea\'s Customs Act Enforcement Rule (관세법 시행규칙) documents a "선택관세" (elective) mechanism for designated ad-valorem/specific goods — apply whichever of the two yields the HIGHER amount — distinct from a true "복합관세" (compound: both applied together, additive). The rows carrying this shape in the real release cluster in HS chapters 3/4/7/8 (fish, dairy/honey, vegetables, fruit), the classic Korean agricultural-protection compound-duty category where 선택관세 is the well-established pattern — but this has NOT been confirmed per HS line from a source naming the exact operator for each one, so no operator is asserted in the parsed value: both components are retained separately.';
+    const unitNote = unitResolution?.resolved
+      ? unitResolution.unit.confidence === 'unambiguous'
+        ? `Quantity unit resolved to ${unitResolution.unit.unit_label} (${unitResolution.unit.unit_code}) from KCS dataset 15049722 — the only unit that dataset publishes for this item, so unambiguous.`
+        : `Quantity unit resolved to ${unitResolution.unit.unit_label} (${unitResolution.unit.unit_code}) from the item's own official name in KCS dataset 15049722 ("${unitResolution.unit.official_item_name_ko}"); that dataset also publishes ${unitResolution.unit.alternative_candidate_unit} as a candidate for this item, not chosen here — see korea-tariff-units.ts for the reasoning.`
+      : `Quantity unit NOT resolved: this item is not in the KCS dataset 15049722 extract this project retains. Not guessed.`;
     return {
       kind: 'compound',
       ad_valorem_rate_percent: null,
       specific_amount: row.unit_amount,
       specific_currency: SPECIFIC_DUTY_CURRENCY,
-      specific_unit: null,
-      specific_unit_quantity: null,
+      specific_unit: unitResolution?.resolved ? unitResolution.unit.unit_code : null,
+      specific_unit_quantity: unitResolution?.resolved ? 1 : null,
       expression,
-      note: 'Both 관세율 and 단위당세액 are published for this row. Korea\'s Customs Act Enforcement Rule (관세법 시행규칙) documents a "선택관세" (elective) mechanism for designated ad-valorem/specific goods — apply whichever of the two yields the HIGHER amount — distinct from a true "복합관세" (compound: both applied together, additive). The rows carrying this shape in the real release cluster in HS chapters 3/4/7/8 (fish, dairy/honey, vegetables, fruit), the classic Korean agricultural-protection compound-duty category where 선택관세 is the well-established pattern — but this has NOT been confirmed per HS line from a source naming the exact operator for each one, so no operator is asserted in the parsed value: both components are retained separately, and the specific component\'s quantity unit (kg, piece, ...) — not published in this dataset — is left unresolved rather than assumed.',
+      note: `${operatorNote} ${unitNote}`,
     };
   }
 
@@ -209,7 +229,7 @@ export function buildKoreaMarketAccess(args: {
         effective_from: parseYyyymmdd(anyRowForValidity.effective_from),
         effective_to: parseYyyymmdd(anyRowForValidity.effective_to),
         general_duty: generalRow
-          ? parseKoreaDuty(generalRow)
+          ? parseKoreaDuty(item, generalRow)
           : EMPTY('none', '', `KCS publishes no currently-effective ${GENERAL_RATE_CODE} (기본세율) row for this item at the assessment date.`),
         control_codes: [],
         preference_area_ids: preferenceAreas,
@@ -259,7 +279,7 @@ export function buildKoreaMarketAccess(args: {
         // Only asserted where the registry itself confirms the code names India, and only when the
         // request's own origin is India — never inferred from the code string alone.
         applies_to_origin_country: isIndiaLine ? 'IN' : null,
-        duty: parseKoreaDuty(row),
+        duty: parseKoreaDuty(item, row),
         conditions: conditionsFor(row, program),
         effective_from: parseYyyymmdd(row.effective_from),
         effective_to: parseYyyymmdd(row.effective_to),
@@ -307,7 +327,7 @@ export function buildKoreaMarketAccess(args: {
       ? determineIndiaPreference({
         direct_india_measures: resolvedEntry.indiaRows.map(({ row }) => ({
           geographic_area_id: row.rate_type_code,
-          duty: parseKoreaDuty(row),
+          duty: parseKoreaDuty(resolvedEntry.candidate.national_tariff_code, row),
           is_quota: false,
         })),
         proven_group_measures: [],
