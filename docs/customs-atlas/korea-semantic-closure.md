@@ -55,6 +55,62 @@ January against one of the nine crude-oil corrections sees KCS's *current* 0% ra
 1% `1.1` published for that date at the time — a deliberate choice (serve the authority's best
 current statement) rather than a literal historical replay.
 
+## 용도세율구분 A/C — closed
+
+The main tariff dataset's own primary catalogue description states `용도세율구분` and the top-level
+`관세율구분` field **share one code vocabulary** — "A(기본세율), C(WTO 협정에 의한 양허관세)" is given
+as a single joint description covering both fields, not two independent code spaces that happen to
+reuse the same letters. Read against that: a non-null `용도세율구분` value means the row's
+conditional end-use rate (용도세율 — Customs Act Arts. 83/97-98, requiring prior approval and up to
+3 years of post-clearance 사후관리 monitoring) is administered **against that same base-rate
+category** — `A` anchors it to 기본세율 (the basic/general rate), `C` anchors it to the WTO-bound
+concession rate. Only `A` and `C` are observed active in the real 2026-02-11 release, matching this
+reading exactly with zero unexplained values. Implemented as `conditions.purpose_code_anchor` in
+`korea-parser.ts`. Never treated as unconditional either way — the anchor names which base category
+the reduced rate is pegged to, not a certification that a given shipment already holds the required
+approval.
+
+## Specific/compound-duty quantity units — closed
+
+The main tariff dataset (`관세청_품목번호별 관세율표`) carries no unit column of its own. KCS
+publishes it as a **separate, companion open dataset**: `관세청_HS부호` (data.go.kr catalogue
+15049722), columns `수량단위코드` (quantity-unit code) and `중량단위코드` (weight-unit code, always
+`KG` when populated) keyed by the same 10-digit HS item number. Cross-referencing this dataset
+against every item carrying an active `단위당세액` (per-unit tax amount) row in the real release —
+**942 rows, collapsing to 108 distinct HS10 items** — resolved:
+
+- **105 items unambiguously**: the companion dataset publishes exactly one unit candidate for the
+  item (overwhelmingly `KG`/kilogram; a handful of `U` piece-count and other codes).
+- **3 items with two published candidates** (`3706100000`, `3706900000` — photographic/cinema film;
+  `8523292020` — recorded video media) resolved by the item's own official Korean name in that same
+  dataset: 3706100000/3706900000's name states a width-in-millimetres threshold ("폭이
+  35밀리미터 이상인 것"), so metres (`M`) is chosen over the competing kilogram candidate; 8523292020's
+  name states "recorded" media ("비디오 녹화된 것"), a discrete-item description, so pieces (`U`) is
+  chosen over kilogram. Both cases retain the untaken alternative in the registry and in the
+  parsed duty's own note rather than silently dropping it.
+- **0 items unresolved.**
+
+Currency is `KRW` throughout (a fact of Korean tariff law generally, not per-row published data).
+Registry lives in `src/lib/market-access/providers/korea-tariff-units.ts`
+(`KOREA_UNIT_VERIFIED_AT = '2026-09-04'`); consumed by `parseKoreaDuty` in `korea-parser.ts`, which
+now takes the HS10 item as an explicit argument. Live-staging-verified: HS 070610 (carrots) resolves
+every rate program to kilogram; HS 370610 item 3706100000 (photographic film) resolves to metres
+with the kilogram alternative named in the parsed duty's own note.
+
+## Compound-duty operator — 선택관세 identified, not yet per-line confirmed
+
+Korea's Customs Act Enforcement Rule (관세법 시행규칙) documents a **선택관세** (elective-tariff)
+mechanism for designated ad-valorem/specific goods: apply whichever of the ad valorem or specific
+component yields the **higher** amount — distinct from a true **복합관세** (compound: both
+components applied together, additive). The rows carrying the two-component shape in the real
+release cluster in HS chapters 3/4/7/8 (fish, dairy/honey, vegetables, fruit) — the classic Korean
+agricultural-protection category where 선택관세 is the well-established pattern per Korean
+secondary legal sources — but this has **not** been confirmed per individual HS line from a source
+naming the exact operator for each one. `ParsedDuty` therefore asserts no operator: both components
+are retained separately (`kind: 'compound'`, `ad_valorem_rate_percent` and `specific_amount` both
+populated), so no information is lost or guessed if a per-line source is found later. This is the
+one item carried into "genuinely still open" below.
+
 ## Quota, special safeguard, purpose/end-use — all now conditional, never unconditional
 
 - **Quota (할당관세, `P1`-`P4`, `W1`-`W3`)**: `measure_kind: 'tariff_quota'`, plus a
@@ -71,16 +127,11 @@ current statement) rather than a literal historical replay.
 
 ## Genuinely still open
 
-- **The exact semantics of `용도세율구분`'s own `A`/`C` values** (a different code space from the
-  top-level `관세율구분` codes of the same letters) — real, confirmed mechanism, unconfirmed exact
-  per-value meaning.
-- **Specific-duty quantity units** (kg, piece, ...) for compound rows — this dataset carries no
-  unit column; KRW currency is asserted (a fact of Korean tariff law generally), the unit is not.
-  CLIP's own per-item tariff-detail pages likely carry it; not pulled in this pass (a targeted,
-  bounded follow-up, not a blanket re-scrape).
-- **Max/min ("whichever is higher/lower") compound operators** — none observed in the real release
-  to date; the architecture (retain both components, `kind: 'compound'`) does not lose the
-  information if one appears, but the operator itself is not modeled.
+- **Per-line compound-duty operator confirmation** — 선택관세 (whichever-is-higher) is the
+  identified, legally-documented mechanism and the overwhelmingly likely operator for every
+  two-component row observed, but no source naming the exact operator for each individual HS line
+  has been found. The architecture (retain both components, `kind: 'compound'`, no operator
+  asserted) does not lose information if such a source is found later — nothing is guessed today.
 
 ## Memory architecture note
 
