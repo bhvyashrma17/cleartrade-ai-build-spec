@@ -27,7 +27,9 @@ export type NationalCodeSystem =
   | 'JP_STATISTICAL_CODE'
   | 'AU_TARIFF_ITEM'
   | 'NO_VARENUMMER'
-  | 'KR_TARIFF_ITEM';
+  | 'KR_TARIFF_ITEM'
+  | 'TW_CUSTOMS_TARIFF'
+  | 'GE_TAX_CODE';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

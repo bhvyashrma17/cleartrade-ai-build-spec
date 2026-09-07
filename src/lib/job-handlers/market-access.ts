@@ -21,6 +21,8 @@ import { fetchUsMarketAccess } from '@/lib/market-access/us-hts';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 import { EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess } from '@/lib/market-access/taric/service';
 import { fetchCanadaMarketAccess } from '@/lib/market-access/providers/canada-service';
+import { fetchTaiwanMarketAccess } from '@/lib/market-access/providers/taiwan-service';
+import { fetchGeorgiaMarketAccess } from '@/lib/market-access/providers/geo-service';
 import { fetchNzMarketAccess } from '@/lib/market-access/providers/nz-service';
 import { fetchAustraliaMarketAccess } from '@/lib/market-access/providers/australia-service';
 import { fetchJapanMarketAccess } from '@/lib/market-access/providers/japan-service';
@@ -100,6 +102,22 @@ const JAPAN_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const TAIWAN_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'tw_customs_import_duty',
+  fetch: (request) => fetchTaiwanMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
+const GEORGIA_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'ge_matsne_tax_code_article_197',
+  fetch: (request) => fetchGeorgiaMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
 const KOREA_ADAPTER: MarketAccessAdapter = {
   provider_key: 'kr_kcs_customs_tariff',
   fetch: (request) => fetchKoreaMarketAccess(request.hs6, {
@@ -123,6 +141,8 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   AU: AUSTRALIA_ADAPTER,
   NO: NORWAY_ADAPTER,
   KR: KOREA_ADAPTER,
+  TW: TAIWAN_ADAPTER,
+  GE: GEORGIA_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 

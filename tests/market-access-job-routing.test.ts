@@ -22,6 +22,8 @@ const fetchJapanMarketAccess = vi.fn();
 const fetchAustraliaMarketAccess = vi.fn();
 const fetchNorwayMarketAccess = vi.fn();
 const fetchKoreaMarketAccess = vi.fn();
+const fetchTaiwanMarketAccess = vi.fn();
+const fetchGeorgiaMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
@@ -36,6 +38,8 @@ vi.mock('@/lib/market-access/providers/japan-service', () => ({ fetchJapanMarket
 vi.mock('@/lib/market-access/providers/australia-service', () => ({ fetchAustraliaMarketAccess }));
 vi.mock('@/lib/market-access/providers/norway-service', () => ({ fetchNorwayMarketAccess }));
 vi.mock('@/lib/market-access/providers/korea-service', () => ({ fetchKoreaMarketAccess }));
+vi.mock('@/lib/market-access/providers/taiwan-service', () => ({ fetchTaiwanMarketAccess }));
+vi.mock('@/lib/market-access/providers/geo-service', () => ({ fetchGeorgiaMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -74,6 +78,9 @@ afterEach(() => {
   fetchJapanMarketAccess.mockReset();
   fetchAustraliaMarketAccess.mockReset();
   fetchNorwayMarketAccess.mockReset();
+  fetchKoreaMarketAccess.mockReset();
+  fetchTaiwanMarketAccess.mockReset();
+  fetchGeorgiaMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -175,6 +182,22 @@ describe('market-access ingest routing', () => {
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
   });
 
+  test('TW routes to the Taiwan Customs retained CSV adapter', async () => {
+    fetchTaiwanMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'TW', jurisdiction: 'TW', provider: 'tw_customs_import_duty' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-tw', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'TW', hs_code: '010121' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchTaiwanMarketAccess).toHaveBeenCalledWith('010121', { now: undefined, origin_country: undefined });
+  });
+
+  test('GE routes to the Matsne Article 197 retained-release adapter', async () => {
+    fetchGeorgiaMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'GE', jurisdiction: 'GE', provider: 'ge_matsne_tax_code_article_197' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-ge', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'GE', hs_code: '220410' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchGeorgiaMarketAccess).toHaveBeenCalledWith('220410', { now: undefined, origin_country: undefined });
+  });
+
   test('an authority acquisition failure creates no canonical market evidence', async () => {
     fetchCanadaMarketAccess.mockRejectedValue(new Error('CBSA unavailable'));
     await expect(runMarketAccessIngest(ctx({ country_code: 'CA', hs_code: '090111' }))).rejects.toThrow('CBSA unavailable');
@@ -205,6 +228,8 @@ describe('market-access ingest routing', () => {
     expect(fetchAustraliaMarketAccess).not.toHaveBeenCalled();
     expect(fetchNorwayMarketAccess).not.toHaveBeenCalled();
     expect(fetchKoreaMarketAccess).not.toHaveBeenCalled();
+    expect(fetchTaiwanMarketAccess).not.toHaveBeenCalled();
+    expect(fetchGeorgiaMarketAccess).not.toHaveBeenCalled();
     expect(persistMarketAccessIngest).not.toHaveBeenCalled();
   });
 

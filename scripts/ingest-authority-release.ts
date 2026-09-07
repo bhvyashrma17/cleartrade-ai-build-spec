@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { OrgTier } from '@prisma/client';
 import { acquireAndImportCanadaRelease } from '@/lib/market-access/providers/canada-service';
+import { importGeorgiaRelease } from '@/lib/market-access/providers/geo-service';
+import { importPhilippinesRelease } from '@/lib/market-access/providers/philippines-service';
+import { importTaiwanRelease } from '@/lib/market-access/providers/taiwan-service';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -15,8 +19,8 @@ function required(name: string) {
 
 async function main() {
   const country = required('country').toUpperCase();
-  if (country !== 'CA') {
-    throw new Error('Only CA is implemented. JP, AE and BR remain licence/source-contract gated.');
+  if (!['CA', 'TW', 'GE', 'PH'].includes(country)) {
+    throw new Error('Supported authority-release imports are CA, TW, GE and the controlled manual PH composite.');
   }
   const actorEmail = required('actor-email').toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: actorEmail } });
@@ -32,20 +36,22 @@ async function main() {
   const effective = new Date(`${required('effective-date')}T00:00:00.000Z`);
   if (Number.isNaN(effective.getTime())) throw new Error('--effective-date must be YYYY-MM-DD.');
   const releaseIdentifier = required('release');
-  const tariffUrl = required('tariff-url');
-  const countryTreatmentsUrl = required('country-treatments-url');
-  const imported = await acquireAndImportCanadaRelease({
-    actor,
-    release_identifier: releaseIdentifier,
-    reference_date: effective,
-    activate: flag('activate'),
-    correlation_id: randomUUID(),
-    acquisition: {
-      release_identifier: releaseIdentifier,
-      tariff_url: tariffUrl,
-      country_treatments_url: countryTreatmentsUrl,
-    },
-  });
+  const correlationId = randomUUID();
+  const common = { actor, release_identifier: releaseIdentifier, reference_date: effective, activate: flag('activate'), correlation_id: correlationId };
+  const imported = country === 'CA'
+    ? await acquireAndImportCanadaRelease({
+      ...common,
+      acquisition: {
+        release_identifier: releaseIdentifier,
+        tariff_url: required('tariff-url'),
+        country_treatments_url: required('country-treatments-url'),
+      },
+    })
+    : country === 'TW'
+      ? await importTaiwanRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') })
+      : country === 'GE'
+        ? await importGeorgiaRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') })
+        : await importPhilippinesRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') });
   console.log(JSON.stringify({
     release_id: imported.release.id,
     release_identifier: imported.release.release_identifier,
