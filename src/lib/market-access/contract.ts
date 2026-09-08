@@ -29,7 +29,8 @@ export type NationalCodeSystem =
   | 'NO_VARENUMMER'
   | 'KR_TARIFF_ITEM'
   | 'TW_CUSTOMS_TARIFF'
-  | 'GE_TAX_CODE';
+  | 'GE_TAX_CODE'
+  | 'IL_CUSTOMS_BOOK';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

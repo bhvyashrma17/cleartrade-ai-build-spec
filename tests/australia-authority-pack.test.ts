@@ -206,15 +206,7 @@ describe('Australia–India ECTA is exception-list semantics', () => {
   });
 });
 
-describe('Israel and the Philippines are stopped with distinct, precise reasons', () => {
-  test('Israel is unresolved on rights AND blocked from automated access, not silently cleared', () => {
-    const source = unconfiguredSourceForCountry('IL');
-    expect(source).not.toBeNull();
-    expect(source!.reason).toBe('no_documented_machine_interface');
-    expect(source!.determination).toMatch(/403/);
-    expect(source!.determination).toMatch(/circumventing an access control/);
-  });
-
+describe('The Philippines remains stopped at its source boundary', () => {
   test('the Philippines stops on interface, explicitly NOT on a rights conclusion', () => {
     const source = unconfiguredSourceForCountry('PH');
     expect(source).not.toBeNull();

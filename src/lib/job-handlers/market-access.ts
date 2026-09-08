@@ -28,6 +28,7 @@ import { fetchAustraliaMarketAccess } from '@/lib/market-access/providers/austra
 import { fetchJapanMarketAccess } from '@/lib/market-access/providers/japan-service';
 import { fetchNorwayMarketAccess } from '@/lib/market-access/providers/norway-service';
 import { fetchKoreaMarketAccess } from '@/lib/market-access/providers/korea-service';
+import { fetchIsraelMarketAccess } from '@/lib/market-access/providers/israel-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -126,6 +127,14 @@ const KOREA_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const ISRAEL_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'il_tax_authority_customs_book',
+  fetch: (request) => fetchIsraelMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
  * from each source's own destination list rather than duplicating that list here. Two sources
@@ -143,6 +152,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   KR: KOREA_ADAPTER,
   TW: TAIWAN_ADAPTER,
   GE: GEORGIA_ADAPTER,
+  IL: ISRAEL_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 

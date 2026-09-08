@@ -12,6 +12,7 @@
 export type UnconfiguredReason =
   | 'no_documented_machine_interface'
   | 'bulk_distribution_only'
+  | 'source_insufficient'
   | 'license_pending'
   /**
    * Rights are cleared and a documented machine interface exists, but it requires a registered
@@ -72,14 +73,23 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://data.go.th/', 'https://www.customs.go.th/'],
     unblocked_by: 'A reachable, documented Thai Customs tariff dataset or API with dataset-specific reuse terms, or an authorised access path to data.go.th.',
   },
-  IL_TAX_AUTHORITY: {
-    jurisdiction: 'IL',
-    country_codes: ['IL'],
-    authority: 'Israel Tax Authority — Customs Book / customs and purchase tax tariff (gov.il, shaarolami)',
-    reason: 'no_documented_machine_interface',
-    determination: 'UNRESOLVED, and deliberately not upgraded. Two independent blockers, neither of which a public-visibility argument can clear. (1) No dataset-specific reuse licence was located from a primary Israeli government source: gov.il publishes the tariff as a lookup service and downloadable rate files, but no licence, terms-of-use or copyright statement covering commercial reuse, redistribution or derived display of that dataset was found. (2) The gov.il host returns HTTP 403 to automated retrieval, including a plain identifying client — the site is actively declining automated access. Working around that block (rotating user agents, or driving the shaarolami query UI) would be circumventing an access control, not acquiring an authorised source, so it was not attempted.',
-    references: ['https://www.gov.il/en/service/2customs-tariff', 'https://www.gov.il/en/service/customs-system-tables', 'https://shaarolami-query.customs.mof.gov.il/CustomspilotWeb/en/CustomsBook/Import/OrderFrame'],
-    unblocked_by: 'An Israel Tax Authority statement of reuse terms for the customs tariff dataset (or a data.gov.il entry carrying an explicit licence), together with an access path that does not require defeating the 403 — for example a published bulk file endpoint or an authorised API credential.',
+  UA_CUSTOMS_DUTY_RATES: {
+    jurisdiction: 'UA',
+    country_codes: ['UA'],
+    authority: 'State Customs Service of Ukraine — Rates of import and export duties',
+    reason: 'source_insufficient',
+    determination: 'The current 2026 data.gov.ua CSV is an openly licensed catalogue of governing legal acts and web links, not a commodity-level import-duty schedule. The nationwide import tariff is published separately by the Verkhovna Rada as two large legal-text schedules under Law 2697-IX. The catalogue has no classification/rate/effective-date rows that can be normalized into Market Access evidence, and this environment cannot reliably acquire the linked official schedules as retained machine releases. A legal-resource link is not a tariff row.',
+    references: ['https://data.gov.ua/dataset/duty-rates', 'https://zakon.rada.gov.ua/laws/show/2697-IX'],
+    unblocked_by: 'A reliably acquirable official commodity-level schedule (or documented API) carrying UKTZED code, description, preferential/full import rates, duty units and effective dates, tied to the State Customs dataset or separately licensed by the publishing authority.',
+  },
+  EAEU_KZ_OPEN_DATA: {
+    jurisdiction: 'EAEU',
+    country_codes: ['KZ', 'RU', 'BY', 'AM', 'KG'],
+    authority: 'Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff',
+    reason: 'source_insufficient',
+    determination: 'The rights-cleared data.egov.kz release fails the first EAEU source gate: its own metadata declares exactly one string field named link and describes a set of EAEU TN VED codes; it does not contain tariff-rate fields. Kazakhstan State Revenue Committee separately exposes 2026 XML/Excel tariff exports, but no dataset-specific evidence ties those bytes to the open-data release or its reuse grant. Portal openness is not transferred to a different authority webpage. No common-tariff pack or destination wrapper is activated.',
+    references: ['https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt', 'https://data.egov.kz/meta/euraziyalyk_ekonomikalyk_odakt/v3?pretty', 'https://akm.kgd.gov.kz/ru/nsi/impprim/10/3974'],
+    unblocked_by: 'An official rights-cleared release that contains the EAEU tariff rates, or an authoritative statement tying the KGD XML/Excel exports to the open-data dataset and permitting automated retrieval, retention, commercial reuse and derived customer display.',
   },
   PH_TARIFF_COMMISSION: {
     jurisdiction: 'PH',
