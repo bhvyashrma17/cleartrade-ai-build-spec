@@ -25,6 +25,7 @@ const fetchKoreaMarketAccess = vi.fn();
 const fetchTaiwanMarketAccess = vi.fn();
 const fetchGeorgiaMarketAccess = vi.fn();
 const fetchIsraelMarketAccess = vi.fn();
+const fetchPeruMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
@@ -42,6 +43,7 @@ vi.mock('@/lib/market-access/providers/korea-service', () => ({ fetchKoreaMarket
 vi.mock('@/lib/market-access/providers/taiwan-service', () => ({ fetchTaiwanMarketAccess }));
 vi.mock('@/lib/market-access/providers/geo-service', () => ({ fetchGeorgiaMarketAccess }));
 vi.mock('@/lib/market-access/providers/israel-service', () => ({ fetchIsraelMarketAccess }));
+vi.mock('@/lib/market-access/providers/peru-service', () => ({ fetchPeruMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -84,6 +86,7 @@ afterEach(() => {
   fetchTaiwanMarketAccess.mockReset();
   fetchGeorgiaMarketAccess.mockReset();
   fetchIsraelMarketAccess.mockReset();
+  fetchPeruMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -207,6 +210,14 @@ describe('market-access ingest routing', () => {
     const outcome = await runMarketAccessIngest(ctx({ country_code: 'IL', hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect(fetchIsraelMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, origin_country: undefined });
+  });
+
+  test('PE routes to the SUNAT retained consolidated-tariff adapter', async () => {
+    fetchPeruMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'PE', jurisdiction: 'PE', provider: 'pe_sunat_customs_tariff' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-pe', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'PE', hs_code: '100630', origin_country: 'IN' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchPeruMarketAccess).toHaveBeenCalledWith('100630', { now: undefined, origin_country: 'IN' });
   });
 
   test('an authority acquisition failure creates no canonical market evidence', async () => {

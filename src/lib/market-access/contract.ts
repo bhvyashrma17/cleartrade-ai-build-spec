@@ -30,7 +30,8 @@ export type NationalCodeSystem =
   | 'KR_TARIFF_ITEM'
   | 'TW_CUSTOMS_TARIFF'
   | 'GE_TAX_CODE'
-  | 'IL_CUSTOMS_BOOK';
+  | 'IL_CUSTOMS_BOOK'
+  | 'PE_NATIONAL_SUBPARTIDA';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

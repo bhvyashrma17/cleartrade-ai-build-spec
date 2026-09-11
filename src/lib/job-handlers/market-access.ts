@@ -29,6 +29,7 @@ import { fetchJapanMarketAccess } from '@/lib/market-access/providers/japan-serv
 import { fetchNorwayMarketAccess } from '@/lib/market-access/providers/norway-service';
 import { fetchKoreaMarketAccess } from '@/lib/market-access/providers/korea-service';
 import { fetchIsraelMarketAccess } from '@/lib/market-access/providers/israel-service';
+import { fetchPeruMarketAccess } from '@/lib/market-access/providers/peru-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -135,6 +136,14 @@ const ISRAEL_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const PERU_ADAPTER: MarketAccessAdapter = {
+  provider_key: 'pe_sunat_customs_tariff',
+  fetch: (request) => fetchPeruMarketAccess(request.hs6, {
+    now: request.now,
+    origin_country: request.origin_country,
+  }),
+};
+
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
  * from each source's own destination list rather than duplicating that list here. Two sources
@@ -153,11 +162,12 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   TW: TAIWAN_ADAPTER,
   GE: GEORGIA_ADAPTER,
   IL: ISRAEL_ADAPTER,
+  PE: PERU_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 
 export async function runMarketAccessIngest(ctx: JobContext): Promise<JobOutcome> {
-  const payload = ctx.payload as { country_code?: string; hs_code?: string };
+  const payload = ctx.payload as { country_code?: string; hs_code?: string; origin_country?: string };
   const country = (payload.country_code ?? '').trim().toUpperCase();
   const hs6 = (payload.hs_code ?? '').trim();
   if (!/^[A-Z]{2}$/.test(country)) return { status: JobStatus.failed, result: { error: 'Market access ingest requires an ISO alpha-2 destination.' } };
@@ -184,7 +194,7 @@ export async function runMarketAccessIngest(ctx: JobContext): Promise<JobOutcome
     return { status: JobStatus.failed, result: { error: `No authoritative market-access source is connected or documented for ${country}.`, country_code: country, hs_code: hs6 } };
   }
 
-  const result = await adapter.fetch({ hs6, destination_country: country });
+  const result = await adapter.fetch({ hs6, destination_country: country, origin_country: payload.origin_country });
   const snapshot = await persistMarketAccessIngest(result, { source_run_id: ctx.job_id });
   return {
     status: JobStatus.completed,

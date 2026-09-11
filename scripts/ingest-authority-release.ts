@@ -6,6 +6,7 @@ import { importGeorgiaRelease } from '@/lib/market-access/providers/geo-service'
 import { importPhilippinesRelease } from '@/lib/market-access/providers/philippines-service';
 import { importTaiwanRelease } from '@/lib/market-access/providers/taiwan-service';
 import { acquireAndImportIsraelRelease } from '@/lib/market-access/providers/israel-service';
+import { acquireAndImportPeruRelease } from '@/lib/market-access/providers/peru-service';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -20,8 +21,8 @@ function required(name: string) {
 
 async function main() {
   const country = required('country').toUpperCase();
-  if (!['CA', 'TW', 'GE', 'IL', 'PH'].includes(country)) {
-    throw new Error('Supported authority-release imports are CA, TW, GE, IL and the controlled manual PH composite.');
+  if (!['CA', 'TW', 'GE', 'IL', 'PH', 'PE'].includes(country)) {
+    throw new Error('Supported authority-release imports are CA, TW, GE, IL, PE and the controlled manual PH composite.');
   }
   const actorEmail = required('actor-email').toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: actorEmail } });
@@ -54,7 +55,9 @@ async function main() {
         ? await importGeorgiaRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') })
         : country === 'IL'
           ? await acquireAndImportIsraelRelease({ ...common, acquisition: { release_identifier: releaseIdentifier } })
-          : await importPhilippinesRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') });
+          : country === 'PE'
+            ? await acquireAndImportPeruRelease(common)
+            : await importPhilippinesRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') });
   console.log(JSON.stringify({
     release_id: imported.release.id,
     release_identifier: imported.release.release_identifier,
