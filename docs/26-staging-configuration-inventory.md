@@ -45,6 +45,8 @@ credential produces a config that passes startup and fails at first real use.
 |---|---|---|---|---|
 | `DATABASE_URL` | Pooled application connection | **Yes** | provider (managed Postgres) | Provider console; ClearTrade ops rotates credential. |
 | `DIRECT_DATABASE_URL` | Unpooled connection for migrations | **Yes** | provider | Provider console. Required for the `migration` role. |
+| `DATABASE_IDENTITY_SHA256` | Exact pooled-URL identity pin | **Yes** | ClearTrade | Recompute only with a reviewed database credential/endpoint rotation. |
+| `DIRECT_DATABASE_IDENTITY_SHA256` | Exact direct-URL identity pin | **Yes** | ClearTrade | Independently recompute only with a reviewed direct credential/endpoint rotation. |
 | `COMTRADE_API_KEY` | UN Comtrade API subscription key | **Yes** | provider (UN Comtrade) | UN Comtrade account owner. Staging budget must stay capped. |
 | `STORAGE_BUCKET` / `STORAGE_REGION` / `STORAGE_ENDPOINT` | Object storage target | **Yes** | provider | Ops. Not secret, but environment-specific. |
 | object-storage access key / secret | Least-privilege bucket credentials | **Yes** | provider | Ops. Scope to the single staging bucket. |

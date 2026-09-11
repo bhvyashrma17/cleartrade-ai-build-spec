@@ -344,7 +344,7 @@ describe('unconfigured authoritative sources', () => {
     const expectedControllingReferences: Record<string, RegExp> = {
       UY: /licencia-datos-abiertos-uruguay/,
       NG: /wipolex\/en\/legislation\/details\/21820/,
-      JM: /wipolex\/en\/legislation\/details\/21536/,
+      JM: /laws\.moj\.gov\.jm\/legislation\/statutes\/C\/The%20Copyright%20Act\.pdf/,
       PA: /wipolex\/en\/legislation\/details\/15426/,
       TN: /wipolex\/en\/legislation\/details\/21148/,
       DO: /wipolex\/en\/legislation\/details\/1191/,
@@ -356,6 +356,17 @@ describe('unconfigured authoritative sources', () => {
       expect(source, country).not.toBeNull();
       expect(source!.references.some((reference) => controllingReference.test(reference)), country).toBe(true);
     }
+
+    const jamaica = unconfiguredSourceForCountry('JM')!;
+    expect(jamaica.reason).toBe('license_pending');
+    expect(jamaica.determination).toMatch(/official consolidated Copyright Act published by Jamaica's Ministry of Justice/);
+    expect(jamaica.determination).toMatch(/section 13B[\s\S]*non-commercial/);
+
+    const dominicanRepublic = unconfiguredSourceForCountry('DO')!;
+    expect(dominicanRepublic.reason).toBe('source_insufficient');
+    expect(dominicanRepublic.references[0]).toMatch(/^https:\/\/onda\.gob\.do\//);
+    expect(dominicanRepublic.determination).toMatch(/WIPO Lex explicitly marks[\s\S]*unconsolidated/);
+    expect(dominicanRepublic.determination).toMatch(/neither copy is represented here as definitive current consolidated law/);
   });
 });
 

@@ -8,6 +8,10 @@ export function databaseIdentityFingerprint(env: NodeJS.ProcessEnv) {
   return createHash('sha256').update(env.DATABASE_URL?.trim() ?? '').digest('hex');
 }
 
+export function directDatabaseIdentityFingerprint(env: NodeJS.ProcessEnv) {
+  return createHash('sha256').update(env.DIRECT_DATABASE_URL?.trim() ?? '').digest('hex');
+}
+
 export function storageIdentityFingerprint(env: NodeJS.ProcessEnv) {
   return createHash('sha256').update(JSON.stringify([
     env.STORAGE_ENDPOINT?.trim() ?? '', env.STORAGE_BUCKET?.trim() ?? '', env.AWS_ACCESS_KEY_ID?.trim() ?? '',
@@ -81,6 +85,59 @@ function oauthProviderPairProblem(
   return `${providerLabel} OAuth requires both ${idKey} and ${secretKey} when enabled.`;
 }
 
+function databaseIdentityProblems(role: RuntimeRole, env: NodeJS.ProcessEnv, environment: ClearTradeEnvironment) {
+  const errors: string[] = [];
+  if (missing(env, 'DATABASE_URL')) errors.push('DATABASE_URL is required.');
+  if (!isRealWorkflowEnvironment(env)) return errors;
+
+  if (env.DATABASE_ENVIRONMENT !== environment) errors.push(`DATABASE_ENVIRONMENT must equal ${environment}.`);
+  for (const name of ['DATABASE_URL', 'DIRECT_DATABASE_URL'] as const) {
+    const value = env[name]?.trim();
+    if (!value) {
+      errors.push(`${name} is required in ${environment}.`);
+      continue;
+    }
+    if (/(?:test|dev|local)/i.test(value)) errors.push(`${environment} cannot use ${name} labelled test/dev/local.`);
+    if (!/sslmode=(require|verify-ca|verify-full)/i.test(value)) errors.push(`${name} must request TLS (sslmode=require or stricter).`);
+  }
+
+  const pins = [
+    ['DATABASE_URL', 'DATABASE_IDENTITY_SHA256', databaseIdentityFingerprint(env)],
+    ['DIRECT_DATABASE_URL', 'DIRECT_DATABASE_IDENTITY_SHA256', directDatabaseIdentityFingerprint(env)],
+  ] as const;
+  for (const [urlName, pinName, actual] of pins) {
+    const expected = env[pinName]?.trim().toLowerCase();
+    if (!expected) errors.push(`${pinName} is required in ${environment}.`);
+    else if (!/^[a-f0-9]{64}$/.test(expected)) errors.push(`${pinName} must be a SHA-256 fingerprint.`);
+    else if (expected !== actual) errors.push(`${urlName} does not match the pinned ${environment} database identity in ${pinName}.`);
+  }
+
+  // The migration role is called out in the message because this is the last gate before Prisma
+  // selects `directUrl`. Other real roles require the same direct identity so a copied credential
+  // is rejected at startup, before it can later be reused by an operational command.
+  if (role === 'migration' && missing(env, 'DIRECT_DATABASE_URL')) {
+    errors.push('The migration role cannot run without an identity-pinned DIRECT_DATABASE_URL.');
+  }
+  return errors;
+}
+
+/**
+ * Narrow guard for Prisma, backup and restore tooling that consumes a direct connection.
+ * It intentionally validates only environment/database identity; application-only provider
+ * credentials must not be a prerequisite for running a migration safety check.
+ */
+export function validateDatabaseEnvironment(role: RuntimeRole = 'migration', env: NodeJS.ProcessEnv = process.env) {
+  const environment = appEnvironment(env);
+  const errors = databaseIdentityProblems(role, env, environment);
+  if (errors.length) throw new Error(`Invalid ${environment} ${role} database configuration: ${errors.join(' ')}`);
+  return {
+    environment,
+    role,
+    database_fingerprint: databaseIdentityFingerprint(env),
+    direct_database_fingerprint: directDatabaseIdentityFingerprint(env),
+  };
+}
+
 /**
  * The payment gateway is all-or-nothing, and partial configuration must fail at BOOT.
  *
@@ -142,29 +199,8 @@ function razorpayProblems(env:NodeJS.ProcessEnv,environment:ClearTradeEnvironmen
 
 export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEnv=process.env){
   const environment=appEnvironment(env),errors:string[]=[];
-  if(missing(env,'DATABASE_URL'))errors.push('DATABASE_URL is required.');
+  errors.push(...databaseIdentityProblems(role, env, environment));
   if(isRealWorkflowEnvironment(env)){
-    if(env.DATABASE_ENVIRONMENT!==environment)errors.push(`DATABASE_ENVIRONMENT must equal ${environment}.`);
-    if(/(?:test|dev|local)/i.test(env.DATABASE_URL??''))errors.push(`${environment} cannot use a database URL labelled test/dev/local.`);
-    // Transport encryption. A managed provider that terminates TLS still requires the client
-    // to ask for it; without sslmode the driver may silently negotiate plaintext.
-    if(!/sslmode=(require|verify-ca|verify-full)/i.test(env.DATABASE_URL??''))errors.push('DATABASE_URL must request TLS (sslmode=require or stricter).');
-    // Migrations run over a direct (unpooled) connection. Optional, but if present it must be
-    // held to the same standards as the pooled URL — a dev database here would be worse, not
-    // better, since the migrator writes schema.
-    if(env.DIRECT_DATABASE_URL?.trim()){
-      if(/(?:test|dev|local)/i.test(env.DIRECT_DATABASE_URL))errors.push(`${environment} cannot use a direct database URL labelled test/dev/local.`);
-      if(!/sslmode=(require|verify-ca|verify-full)/i.test(env.DIRECT_DATABASE_URL))errors.push('DIRECT_DATABASE_URL must request TLS (sslmode=require or stricter).');
-    }else if(role==='migration')errors.push('DIRECT_DATABASE_URL is required for the migration role (unpooled connection).');
-
-    // DATABASE_ENVIRONMENT is operator-supplied and cannot detect a copied production URL. A
-    // staging deployment therefore pins the exact resolved resource identity. Copying another
-    // environment's URL or rotating credentials without deliberately updating the pin fails boot.
-    if(environment==='staging'){
-      if(missing(env,'DATABASE_IDENTITY_SHA256'))errors.push('DATABASE_IDENTITY_SHA256 is required in staging.');
-      else if(env.DATABASE_IDENTITY_SHA256!==databaseIdentityFingerprint(env))errors.push('DATABASE_URL does not match the pinned staging database identity.');
-    }
-
     for(const [name,min] of [['AUTH_SECRET',32],['GUEST_IP_HASH_SECRET',32],['IMPORT_BUYER_REF_SECRET',32],['OPERATIONS_TOKEN',32]] as const){
       const problem=weakSecret(env[name],min);
       if(problem)errors.push(`${name} ${problem}.`);

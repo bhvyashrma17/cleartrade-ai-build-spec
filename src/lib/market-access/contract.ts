@@ -178,7 +178,8 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
   evidence.push({
     jurisdiction: result.jurisdiction, country_code: result.country_code, hs_code_scope: result.hs6,
     rule_type: MarketAccessRuleType.preferential_tariff_india,
-    source_authority: result.source_authority, source_reference: result.source_reference,
+    source_authority: preference.source_authority ?? result.source_authority,
+    source_reference: preference.source_reference ?? result.source_reference,
     retrieved_at: result.retrieved_at,
     effective_at: resolved?.effective_from ?? null, expires_at: resolved?.effective_to ?? null,
     status: calculatorPreferenceStatus(preference.applicability),
@@ -189,7 +190,12 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
     duty_expression: preference.duty?.expression ?? null, duty_kind: preference.duty?.kind ?? null,
     preference_applicability: preference.applicability, preference_basis: preference.basis,
     verification_grade: grade,
-    raw_evidence: { geographic_area_id: preference.geographic_area_id, applicability: preference.applicability, basis: preference.basis } as Prisma.InputJsonValue,
+    raw_evidence: {
+      geographic_area_id: preference.geographic_area_id,
+      applicability: preference.applicability,
+      basis: preference.basis,
+      ...(preference.raw_evidence ?? {}),
+    } as Prisma.InputJsonValue,
   });
 
   for (const requirement of result.requirements) {

@@ -12,7 +12,7 @@ import { buildPeruMarketAccess, PERU_BUNDLE_READER_VERSION, PeruBundleError, PER
 const SOURCE_FAMILY = 'PE_SUNAT';
 export const PERU_RELEASE_SOURCE: AuthorityReleaseSource = Object.freeze({
   source_family: SOURCE_FAMILY, authority: PERU_SOURCE_AUTHORITY, destination_scope: ['PE'],
-  source_distribution: 'SUNAT consolidated national tariff workbook plus El Peruano RVM 016 official PDF', source_format: 'zip+xlsx+pdf', content_type: 'application/zip',
+  source_distribution: 'SUNAT consolidated tariff workbook, El Peruano RVM 016 PDF and retained MINCETUR Peru–India agreement status page', source_format: 'zip+xlsx+pdf+html', content_type: 'application/zip',
   max_bundle_bytes: 8 * 1024 * 1024, reader_version: PERU_BUNDLE_READER_VERSION, parser_version: PERU_PARSER_VERSION,
 });
 
@@ -36,6 +36,8 @@ export async function importPeruRelease(args: { actor: Principal; bytes: Buffer;
         automated_current_state_reconciliation: false,
         franja_overlay_version: 'RVM 016-2026-EF/15.01',
         franja_official_pdf_retained: true,
+        mincetur_india_status_page_retained: Boolean(bundle.india_preference_evidence),
+        india_preference_provenance_complete: Boolean(bundle.india_preference_evidence),
       },
     };
   } });

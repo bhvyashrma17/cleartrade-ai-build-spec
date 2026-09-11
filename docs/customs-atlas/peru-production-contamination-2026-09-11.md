@@ -95,9 +95,10 @@ resources:
 | staging worker | same | same | same | same |
 
 Those hashes differ from production. Both staging processes also carry
-`DATABASE_IDENTITY_SHA256` and `STORAGE_IDENTITY_SHA256` pins. The runtime repair makes staging
-fail at boot if the resolved database URL or the tuple `(endpoint, bucket, access key)` no longer
-matches its approved pin, preventing a copied production variable set from silently starting.
+`DATABASE_IDENTITY_SHA256`, `DIRECT_DATABASE_IDENTITY_SHA256`, and `STORAGE_IDENTITY_SHA256`
+pins. The runtime repair makes staging fail before application startup or a Prisma migration if
+either resolved database URL, or the tuple `(endpoint, bucket, access key)`, no longer matches its
+approved pin, preventing a copied production variable set from silently starting or migrating.
 The staging web deployment `a78faa78-1d87-44ad-af21-46588e10cc9a` and worker deployment
 `7a0b9040-dcf4-4ae6-bdcc-e134a6def3ba` both reached `SUCCESS` after this rewire.
 

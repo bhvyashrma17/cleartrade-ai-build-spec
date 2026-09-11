@@ -210,6 +210,10 @@ export interface IndiaPreferenceDetermination {
   basis: string;
   /** The authority's geographic-area identifier the candidate measure was published under. */
   geographic_area_id: string | null;
+  /** Preference-specific provenance when it is supplied by a different authority than the tariff. */
+  source_authority?: string;
+  source_reference?: string;
+  raw_evidence?: Record<string, unknown>;
 }
 
 export interface IndiaPreferenceInput {

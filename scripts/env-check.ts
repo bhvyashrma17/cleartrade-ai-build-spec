@@ -62,7 +62,8 @@ const INVENTORY: Entry[] = [
   // --- Database -------------------------------------------------------------------------
   { name: 'DATABASE_URL', cls: 'secret', provider: 'managed Postgres', local: 'required', staging: 'required', production: 'required', note: 'Pooled; sslmode required in real environments' },
   { name: 'DIRECT_DATABASE_URL', cls: 'secret', provider: 'managed Postgres', local: 'recommended', staging: 'required', production: 'required', note: 'Unpooled; required for the migration role' },
-  { name: 'DATABASE_IDENTITY_SHA256', cls: 'secret', provider: 'ClearTrade', staging: 'required', note: 'SHA-256 pin of the resolved staging DATABASE_URL; prevents cross-environment URL reuse' },
+  { name: 'DATABASE_IDENTITY_SHA256', cls: 'secret', provider: 'ClearTrade', staging: 'required', production: 'required', note: 'SHA-256 pin of the resolved DATABASE_URL; prevents cross-environment URL reuse' },
+  { name: 'DIRECT_DATABASE_IDENTITY_SHA256', cls: 'secret', provider: 'ClearTrade', staging: 'required', production: 'required', note: 'Independent SHA-256 pin of the resolved DIRECT_DATABASE_URL; gates migrations and direct operations' },
   { name: 'RESTORE_DRILL_DATABASE_URL', cls: 'secret', provider: 'managed Postgres', note: 'Restore drill only; URL must contain restore_drill' },
 
   // --- Auth / crypto (ClearTrade-generated) ---------------------------------------------

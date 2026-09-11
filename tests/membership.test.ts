@@ -24,7 +24,7 @@ import {
   toSubscriptionStatus,
 } from '../src/lib/state-machines/subscription';
 import { minTierFor } from '../src/lib/permissions';
-import { validateRuntimeEnvironment } from '../src/lib/runtime-config';
+import { databaseIdentityFingerprint, directDatabaseIdentityFingerprint, validateRuntimeEnvironment } from '../src/lib/runtime-config';
 import { PREVIEW_BUYERS, PREVIEW_MARKETS, SAMPLE_DISCLAIMER } from '../src/lib/billing/preview';
 import { prisma } from '../src/lib/prisma';
 
@@ -438,6 +438,8 @@ describe('payment configuration fails closed at boot', () => {
     NOTIFICATION_PROVIDER_URL: 'https://notifications.internal/send',
     NEXT_PUBLIC_APP_URL: 'https://cleartrade.in',
   };
+  base.DATABASE_IDENTITY_SHA256 = databaseIdentityFingerprint(asEnv(base));
+  base.DIRECT_DATABASE_IDENTITY_SHA256 = directDatabaseIdentityFingerprint(asEnv(base));
 
   const live: Record<string, string> = {
     RAZORPAY_KEY_ID: 'rzp_live_9f2c7b41a8e0', RAZORPAY_KEY_SECRET: 'Qw8Nb3Xc7Rp2Yk5Hd9Gs4Lf1JaMv6Tz',

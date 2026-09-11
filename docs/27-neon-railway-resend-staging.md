@@ -50,6 +50,10 @@ Neon exposes two endpoints and **both are required**:
 | `DIRECT_DATABASE_URL` | direct (no `-pooler`) | migrator, Prisma Migrate |
 
 Append `?sslmode=require` to both — startup validation rejects a URL without it.
+Set `DATABASE_IDENTITY_SHA256` to SHA-256 of the exact resolved pooled URL and
+`DIRECT_DATABASE_IDENTITY_SHA256` to SHA-256 of the exact resolved direct URL. Both pins are
+required independently in staging and production, and `npm run migrate:deploy` refuses to invoke
+Prisma when either resolved URL does not match its own environment pin.
 
 ### The schema change this required
 

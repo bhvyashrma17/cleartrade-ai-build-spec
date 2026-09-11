@@ -1,12 +1,26 @@
-import {afterAll,describe,expect,test} from 'vitest';import {prisma} from '../src/lib/prisma';import {databaseIdentityFingerprint,storageIdentityFingerprint,validateRuntimeEnvironment} from '../src/lib/runtime-config';import {operationsAuthorized} from '../src/lib/operations-auth';import {storageHealthcheck} from '../src/lib/document-storage';
+import {afterAll,describe,expect,test} from 'vitest';import {prisma} from '../src/lib/prisma';import {databaseIdentityFingerprint,directDatabaseIdentityFingerprint,storageIdentityFingerprint,validateDatabaseEnvironment,validateRuntimeEnvironment} from '../src/lib/runtime-config';import {operationsAuthorized} from '../src/lib/operations-auth';import {storageHealthcheck} from '../src/lib/document-storage';
 import { envFilePolicyProblem } from '../scripts/env-file-policy';
 afterAll(async()=>{await prisma.workerHeartbeat.deleteMany({where:{instance_id:{startsWith:'vitest-ops'}}});await prisma.$disconnect();});
 const staging={NODE_ENV:'production',APP_ENV:'staging',DATABASE_ENVIRONMENT:'staging',DATABASE_URL:'postgresql://app@db.internal/cleartrade_staging?sslmode=require',DIRECT_DATABASE_URL:'postgresql://app@db-direct.internal/cleartrade_staging?sslmode=require',AUTH_SECRET:'Kq7Zx2Vb9Nm4Tp1Rw6Yc3Fh8Ls5Jd0Ga',GUEST_IP_HASH_SECRET:'Bn3Xq8Wz1Cv6Rt4Ym9Pk2Hs7Ld5Fj0Ae',IMPORT_BUYER_REF_SECRET:'Mv5Tz9Qw2Nb7Xc4Rp1Yk8Hd3Gs6Lf0Ja',IMPORT_BUYER_REF_KEY_VERSION:'v1',IMPORT_RAW_IDENTITY_ENCRYPTION_KEY:Buffer.from('9f2c7b41a8e05d63'.repeat(4),'hex').toString('base64'),IMPORT_RAW_IDENTITY_KEY_VERSION:'v1',OPERATIONS_TOKEN:'Zr6Hn2Kd9Tq4Wm7Bx1Vc5Yp8Ls3Gf0Ju',COMTRADE_CLIENT:'real',COMTRADE_API_KEY:'provider-key',DISCOVERY_ENGINE:'warehouse',STORAGE_BACKEND:'s3',STORAGE_BUCKET:'bucket',STORAGE_REGION:'region',DOCUMENT_MALWARE_SCANNER:'http',DOCUMENT_MALWARE_SCANNER_URL:'https://scanner.internal/scan',NOTIFICATION_PROVIDER:'http',NOTIFICATION_PROVIDER_API_KEY:'provider-key',NOTIFICATION_PROVIDER_URL:'https://notifications.internal/send',NEXT_PUBLIC_APP_URL:'https://staging.example.test'} as NodeJS.ProcessEnv;
-Object.assign(staging,{DATABASE_IDENTITY_SHA256:databaseIdentityFingerprint(staging),STORAGE_IDENTITY_SHA256:storageIdentityFingerprint(staging)});
+Object.assign(staging,{DATABASE_IDENTITY_SHA256:databaseIdentityFingerprint(staging),DIRECT_DATABASE_IDENTITY_SHA256:directDatabaseIdentityFingerprint(staging),STORAGE_IDENTITY_SHA256:storageIdentityFingerprint(staging)});
+const production={
+  ...staging,
+  APP_ENV:'production',
+  DATABASE_ENVIRONMENT:'production',
+  DATABASE_URL:'postgresql://app@production-db.internal/cleartrade_production?sslmode=require',
+  DIRECT_DATABASE_URL:'postgresql://app@production-direct.internal/cleartrade_production?sslmode=require',
+  NEXT_PUBLIC_APP_URL:'https://www.cleartrade.test',
+  PAYMENTS_DISABLED:'true',
+} as NodeJS.ProcessEnv;
+Object.assign(production,{DATABASE_IDENTITY_SHA256:databaseIdentityFingerprint(production),DIRECT_DATABASE_IDENTITY_SHA256:directDatabaseIdentityFingerprint(production)});
 describe('deployment safety',()=>{
   test('development is explicit and may use local storage',()=>expect(validateRuntimeEnvironment('web',{NODE_ENV:'development',APP_ENV:'development',DATABASE_URL:'postgresql://localhost/cleartrade_dev'})).toMatchObject({environment:'development',storage_backend:'local'}));
   test('staging fails closed on missing secrets, mock providers, local storage, and dev databases',()=>expect(()=>validateRuntimeEnvironment('web',{NODE_ENV:'production',APP_ENV:'staging',DATABASE_ENVIRONMENT:'staging',DATABASE_URL:'postgresql://localhost/cleartrade_dev',COMTRADE_CLIENT:'mock',STORAGE_BACKEND:'local'})).toThrow(/AUTH_SECRET.*mock|COMTRADE_CLIENT.*real/));
   test('a complete platform-neutral staging configuration validates',()=>expect(validateRuntimeEnvironment('worker',staging)).toMatchObject({environment:'staging',role:'worker',storage_backend:'s3'}));
+  test('complete staging and production database pairs pass the narrow tooling guard',()=>{
+    expect(validateDatabaseEnvironment('migration',staging)).toMatchObject({environment:'staging',database_fingerprint:staging.DATABASE_IDENTITY_SHA256,direct_database_fingerprint:staging.DIRECT_DATABASE_IDENTITY_SHA256});
+    expect(validateDatabaseEnvironment('migration',production)).toMatchObject({environment:'production',database_fingerprint:production.DATABASE_IDENTITY_SHA256,direct_database_fingerprint:production.DIRECT_DATABASE_IDENTITY_SHA256});
+  });
   test('operational metrics use constant-time bearer-token authorization',()=>{const request=new Request('http://localhost/api/metrics',{headers:{authorization:`Bearer ${staging.OPERATIONS_TOKEN}`}}),previous=process.env.OPERATIONS_TOKEN;process.env.OPERATIONS_TOKEN='wrong-token-value-that-is-long-enough';expect(operationsAuthorized(request)).toBe(false);process.env.OPERATIONS_TOKEN=staging.OPERATIONS_TOKEN;expect(operationsAuthorized(request)).toBe(true);process.env.OPERATIONS_TOKEN=previous;});
   test('worker heartbeat state is durable and queryable',async()=>{const row=await prisma.workerHeartbeat.create({data:{id:'vitest-ops-heartbeat',instance_id:'vitest-ops-1',status:'degraded',last_seen_at:new Date(),last_error:'test failure',last_error_at:new Date(),consecutive_failures:1}});expect(row).toMatchObject({status:'degraded',consecutive_failures:1});});
   test('development local storage readiness creates a durable local root',async()=>expect(await storageHealthcheck()).toEqual({backend:'local',ready:true}));
@@ -21,7 +35,7 @@ const withValue = (key: string, value: string) => ({ ...staging, [key]: value })
 
 describe('staging fails closed on missing mandatory secrets', () => {
   const mandatory = [
-    'DATABASE_URL', 'DATABASE_IDENTITY_SHA256', 'AUTH_SECRET', 'GUEST_IP_HASH_SECRET', 'IMPORT_BUYER_REF_SECRET',
+    'DATABASE_URL', 'DIRECT_DATABASE_URL', 'DATABASE_IDENTITY_SHA256', 'DIRECT_DATABASE_IDENTITY_SHA256', 'AUTH_SECRET', 'GUEST_IP_HASH_SECRET', 'IMPORT_BUYER_REF_SECRET',
     'IMPORT_BUYER_REF_KEY_VERSION', 'IMPORT_RAW_IDENTITY_ENCRYPTION_KEY',
     'IMPORT_RAW_IDENTITY_KEY_VERSION', 'OPERATIONS_TOKEN', 'COMTRADE_API_KEY',
     'STORAGE_BUCKET', 'STORAGE_REGION', 'STORAGE_IDENTITY_SHA256', 'DOCUMENT_MALWARE_SCANNER_URL',
@@ -31,10 +45,9 @@ describe('staging fails closed on missing mandatory secrets', () => {
     expect(() => validateRuntimeEnvironment('web', without(key))).toThrow(new RegExp(key));
   });
 
-  test('the migration role additionally requires an unpooled direct URL', () => {
+  test('every real process requires the independently pinned unpooled direct URL', () => {
     expect(() => validateRuntimeEnvironment('migration', without('DIRECT_DATABASE_URL'))).toThrow(/DIRECT_DATABASE_URL/);
-    // ...which the web role does not need.
-    expect(() => validateRuntimeEnvironment('web', without('DIRECT_DATABASE_URL'))).not.toThrow();
+    expect(() => validateRuntimeEnvironment('web', without('DIRECT_DATABASE_URL'))).toThrow(/DIRECT_DATABASE_URL/);
   });
 
   test('a fully valid staging configuration still validates (the checks are not vacuous)', () => {
@@ -90,13 +103,35 @@ describe('staging rejects insecure transport and dev-labelled infrastructure', (
   });
 
   test('the direct migration URL is held to the same standard as the pooled URL', () => {
-    expect(() => validateRuntimeEnvironment('migration', withValue('DIRECT_DATABASE_URL', 'postgresql://app@db.internal/cleartrade_dev?sslmode=require'))).toThrow(/direct database URL/);
+    expect(() => validateRuntimeEnvironment('migration', withValue('DIRECT_DATABASE_URL', 'postgresql://app@db.internal/cleartrade_dev?sslmode=require'))).toThrow(/DIRECT_DATABASE_URL.*test\/dev\/local/);
     expect(() => validateRuntimeEnvironment('migration', withValue('DIRECT_DATABASE_URL', 'postgresql://app@db-direct.internal/cleartrade_staging'))).toThrow(/DIRECT_DATABASE_URL must request TLS/);
   });
 
   test('copying another environment database or bucket fails the pinned staging identity', () => {
-    expect(() => validateRuntimeEnvironment('web', withValue('DATABASE_URL', 'postgresql://app@production.internal/cleartrade_production?sslmode=require'))).toThrow(/pinned staging database identity/);
+    expect(() => validateRuntimeEnvironment('web', withValue('DATABASE_URL', production.DATABASE_URL!))).toThrow(/pinned staging database identity/);
     expect(() => validateRuntimeEnvironment('web', withValue('STORAGE_BUCKET', 'production-bucket'))).toThrow(/pinned staging storage identity/);
+  });
+
+  test('staging pooled URL plus production direct URL is rejected before tooling can run', () => {
+    expect(() => validateDatabaseEnvironment('migration', { ...staging, DIRECT_DATABASE_URL: production.DIRECT_DATABASE_URL } as NodeJS.ProcessEnv))
+      .toThrow(/DIRECT_DATABASE_URL does not match the pinned staging database identity/);
+  });
+
+  test('production pooled URL plus staging direct URL is rejected before tooling can run', () => {
+    expect(() => validateDatabaseEnvironment('migration', { ...production, DIRECT_DATABASE_URL: staging.DIRECT_DATABASE_URL } as NodeJS.ProcessEnv))
+      .toThrow(/DIRECT_DATABASE_URL does not match the pinned production database identity/);
+  });
+
+  test('a correct pooled URL plus an unknown direct URL is rejected', () => {
+    expect(() => validateDatabaseEnvironment('migration', { ...staging, DIRECT_DATABASE_URL: 'postgresql://app@unknown.internal/cleartrade_unknown?sslmode=require' } as NodeJS.ProcessEnv))
+      .toThrow(/DIRECT_DATABASE_URL does not match the pinned staging database identity/);
+  });
+
+  test('explicit pins cannot be swapped between pooled and direct connection paths', () => {
+    expect(() => validateDatabaseEnvironment('migration', { ...staging, DIRECT_DATABASE_IDENTITY_SHA256: staging.DATABASE_IDENTITY_SHA256 } as NodeJS.ProcessEnv))
+      .toThrow(/DIRECT_DATABASE_IDENTITY_SHA256/);
+    expect(() => validateDatabaseEnvironment('migration', { ...production, DATABASE_IDENTITY_SHA256: staging.DATABASE_IDENTITY_SHA256 } as NodeJS.ProcessEnv))
+      .toThrow(/DATABASE_IDENTITY_SHA256/);
   });
 
   test('the malware scanner receives customer documents, so plaintext transport is refused', () => {

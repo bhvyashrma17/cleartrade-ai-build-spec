@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${DIRECT_DATABASE_URL:?DIRECT_DATABASE_URL is required}"
+npx tsx scripts/database-identity-check.ts
 backup_dir="${BACKUP_DIRECTORY:-./.data/backups}"
 mkdir -p "$backup_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"

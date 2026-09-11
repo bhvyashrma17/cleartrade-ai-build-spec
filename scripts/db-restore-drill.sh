@@ -2,6 +2,7 @@
 set -euo pipefail
 : "${DIRECT_DATABASE_URL:?DIRECT_DATABASE_URL is required}"
 : "${RESTORE_DRILL_DATABASE_URL:?RESTORE_DRILL_DATABASE_URL is required}"
+npx tsx scripts/database-identity-check.ts
 case "$RESTORE_DRILL_DATABASE_URL" in *restore_drill*) ;; *) echo "Refusing target without restore_drill in its URL" >&2; exit 2;; esac
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT

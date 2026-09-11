@@ -5,9 +5,11 @@ import type { MarketAccessIngestResult, MarketAccessLineRecord } from '@/lib/mar
 import { resolveNationalTariffLine, type CandidateTariffLine, type ParsedDuty } from '@/lib/market-access/tariff-semantics';
 
 export const PERU_RAW_BUNDLE_READER_VERSION = 'sunat-arancel-2022-consolidated-xlsx-reader-v1' as const;
-export const PERU_BUNDLE_READER_VERSION = 'sunat-arancel-and-franja-pdf-bundle-reader-v2' as const;
+export const PERU_COMPOSITE_BUNDLE_READER_VERSION_V2 = 'sunat-arancel-and-franja-pdf-bundle-reader-v2' as const;
+export const PERU_BUNDLE_READER_VERSION = 'sunat-arancel-franja-and-mincetur-bundle-reader-v3' as const;
 export const PERU_LEGACY_PARSER_VERSION = 'pe-sunat-tariff-parser-v1' as const;
-export const PERU_PARSER_VERSION = 'pe-sunat-tariff-parser-v2' as const;
+export const PERU_COMPOSITE_PARSER_VERSION_V2 = 'pe-sunat-tariff-parser-v2' as const;
+export const PERU_PARSER_VERSION = 'pe-sunat-tariff-parser-v3' as const;
 export const PERU_PROVIDER = 'pe_sunat_customs_tariff' as const;
 export const PERU_SOURCE_AUTHORITY = 'SUNAT / Ministerio de Economía y Finanzas del Perú' as const;
 export const PERU_SOURCE_DATASET = 'Arancel de Aduanas 2022 consolidado and Sistema de Franja de Precios' as const;
@@ -19,6 +21,8 @@ const GENERAL_RATES = new Set([0, 4, 6, 11]);
 const SUNAT_XLSX_URL = 'https://www.sunat.gob.pe/orientacionaduanera/aranceles/Cap01-98-Descripcion.zip';
 const FRANJA_RESOLUTION_URL = 'https://busquedas.elperuano.pe/dispositivo/NL/2545338-1';
 const FRANJA_PDF_URL = 'https://busquedas.elperuano.pe/api/archivo/file/4lM0IZjiKpl9iq1LmL_dX5/*/2545338-1.PDF';
+const MINCETUR_INDIA_STATUS_URL = 'https://www.acuerdoscomerciales.gob.pe/Negociacion/India/Sobre_Acuerdo.html';
+const MINCETUR_AUTHORITY = 'Ministerio de Comercio Exterior y Turismo del Perú (MINCETUR)';
 const FRANJA_EFFECTIVE_FROM = '2026-08-20';
 const FRANJA_EFFECTIVE_TO = '2026-12-31';
 
@@ -64,9 +68,16 @@ export interface PeruAuthorityBundle {
   source_url: string;
   rows: readonly PeruTariffRow[];
   files: readonly { name: string; size_bytes: number; sha256: string; role: string }[];
-  reader_version: typeof PERU_RAW_BUNDLE_READER_VERSION | typeof PERU_BUNDLE_READER_VERSION;
-  format: 'raw_sunat_zip' | 'composite_pdf_v3';
+  reader_version: typeof PERU_RAW_BUNDLE_READER_VERSION | typeof PERU_COMPOSITE_BUNDLE_READER_VERSION_V2 | typeof PERU_BUNDLE_READER_VERSION;
+  format: 'raw_sunat_zip' | 'composite_pdf_v3' | 'composite_pdf_html_v4';
   franja_decision_retained: boolean;
+  india_preference_evidence: {
+    authority: typeof MINCETUR_AUTHORITY;
+    artifact: 'mincetur-india-agreement-status.html';
+    page_title: string;
+    source_url: typeof MINCETUR_INDIA_STATUS_URL;
+    sha256: string;
+  } | null;
 }
 
 interface ParsedSunatTariff { rows: PeruTariffRow[]; file: { name: string; size_bytes: number; sha256: string; role: string } }
@@ -134,7 +145,7 @@ export async function readPeruRawSunatZip(args: { bytes: Buffer; release_identif
     checksum: sha256(args.bytes), size_bytes: args.bytes.length,
     release_identifier: args.release_identifier, source_url: args.source_url,
     rows: tariff.rows, files: [tariff.file], reader_version: PERU_RAW_BUNDLE_READER_VERSION,
-    format: 'raw_sunat_zip', franja_decision_retained: false,
+    format: 'raw_sunat_zip', franja_decision_retained: false, india_preference_evidence: null,
   };
 }
 
@@ -142,6 +153,14 @@ interface CompositeManifest {
   acquisition_version?: unknown;
   artifacts?: Array<{ name?: unknown; role?: unknown; url?: unknown; landing_url?: unknown; size_bytes?: unknown; sha256?: unknown }>;
   legal_decision?: { identifier?: unknown; publication_date?: unknown; effective_from?: unknown; effective_to?: unknown };
+  india_preference_evidence?: {
+    authority?: unknown;
+    artifact?: unknown;
+    page_title?: unknown;
+    observed_inventory_section?: unknown;
+    assessment?: unknown;
+    temporal_context?: unknown;
+  };
 }
 
 function requireManifestArtifact(manifest: CompositeManifest, expected: { name: string; role: string; url: string }, bytes: Buffer) {
@@ -152,35 +171,56 @@ function requireManifestArtifact(manifest: CompositeManifest, expected: { name: 
   }
 }
 
-export async function readPeruCompositeAuthorityZip(args: { bytes: Buffer; release_identifier: string; source_url: string }): Promise<PeruAuthorityBundle> {
+async function loadComposite(args: { bytes: Buffer }) {
   let composite: JSZip;
   try { composite = await JSZip.loadAsync(args.bytes); }
   catch { throw new PeruBundleError('corrupt_archive', 'The Peru authority release is not a readable ZIP archive.'); }
+  return composite;
+}
+
+function requireReviewedFranja(bytes: Buffer) {
+  const searchablePdf = bytes.toString('latin1');
+  if (!bytes.subarray(0, 5).equals(Buffer.from('%PDF-'))
+    || !['016-2026-EF/15.01', '2545338-1', 'derechos variables adicionales'].every((token) => searchablePdf.toLowerCase().includes(token.toLowerCase()))) {
+    throw new PeruBundleError('franja_mismatch', 'The retained El Peruano PDF does not match the reviewed RVM 016 legal artifact.');
+  }
+}
+
+function requireReviewedLegalDecision(manifest: CompositeManifest) {
+  if (manifest.legal_decision?.identifier !== 'RVM 016-2026-EF/15.01'
+    || manifest.legal_decision.publication_date !== '2026-08-20'
+    || manifest.legal_decision.effective_from !== FRANJA_EFFECTIVE_FROM
+    || manifest.legal_decision.effective_to !== FRANJA_EFFECTIVE_TO) {
+    throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest does not identify the reviewed RVM 016 legal decision.');
+  }
+}
+
+async function readManifest(composite: JSZip) {
+  const manifestBytes = await composite.file('acquisition.json')!.async('nodebuffer');
+  let manifest: CompositeManifest;
+  try { manifest = JSON.parse(manifestBytes.toString('utf8')) as CompositeManifest; }
+  catch { throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest is not valid JSON.'); }
+  return { manifest, manifestBytes };
+}
+
+/** Immutable reader for v3 bundles already retained before MINCETUR evidence was added. */
+export async function readPeruCompositeAuthorityZipV2(args: { bytes: Buffer; release_identifier: string; source_url: string }): Promise<PeruAuthorityBundle> {
+  const composite = await loadComposite(args);
   const entries = Object.values(composite.files).filter((entry) => !entry.dir);
   const expected = ['acquisition.json', 'franja-resolution.pdf', 'sunat-tariff.zip'];
   if (entries.map((entry) => entry.name).sort().join('|') !== expected.join('|')) {
     throw new PeruBundleError('unexpected_manifest', `The retained Peru release must contain exactly ${expected.join(', ')}.`);
   }
-  const manifestBytes = await composite.file('acquisition.json')!.async('nodebuffer');
-  let manifest: CompositeManifest;
-  try { manifest = JSON.parse(manifestBytes.toString('utf8')) as CompositeManifest; }
-  catch { throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest is not valid JSON.'); }
-  if (manifest.acquisition_version !== 'sunat-tariff-and-franja-acquisition-v3'
-    || manifest.legal_decision?.identifier !== 'RVM 016-2026-EF/15.01'
-    || manifest.legal_decision.publication_date !== '2026-08-20'
-    || manifest.legal_decision.effective_from !== FRANJA_EFFECTIVE_FROM
-    || manifest.legal_decision.effective_to !== FRANJA_EFFECTIVE_TO) {
+  const { manifest, manifestBytes } = await readManifest(composite);
+  if (manifest.acquisition_version !== 'sunat-tariff-and-franja-acquisition-v3') {
     throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest does not identify the reviewed official sources and acquisition version.');
   }
+  requireReviewedLegalDecision(manifest);
   const tariffBytes = await composite.file('sunat-tariff.zip')!.async('nodebuffer');
   const franjaBytes = await composite.file('franja-resolution.pdf')!.async('nodebuffer');
   requireManifestArtifact(manifest, { name: 'sunat-tariff.zip', role: 'official_consolidated_tariff', url: SUNAT_XLSX_URL }, tariffBytes);
   requireManifestArtifact(manifest, { name: 'franja-resolution.pdf', role: 'official_price_band_resolution', url: FRANJA_PDF_URL }, franjaBytes);
-  const searchablePdf = franjaBytes.toString('latin1');
-  if (!franjaBytes.subarray(0, 5).equals(Buffer.from('%PDF-'))
-    || !['016-2026-EF/15.01', '2545338-1', 'derechos variables adicionales'].every((token) => searchablePdf.toLowerCase().includes(token.toLowerCase()))) {
-    throw new PeruBundleError('franja_mismatch', 'The retained El Peruano PDF does not match the reviewed RVM 016 legal artifact.');
-  }
+  requireReviewedFranja(franjaBytes);
   const tariff = await readSunatTariffZip(tariffBytes);
   return {
     checksum: sha256(args.bytes),
@@ -194,8 +234,68 @@ export async function readPeruCompositeAuthorityZip(args: { bytes: Buffer; relea
       { name: 'franja-resolution.pdf', size_bytes: franjaBytes.length, sha256: sha256(franjaBytes), role: 'official_price_band_resolution' },
       { name: 'acquisition.json', size_bytes: manifestBytes.length, sha256: sha256(manifestBytes), role: 'acquisition_manifest' },
     ],
+    reader_version: PERU_COMPOSITE_BUNDLE_READER_VERSION_V2,
+    format: 'composite_pdf_v3', franja_decision_retained: true, india_preference_evidence: null,
+  };
+}
+
+/** Current reader: SUNAT tariff + El Peruano decision + retained MINCETUR India status page. */
+export async function readPeruCompositeAuthorityZip(args: { bytes: Buffer; release_identifier: string; source_url: string }): Promise<PeruAuthorityBundle> {
+  const composite = await loadComposite(args);
+  const entries = Object.values(composite.files).filter((entry) => !entry.dir);
+  const expected = ['acquisition.json', 'franja-resolution.pdf', 'mincetur-india-agreement-status.html', 'sunat-tariff.zip'];
+  if (entries.map((entry) => entry.name).sort().join('|') !== expected.join('|')) {
+    throw new PeruBundleError('unexpected_manifest', `The retained Peru release must contain exactly ${expected.join(', ')}.`);
+  }
+  const { manifest, manifestBytes } = await readManifest(composite);
+  if (manifest.acquisition_version !== 'sunat-tariff-franja-and-mincetur-acquisition-v4') {
+    throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest does not identify the reviewed official sources and acquisition version.');
+  }
+  requireReviewedLegalDecision(manifest);
+  if (manifest.india_preference_evidence?.authority !== MINCETUR_AUTHORITY
+    || manifest.india_preference_evidence.artifact !== 'mincetur-india-agreement-status.html'
+    || manifest.india_preference_evidence.page_title !== 'Acuerdo Comercial Perú – India — Sobre la negociación'
+    || manifest.india_preference_evidence.observed_inventory_section !== 'En negociación'
+    || manifest.india_preference_evidence.assessment !== 'no_operative_preferential_agreement_identified'
+    || typeof manifest.india_preference_evidence.temporal_context !== 'string') {
+    throw new PeruBundleError('india_preference_evidence_mismatch', 'The manifest does not describe the reviewed MINCETUR India agreement evidence.');
+  }
+  const tariffBytes = await composite.file('sunat-tariff.zip')!.async('nodebuffer');
+  const franjaBytes = await composite.file('franja-resolution.pdf')!.async('nodebuffer');
+  const minceturBytes = await composite.file('mincetur-india-agreement-status.html')!.async('nodebuffer');
+  requireManifestArtifact(manifest, { name: 'sunat-tariff.zip', role: 'official_consolidated_tariff', url: SUNAT_XLSX_URL }, tariffBytes);
+  requireManifestArtifact(manifest, { name: 'franja-resolution.pdf', role: 'official_price_band_resolution', url: FRANJA_PDF_URL }, franjaBytes);
+  requireManifestArtifact(manifest, { name: 'mincetur-india-agreement-status.html', role: 'official_trade_agreement_inventory_status', url: MINCETUR_INDIA_STATUS_URL }, minceturBytes);
+  requireReviewedFranja(franjaBytes);
+  const minceturText = minceturBytes.toString('utf8').toLowerCase();
+  if (!['acuerdo comercial perú', 'india', 'en negociación', 'ministerio de comercio exterior'].every((token) => minceturText.includes(token))) {
+    throw new PeruBundleError('india_preference_evidence_mismatch', 'The retained MINCETUR page does not match the reviewed Peru–India agreement inventory status.');
+  }
+  const tariff = await readSunatTariffZip(tariffBytes);
+  const minceturSha256 = sha256(minceturBytes);
+  return {
+    checksum: sha256(args.bytes),
+    size_bytes: args.bytes.length,
+    release_identifier: args.release_identifier,
+    source_url: args.source_url,
+    rows: tariff.rows,
+    files: [
+      tariff.file,
+      { name: 'sunat-tariff.zip', size_bytes: tariffBytes.length, sha256: sha256(tariffBytes), role: 'official_consolidated_tariff' },
+      { name: 'franja-resolution.pdf', size_bytes: franjaBytes.length, sha256: sha256(franjaBytes), role: 'official_price_band_resolution' },
+      { name: 'mincetur-india-agreement-status.html', size_bytes: minceturBytes.length, sha256: minceturSha256, role: 'official_trade_agreement_inventory_status' },
+      { name: 'acquisition.json', size_bytes: manifestBytes.length, sha256: sha256(manifestBytes), role: 'acquisition_manifest' },
+    ],
     reader_version: PERU_BUNDLE_READER_VERSION,
-    format: 'composite_pdf_v3', franja_decision_retained: true,
+    format: 'composite_pdf_html_v4',
+    franja_decision_retained: true,
+    india_preference_evidence: {
+      authority: MINCETUR_AUTHORITY,
+      artifact: 'mincetur-india-agreement-status.html',
+      page_title: manifest.india_preference_evidence.page_title,
+      source_url: MINCETUR_INDIA_STATUS_URL,
+      sha256: minceturSha256,
+    },
   };
 }
 
@@ -204,6 +304,7 @@ export const readPeruAuthorityZip = readPeruCompositeAuthorityZip;
 
 export function readPeruAuthorityRelease(args: { bytes: Buffer; release_identifier: string; source_url: string; reader_version: string }) {
   if (args.reader_version === PERU_RAW_BUNDLE_READER_VERSION) return readPeruRawSunatZip(args);
+  if (args.reader_version === PERU_COMPOSITE_BUNDLE_READER_VERSION_V2) return readPeruCompositeAuthorityZipV2(args);
   if (args.reader_version === PERU_BUNDLE_READER_VERSION) return readPeruCompositeAuthorityZip(args);
   throw new PeruBundleError('unsupported_reader_version', `Unsupported Peru reader version ${args.reader_version}.`);
 }
@@ -231,10 +332,13 @@ function isDateWithin(at: Date, effectiveFrom: string | null, effectiveTo: strin
 export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; release_id: string; release_reference_date: Date; retrieved_at: Date; hs6: string; at: Date; origin_country?: string; parser_version?: string }): MarketAccessIngestResult {
   const origin = (args.origin_country ?? 'IN').trim().toUpperCase();
   const parserVersion = args.parser_version ?? PERU_PARSER_VERSION;
-  if (![PERU_LEGACY_PARSER_VERSION, PERU_PARSER_VERSION].includes(parserVersion as typeof PERU_PARSER_VERSION)) {
+  if (![PERU_LEGACY_PARSER_VERSION, PERU_COMPOSITE_PARSER_VERSION_V2, PERU_PARSER_VERSION].includes(parserVersion as typeof PERU_PARSER_VERSION)) {
     throw new PeruBundleError('unsupported_parser_version', `Unsupported Peru parser version ${parserVersion}.`);
   }
   const legacyReplay = parserVersion === PERU_LEGACY_PARSER_VERSION;
+  if (parserVersion === PERU_PARSER_VERSION && origin === 'IN' && !args.bundle.india_preference_evidence) {
+    throw new PeruBundleError('india_preference_evidence_missing', 'Peru parser v3 requires the retained MINCETUR India agreement evidence artifact.');
+  }
   const franjaInForce = isDateWithin(args.at, FRANJA_EFFECTIVE_FROM, FRANJA_EFFECTIVE_TO);
   const includeFranja = legacyReplay || (args.bundle.franja_decision_retained && franjaInForce);
   const generalEffectiveFrom = legacyReplay ? args.release_reference_date : null;
@@ -302,6 +406,34 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
     }
   }
   const generalDuty = resolution.resolved_line?.general_duty ?? null;
+  const minceturEvidence = args.bundle.india_preference_evidence;
+  const preference = origin !== 'IN'
+    ? { applicability: 'not_applicable' as const, duty: null, geographic_area_id: null, basis: `The requested origin is ${origin}, not India.` }
+    : parserVersion === PERU_PARSER_VERSION && minceturEvidence
+      ? {
+        applicability: 'not_applicable' as const,
+        duty: null,
+        geographic_area_id: null,
+        basis: `No operative preferential trade agreement applicable to imports from India was identified in MINCETUR's authoritative Peruvian trade-agreement inventory as of the ${utcDateOnly(args.release_reference_date)} release reference date.`,
+        source_authority: minceturEvidence.authority,
+        source_reference: `${minceturEvidence.source_url} · retained ${minceturEvidence.artifact} · SHA-256 ${minceturEvidence.sha256}`,
+        raw_evidence: {
+          authority: minceturEvidence.authority,
+          artifact: minceturEvidence.artifact,
+          page_title: minceturEvidence.page_title,
+          retrieved_at: args.retrieved_at.toISOString(),
+          release_reference_date: utcDateOnly(args.release_reference_date),
+          source_reference: minceturEvidence.source_url,
+          artifact_sha256: minceturEvidence.sha256,
+          semantic_claim: 'no_operative_preferential_agreement_applicable_to_india_identified',
+        },
+      }
+      : {
+        applicability: 'not_applicable' as const,
+        duty: null,
+        geographic_area_id: null,
+        basis: 'Historical Peru parser replay: the official in-force agreement inventory conclusion was recorded before its MINCETUR source page was retained in the authority bundle.',
+      };
   return {
     jurisdiction: 'PE', country_code: 'PE', hs6: args.hs6,
     hs_revision: 'HS 2022 · NANDINA 8-digit · Peru 10-digit national subpartidas',
@@ -310,15 +442,14 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
     source_reference: [
       args.bundle.source_url,
       ...(args.bundle.franja_decision_retained ? [FRANJA_RESOLUTION_URL] : []),
+      ...(minceturEvidence ? [minceturEvidence.source_url] : []),
       `ZIP sha256 ${args.bundle.checksum}`,
     ].join(' · '),
     national_code_system: 'PE_NATIONAL_SUBPARTIDA', parser_version: parserVersion,
     source_release_id: args.release_id, request_identity: `origin=${origin};as_of=${args.at.toISOString().slice(0, 10)}`,
     retrieved_at: args.retrieved_at, evidence_class: 'authoritative_public', recorded_by_id: null,
     resolution, general_duty: generalDuty,
-    india_preference: origin === 'IN'
-      ? { applicability: 'not_applicable', duty: null, geographic_area_id: null, basis: 'Peru’s official in-force agreement inventory is complete and has no operative India agreement; the India–Peru agreement remains under negotiation as of 2026-09-10.' }
-      : { applicability: 'not_applicable', duty: null, geographic_area_id: null, basis: `The requested origin is ${origin}, not India.` },
+    india_preference: preference,
     lines, requirements: [], regulatory_coverage_complete: false,
     raw_evidence: {
       tariff_rows: tariffRows,
@@ -338,6 +469,10 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
         rates_usd_per_tonne: FRANJA_RATE_USD_PER_TONNE, code_count: FRANJA_BY_CODE.size,
         table_authority: 'D.S. 338-2025-EF', table_valid_through: FRANJA_EFFECTIVE_TO,
         legacy_replay: legacyReplay,
+      },
+      india_preference_evidence: minceturEvidence ? (preference as { raw_evidence?: Record<string, unknown> }).raw_evidence : {
+        retained_in_authority_bundle: false,
+        historical_parser_replay: parserVersion !== PERU_PARSER_VERSION,
       },
     },
   };

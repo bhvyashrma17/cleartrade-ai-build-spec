@@ -67,7 +67,9 @@ npm run env:check
 
 - `APP_ENV=staging`, `DATABASE_ENVIRONMENT=staging` (startup fails unless they match).
 - Pooled `DATABASE_URL` and unpooled `DIRECT_DATABASE_URL`, both with `sslmode=require` or
-  stricter, neither labelled `dev`/`test`/`local`.
+  stricter, neither labelled `dev`/`test`/`local`. Independently pin their exact resolved values
+  with `DATABASE_IDENTITY_SHA256` and `DIRECT_DATABASE_IDENTITY_SHA256`; startup and migration
+  tooling reject a copied, rotated or cross-environment URL before connecting.
 - `NEXT_PUBLIC_APP_URL` on **https** — it is compiled into the client bundle and scopes cookies.
 - Independently generated secrets from `npm run secrets:staging`. Never the development values.
 - Real providers: `COMTRADE_CLIENT=real`, `STORAGE_BACKEND=s3`, `DOCUMENT_MALWARE_SCANNER=http`
@@ -83,7 +85,8 @@ npm run env:check
 
 Same shape as staging, with these differences:
 
-- `APP_ENV=production`, `DATABASE_ENVIRONMENT=production`, separate database and bucket.
+- `APP_ENV=production`, `DATABASE_ENVIRONMENT=production`, separate database and bucket. Production
+  requires its own pooled and direct SHA-256 identity pins; neither staging pin is valid there.
 - `NEXT_PUBLIC_APP_URL=https://www.cleartrade.in` — the `www` host is canonical; the apex
   does not serve the app. It is compiled into the client bundle and scopes cookies, so
   changing it requires a rebuild, not just a restart.
@@ -119,6 +122,8 @@ Requirement key: **R** required · **r** recommended · **o** optional · **–*
 |---|---|---|---|---|---|---|---|---|
 | `DATABASE_URL` | R | R | R | **secret** | managed Postgres | local `cleartrade_dev` | pooled staging URL, `sslmode=require` | `prisma/schema.prisma`, `runtime-config.ts` |
 | `DIRECT_DATABASE_URL` | r | R | R | **secret** | managed Postgres | same local URL | unpooled staging URL, TLS | `schema.prisma` `directUrl`, `db-backup.sh` |
+| `DATABASE_IDENTITY_SHA256` | o | R | R | **secret** | ClearTrade | unset | SHA-256 of exact resolved pooled URL | `runtime-config.ts`, migration tooling |
+| `DIRECT_DATABASE_IDENTITY_SHA256` | o | R | R | **secret** | ClearTrade | unset | SHA-256 of exact resolved direct URL | `runtime-config.ts`, migration/backup tooling |
 | `RESTORE_DRILL_DATABASE_URL` | o | o | o | **secret** | managed Postgres | unset | drill target only | `db-restore-drill.sh` |
 
 ### Auth, guests and identity crypto — all ClearTrade-generated
