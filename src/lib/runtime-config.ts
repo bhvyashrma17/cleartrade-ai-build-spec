@@ -1,7 +1,18 @@
+import {createHash} from 'node:crypto';
 import {appEnvironment,isRealWorkflowEnvironment,type ClearTradeEnvironment} from '@/lib/evidence-environment';
 
 export type RuntimeRole='web'|'worker'|'migration'|'scheduler';
 const missing=(env:NodeJS.ProcessEnv,name:string)=>!env[name]?.trim();
+
+export function databaseIdentityFingerprint(env: NodeJS.ProcessEnv) {
+  return createHash('sha256').update(env.DATABASE_URL?.trim() ?? '').digest('hex');
+}
+
+export function storageIdentityFingerprint(env: NodeJS.ProcessEnv) {
+  return createHash('sha256').update(JSON.stringify([
+    env.STORAGE_ENDPOINT?.trim() ?? '', env.STORAGE_BUCKET?.trim() ?? '', env.AWS_ACCESS_KEY_ID?.trim() ?? '',
+  ])).digest('hex');
+}
 
 /**
  * Values that must never reach a real environment.
@@ -146,6 +157,14 @@ export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEn
       if(!/sslmode=(require|verify-ca|verify-full)/i.test(env.DIRECT_DATABASE_URL))errors.push('DIRECT_DATABASE_URL must request TLS (sslmode=require or stricter).');
     }else if(role==='migration')errors.push('DIRECT_DATABASE_URL is required for the migration role (unpooled connection).');
 
+    // DATABASE_ENVIRONMENT is operator-supplied and cannot detect a copied production URL. A
+    // staging deployment therefore pins the exact resolved resource identity. Copying another
+    // environment's URL or rotating credentials without deliberately updating the pin fails boot.
+    if(environment==='staging'){
+      if(missing(env,'DATABASE_IDENTITY_SHA256'))errors.push('DATABASE_IDENTITY_SHA256 is required in staging.');
+      else if(env.DATABASE_IDENTITY_SHA256!==databaseIdentityFingerprint(env))errors.push('DATABASE_URL does not match the pinned staging database identity.');
+    }
+
     for(const [name,min] of [['AUTH_SECRET',32],['GUEST_IP_HASH_SECRET',32],['IMPORT_BUYER_REF_SECRET',32],['OPERATIONS_TOKEN',32]] as const){
       const problem=weakSecret(env[name],min);
       if(problem)errors.push(`${name} ${problem}.`);
@@ -167,6 +186,10 @@ export function validateRuntimeEnvironment(role:RuntimeRole,env:NodeJS.ProcessEn
     if(env.DISCOVERY_ENGINE==='mock')errors.push('DISCOVERY_ENGINE=mock is forbidden.');
     if(env.STORAGE_BACKEND!=='s3')errors.push('STORAGE_BACKEND must be s3; local disk is not durable.');
     for(const key of ['STORAGE_BUCKET','STORAGE_REGION'])if(missing(env,key))errors.push(`${key} is required.`);
+    if(environment==='staging'){
+      if(missing(env,'STORAGE_IDENTITY_SHA256'))errors.push('STORAGE_IDENTITY_SHA256 is required in staging.');
+      else if(env.STORAGE_IDENTITY_SHA256!==storageIdentityFingerprint(env))errors.push('Object storage does not match the pinned staging storage identity.');
+    }
     if(env.DOCUMENT_MALWARE_SCANNER!=='http')errors.push('DOCUMENT_MALWARE_SCANNER must be http.');
     if(missing(env,'DOCUMENT_MALWARE_SCANNER_URL'))errors.push('DOCUMENT_MALWARE_SCANNER_URL is required.');
     // The scanner receives customer documents; plaintext transport would expose them.

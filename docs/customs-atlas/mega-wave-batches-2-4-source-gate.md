@@ -31,7 +31,7 @@ Peru is the only country in this wave whose current executable artifact, amendme
 
 ## Operational implementation: Peru
 
-The Peru provider adds deterministic HTTPS acquisition, immutable `AuthorityRelease` retention, SHA-256 identity, exact ZIP/XLSX schema validation, 8,017-row and unique-code controls, explicit checks for the `D.S. 163-2022-EF` and `D.S. 194-2022-EF` codes, HS6-to-ten-digit refinement, provider routing, audited reparse and CLI release import.
+The Peru provider adds deterministic HTTPS acquisition of the SUNAT ZIP plus El Peruano's static official PDF, immutable `AuthorityRelease` retention, per-file SHA-256 identity, exact ZIP/XLSX schema validation, 8,017-row and unique-code controls, explicit checks for the `D.S. 163-2022-EF` and `D.S. 194-2022-EF` codes, HS6-to-ten-digit refinement, versioned historical replay, provider routing, audited reparse and CLI release import. It records amendment-code presence without overstating that the unretained MEF currentness page or amendment texts were automatically reconciled.
 
 It preserves general duty as a pure ad-valorem measure. For the 48 SUNAT price-band subheadings it emits a separate `additional_duty` specific measure using [RVM 016-2026-EF/15.01](https://busquedas.elperuano.pe/dispositivo/NL/2545338-1): corn USD 0/TM, sugar USD 64/TM, paddy rice USD 100/TM, milled rice USD 142/TM and dairy USD 0/TM. The governing tables are valid through 31 December 2026 under [D.S. 338-2025-EF](https://www.gob.pe/institucion/mef/normas-legales/7574373-338-2025-ef). No AVE is invented. Full reasoning and source checks are in [the Peru decision](./mega-wave-batches-2-4-peru.md).
 

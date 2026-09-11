@@ -98,7 +98,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Uruguay Ministry of Economy and Finance — National Tariff',
     reason: 'license_pending',
     determination: 'MEF publishes an executable national XLSX with AEC and Uruguayan national rates, but the observed workbook is dated February 2025 and is not a dataset in Uruguay\'s licensed open-data catalogue. No file-specific grant covers commercial normalization, retained releases or paid customer display, and no authoritative 2026 amendment manifest or national MERCOSUR–India PTA layer is attached. A licence from another government portal surface is not inherited by this workbook.',
-    references: ['https://www.gub.uy/ministerio-economia-finanzas/politicas-y-gestion/nomenclatura-aranceles-uruguay', 'https://www.gub.uy/ministerio-economia-finanzas/sites/ministerio-economia-finanzas/files/2025-05/Arancel%20Nacional_Febrero%202025%20-final.xlsx'],
+    references: ['https://www.gub.uy/ministerio-economia-finanzas/politicas-y-gestion/nomenclatura-aranceles-uruguay', 'https://www.gub.uy/ministerio-economia-finanzas/sites/ministerio-economia-finanzas/files/2025-05/Arancel%20Nacional_Febrero%202025%20-final.xlsx', 'https://www.gub.uy/agencia-gobierno-electronico-sociedad-informacion-conocimiento/comunicacion/publicaciones/licencia-datos-abiertos-uruguay'],
     unblocked_by: 'MEF confirmation that the national open-data licence covers the exact current workbook for commercial derivatives, immutable retention and customer display, plus a 2026 release or complete amendment manifest and the operative national India-PTA instruments.',
   },
   NG_NCS_CET: {
@@ -107,7 +107,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Nigeria Customs Service — Nigeria Customs Tariff / ECOWAS CET',
     reason: 'source_insufficient',
     determination: 'Nigeria Copyright Act 2022 sections 2(5) and 3 exclude mere data and official legislative or administrative texts from protection, so the legal tariff facts and official instruments are reusable with provenance; any original selection/arrangement or site software remains excluded. The source gate still fails because NCS did not yield an authoritative populated full-tariff release carrying Nigeria\'s national levies, prohibitions, derogations and amendment dates. The regional ECOWAS base cannot stand in for national execution.',
-    references: ['https://customs.gov.ng/cet-tariff', 'https://cet.customs.gov.ng/', 'https://api.customs.gov.ng/api/pages/cet-tariff'],
+    references: ['https://customs.gov.ng/cet-tariff', 'https://cet.customs.gov.ng/', 'https://api.customs.gov.ng/api/pages/cet-tariff', 'https://www.wipo.int/wipolex/en/legislation/details/21820'],
     unblocked_by: 'A current populated NCS full-tariff export carrying the Nigerian national execution layer, field definitions, dates and override precedence, with any protected compilation elements excluded or separately licensed.',
   },
   BD_NBR_NATIONAL_TARIFF: {
@@ -161,7 +161,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Jamaica Customs Agency — Integrated Tariff',
     reason: 'license_pending',
     determination: 'JCA publishes a current Integrated Tariff effective 1 May 2026. Jamaica Copyright Act section 13B places Acts and subsidiary legislation under Crown copyright and the identified automatic reproduction exception is non-commercial, so commercial normalization and retained paid display remain unlicensed. CARICOM treatment, national taxes, suspensions and derogations must remain distinct, and the agreement material does not establish an India preference.',
-    references: ['https://jca.gov.jm/e-services/integrated-tariff-search/', 'https://jca.gov.jm/business/trade-agreements/'],
+    references: ['https://jca.gov.jm/e-services/integrated-tariff-search/', 'https://jca.gov.jm/business/trade-agreements/', 'https://www.wipo.int/wipolex/en/legislation/details/21536'],
     unblocked_by: 'Written JCA permission for periodic acquisition, normalization, immutable historical retention and paid derived/customer display, with required attribution and third-party/CARICOM/WCO exclusions documented.',
   },
   PA_ANA_INTERACTIVE_TARIFF: {
@@ -170,7 +170,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Panama National Customs Authority — Interactive National Tariff',
     reason: 'source_insufficient',
     determination: 'Panama Law 64/2012 Art. 13 excludes official legislative and administrative texts when faithfully reproduced with source attribution, clearing the legal instruments themselves. The 12-digit interactive tariff has no supported bulk/history contract, and the June 2026 Gazette contains Cabinet Decrees 7 and 8 changing tariff treatment and a rice quota. A 2025 compilation therefore cannot reproduce the September 2026 state and undocumented browser endpoints are not an acceptable substitute.',
-    references: ['https://aranceles.ana.gob.pa/', 'https://aranceles-api.ana.gob.pa/', 'https://aranceles.ana.gob.pa/assets/documentos_aduanas/manual/Manual%20Herramienta%20Arancel%20Interactivo_Dic2020_V1.pdf'],
+    references: ['https://aranceles.ana.gob.pa/', 'https://aranceles-api.ana.gob.pa/', 'https://aranceles.ana.gob.pa/assets/documentos_aduanas/manual/Manual%20Herramienta%20Arancel%20Interactivo_Dic2020_V1.pdf', 'https://www.wipo.int/wipolex/en/legislation/details/15426'],
     unblocked_by: 'A supported complete export or reproducible official baseline-plus-Gazette pipeline with field dictionary and every effective amendment through the query date, preserving faithful text and source attribution.',
   },
   TN_CUSTOMS_TARIFWEB: {
@@ -179,7 +179,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Tunisian Customs — Tarif Web 2026',
     reason: 'source_insufficient',
     determination: 'Tunisia Law 94-36, as amended, Art. 1 excludes official texts from copyright. Tarifweb2026 nevertheless self-identifies its underlying update as 17 June 2025 and the sixth nomenclature while Finance Law 2026 changes rates through 2028. No supported bulk/history contract or reconciled 2026 amendment state was established. National 10-character classification, conventional/autonomous duties and separate tax or regulatory measures cannot safely be reconstructed from the label alone.',
-    references: ['https://www.douane.gov.tn/tarifweb2026/', 'https://www.douane.gov.tn/consultation-tarifweb/', 'https://www.douane.gov.tn/tarif-douanier/'],
+    references: ['https://www.douane.gov.tn/tarifweb2026/', 'https://www.douane.gov.tn/consultation-tarifweb/', 'https://www.douane.gov.tn/tarif-douanier/', 'https://www.wipo.int/wipolex/en/legislation/details/21148'],
     unblocked_by: 'A supported complete extraction or official baseline-plus-amendment chain that reconciles Tarifweb\'s stated 2025 update with Finance Law 2026, including field/code definitions and rate precedence.',
   },
   DO_DGA_CUSTOMS_TARIFF: {
@@ -188,7 +188,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Dominican Republic Directorate General of Customs — National Customs Tariff',
     reason: 'source_insufficient',
     determination: 'Dominican Law 65-00 Art. 41 permits faithful, sourced reproduction of official texts unless expressly prohibited, so the legal tariff instruments are reusable on those conditions. DGA identifies the Seventh Amendment 2022 tariff through an embedded publication, but a complete current executable artifact and every subsequent amendment were not reliably acquired. A landing page or flipbook identifier is not a reproducible national release, and no India preference evidence was established.',
-    references: ['https://www.aduanas.gob.do/de-interes/consultas/', 'https://www.aduanas.gob.do/consultas/arancel-de-aduanas-7ma-enmienda-2022/', 'https://www.aduanas.gob.do/media/rupaj0fj/aviso-entrada-en-vigor-enmienda.pdf'],
+    references: ['https://www.aduanas.gob.do/de-interes/consultas/', 'https://www.aduanas.gob.do/consultas/arancel-de-aduanas-7ma-enmienda-2022/', 'https://www.aduanas.gob.do/media/rupaj0fj/aviso-entrada-en-vigor-enmienda.pdf', 'https://www.wipo.int/wipolex/en/legislation/details/1191'],
     unblocked_by: 'A stable official download of the complete DGA tariff plus every effective amendment and field definition, with faithful text/source attribution and any expressly protected third-party compilation elements excluded.',
   },
   AR_ARCA_SIM: {
@@ -224,7 +224,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'North Macedonia Customs Administration — Customs Tariff 2026',
     reason: 'individual_investigation_required',
     determination: 'North Macedonia copyright law Art. 16 excludes official legal and administrative texts and simple facts. Customs identifies Official Gazette 261/25 as the 2026 national tariff decision, but the authority download route presents an expired TLS certificate and the complete annex/amendment chain has not yet passed deterministic real-file qualification. EU-CN alignment is nomenclature alignment only. Specific or compound duties, quotas and dates cannot be normalized until that controlled acquisition/parser path is proven.',
-    references: ['https://customs.gov.mk/carinska-tarifa.nspx', 'https://customs.gov.mk/content/documents/zakon_za_carinska_tarifa.pdf'],
+    references: ['https://customs.gov.mk/carinska-tarifa.nspx', 'https://customs.gov.mk/content/documents/zakon_za_carinska_tarifa.pdf', 'https://www.wipo.int/wipolex/en/legislation/details/10641'],
     unblocked_by: 'A stable authenticated acquisition of the complete Gazette 261/25 annex and every current amendment, followed by real-file schema, row-count and rate-semantic qualification.',
   },
   ME_CUSTOMS_TARICG: {
@@ -242,7 +242,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     authority: 'Trinidad and Tobago Customs and Excise Division / Ministry of Finance — CET',
     reason: 'source_insufficient',
     determination: 'Copyright Act section 7(1)(b) excludes official texts and simple facts, clearing faithful use of the legal tariff material while leaving any original compilation arrangement separate. The Ministry of Trade publishes the complete First Schedule in Legal Notice 218/2024, effective 1 January 2025, and Gazette notices 494/495 of December 2025 vary or suspend treatment into 2026–27. The source gate remains incomplete because no authoritative index proved that those are every later national amendment/suspension through September 2026. CARICOM CET cannot fill that gap.',
-    references: ['https://tradeind.gov.tt/wp-content/uploads/2025/04/Legal-Notice-No.-218-Customs-Common-External-Tariff-Order-2024.pdf', 'https://www.customs.gov.tt/importing/notices-to-importers', 'https://printery.gov.tt/'],
+    references: ['https://tradeind.gov.tt/wp-content/uploads/2025/04/Legal-Notice-No.-218-Customs-Common-External-Tariff-Order-2024.pdf', 'https://www.customs.gov.tt/importing/notices-to-importers', 'https://printery.gov.tt/', 'https://www.wipo.int/wipolex/en/legislation/details/6639'],
     unblocked_by: 'An exhaustive Gazette/Customs manifest proving every amendment and suspension after Legal Notice 218/2024 through the query date, followed by deterministic annex parsing and precedence tests.',
   },
   PH_TARIFF_COMMISSION: {

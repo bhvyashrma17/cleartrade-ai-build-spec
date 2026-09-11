@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 
-export const PERU_ACQUISITION_VERSION = 'sunat-tariff-and-franja-acquisition-v2' as const;
+export const PERU_ACQUISITION_VERSION = 'sunat-tariff-and-franja-acquisition-v3' as const;
 export const PERU_TARIFF_URL = 'https://www.sunat.gob.pe/orientacionaduanera/aranceles/Cap01-98-Descripcion.zip' as const;
-export const PERU_FRANJA_URL = 'https://busquedas.elperuano.pe/dispositivo/NL/2545338-1' as const;
+/** Static official PDF behind El Peruano's public decision page. */
+export const PERU_FRANJA_URL = 'https://busquedas.elperuano.pe/api/archivo/file/4lM0IZjiKpl9iq1LmL_dX5/*/2545338-1.PDF' as const;
+export const PERU_FRANJA_LANDING_URL = 'https://busquedas.elperuano.pe/dispositivo/NL/2545338-1' as const;
 
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 
@@ -33,16 +36,40 @@ async function fetchOfficialBytes(url: typeof PERU_TARIFF_URL | typeof PERU_FRAN
   throw lastError;
 }
 
-/** Retain the general schedule and the monthly variable-duty decision in one immutable release. */
+const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * Retain the general schedule and the monthly variable-duty decision in one immutable release.
+ *
+ * The decision is acquired from El Peruano's static PDF artifact, not its server-rendered landing
+ * page. The landing page contains advertising, anti-bot and React state that changes independently
+ * of the law. The PDF is the authoritative published document and has stable content identity.
+ */
 export async function acquirePeruAuthorityBundle(options: { fetch_impl?: typeof fetch; attempts?: number } = {}) {
   const [tariff, franja] = await Promise.all([
     fetchOfficialBytes(PERU_TARIFF_URL, options),
     fetchOfficialBytes(PERU_FRANJA_URL, options),
   ]);
+  if (!franja.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+    throw new Error('El Peruano did not return the RVM 016 official PDF artifact.');
+  }
+  const manifest = {
+    acquisition_version: PERU_ACQUISITION_VERSION,
+    artifacts: [
+      { name: 'sunat-tariff.zip', role: 'official_consolidated_tariff', url: PERU_TARIFF_URL, size_bytes: tariff.length, sha256: sha256(tariff) },
+      { name: 'franja-resolution.pdf', role: 'official_price_band_resolution', url: PERU_FRANJA_URL, landing_url: PERU_FRANJA_LANDING_URL, size_bytes: franja.length, sha256: sha256(franja) },
+    ],
+    legal_decision: {
+      identifier: 'RVM 016-2026-EF/15.01',
+      publication_date: '2026-08-20',
+      effective_from: '2026-08-20',
+      effective_to: '2026-12-31',
+    },
+  };
   const zip = new JSZip();
   const stable = { date: new Date('1980-01-01T00:00:00.000Z'), createFolders: false } as const;
   zip.file('sunat-tariff.zip', tariff, stable);
-  zip.file('franja-resolution.html', franja, stable);
-  zip.file('acquisition.json', JSON.stringify({ acquisition_version: PERU_ACQUISITION_VERSION, tariff_url: PERU_TARIFF_URL, franja_url: PERU_FRANJA_URL }, null, 2), stable);
+  zip.file('franja-resolution.pdf', franja, stable);
+  zip.file('acquisition.json', JSON.stringify(manifest, null, 2), stable);
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', platform: 'UNIX' });
 }

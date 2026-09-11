@@ -4,8 +4,10 @@ import JSZip from 'jszip';
 import type { MarketAccessIngestResult, MarketAccessLineRecord } from '@/lib/market-access/contract';
 import { resolveNationalTariffLine, type CandidateTariffLine, type ParsedDuty } from '@/lib/market-access/tariff-semantics';
 
-export const PERU_BUNDLE_READER_VERSION = 'sunat-arancel-2022-consolidated-xlsx-reader-v1' as const;
-export const PERU_PARSER_VERSION = 'pe-sunat-tariff-parser-v1' as const;
+export const PERU_RAW_BUNDLE_READER_VERSION = 'sunat-arancel-2022-consolidated-xlsx-reader-v1' as const;
+export const PERU_BUNDLE_READER_VERSION = 'sunat-arancel-and-franja-pdf-bundle-reader-v2' as const;
+export const PERU_LEGACY_PARSER_VERSION = 'pe-sunat-tariff-parser-v1' as const;
+export const PERU_PARSER_VERSION = 'pe-sunat-tariff-parser-v2' as const;
 export const PERU_PROVIDER = 'pe_sunat_customs_tariff' as const;
 export const PERU_SOURCE_AUTHORITY = 'SUNAT / Ministerio de Economía y Finanzas del Perú' as const;
 export const PERU_SOURCE_DATASET = 'Arancel de Aduanas 2022 consolidado and Sistema de Franja de Precios' as const;
@@ -15,8 +17,10 @@ const EXPECTED_HEADER = ['Subpartida Nacional', 'Descripcion del Arancel 2022', 
 const EXPECTED_ROW_COUNT = 8_017;
 const GENERAL_RATES = new Set([0, 4, 6, 11]);
 const SUNAT_XLSX_URL = 'https://www.sunat.gob.pe/orientacionaduanera/aranceles/Cap01-98-Descripcion.zip';
-const MEF_CURRENTNESS_URL = 'https://www.mef.gob.pe/es/?id=287&option=com_content&view=article';
 const FRANJA_RESOLUTION_URL = 'https://busquedas.elperuano.pe/dispositivo/NL/2545338-1';
+const FRANJA_PDF_URL = 'https://busquedas.elperuano.pe/api/archivo/file/4lM0IZjiKpl9iq1LmL_dX5/*/2545338-1.PDF';
+const FRANJA_EFFECTIVE_FROM = '2026-08-20';
+const FRANJA_EFFECTIVE_TO = '2026-12-31';
 
 type FranjaGroup = 'corn' | 'sugar' | 'rice_paddy' | 'rice_milled' | 'dairy';
 
@@ -59,11 +63,15 @@ export interface PeruAuthorityBundle {
   release_identifier: string;
   source_url: string;
   rows: readonly PeruTariffRow[];
-  files: readonly { name: string; size_bytes: number }[];
-  reader_version: typeof PERU_BUNDLE_READER_VERSION;
+  files: readonly { name: string; size_bytes: number; sha256: string; role: string }[];
+  reader_version: typeof PERU_RAW_BUNDLE_READER_VERSION | typeof PERU_BUNDLE_READER_VERSION;
+  format: 'raw_sunat_zip' | 'composite_pdf_v3';
+  franja_decision_retained: boolean;
 }
 
-interface ParsedSunatTariff { rows: PeruTariffRow[]; file: { name: string; size_bytes: number } }
+interface ParsedSunatTariff { rows: PeruTariffRow[]; file: { name: string; size_bytes: number; sha256: string; role: string } }
+
+const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 function plainCell(value: ExcelJS.CellValue): string {
   if (value == null) return '';
@@ -116,39 +124,88 @@ async function readSunatTariffZip(bytes: Buffer): Promise<ParsedSunatTariff> {
   for (const amendmentCode of ['0208900010', '0208900090', '9811000000']) {
     if (!seen.has(amendmentCode)) throw new PeruBundleError('amendment_missing', `The consolidated SUNAT workbook is missing amendment code ${amendmentCode}.`);
   }
-  return { rows, file: { name: files[0]!.name, size_bytes: workbookBytes.length } };
+  return { rows, file: { name: files[0]!.name, size_bytes: workbookBytes.length, sha256: sha256(workbookBytes), role: 'official_consolidated_tariff_workbook' } };
 }
 
-export async function readPeruAuthorityZip(args: { bytes: Buffer; release_identifier: string; source_url: string }): Promise<PeruAuthorityBundle> {
+/** Reader for immutable releases imported before the franja document was bundled. */
+export async function readPeruRawSunatZip(args: { bytes: Buffer; release_identifier: string; source_url: string }): Promise<PeruAuthorityBundle> {
+  const tariff = await readSunatTariffZip(args.bytes);
+  return {
+    checksum: sha256(args.bytes), size_bytes: args.bytes.length,
+    release_identifier: args.release_identifier, source_url: args.source_url,
+    rows: tariff.rows, files: [tariff.file], reader_version: PERU_RAW_BUNDLE_READER_VERSION,
+    format: 'raw_sunat_zip', franja_decision_retained: false,
+  };
+}
+
+interface CompositeManifest {
+  acquisition_version?: unknown;
+  artifacts?: Array<{ name?: unknown; role?: unknown; url?: unknown; landing_url?: unknown; size_bytes?: unknown; sha256?: unknown }>;
+  legal_decision?: { identifier?: unknown; publication_date?: unknown; effective_from?: unknown; effective_to?: unknown };
+}
+
+function requireManifestArtifact(manifest: CompositeManifest, expected: { name: string; role: string; url: string }, bytes: Buffer) {
+  const artifact = manifest.artifacts?.find((item) => item.name === expected.name);
+  if (!artifact || artifact.role !== expected.role || artifact.url !== expected.url
+    || artifact.size_bytes !== bytes.length || artifact.sha256 !== sha256(bytes)) {
+    throw new PeruBundleError('artifact_hash_mismatch', `The acquisition manifest does not authenticate ${expected.name}.`);
+  }
+}
+
+export async function readPeruCompositeAuthorityZip(args: { bytes: Buffer; release_identifier: string; source_url: string }): Promise<PeruAuthorityBundle> {
   let composite: JSZip;
   try { composite = await JSZip.loadAsync(args.bytes); }
   catch { throw new PeruBundleError('corrupt_archive', 'The Peru authority release is not a readable ZIP archive.'); }
   const entries = Object.values(composite.files).filter((entry) => !entry.dir);
-  const expected = ['acquisition.json', 'franja-resolution.html', 'sunat-tariff.zip'];
+  const expected = ['acquisition.json', 'franja-resolution.pdf', 'sunat-tariff.zip'];
   if (entries.map((entry) => entry.name).sort().join('|') !== expected.join('|')) {
     throw new PeruBundleError('unexpected_manifest', `The retained Peru release must contain exactly ${expected.join(', ')}.`);
   }
-  const manifest = JSON.parse(await composite.file('acquisition.json')!.async('text')) as Record<string, unknown>;
-  if (manifest.acquisition_version !== 'sunat-tariff-and-franja-acquisition-v2'
-    || manifest.tariff_url !== SUNAT_XLSX_URL || manifest.franja_url !== FRANJA_RESOLUTION_URL) {
+  const manifestBytes = await composite.file('acquisition.json')!.async('nodebuffer');
+  let manifest: CompositeManifest;
+  try { manifest = JSON.parse(manifestBytes.toString('utf8')) as CompositeManifest; }
+  catch { throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest is not valid JSON.'); }
+  if (manifest.acquisition_version !== 'sunat-tariff-and-franja-acquisition-v3'
+    || manifest.legal_decision?.identifier !== 'RVM 016-2026-EF/15.01'
+    || manifest.legal_decision.publication_date !== '2026-08-20'
+    || manifest.legal_decision.effective_from !== FRANJA_EFFECTIVE_FROM
+    || manifest.legal_decision.effective_to !== FRANJA_EFFECTIVE_TO) {
     throw new PeruBundleError('unexpected_acquisition', 'The Peru acquisition manifest does not identify the reviewed official sources and acquisition version.');
   }
   const tariffBytes = await composite.file('sunat-tariff.zip')!.async('nodebuffer');
-  const franjaBytes = await composite.file('franja-resolution.html')!.async('nodebuffer');
-  const franjaText = franjaBytes.toString('utf8').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ');
-  for (const token of ['016-2026-EF/15.01', 'Derechos Variables Adicionales 0 64 100 (arroz cáscara) 142 (arroz pilado) 0', '2545338-1']) {
-    if (!franjaText.includes(token)) throw new PeruBundleError('franja_mismatch', `The retained El Peruano decision is missing reviewed token ${token}.`);
+  const franjaBytes = await composite.file('franja-resolution.pdf')!.async('nodebuffer');
+  requireManifestArtifact(manifest, { name: 'sunat-tariff.zip', role: 'official_consolidated_tariff', url: SUNAT_XLSX_URL }, tariffBytes);
+  requireManifestArtifact(manifest, { name: 'franja-resolution.pdf', role: 'official_price_band_resolution', url: FRANJA_PDF_URL }, franjaBytes);
+  const searchablePdf = franjaBytes.toString('latin1');
+  if (!franjaBytes.subarray(0, 5).equals(Buffer.from('%PDF-'))
+    || !['016-2026-EF/15.01', '2545338-1', 'derechos variables adicionales'].every((token) => searchablePdf.toLowerCase().includes(token.toLowerCase()))) {
+    throw new PeruBundleError('franja_mismatch', 'The retained El Peruano PDF does not match the reviewed RVM 016 legal artifact.');
   }
   const tariff = await readSunatTariffZip(tariffBytes);
   return {
-    checksum: createHash('sha256').update(args.bytes).digest('hex'),
+    checksum: sha256(args.bytes),
     size_bytes: args.bytes.length,
     release_identifier: args.release_identifier,
     source_url: args.source_url,
     rows: tariff.rows,
-    files: [tariff.file, { name: 'sunat-tariff.zip', size_bytes: tariffBytes.length }, { name: 'franja-resolution.html', size_bytes: franjaBytes.length }, { name: 'acquisition.json', size_bytes: Buffer.byteLength(JSON.stringify(manifest)) }],
+    files: [
+      tariff.file,
+      { name: 'sunat-tariff.zip', size_bytes: tariffBytes.length, sha256: sha256(tariffBytes), role: 'official_consolidated_tariff' },
+      { name: 'franja-resolution.pdf', size_bytes: franjaBytes.length, sha256: sha256(franjaBytes), role: 'official_price_band_resolution' },
+      { name: 'acquisition.json', size_bytes: manifestBytes.length, sha256: sha256(manifestBytes), role: 'acquisition_manifest' },
+    ],
     reader_version: PERU_BUNDLE_READER_VERSION,
+    format: 'composite_pdf_v3', franja_decision_retained: true,
   };
+}
+
+/** Current-format compatibility name retained for callers and fixtures. */
+export const readPeruAuthorityZip = readPeruCompositeAuthorityZip;
+
+export function readPeruAuthorityRelease(args: { bytes: Buffer; release_identifier: string; source_url: string; reader_version: string }) {
+  if (args.reader_version === PERU_RAW_BUNDLE_READER_VERSION) return readPeruRawSunatZip(args);
+  if (args.reader_version === PERU_BUNDLE_READER_VERSION) return readPeruCompositeAuthorityZip(args);
+  throw new PeruBundleError('unsupported_reader_version', `Unsupported Peru reader version ${args.reader_version}.`);
 }
 
 function adValorem(rate: number): ParsedDuty {
@@ -160,8 +217,29 @@ function franjaDuty(group: FranjaGroup): ParsedDuty {
   return { kind: 'specific', ad_valorem_rate_percent: null, specific_amount: amount, specific_currency: 'USD', specific_unit: 'TNE', specific_unit_quantity: 1, expression: `USD ${amount} / TNE`, note: 'Monthly variable additional duty under RVM 016-2026-EF/15.01; retained separately from the general ad-valorem duty and subject to the legal price-band cap/rebate rules.' };
 }
 
+function utcDateOnly(value: Date) {
+  if (Number.isNaN(value.getTime())) throw new PeruBundleError('invalid_effective_date', 'The Peru measure date is invalid.');
+  return value.toISOString().slice(0, 10);
+}
+
+/** Legal dates are inclusive Peru publication dates represented as UTC date-only values. */
+function isDateWithin(at: Date, effectiveFrom: string | null, effectiveTo: string | null) {
+  const date = utcDateOnly(at);
+  return (effectiveFrom === null || effectiveFrom <= date) && (effectiveTo === null || date <= effectiveTo);
+}
+
 export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; release_id: string; release_reference_date: Date; retrieved_at: Date; hs6: string; at: Date; origin_country?: string; parser_version?: string }): MarketAccessIngestResult {
   const origin = (args.origin_country ?? 'IN').trim().toUpperCase();
+  const parserVersion = args.parser_version ?? PERU_PARSER_VERSION;
+  if (![PERU_LEGACY_PARSER_VERSION, PERU_PARSER_VERSION].includes(parserVersion as typeof PERU_PARSER_VERSION)) {
+    throw new PeruBundleError('unsupported_parser_version', `Unsupported Peru parser version ${parserVersion}.`);
+  }
+  const legacyReplay = parserVersion === PERU_LEGACY_PARSER_VERSION;
+  const franjaInForce = isDateWithin(args.at, FRANJA_EFFECTIVE_FROM, FRANJA_EFFECTIVE_TO);
+  const includeFranja = legacyReplay || (args.bundle.franja_decision_retained && franjaInForce);
+  const generalEffectiveFrom = legacyReplay ? args.release_reference_date : null;
+  const franjaEffectiveFrom = legacyReplay ? args.release_reference_date : new Date(`${FRANJA_EFFECTIVE_FROM}T00:00:00.000Z`);
+  const franjaEffectiveTo = legacyReplay ? null : new Date(`${FRANJA_EFFECTIVE_TO}T00:00:00.000Z`);
   const tariffRows = args.bundle.rows.filter((row) => row.code.startsWith(args.hs6));
   const candidates: CandidateTariffLine[] = tariffRows.map((row) => {
     const franja = FRANJA_BY_CODE.get(row.code);
@@ -169,10 +247,10 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
       national_tariff_code: row.code,
       description: row.description,
       declarable: true,
-      effective_from: null,
+      effective_from: generalEffectiveFrom,
       effective_to: null,
       general_duty: adValorem(row.ad_valorem_rate_percent),
-      control_codes: franja ? [`PE_FRANJA:${franja}`] : [],
+      control_codes: franja && includeFranja ? [`PE_FRANJA:${franja}`] : [],
       preference_area_ids: [],
     };
   });
@@ -184,7 +262,7 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
       description: row.description,
       declarable: true,
       applies_to_origin_country: origin,
-      effective_from: null,
+      effective_from: generalEffectiveFrom,
       effective_to: null,
     };
     lines.push({
@@ -198,10 +276,11 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
       raw_measure: row,
     });
     const franja = FRANJA_BY_CODE.get(row.code);
-    if (franja) {
+    if (franja && includeFranja) {
       lines.push({
         ...common,
-        effective_from: new Date('2026-08-20T00:00:00.000Z'),
+        effective_from: franjaEffectiveFrom,
+        effective_to: franjaEffectiveTo,
         measure_kind: 'additional_duty',
         origin_geographic_area_id: null,
         origin_scope: 'erga_omnes',
@@ -227,9 +306,13 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
     jurisdiction: 'PE', country_code: 'PE', hs6: args.hs6,
     hs_revision: 'HS 2022 · NANDINA 8-digit · Peru 10-digit national subpartidas',
     provider: PERU_PROVIDER, source_authority: PERU_SOURCE_AUTHORITY, source_dataset: PERU_SOURCE_DATASET,
-    source_dataset_version: `${args.bundle.release_identifier}; 8017-line consolidated state verified 2026-09-10`,
-    source_reference: `${args.bundle.source_url} · ${MEF_CURRENTNESS_URL} · ${FRANJA_RESOLUTION_URL} · ZIP sha256 ${args.bundle.checksum}`,
-    national_code_system: 'PE_NATIONAL_SUBPARTIDA', parser_version: args.parser_version ?? PERU_PARSER_VERSION,
+    source_dataset_version: `${args.bundle.release_identifier}; 8017 workbook rows validated`,
+    source_reference: [
+      args.bundle.source_url,
+      ...(args.bundle.franja_decision_retained ? [FRANJA_RESOLUTION_URL] : []),
+      `ZIP sha256 ${args.bundle.checksum}`,
+    ].join(' · '),
+    national_code_system: 'PE_NATIONAL_SUBPARTIDA', parser_version: parserVersion,
     source_release_id: args.release_id, request_identity: `origin=${origin};as_of=${args.at.toISOString().slice(0, 10)}`,
     retrieved_at: args.retrieved_at, evidence_class: 'authoritative_public', recorded_by_id: null,
     resolution, general_duty: generalDuty,
@@ -239,11 +322,25 @@ export function buildPeruMarketAccess(args: { bundle: PeruAuthorityBundle; relea
     lines, requirements: [], regulatory_coverage_complete: false,
     raw_evidence: {
       tariff_rows: tariffRows,
-      amendment_chain: { baseline: 'D.S. 404-2021-EF', sunat_log: ['D.S. 163-2022-EF'], mef_complete_chain: ['D.S. 163-2022-EF', 'D.S. 194-2022-EF'], reconciled_by_consolidated_codes: ['9811000000', '0208900010', '0208900090'], current_line_count: EXPECTED_ROW_COUNT },
+      workbook_validation: {
+        row_count: EXPECTED_ROW_COUNT,
+        amendment_code_presence_checked: ['9811000000', '0208900010', '0208900090'],
+        mef_currentness_page_retained: false,
+        amendment_texts_retained: false,
+        automated_current_state_reconciliation: false,
+      },
       rights_basis: 'Decreto Legislativo 822 Art. 9 excludes official legislative, administrative and judicial texts and simple facts/data; source attribution and text integrity are preserved, and third-party website/software/WCO assets are excluded.',
-      franja_current_state: { resolution: 'RVM 016-2026-EF/15.01', published: '2026-08-20', rates_usd_per_tonne: FRANJA_RATE_USD_PER_TONNE, code_count: FRANJA_BY_CODE.size, table_authority: 'D.S. 338-2025-EF', table_valid_through: '2026-12-31' },
+      franja_measure: {
+        resolution: 'RVM 016-2026-EF/15.01', published: '2026-08-20',
+        effective_from: FRANJA_EFFECTIVE_FROM, effective_to: FRANJA_EFFECTIVE_TO,
+        applicable_on_requested_date: includeFranja,
+        retained_in_authority_bundle: args.bundle.franja_decision_retained,
+        rates_usd_per_tonne: FRANJA_RATE_USD_PER_TONNE, code_count: FRANJA_BY_CODE.size,
+        table_authority: 'D.S. 338-2025-EF', table_valid_through: FRANJA_EFFECTIVE_TO,
+        legacy_replay: legacyReplay,
+      },
     },
   };
 }
 
-export const __test__ = { FRANJA_CODES, FRANJA_RATE_USD_PER_TONNE, EXPECTED_ROW_COUNT };
+export const __test__ = { FRANJA_CODES, FRANJA_RATE_USD_PER_TONNE, EXPECTED_ROW_COUNT, isDateWithin };

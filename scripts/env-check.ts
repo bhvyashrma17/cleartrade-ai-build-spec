@@ -62,6 +62,7 @@ const INVENTORY: Entry[] = [
   // --- Database -------------------------------------------------------------------------
   { name: 'DATABASE_URL', cls: 'secret', provider: 'managed Postgres', local: 'required', staging: 'required', production: 'required', note: 'Pooled; sslmode required in real environments' },
   { name: 'DIRECT_DATABASE_URL', cls: 'secret', provider: 'managed Postgres', local: 'recommended', staging: 'required', production: 'required', note: 'Unpooled; required for the migration role' },
+  { name: 'DATABASE_IDENTITY_SHA256', cls: 'secret', provider: 'ClearTrade', staging: 'required', note: 'SHA-256 pin of the resolved staging DATABASE_URL; prevents cross-environment URL reuse' },
   { name: 'RESTORE_DRILL_DATABASE_URL', cls: 'secret', provider: 'managed Postgres', note: 'Restore drill only; URL must contain restore_drill' },
 
   // --- Auth / crypto (ClearTrade-generated) ---------------------------------------------
@@ -107,6 +108,7 @@ const INVENTORY: Entry[] = [
   { name: 'STORAGE_PUBLIC_BASE_URL', cls: 'public', provider: 'object storage', note: 'Used only to probe that the bucket is private' },
   { name: 'AWS_ACCESS_KEY_ID', cls: 'secret', provider: 'object storage', staging: 'required', production: 'required', note: 'Read by the AWS SDK credential chain, not by app code' },
   { name: 'AWS_SECRET_ACCESS_KEY', cls: 'secret', provider: 'object storage', staging: 'required', production: 'required', note: 'Prefer workload identity where available' },
+  { name: 'STORAGE_IDENTITY_SHA256', cls: 'secret', provider: 'ClearTrade', staging: 'required', note: 'SHA-256 pin of endpoint, bucket and access-key identity; prevents cross-environment storage reuse' },
   { name: 'UPLOAD_MAX_BYTES', cls: 'public', provider: 'ClearTrade', note: 'Defaults to 25 MiB' },
 
   // --- Malware scanner ------------------------------------------------------------------

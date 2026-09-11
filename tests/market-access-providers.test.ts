@@ -339,6 +339,24 @@ describe('unconfigured authoritative sources', () => {
     expect(unconfiguredSourceForCountry('GB')).toBeNull();
     expect(unconfiguredSourceForCountry('US')).toBeNull();
   });
+
+  test('audited Peru-wave blockers cite the controlling reuse or official-text source', () => {
+    const expectedControllingReferences: Record<string, RegExp> = {
+      UY: /licencia-datos-abiertos-uruguay/,
+      NG: /wipolex\/en\/legislation\/details\/21820/,
+      JM: /wipolex\/en\/legislation\/details\/21536/,
+      PA: /wipolex\/en\/legislation\/details\/15426/,
+      TN: /wipolex\/en\/legislation\/details\/21148/,
+      DO: /wipolex\/en\/legislation\/details\/1191/,
+      MK: /wipolex\/en\/legislation\/details\/10641/,
+      TT: /wipolex\/en\/legislation\/details\/6639/,
+    };
+    for (const [country, controllingReference] of Object.entries(expectedControllingReferences)) {
+      const source = unconfiguredSourceForCountry(country);
+      expect(source, country).not.toBeNull();
+      expect(source!.references.some((reference) => controllingReference.test(reference)), country).toBe(true);
+    }
+  });
 });
 
 describe('preference applicability reaches the calculator fail-closed', () => {
