@@ -4,6 +4,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 import { persistMarketAccessIngest, type MarketAccessIngestResult, type MarketAccessLineRecord, type MarketAccessRequirementRecord } from '../src/lib/market-access/contract';
 import { buildManualAuthoritativeMarketAccess } from '../src/lib/market-access/manual-authoritative';
 import { UNCONFIGURED_MARKET_ACCESS_SOURCES, unconfiguredSourceForCountry } from '../src/lib/market-access/unconfigured-sources';
+import { DESTINATION_ADAPTERS, runMarketAccessIngest } from '../src/lib/job-handlers/market-access';
 import { isEuTaricDestination } from '../src/lib/market-access/taric/service';
 import { parseDutyExpression, resolveNationalTariffLine, type CandidateTariffLine } from '../src/lib/market-access/tariff-semantics';
 import { CONFIG_DEFAULTS } from '../src/lib/config';
@@ -367,6 +368,56 @@ describe('unconfigured authoritative sources', () => {
     expect(dominicanRepublic.references[0]).toMatch(/^https:\/\/onda\.gob\.do\//);
     expect(dominicanRepublic.determination).toMatch(/WIPO Lex explicitly marks[\s\S]*unconsolidated/);
     expect(dominicanRepublic.determination).toMatch(/neither copy is represented here as definitive current consolidated law/);
+  });
+
+  test('Mega-Wave C records a country-specific blocker for all 20 destinations', () => {
+    const expectedReasons = {
+      MY: 'no_documented_machine_interface', ID: 'no_documented_machine_interface',
+      VN: 'no_documented_machine_interface', HK: 'license_pending', TR: 'license_pending',
+      CH: 'license_pending', IS: 'license_pending', RS: 'individual_investigation_required',
+      BA: 'source_insufficient', MD: 'source_insufficient', XK: 'individual_investigation_required',
+      CL: 'license_pending', MX: 'source_insufficient', ZA: 'license_pending',
+      KE: 'source_insufficient', MA: 'no_documented_machine_interface',
+      EG: 'no_documented_machine_interface', JO: 'no_documented_machine_interface',
+      BH: 'bulk_distribution_only', OM: 'individual_investigation_required',
+    } as const;
+
+    for (const [country, reason] of Object.entries(expectedReasons)) {
+      const source = unconfiguredSourceForCountry(country);
+      expect(source, country).not.toBeNull();
+      expect(source!.country_codes, country).toContain(country);
+      expect(source!.reason, country).toBe(reason);
+      expect(source!.authority.trim().length, country).toBeGreaterThan(20);
+      expect(source!.determination.trim().length, country).toBeGreaterThan(100);
+      expect(source!.references.length, country).toBeGreaterThan(0);
+      expect(source!.references.every((reference) => reference.startsWith('https://')), country).toBe(true);
+      expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
+      expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
+    }
+  });
+
+  test('Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
+    const countries = ['MY', 'ID', 'VN', 'HK', 'TR', 'CH', 'IS', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH', 'OM'];
+    const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
+      job_id: `mega-wave-c-${country}`,
+      payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
+    } as never)));
+
+    expect(outcomes).toHaveLength(20);
+    for (const [index, outcome] of outcomes.entries()) {
+      const result = outcome.result as Record<string, unknown>;
+      expect(outcome.status, countries[index]).toBe('completed');
+      expect(result.country_code, countries[index]).toBe(countries[index]);
+      expect(result.snapshot_id, countries[index]).toBeNull();
+      expect(result.provider_state, countries[index]).toBe('provider_unconfigured_or_license_pending');
+      expect(result.next_step, countries[index]).toBe('authoritative_manual_capture');
+      expect(result.reason, countries[index]).toBeTruthy();
+      expect(result.authority, countries[index]).toBeTruthy();
+      expect(result.references, countries[index]).toBeTruthy();
+      expect(result, countries[index]).not.toHaveProperty('general_duty_expression');
+      expect(result, countries[index]).not.toHaveProperty('tariff_rate_percent');
+      expect(result, countries[index]).not.toHaveProperty('evidence_count');
+    }
   });
 });
 
