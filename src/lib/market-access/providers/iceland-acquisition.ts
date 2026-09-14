@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 
-export const ICELAND_ACQUISITION_VERSION = 'skatturinn-tollskrarlyklar-acquisition-v1' as const;
+export const ICELAND_ACQUISITION_VERSION = 'skatturinn-tollskrarlyklar-acquisition-v2' as const;
 export const ICELAND_KEYS_URL = 'https://www.skatturinn.is/media/tollamal/TSKINN01092026.zip' as const;
 export const ICELAND_KEYS_PAGE_URL = 'https://www.skatturinn.is/fagadilar/tollamal/hugbunadarhus/tollskrarlyklar/' as const;
 export const ICELAND_LAYOUT_URL = 'https://www.skatturinn.is/media/annad/Tollskrarlyklar_INNFL_Faerslulysing_01_03_2013.pdf' as const;
@@ -58,6 +58,26 @@ async function fetchOfficialBytes(url: string, options: { fetch_impl?: typeof fe
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 /**
+ * Skatturinn's CMS adds request-specific ids in the page chrome. Retain the authority-authored
+ * article fragment, not that nondeterministic wrapper, so the same published evidence has one
+ * content identity regardless of acquisition host.
+ */
+function retainOfficialArticle(bytes: Buffer, dataAid: string, url: string) {
+  const html = bytes.toString('utf8').replace(/\r\n?/g, '\n');
+  const article = `<div class="article box" data-aid="${dataAid}">`;
+  const articleStart = html.indexOf(article);
+  const markerStart = html.lastIndexOf('<!-- eplica-contentid ', articleStart);
+  const terminator = '<hr class="stream" />';
+  const end = html.indexOf(terminator, articleStart);
+  if (articleStart < 0 || markerStart < 0 || end < 0) {
+    throw new Error(`Skatturinn did not return the reviewed article structure for ${url}.`);
+  }
+  const retained = html.slice(markerStart, end + terminator.length)
+    .split('\n').map((line) => line.trimEnd()).join('\n').trimEnd() + '\n';
+  return Buffer.from(retained, 'utf8');
+}
+
+/**
  * Retain the executable keys, their official schema/limitations, the controlling printed tariff,
  * the authority's software-use statement and the India-TEPA notice as one immutable release.
  */
@@ -75,7 +95,9 @@ export async function acquireIcelandAuthorityBundle(options: { fetch_impl?: type
     ['software-guide.pdf', 'official_free_use_statement_for_customs_software', ICELAND_SOFTWARE_GUIDE_URL],
   ] as const;
   const artifacts = await Promise.all(sources.map(async ([name, role, url]) => {
-    const bytes = await fetchOfficialBytes(url, options);
+    let bytes = await fetchOfficialBytes(url, options);
+    if (name === 'keys-publication.html') bytes = retainOfficialArticle(bytes, '3430', url);
+    if (name === 'india-tepa-notice.html') bytes = retainOfficialArticle(bytes, '5534', url);
     return { name, role, url: officialUrl(url), bytes };
   }));
 

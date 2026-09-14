@@ -25,7 +25,8 @@ live acquisitions. Its five fixed-width record types separately encode duties, f
 prohibitions and quantity units.[2] The authority's India notice maps `YX` to EFTA–India TEPA from
 1 October 2025 and requires originating status, direct transport and proof of origin.[3]
 
-The implemented composite retains the tariff-key ZIP, release page, two schema documents, known-
+The implemented composite retains the tariff-key ZIP, canonical authority-authored article fragments
+from the release and India-notice pages, two schema documents, known-
 deviations document, controlling printed tariff, India-TEPA notice and software-use guide. The live
 qualified file contains 29,671 physical records and 9,442 declarable tariff lines. Three lines have
 no `A` record and remain explicitly missing, not zero. Known manual/quantity-dependent quota
@@ -94,11 +95,12 @@ evidence resolves.
 | Control | Observed value |
 |---|---|
 | Tariff-key ZIP SHA-256 | `fc664a01b46622ab282e1c37935d163a193d6fd6df4e0f42c1be051518e6f48f` |
-| Composite SHA-256 | `6334e394e2c5a4faecae3d3b4e26d402bd5ec41be8b632ac25f36baf202981af` |
-| Composite bytes | 3,584,187 |
+| Composite SHA-256 | `2b130a97c44e7ef6cbdcfa181867894681acd44abfad187eff70fd907e3e6995` |
+| Composite bytes | 3,544,937 |
 | Declarable lines | 9,442 |
 | Physical records | 29,671 (`1`: 9,442; `2`: 2,625; `3`: 218; `4`: 9,442; `5`: 7,944) |
 | Reacquisition | Two consecutive live downloads were byte-identical |
+| HTML normalization | Request-specific CMS chrome is excluded; authority-authored article fragments are retained |
 | Canary semantics | `610910`: legal zero + `YX` requiring origin proof; `020110`: 30% + ISK 357/kg compound; `100630`: two equivalent national children |
 
 ## Sources

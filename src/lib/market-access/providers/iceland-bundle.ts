@@ -80,7 +80,8 @@ export async function readIcelandAuthorityBundle(args: { bytes: Buffer; release_
   let manifest: { acquisition_version?: unknown; release_identifier?: unknown; effective_from?: unknown; artifacts?: Array<Record<string, unknown>>; rights_evidence?: Record<string, unknown>; india_preference_evidence?: Record<string, unknown> };
   try { manifest = JSON.parse(manifestBytes.toString('utf8')); }
   catch { throw new IcelandBundleError('invalid_manifest', 'The Iceland acquisition manifest is not valid JSON.'); }
-  if (manifest.acquisition_version !== ICELAND_ACQUISITION_VERSION || manifest.release_identifier !== args.release_identifier || manifest.effective_from !== args.release_identifier) {
+  const supportedAcquisitions = new Set([ICELAND_ACQUISITION_VERSION, 'skatturinn-tollskrarlyklar-acquisition-v1']);
+  if (!supportedAcquisitions.has(String(manifest.acquisition_version)) || manifest.release_identifier !== args.release_identifier || manifest.effective_from !== args.release_identifier) {
     throw new IcelandBundleError('unexpected_acquisition', 'The Iceland manifest does not identify the reviewed release and acquisition version.');
   }
   if (manifest.rights_evidence?.artifact !== 'record-layout.pdf' || manifest.india_preference_evidence?.authority_code !== 'YX' || manifest.india_preference_evidence?.requires_origin_proof !== true) {

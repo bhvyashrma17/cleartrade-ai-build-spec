@@ -43,7 +43,7 @@ async function rawTariffZip(lines: string[]) {
   return Buffer.from(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', platform: 'UNIX' }));
 }
 
-async function fixtureBytes() {
+async function fixtureBytes(chrome = 'fixture') {
   const keys = await rawTariffZip([
     dutyRecord('1', '61091000', [{ code: 'A', percent: 1000 }, { code: 'YX' }]),
     controlRecord('61091000', { fee: { code: 'RF', percent: 250 }, permit: 'MST', prohibition: 'TKR', base: 'K', net: true }),
@@ -62,9 +62,9 @@ async function fixtureBytes() {
   const fetchImpl = vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url === ICELAND_KEYS_URL) return new Response(keys, { status: 200 });
-    if (url.includes('india') || url.includes('indland')) return new Response('<html>Indland 1. október 2025</html>', { status: 200 });
+    if (url.includes('india') || url.includes('indland')) return new Response(`<html><div id="${chrome}"></div><!-- eplica-contentid 1-5534-MainContent --><div class="article box" data-aid="5534"><p>Indland 1. október 2025</p></div><hr class="stream" /><div id="dynamic-${chrome}"></div></html>`, { status: 200 });
     if (url.endsWith('.pdf')) return new Response(Buffer.from('%PDF-1.7 reviewed Iceland authority fixture'), { status: 200 });
-    return new Response('<html>tollskrárlyklar release history</html>', { status: 200 });
+    return new Response(`<html><div id="${chrome}"></div><!-- eplica-contentid 1-3430-MainContent --><div class="article box" data-aid="3430"><p>tollskrárlyklar release history</p></div><hr class="stream" /><div id="dynamic-${chrome}"></div></html>`, { status: 200 });
   }) as typeof fetch;
   return { bytes: await acquireIcelandAuthorityBundle({ fetch_impl: fetchImpl }), fetchImpl };
 }
@@ -78,7 +78,7 @@ async function parsed() {
 describe('Iceland retained authority bundle', () => {
   test('is deterministic, host-pinned and authenticates every retained artifact', async () => {
     const first = await fixtureBytes();
-    const second = await fixtureBytes();
+    const second = await fixtureBytes('different-request-chrome');
     expect(first.bytes.equals(second.bytes)).toBe(true);
     expect(sha256(first.bytes)).toBe(sha256(second.bytes));
     expect(first.fetchImpl).toHaveBeenCalledTimes(8);
@@ -87,7 +87,13 @@ describe('Iceland retained authority bundle', () => {
     expect(bundle.files).toHaveLength(9);
     expect(bundle.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
 
-    await expect(acquireIcelandAuthorityBundle({ fetch_impl: (async (input) => new Response(String(input) === ICELAND_KEYS_URL ? 'not a zip' : '%PDF-')) as typeof fetch, attempts: 1 }))
+    await expect(acquireIcelandAuthorityBundle({ fetch_impl: (async (input) => {
+      const url = String(input);
+      if (url === ICELAND_KEYS_URL) return new Response('not a zip');
+      if (url.endsWith('.pdf')) return new Response('%PDF-');
+      const aid = url.includes('indland') ? '5534' : '3430';
+      return new Response(`<!-- eplica-contentid 1-${aid}-MainContent --><div class="article box" data-aid="${aid}">Indland 1. október</div><hr class="stream" />`);
+    }) as typeof fetch, attempts: 1 }))
       .rejects.toThrow(/tariff-key ZIP/);
   });
 
@@ -95,6 +101,12 @@ describe('Iceland retained authority bundle', () => {
     const { bytes } = await fixtureBytes();
     const zip = await JSZip.loadAsync(bytes);
     const manifest = JSON.parse(await zip.file('acquisition.json')!.async('text'));
+
+    manifest.acquisition_version = 'skatturinn-tollskrarlyklar-acquisition-v1';
+    zip.file('acquisition.json', JSON.stringify(manifest), { date: new Date('1980-01-01T00:00:00.000Z') });
+    const legacy = Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
+    await expect(readIcelandAuthorityBundle({ bytes: legacy, release_identifier: RELEASE })).resolves.toMatchObject({ release_identifier: RELEASE });
+
     manifest.artifacts[0].sha256 = '0'.repeat(64);
     zip.file('acquisition.json', JSON.stringify(manifest), { date: new Date('1980-01-01T00:00:00.000Z') });
     const tampered = Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
