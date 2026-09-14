@@ -8,7 +8,7 @@
 
 **Result:** 8/8 re-investigated; Iceland activated; seven precise blockers retained; operational coverage 39 → 40.
 
-**Environment:** research and local validation only at this point in the record; production was not accessed or changed.
+**Environment:** validated locally and deployed/canary-tested in the isolated Railway staging environment; production was not accessed or changed.
 
 This is an evidence-gate record, not a substitute for the retained source artifacts. `PASS` means
 the gate is satisfied for the provider scope that is actually published. `PARTIAL` means the source
@@ -102,6 +102,16 @@ evidence resolves.
 | Reacquisition | Two consecutive live downloads were byte-identical |
 | HTML normalization | Request-specific CMS chrome is excluded; authority-authored article fragments are retained |
 | Canary semantics | `610910`: legal zero + `YX` requiring origin proof; `020110`: 30% + ISK 357/kg compound; `100630`: two equivalent national children |
+
+## Isolated staging proof
+
+- Final web deployment `d0c7675a-a4c2-4f1e-b071-124587c8c463`: `SUCCESS`.
+- Final worker deployment `f4efcadd-b9b8-48ae-9449-8ca8960c8d06`: `SUCCESS`; the deployment restarted the worker process.
+- Readiness endpoint: database and private S3-compatible storage both `ready`.
+- Storage preflight: 9/9 upload, identity, metadata, content, checksum, length and cleanup checks passed in bucket `cleartrade-staging-isolated-j21z3g`.
+- Active authority release: `cmu0qyev20001qb2tm0qeigq6`, checksum `2b130a97c44e7ef6cbdcfa181867894681acd44abfad187eff70fd907e3e6995`; exactly one Iceland release is active.
+- The first staging canary exposed request-specific CMS chrome in the v1 composite. That release (`cmu0qla2t0001o351wutubync`) was superseded, not edited. Acquisition v2 excludes the chrome, preserves backward reading of v1, and produced the same checksum locally and in staging.
+- Production project/environment/services were never deployment or write targets.
 
 ## Sources
 
