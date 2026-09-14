@@ -1,5 +1,9 @@
 # Customs Atlas Mega-Wave C source gate
 
+> Historical checkpoint: Iceland and the seven near-pass hypotheses were re-investigated on
+> 14 September 2026. See [targeted-unblock-sprint-2026-09-14.md](targeted-unblock-sprint-2026-09-14.md)
+> for the superseding decisions; this record is retained to preserve the original gate history.
+
 **Decision date:** 13 September 2026  
 **Baseline:** `3f390a36ca132b26fdda0bcbb21c80546ddac042`  
 **Scope:** MY, ID, VN, HK, TR, CH, IS, RS, BA, MD, XK, CL, MX, ZA, KE, MA, EG, JO, BH, OM  

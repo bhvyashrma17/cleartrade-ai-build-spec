@@ -223,11 +223,11 @@ describe('Norwegian national line resolution', () => {
 });
 
 describe('Wave 2 candidates stopped with precise, distinct reasons', () => {
-  test('Switzerland remains written-permission-pending and is not downgraded by public visibility', () => {
+  test('Switzerland records the now-cleared official-text right but remains blocked on a complete Tares distribution', () => {
     const source = unconfiguredSourceForCountry('CH');
-    expect(source?.reason).toBe('license_pending');
-    expect(source!.determination).toMatch(/written permission/i);
-    expect(source!.determination).toMatch(/not downgraded merely because/);
+    expect(source?.reason).toBe('source_insufficient');
+    expect(source!.determination).toMatch(/Copyright Act article 5/i);
+    expect(source!.determination).toMatch(/complete bulk Tares contract/i);
   });
 
   test('Singapore stops because the portal licence does not attach to the tariff dataset', () => {

@@ -370,11 +370,11 @@ describe('unconfigured authoritative sources', () => {
     expect(dominicanRepublic.determination).toMatch(/neither copy is represented here as definitive current consolidated law/);
   });
 
-  test('Mega-Wave C records a country-specific blocker for all 20 destinations', () => {
+  test('Mega-Wave C blockers remain precise for the 19 destinations not since activated', () => {
     const expectedReasons = {
       MY: 'no_documented_machine_interface', ID: 'no_documented_machine_interface',
-      VN: 'no_documented_machine_interface', HK: 'license_pending', TR: 'license_pending',
-      CH: 'license_pending', IS: 'license_pending', RS: 'individual_investigation_required',
+      VN: 'no_documented_machine_interface', HK: 'license_pending', TR: 'source_insufficient',
+      CH: 'source_insufficient', RS: 'individual_investigation_required',
       BA: 'source_insufficient', MD: 'source_insufficient', XK: 'individual_investigation_required',
       CL: 'license_pending', MX: 'source_insufficient', ZA: 'license_pending',
       KE: 'source_insufficient', MA: 'no_documented_machine_interface',
@@ -396,14 +396,14 @@ describe('unconfigured authoritative sources', () => {
     }
   });
 
-  test('Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
-    const countries = ['MY', 'ID', 'VN', 'HK', 'TR', 'CH', 'IS', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH', 'OM'];
+  test('remaining Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
+    const countries = ['MY', 'ID', 'VN', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH', 'OM'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-c-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(20);
+    expect(outcomes).toHaveLength(19);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
