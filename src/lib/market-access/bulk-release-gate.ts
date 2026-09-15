@@ -68,6 +68,12 @@ export const BULK_QUALIFICATION_REQUIRED: Readonly<Record<string, boolean>> = Ob
   // Korea ships one ~22MB XLSX of ~380K rate rows across ~11K tariff items — a bulk archive by the
   // same test, not a per-request lookup API.
   KR_KCS: true,
+  // These PDF-table packs retain large source PDFs but decode to bounded 5.8k–8.3k row maps;
+  // each service participates in the process-wide 160MB cache budget at a conservative 28MB.
+  NP_CUSTOMS_PDF: false,
+  BT_DRC_PDF: false,
+  AL_CUSTOMS_ARCHIVE: false,
+  MU_MRA_TARIFF: false,
 });
 
 export function requiresBulkQualification(sourceFamily: string): boolean {

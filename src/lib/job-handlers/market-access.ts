@@ -32,6 +32,7 @@ import { fetchIsraelMarketAccess } from '@/lib/market-access/providers/israel-se
 import { fetchPeruMarketAccess } from '@/lib/market-access/providers/peru-service';
 import { fetchIcelandMarketAccess } from '@/lib/market-access/providers/iceland-service';
 import { fetchOmanMarketAccess } from '@/lib/market-access/providers/oman-service';
+import { fetchAlbaniaMarketAccess, fetchBhutanMarketAccess, fetchMauritiusMarketAccess, fetchNepalMarketAccess } from '@/lib/market-access/providers/green-wave-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -162,6 +163,11 @@ const OMAN_ADAPTER: MarketAccessAdapter = {
   }),
 };
 
+const NEPAL_ADAPTER: MarketAccessAdapter = { provider_key: 'np_customs_tariff_pdf', fetch: (request) => fetchNepalMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const BHUTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'bt_drc_tariff_pdf', fetch: (request) => fetchBhutanMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const ALBANIA_ADAPTER: MarketAccessAdapter = { provider_key: 'al_customs_nomenclature_archive', fetch: (request) => fetchAlbaniaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const MAURITIUS_ADAPTER: MarketAccessAdapter = { provider_key: 'mu_mra_integrated_tariff', fetch: (request) => fetchMauritiusMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
  * from each source's own destination list rather than duplicating that list here. Two sources
@@ -183,6 +189,10 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   PE: PERU_ADAPTER,
   IS: ICELAND_ADAPTER,
   OM: OMAN_ADAPTER,
+  NP: NEPAL_ADAPTER,
+  BT: BHUTAN_ADAPTER,
+  AL: ALBANIA_ADAPTER,
+  MU: MAURITIUS_ADAPTER,
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 

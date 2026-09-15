@@ -33,7 +33,11 @@ export type NationalCodeSystem =
   | 'IL_CUSTOMS_BOOK'
   | 'PE_NATIONAL_SUBPARTIDA'
   | 'IS_TOLLSKRARLYKILL'
-  | 'OM_CUSTOMS_TARIFF';
+  | 'OM_CUSTOMS_TARIFF'
+  | 'NP_CUSTOMS_TARIFF'
+  | 'BT_TRADE_CLASSIFICATION'
+  | 'AL_COMBINED_NOMENCLATURE'
+  | 'MU_INTEGRATED_TARIFF';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

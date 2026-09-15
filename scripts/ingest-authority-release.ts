@@ -8,6 +8,8 @@ import { importTaiwanRelease } from '@/lib/market-access/providers/taiwan-servic
 import { acquireAndImportIsraelRelease } from '@/lib/market-access/providers/israel-service';
 import { acquireAndImportPeruRelease } from '@/lib/market-access/providers/peru-service';
 import { acquireAndImportOmanRelease } from '@/lib/market-access/providers/oman-service';
+import { acquireAndImportGreenWaveRelease } from '@/lib/market-access/providers/green-wave-service';
+import type { GreenWaveCountry } from '@/lib/market-access/providers/green-wave-config';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -22,8 +24,8 @@ function required(name: string) {
 
 async function main() {
   const country = required('country').toUpperCase();
-  if (!['CA', 'TW', 'GE', 'IL', 'PH', 'PE', 'OM'].includes(country)) {
-    throw new Error('Supported authority-release imports are CA, TW, GE, IL, PE, OM and the controlled manual PH composite.');
+  if (!['CA', 'TW', 'GE', 'IL', 'PH', 'PE', 'OM', 'NP', 'BT', 'AL', 'MU'].includes(country)) {
+    throw new Error('Supported authority-release imports are CA, TW, GE, IL, PE, OM, NP, BT, AL, MU and the controlled manual PH composite.');
   }
   const actorEmail = required('actor-email').toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: actorEmail } });
@@ -60,7 +62,9 @@ async function main() {
             ? await acquireAndImportPeruRelease(common)
             : country === 'OM'
               ? await acquireAndImportOmanRelease(common)
-              : await importPhilippinesRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') });
+              : ['NP', 'BT', 'AL', 'MU'].includes(country)
+                ? await acquireAndImportGreenWaveRelease(country as GreenWaveCountry, common)
+                : await importPhilippinesRelease({ ...common, bytes: readFileSync(required('file')), source_url: required('source-url') });
   console.log(JSON.stringify({
     release_id: imported.release.id,
     release_identifier: imported.release.release_identifier,
