@@ -32,7 +32,8 @@ export type NationalCodeSystem =
   | 'GE_TAX_CODE'
   | 'IL_CUSTOMS_BOOK'
   | 'PE_NATIONAL_SUBPARTIDA'
-  | 'IS_TOLLSKRARLYKILL';
+  | 'IS_TOLLSKRARLYKILL'
+  | 'OM_CUSTOMS_TARIFF';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

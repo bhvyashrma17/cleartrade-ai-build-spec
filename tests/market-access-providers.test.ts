@@ -370,7 +370,7 @@ describe('unconfigured authoritative sources', () => {
     expect(dominicanRepublic.determination).toMatch(/neither copy is represented here as definitive current consolidated law/);
   });
 
-  test('Mega-Wave C blockers remain precise for the 19 destinations not since activated', () => {
+  test('Mega-Wave C blockers remain precise for the 18 destinations not since activated', () => {
     const expectedReasons = {
       MY: 'no_documented_machine_interface', ID: 'no_documented_machine_interface',
       VN: 'no_documented_machine_interface', HK: 'license_pending', TR: 'source_insufficient',
@@ -379,7 +379,7 @@ describe('unconfigured authoritative sources', () => {
       CL: 'license_pending', MX: 'source_insufficient', ZA: 'license_pending',
       KE: 'source_insufficient', MA: 'no_documented_machine_interface',
       EG: 'no_documented_machine_interface', JO: 'no_documented_machine_interface',
-      BH: 'bulk_distribution_only', OM: 'individual_investigation_required',
+      BH: 'bulk_distribution_only',
     } as const;
 
     for (const [country, reason] of Object.entries(expectedReasons)) {
@@ -394,16 +394,20 @@ describe('unconfigured authoritative sources', () => {
       expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
       expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
+
+    // Oman is now activated and should no longer be unconfigured
+    expect(unconfiguredSourceForCountry('OM')).toBeNull();
+    expect(DESTINATION_ADAPTERS.OM?.provider_key).toBe('om_rop_customs_tariff');
   });
 
   test('remaining Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
-    const countries = ['MY', 'ID', 'VN', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH', 'OM'];
+    const countries = ['MY', 'ID', 'VN', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-c-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(19);
+    expect(outcomes).toHaveLength(18);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
