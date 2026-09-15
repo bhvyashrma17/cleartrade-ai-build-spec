@@ -423,6 +423,63 @@ describe('unconfigured authoritative sources', () => {
       expect(result, countries[index]).not.toHaveProperty('evidence_count');
     }
   });
+
+  test('Mega-Wave D source gate covers all 30 destinations with precise fail-closed reasons', () => {
+    const expectedReasons = {
+      CN: 'individual_investigation_required', SG: 'no_documented_machine_interface',
+      TH: 'individual_investigation_required', BN: 'individual_investigation_required',
+      KH: 'source_insufficient', LA: 'no_documented_machine_interface', LK: 'source_insufficient',
+      MN: 'no_documented_machine_interface', SA: 'no_documented_machine_interface',
+      AE: 'individual_investigation_required', QA: 'no_documented_machine_interface',
+      KW: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
+      BR: 'credential_not_provisioned', EC: 'no_documented_machine_interface',
+      BO: 'individual_investigation_required', GT: 'no_documented_machine_interface',
+      SV: 'individual_investigation_required', HN: 'no_documented_machine_interface',
+      NI: 'no_documented_machine_interface', BZ: 'source_insufficient',
+      GH: 'no_documented_machine_interface', CI: 'source_insufficient', SN: 'source_insufficient',
+      TZ: 'individual_investigation_required', UG: 'individual_investigation_required',
+      RW: 'individual_investigation_required', ZM: 'individual_investigation_required',
+      BW: 'individual_investigation_required', NA: 'individual_investigation_required',
+    } as const;
+
+    expect(Object.keys(expectedReasons)).toHaveLength(30);
+    for (const [country, reason] of Object.entries(expectedReasons)) {
+      const source = unconfiguredSourceForCountry(country);
+      expect(source, country).not.toBeNull();
+      expect(source!.country_codes, country).toContain(country);
+      expect(source!.reason, country).toBe(reason);
+      expect(source!.authority.trim().length, country).toBeGreaterThan(20);
+      expect(source!.determination.trim().length, country).toBeGreaterThan(100);
+      expect(source!.references.length, country).toBeGreaterThan(0);
+      expect(source!.references.every((reference) => reference.startsWith('https://')), country).toBe(true);
+      expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
+      expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
+    }
+  });
+
+  test('Mega-Wave D blockers complete independently without tariff evidence or invented zeroes', async () => {
+    const countries = ['CN', 'SG', 'TH', 'BN', 'KH', 'LA', 'LK', 'MN', 'SA', 'AE', 'QA', 'KW', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
+    const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
+      job_id: `mega-wave-d-${country}`,
+      payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
+    } as never)));
+
+    expect(outcomes).toHaveLength(30);
+    for (const [index, outcome] of outcomes.entries()) {
+      const result = outcome.result as Record<string, unknown>;
+      expect(outcome.status, countries[index]).toBe('completed');
+      expect(result.country_code, countries[index]).toBe(countries[index]);
+      expect(result.snapshot_id, countries[index]).toBeNull();
+      expect(result.provider_state, countries[index]).toBe('provider_unconfigured_or_license_pending');
+      expect(result.next_step, countries[index]).toBe('authoritative_manual_capture');
+      expect(result.reason, countries[index]).toBeTruthy();
+      expect(result.authority, countries[index]).toBeTruthy();
+      expect(result.references, countries[index]).toBeTruthy();
+      expect(result, countries[index]).not.toHaveProperty('general_duty_expression');
+      expect(result, countries[index]).not.toHaveProperty('tariff_rate_percent');
+      expect(result, countries[index]).not.toHaveProperty('evidence_count');
+    }
+  });
 });
 
 describe('preference applicability reaches the calculator fail-closed', () => {

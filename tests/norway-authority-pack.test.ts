@@ -233,13 +233,14 @@ describe('Wave 2 candidates stopped with precise, distinct reasons', () => {
   test('Singapore stops because the portal licence does not attach to the tariff dataset', () => {
     const source = unconfiguredSourceForCountry('SG');
     expect(source?.reason).toBe('no_documented_machine_interface');
-    expect(source!.determination).toMatch(/cannot be transferred onto a dataset that is not published under it/);
+    expect(source!.determination).toMatch(/cannot be transferred to this separate Customs application/);
   });
 
-  test('Thailand records an access refusal, and explicitly claims nothing about its rights', () => {
+  test('Thailand records the newly discovered authority file feed but stops before bespoke delta replay', () => {
     const source = unconfiguredSourceForCountry('TH');
-    expect(source?.reason).toBe('no_documented_machine_interface');
-    expect(source!.determination).toMatch(/403/);
-    expect(source!.determination).toMatch(/unresearched rather than refused/);
+    expect(source?.reason).toBe('individual_investigation_required');
+    expect(source!.determination).toMatch(/reference-file directory live through 14 September 2026/);
+    expect(source!.determination).toMatch(/about 1,952 files/);
+    expect(source!.determination).toMatch(/gap-free replay/);
   });
 });
