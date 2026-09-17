@@ -121,6 +121,6 @@ describe('green-wave country semantics and routing', () => {
     for (const country of ['NP', 'BT', 'AL', 'MU']) { expect(DESTINATION_ADAPTERS[country]?.provider_key).toBe(GREEN_WAVE_CONFIGS[country as keyof typeof GREEN_WAVE_CONFIGS].provider); expect(unconfiguredSourceForCountry(country)).toBeNull(); }
     expect(unconfiguredSourceForCountry('ME')?.reason).toBe('individual_investigation_required');
     expect(unconfiguredSourceForCountry('MK')?.reason).toBe('individual_investigation_required');
-    expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(45);
+    expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(46);
   });
 });

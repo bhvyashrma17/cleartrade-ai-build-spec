@@ -11,7 +11,7 @@ import { readPdfAuthorityBundle } from '@/lib/market-access/providers/pdf-table-
 import type { Principal } from '@/types';
 
 const RELEASE = '2026-09-15';
-const COUNTRIES: readonly GreenWaveCountry[] = ['NP', 'BT', 'AL', 'MU'];
+const COUNTRIES: readonly GreenWaveCountry[] = ['NP', 'BT', 'AL', 'MU', 'LK'];
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const roles = (country: GreenWaveCountry) => Object.fromEntries(GREEN_WAVE_CONFIGS[country].artifacts.map((artifact) => [artifact.name, artifact.role]));
 
@@ -20,6 +20,7 @@ const CASES: Record<GreenWaveCountry, { ordinary: string; unusual: string; expec
   BT: { ordinary: '010611', unusual: '220600', expected_general: 10, expected_unusual_kind: 'specific' },
   AL: { ordinary: '010121', unusual: '010129', expected_general: 2, expected_unusual_kind: 'unparsed' },
   MU: { ordinary: '010121', unusual: '090230', expected_general: 0, expected_unusual_kind: 'mixed' },
+  LK: { ordinary: '100630', unusual: '090230', expected_general: 15, expected_unusual_kind: 'mixed' },
 };
 
 async function actor(): Promise<Principal> {

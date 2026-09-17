@@ -427,22 +427,18 @@ describe('unconfigured authoritative sources', () => {
   test('Mega-Wave D source gate covers all 30 destinations with precise fail-closed reasons', () => {
     const expectedReasons = {
       CN: 'individual_investigation_required', SG: 'no_documented_machine_interface',
-      TH: 'individual_investigation_required', BN: 'individual_investigation_required',
-      KH: 'source_insufficient', LA: 'no_documented_machine_interface', LK: 'source_insufficient',
-      MN: 'no_documented_machine_interface', SA: 'no_documented_machine_interface',
-      AE: 'individual_investigation_required', QA: 'no_documented_machine_interface',
-      KW: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
-      BR: 'credential_not_provisioned', EC: 'no_documented_machine_interface',
-      BO: 'individual_investigation_required', GT: 'no_documented_machine_interface',
-      SV: 'individual_investigation_required', HN: 'no_documented_machine_interface',
-      NI: 'no_documented_machine_interface', BZ: 'source_insufficient',
-      GH: 'no_documented_machine_interface', CI: 'source_insufficient', SN: 'source_insufficient',
-      TZ: 'individual_investigation_required', UG: 'individual_investigation_required',
-      RW: 'individual_investigation_required', ZM: 'individual_investigation_required',
-      BW: 'individual_investigation_required', NA: 'individual_investigation_required',
+TH: 'individual_investigation_required', BN: 'individual_investigation_required',
+      KH: 'source_insufficient', LA: 'no_documented_machine_interface', MN: 'no_documented_machine_interface',
+      SA: 'no_documented_machine_interface', AE: 'individual_investigation_required', QA: 'no_documented_machine_interface',
+      KW: 'no_documented_machine_interface', LB: 'no_documented_machine_interface', BR: 'credential_not_provisioned',
+      EC: 'no_documented_machine_interface', BO: 'individual_investigation_required', GT: 'no_documented_machine_interface',
+      SV: 'individual_investigation_required', HN: 'no_documented_machine_interface', NI: 'no_documented_machine_interface',
+      BZ: 'source_insufficient', GH: 'no_documented_machine_interface', CI: 'source_insufficient', SN: 'source_insufficient',
+      TZ: 'individual_investigation_required', UG: 'individual_investigation_required', RW: 'individual_investigation_required',
+      ZM: 'individual_investigation_required', BW: 'individual_investigation_required', NA: 'individual_investigation_required',
     } as const;
 
-    expect(Object.keys(expectedReasons)).toHaveLength(30);
+    expect(Object.keys(expectedReasons)).toHaveLength(29);
     for (const [country, reason] of Object.entries(expectedReasons)) {
       const source = unconfiguredSourceForCountry(country);
       expect(source, country).not.toBeNull();
@@ -458,13 +454,13 @@ describe('unconfigured authoritative sources', () => {
   });
 
   test('Mega-Wave D blockers complete independently without tariff evidence or invented zeroes', async () => {
-    const countries = ['CN', 'SG', 'TH', 'BN', 'KH', 'LA', 'LK', 'MN', 'SA', 'AE', 'QA', 'KW', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
+    const countries = ['CN', 'SG', 'TH', 'BN', 'KH', 'LA', 'MN', 'SA', 'AE', 'QA', 'KW', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-d-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(30);
+    expect(outcomes).toHaveLength(29);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');

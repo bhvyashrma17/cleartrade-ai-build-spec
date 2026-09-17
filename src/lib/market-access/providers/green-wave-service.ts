@@ -88,5 +88,6 @@ export const fetchNepalMarketAccess = (hs6: string, options?: Parameters<typeof 
 export const fetchBhutanMarketAccess = (hs6: string, options?: Parameters<typeof fetchGreenWaveMarketAccess>[2]) => fetchGreenWaveMarketAccess('BT', hs6, options);
 export const fetchAlbaniaMarketAccess = (hs6: string, options?: Parameters<typeof fetchGreenWaveMarketAccess>[2]) => fetchGreenWaveMarketAccess('AL', hs6, options);
 export const fetchMauritiusMarketAccess = (hs6: string, options?: Parameters<typeof fetchGreenWaveMarketAccess>[2]) => fetchGreenWaveMarketAccess('MU', hs6, options);
+export const fetchSriLankaMarketAccess = (hs6: string, options?: Parameters<typeof fetchGreenWaveMarketAccess>[2]) => fetchGreenWaveMarketAccess('LK', hs6, options);
 
 export const __test__ = { caches };

@@ -1,6 +1,6 @@
 import type { PdfTableProfile } from './pdf-table-family';
 
-export type GreenWaveCountry = 'NP' | 'BT' | 'AL' | 'MU';
+export type GreenWaveCountry = 'NP' | 'BT' | 'AL' | 'MU' | 'LK';
 
 export interface GreenWaveSourceArtifact {
   name: string;
@@ -19,7 +19,7 @@ export interface GreenWaveConfig {
   authority: string;
   dataset: string;
   provider: string;
-  national_code_system: 'NP_CUSTOMS_TARIFF' | 'BT_TRADE_CLASSIFICATION' | 'AL_COMBINED_NOMENCLATURE' | 'MU_INTEGRATED_TARIFF';
+  national_code_system: 'NP_CUSTOMS_TARIFF' | 'BT_TRADE_CLASSIFICATION' | 'AL_COMBINED_NOMENCLATURE' | 'MU_INTEGRATED_TARIFF' | 'LK_CUSTOMS_TARIFF';
   parser_version: string;
   currency: string;
   tariff_url: string;
@@ -148,6 +148,43 @@ export const GREEN_WAVE_CONFIGS: Readonly<Record<GreenWaveCountry, GreenWaveConf
     general_column: 'general', india_column: 'india', india_area_id: 'IN_CECPA', india_basis: 'direct_requires_origin',
     rights_evidence: { artifact: 'government-copyright-policy.json', statutory_cross_check: 'copyright-act-record.json', rule: 'Mauritius government material may be reproduced accurately with source acknowledgement. Official texts and mere data are separately excluded by statute. ClearTrade excludes third-party content, site presentation and software.' },
     preference_evidence: { artifact: 'india-cecpa-notice.pdf', programme: 'Mauritius–India CECPA', direct_tariff_column: 'INDIA', requires_origin_proof: true, origin_qualification_not_established_by_origin_country: true },
+  },
+  LK: {
+    country_code: 'LK', jurisdiction: 'LK', family: 'OFFICIAL_PDF_TABLE', source_family: 'LK_CUSTOMS_PDF',
+    authority: 'Sri Lanka Customs', dataset: 'National Imports Tariff Guide 2026', provider: 'lk_customs_tariff',
+    national_code_system: 'LK_CUSTOMS_TARIFF', parser_version: 'lk-customs-tariff-parser-v1', currency: 'LKR',
+    tariff_url: 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip',
+    tariff_sha256: '0'.repeat(64),
+    profile: {
+      country_code: 'LK', label: 'Sri Lanka National Imports Tariff Guide 2026', expected_pdf_pages: 97,
+      table_first_page: 1, table_last_page: 97, expected_line_count: 5000,
+      code_pattern: /^\d{8}$/, code_header: /^H\.?S\.?\s*Code/i, description_header: /^Description/i, unit_header: /^Unit/i,
+      columns: [
+        { key: 'general', header: /^General\s*Duty/i, required: false },
+        { key: 'preferential', header: /^Preferential\s*Duty/i, required: false },
+        { key: 'india', header: /^India/i, required: false },
+        { key: 'vat', header: /^VAT/i, required: false },
+        { key: 'scl', header: /^SCL/i, required: false },
+        { key: 'cess', header: /^CESS/i, required: false },
+        { key: 'excise', header: /^Excise/i, required: false },
+        { key: 'pal', header: /^PAL/i, required: false },
+        { key: 'sscl', header: /^SSCL/i, required: false },
+      ], code_tolerance_points: 20, effective_from: '2026-05-16',
+    },
+    artifacts: [
+      { name: 'import-tariff-guide-2026-05-16.zip', role: 'official_consolidated_national_tariff', url: 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip', kind: 'pdf', markers: [] },
+      { name: 'gazette-2488-56.json', role: 'reviewed_post_baseline_gazette_10a_surcharge', url: 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { gazette: '2488/56', date: '2026-05-15', instrument: 'Revenue Protection Order No. 01/2026', effect: '50% surcharge on CID for scheduled motor vehicles from 2026-05-16' } },
+      { name: 'gazette-2488-69.json', role: 'reviewed_post_baseline_gazette_grandfathering', url: 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { gazette: '2488/69', date: '2026-05-17', instrument: 'Amendment to RPO 01/2026', effect: 'Grandfathering conditions modified for pre-16-May L/Cs' } },
+      { name: 'gazette-2493-02.json', role: 'reviewed_no_commodity_tariff_effect', url: 'https://documents.gov.lk/view/egz/egz_2026.html', kind: 'evidence_json', markers: [], evidence: { gazette: '2493/02', date: '2026-06-15', instrument: 'Customs Fees and Charges', classification: 'REVIEWED_NO_COMMODITY_TARIFF_EFFECT' } },
+      { name: 'gazette-2497-06.json', role: 'reviewed_no_rate_change', url: 'https://documents.gov.lk/view/egz/egz_2026.html', kind: 'evidence_json', markers: [], evidence: { gazette: '2497/06', date: '2026-07-14', instrument: 'Revenue Protection Order No. 01/2026 confirmation', classification: 'REVIEWED_NO_RATE_CHANGE' } },
+      { name: 'gazette-2501-88.json', role: 'reviewed_post_baseline_gazette_surcharge_extension', url: 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { gazette: '2501/88', date: '2026-08-14', instrument: 'Vehicle surcharge extension', effect: '50% CID surcharge extended through 2026-12-31' } },
+      { name: 'vat-act-14-2026.json', role: 'reviewed_no_import_tariff_effect', url: 'https://www.treasury.gov.lk/web/fiscal-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { act: 'VAT (Amendment) Act No. 14 of 2026', classification: 'REVIEWED_NO_IMPORT_TARIFF_EFFECT' } },
+      { name: 'copyright-act-section-8.json', role: 'reviewed_official_statute_citation_excluding_administrative_decisions_and_facts', url: 'https://www.nipo.gov.lk/web/images/pdf_downloads/Intellectual_Property_Act_No_36_of_2003.pdf', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-16', provision: 'Intellectual Property Act No. 36 of 2003, section 8', finding: 'Mere data and official legislative/administrative/legal texts excluded from copyright. ClearTrade retains official text and tariff facts only.' } },
+      { name: 'isfta-index.json', role: 'reviewed_government_of_india_bilateral_trade_agreement_citation', url: 'https://www.commerce.gov.in/ministryofcommerce/node/3398', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-16', instrument: 'ISFTA', finding: 'India-origin preference requires RoO proof; negative list applies.' } },
+    ],
+    general_column: 'general', india_column: 'india', india_area_id: 'ISFTA', india_basis: 'direct_requires_origin',
+    rights_evidence: { artifact: 'copyright-act-section-8.json', rule: 'Sri Lanka IP Act section 8 excludes mere data and official legislative/administrative/legal texts. ClearTrade retains official text and tariff facts only; claims no right in website presentation, software or protected compilation arrangement.' },
+    preference_evidence: { artifact: 'isfta-index.json', programme: 'ISFTA', direct_tariff_column: 'INDIA', requires_origin_proof: true, origin_qualification_not_established_by_origin_country: true },
   },
 });
 

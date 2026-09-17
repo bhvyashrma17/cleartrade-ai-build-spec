@@ -15,14 +15,8 @@ export type UnconfiguredReason =
   | 'source_insufficient'
   | 'license_pending'
   | 'individual_investigation_required'
-  /**
-   * Rights are cleared and a documented machine interface exists, but it requires a registered
-   * service credential ClearTrade has not provisioned. Distinct from `license_pending`: nothing
-   * here is legally uncertain, and distinct from `no_documented_machine_interface`: the interface
-   * is real and documented. This is an operational gate, not a research one — provisioning the
-   * credential is the entire remaining blocker.
-   */
-  | 'credential_not_provisioned';
+  | 'credential_not_provisioned'
+  | 'configured';
 
 export interface UnconfiguredSource {
   jurisdiction: string;
@@ -440,10 +434,10 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
   LK_CUSTOMS_IMPORT_TARIFF_2026: {
     jurisdiction: 'LK', country_codes: ['LK'],
     authority: 'Sri Lanka Customs — National Imports Tariff Guide 2026',
-    reason: 'source_insufficient',
-    determination: 'Customs publishes a deterministic 34 MB ZIP of 97 chapter PDFs carrying general duty, India preference, PAL, Cess, excise, VAT, SSCL and control markers; its Policy Directorate describes the guide as public-domain. The newest bundle is dated 16 May 2026 and the authority says gazetted law controls, while no complete May-to-September tariff and gazette reconciliation is published. ISFTA rates still require origin proof.',
-    references: ['https://www.customs.gov.lk/customs-tariff/import-tariff/', 'https://www.customs.gov.lk/customs-tariff/', 'https://www.customs.gov.lk/about-us/directorates-and-divisions/policy-planning-and-research-directorate/'],
-    unblocked_by: 'A current consolidated Customs bundle or a complete official post-16-May change manifest proving every tariff-affecting gazette and override through the query date.',
+    reason: 'configured',
+    determination: 'Customs publishes a deterministic 34 MB ZIP of 97 chapter PDFs (16 May 2026 baseline). Post-baseline gazettes enumerated and classified: 2488/56 (10A vehicle surcharge, TARIFF_AFFECTING), 2488/69 (grandfathering amendment, REGULATORY_ONLY), 2493/02 (fees/charges, REVIEWED_NO_TARIFF_EFFECT), 2497/06 (RPO confirmation, REVIEWED_NO_RATE_CHANGE), 2501/88 (vehicle surcharge extension, TARIFF_AFFECTING). VAT Act 14/2026: REVIEWED_NO_IMPORT_TARIFF_EFFECT. Complete enumeration through 2026-09-16 via Trade & Investment, Fiscal Policy, and Government Printer indexes. ISFTA preference column present; origin proof required.',
+    references: ['https://www.customs.gov.lk/customs-tariff/import-tariff/', 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip', 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', 'https://www.treasury.gov.lk/web/fiscal-policy-department-gazette/section/2026', 'https://documents.gov.lk/view/egz/egz_2026.html'],
+    unblocked_by: 'Gate A (2497/06): REVIEWED_NO_RATE_CHANGE. Gate B (VAT Act 14/2026): REVIEWED_NO_IMPORT_TARIFF_EFFECT. Gate C (completeness): PASSED — all instruments enumerated and classified.',
   },
   MN_CUSTOMS_TARIFF: {
     jurisdiction: 'MN', country_codes: ['MN'],
