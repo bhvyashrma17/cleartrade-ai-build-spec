@@ -87,6 +87,14 @@ describe('country_screening job', () => {
     const provider = authenticatedClient({ '276': 9e9, '842': 7e9, '704': 4e9, '392': 2e9 });
     setComtradeClient(provider.client);
 
+    // The disposable schema is shared across suites. Other queue scenarios intentionally leave
+    // jobs queued, so make this claim-order assertion independent of file execution order instead
+    // of assuming a pristine queue. Only test-owned, unclaimed screening jobs are cancelled.
+    await prisma.job.updateMany({
+      where: { type: JobType.country_screening, status: 'queued', id: { not: f.job.id } },
+      data: { status: 'cancelled', completed_at: new Date() },
+    });
+
     const claimed = await claimNextJob([JobType.country_screening]);
     expect(claimed?.id).toBe(f.job.id);
     await runClaimedJob(claimed!);
