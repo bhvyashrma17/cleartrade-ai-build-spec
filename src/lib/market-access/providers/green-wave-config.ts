@@ -6,7 +6,7 @@ export interface GreenWaveSourceArtifact {
   name: string;
   role: string;
   url: string;
-  kind: 'pdf' | 'evidence_json';
+  kind: 'pdf' | 'zip' | 'evidence_json' | 'generated_member_manifest';
   markers: readonly string[];
   evidence?: Readonly<Record<string, unknown>>;
 }
@@ -150,35 +150,39 @@ export const GREEN_WAVE_CONFIGS: Readonly<Record<GreenWaveCountry, GreenWaveConf
     preference_evidence: { artifact: 'india-cecpa-notice.pdf', programme: 'Mauritius–India CECPA', direct_tariff_column: 'INDIA', requires_origin_proof: true, origin_qualification_not_established_by_origin_country: true },
   },
   LK: {
-    country_code: 'LK', jurisdiction: 'LK', family: 'OFFICIAL_PDF_TABLE', source_family: 'LK_CUSTOMS_PDF',
-    authority: 'Sri Lanka Customs', dataset: 'National Imports Tariff Guide 2026', provider: 'lk_customs_tariff',
-    national_code_system: 'LK_CUSTOMS_TARIFF', parser_version: 'lk-customs-tariff-parser-v1', currency: 'LKR',
+    country_code: 'LK', jurisdiction: 'LK', family: 'BASELINE_PLUS_AMENDMENTS', source_family: 'LK_CUSTOMS_PDF',
+    authority: 'Sri Lanka Customs', dataset: 'National Imports Tariff Guide 16 May 2026 plus ordered Gazette overlay', provider: 'lk_customs_tariff',
+    national_code_system: 'LK_CUSTOMS_TARIFF', parser_version: 'lk-customs-tariff-parser-v2', currency: 'LKR',
     tariff_url: 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip',
-    tariff_sha256: '0'.repeat(64),
+    tariff_sha256: 'd9273968e731b8e626016eecc78c20a2db9b8bf0e5b865246229e8d8dc0f3947',
     profile: {
-      country_code: 'LK', label: 'Sri Lanka National Imports Tariff Guide 2026', expected_pdf_pages: 97,
-      table_first_page: 1, table_last_page: 97, expected_line_count: 5000,
-      code_pattern: /^\d{8}$/, code_header: /^H\.?S\.?\s*Code/i, description_header: /^Description/i, unit_header: /^Unit/i,
+      country_code: 'LK', label: 'Sri Lanka National Imports Tariff Guide 16 May 2026', expected_pdf_pages: 641,
+      table_first_page: 1, table_last_page: 641, expected_line_count: 6609,
+      code_pattern: /^\d{4}\.\d{2}(?:\.\d{2})?$/, code_header: /^HS Code$/i, description_header: /^Description$/i, unit_header: /^(?:Unit|Stat\. Unit)$/i,
       columns: [
-        { key: 'general', header: /^General\s*Duty/i, required: false },
-        { key: 'preferential', header: /^Preferential\s*Duty/i, required: false },
-        { key: 'india', header: /^India/i, required: false },
-        { key: 'vat', header: /^VAT/i, required: false },
-        { key: 'scl', header: /^SCL/i, required: false },
-        { key: 'cess', header: /^CESS/i, required: false },
-        { key: 'excise', header: /^Excise/i, required: false },
-        { key: 'pal', header: /^PAL/i, required: false },
-        { key: 'sscl', header: /^SSCL/i, required: false },
-      ], code_tolerance_points: 20, effective_from: '2026-05-16',
+        { key: 'pref_ap', header: /^AP$/, required: false }, { key: 'pref_ad', header: /^AD$/, required: false },
+        { key: 'pref_bn', header: /^BN$/, required: false }, { key: 'pref_gt', header: /^GT$/, required: false },
+        { key: 'india', header: /^IN$/, required: false }, { key: 'pref_pk', header: /^PK$/, required: false },
+        { key: 'pref_sa', header: /^SA$/, required: false }, { key: 'pref_sf', header: /^SF$/, required: false },
+        { key: 'pref_sd', header: /^SD$/, required: false }, { key: 'pref_sg', header: /^SG$/, required: false },
+        { key: 'general', header: /^Duty$/, required: false }, { key: 'vat', header: /^VAT$/, required: false },
+        { key: 'pal_general', header: /^Gen$/, required: false }, { key: 'pal_sg', header: /^SG$/, required: false },
+        { key: 'cess_general', header: /^GEN$/, required: false }, { key: 'cess_sg', header: /^SG$/, required: false },
+        { key: 'excise', header: /^Excise$/, required: false }, { key: 'surcharge', header: /^Surcharge$/, required: false },
+        { key: 'sscl', header: /^SSCL$/, required: false }, { key: 'scl_indicator', header: /^SCL$/, required: false },
+      ], code_tolerance_points: 24, effective_from: '2026-05-16', layout_strategy: 'sri_lanka_multi_column',
     },
     artifacts: [
-      { name: 'import-tariff-guide-2026-05-16.zip', role: 'official_consolidated_national_tariff', url: 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip', kind: 'pdf', markers: [] },
-      { name: 'gazette-2488-56.json', role: 'reviewed_post_baseline_gazette_10a_surcharge', url: 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { gazette: '2488/56', date: '2026-05-15', instrument: 'Revenue Protection Order No. 01/2026', effect: '50% surcharge on CID for scheduled motor vehicles from 2026-05-16' } },
-      { name: 'gazette-2488-69.json', role: 'reviewed_post_baseline_gazette_grandfathering', url: 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { gazette: '2488/69', date: '2026-05-17', instrument: 'Amendment to RPO 01/2026', effect: 'Grandfathering conditions modified for pre-16-May L/Cs' } },
-      { name: 'gazette-2493-02.json', role: 'reviewed_no_commodity_tariff_effect', url: 'https://documents.gov.lk/view/egz/egz_2026.html', kind: 'evidence_json', markers: [], evidence: { gazette: '2493/02', date: '2026-06-15', instrument: 'Customs Fees and Charges', classification: 'REVIEWED_NO_COMMODITY_TARIFF_EFFECT' } },
-      { name: 'gazette-2497-06.json', role: 'reviewed_no_rate_change', url: 'https://documents.gov.lk/view/egz/egz_2026.html', kind: 'evidence_json', markers: [], evidence: { gazette: '2497/06', date: '2026-07-14', instrument: 'Revenue Protection Order No. 01/2026 confirmation', classification: 'REVIEWED_NO_RATE_CHANGE' } },
-      { name: 'gazette-2501-88.json', role: 'reviewed_post_baseline_gazette_surcharge_extension', url: 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { gazette: '2501/88', date: '2026-08-14', instrument: 'Vehicle surcharge extension', effect: '50% CID surcharge extended through 2026-12-31' } },
-      { name: 'vat-act-14-2026.json', role: 'reviewed_no_import_tariff_effect', url: 'https://www.treasury.gov.lk/web/fiscal-policy-department-gazette/section/2026', kind: 'evidence_json', markers: [], evidence: { act: 'VAT (Amendment) Act No. 14 of 2026', classification: 'REVIEWED_NO_IMPORT_TARIFF_EFFECT' } },
+      { name: 'import-tariff-guide-2026-05-16.zip', role: 'official_consolidated_national_tariff_archive', url: 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip', kind: 'zip', markers: [] },
+      { name: 'import-tariff-guide-2026-05-16-members.json', role: 'deterministic_per_member_archive_manifest', url: 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip', kind: 'generated_member_manifest', markers: [] },
+      { name: 'gazette-2487-02.pdf', role: 'official_baseline_special_commodity_levy_order', url: 'https://www.treasury.gov.lk/api/file/1641a539-1f4d-4f2a-90bb-67bfcb305a73', kind: 'pdf', markers: [] },
+      { name: 'gazette-2488-56.pdf', role: 'official_vehicle_surcharge_order', url: 'https://www.treasury.gov.lk/api/file/b5fee09e-8b6d-419e-9b52-54eb0927979e', kind: 'pdf', markers: [] },
+      { name: 'gazette-2488-69.pdf', role: 'official_tariff_affecting_vehicle_surcharge_applicability_amendment', url: 'https://www.treasury.gov.lk/api/file/d9eada68-6238-4f2c-a233-25d5de554627', kind: 'pdf', markers: [] },
+      { name: 'gazette-2493-02.pdf', role: 'official_reviewed_customs_fees_notice_no_commodity_tariff_effect', url: 'https://www.treasury.gov.lk/api/file/dce992ba-973b-4662-b351-5a73df2f7b2a', kind: 'pdf', markers: [] },
+      { name: 'gazette-2497-06.json', role: 'reviewed_official_index_confirmation_no_rate_change', url: 'https://documents.gov.lk/web/extra_gazettes', kind: 'evidence_json', markers: [], evidence: { gazette: '2497/06', date: '2026-07-14', instrument: 'Parliamentary confirmation of Revenue Protection Order No. 01/2026', classification: 'REVIEWED_NO_RATE_CHANGE', reviewed_on: '2026-09-20' } },
+      { name: 'gazette-2501-88.pdf', role: 'official_vehicle_surcharge_extension_order', url: 'https://www.treasury.gov.lk/api/file/1cd1a221-5c6f-49b9-9e60-519fa156c9f8', kind: 'pdf', markers: [] },
+      { name: 'vat-amendment-act-14-2026.pdf', role: 'official_reviewed_vat_amendment_no_customs_import_duty_effect', url: 'https://www.ird.gov.lk/en/publications/Value%20Added%20Tax_Acts/VAT_Act_No_14-2026_E.PDF', kind: 'pdf', markers: [] },
+      { name: 'gazette-enumeration-through-2026-09-16.json', role: 'reviewed_complete_authoritative_post_baseline_publication_enumeration', url: 'https://documents.gov.lk/web/extra_gazettes', kind: 'evidence_json', markers: [], evidence: { baseline_date: '2026-05-16', through_date: '2026-09-16', registers: ['Treasury Trade and Investment Policy Gazette register', 'Treasury Fiscal Policy Gazette register', 'Government Printer Extraordinary Gazette index'], trade_register_items: ['2488/69', '2493/02', '2501/88'], generic_index_item: '2497/06', conclusion: 'All identified post-baseline customs/import-tax instruments were retained or classified; generic-titled entries were inspected.' } },
       { name: 'copyright-act-section-8.json', role: 'reviewed_official_statute_citation_excluding_administrative_decisions_and_facts', url: 'https://www.nipo.gov.lk/web/images/pdf_downloads/Intellectual_Property_Act_No_36_of_2003.pdf', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-16', provision: 'Intellectual Property Act No. 36 of 2003, section 8', finding: 'Mere data and official legislative/administrative/legal texts excluded from copyright. ClearTrade retains official text and tariff facts only.' } },
       { name: 'isfta-index.json', role: 'reviewed_government_of_india_bilateral_trade_agreement_citation', url: 'https://www.commerce.gov.in/ministryofcommerce/node/3398', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-16', instrument: 'ISFTA', finding: 'India-origin preference requires RoO proof; negative list applies.' } },
     ],

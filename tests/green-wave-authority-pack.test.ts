@@ -49,6 +49,9 @@ describe('shared official PDF table family', () => {
 
   test('parses ad-valorem, specific and mixed expressions without inventing equivalents', () => {
     expect(parsePublishedDuty('7.25', 'NPR')).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 7.25 });
+    expect(parsePublishedDuty('18%', 'LKR')).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 18 });
+    expect(parsePublishedDuty('Ex', 'LKR')).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 0 });
+    expect(parsePublishedDuty('10% or Rs.12/= per kg', 'LKR')).toMatchObject({ kind: 'mixed', specific_amount: 12, specific_currency: 'LKR', specific_unit: 'kg', ad_valorem_rate_percent: 10 });
     expect(parsePublishedDuty('Nu. 1200 per litre', 'BTN')).toMatchObject({ kind: 'specific', specific_amount: 1200, specific_currency: 'BTN', specific_unit: 'litre' });
     expect(parsePublishedDuty('Rs. 300 per litre or 80 Percent whichever is higher', 'MUR')).toMatchObject({ kind: 'mixed', specific_amount: 300, ad_valorem_rate_percent: 80 });
     expect(parsePublishedDuty('authority prose', 'ALL')).toMatchObject({ kind: 'unparsed', ad_valorem_rate_percent: null });
@@ -88,11 +91,11 @@ describe('shared official PDF table family', () => {
 });
 
 describe('green-wave country semantics and routing', () => {
-  function bundle(country: 'NP' | 'BT' | 'AL' | 'MU', lines = fixtureLines()): PdfAuthorityBundle {
+  function bundle(country: 'NP' | 'BT' | 'AL' | 'MU' | 'LK', lines = fixtureLines(), amendmentOperations: PdfAuthorityBundle['amendment_operations'] = []): PdfAuthorityBundle {
     const config = GREEN_WAVE_CONFIGS[country];
     return { checksum: 'a'.repeat(64), size_bytes: 1, release_identifier: '2026-09-15', source_url: config.tariff_url, files: [], lines,
       line_count: lines.size, reader_version: 'customs-atlas-pdf-table-bundle-reader-v1', acquisition_version: 'customs-atlas-pdf-table-acquisition-v1',
-      amendment_operations: [], rights_evidence: config.rights_evidence, preference_evidence: config.preference_evidence,
+      amendment_operations: amendmentOperations, rights_evidence: config.rights_evidence, preference_evidence: config.preference_evidence,
       scope: { tariff_treatment_complete: true, regulatory_coverage_complete: false } };
   }
 
@@ -117,8 +120,40 @@ describe('green-wave country semantics and routing', () => {
     expect(al.india_preference.applicability).toBe('not_applicable');
   });
 
-  test('routes four qualified destinations and keeps the two acquisition failures isolated', () => {
-    for (const country of ['NP', 'BT', 'AL', 'MU']) { expect(DESTINATION_ADAPTERS[country]?.provider_key).toBe(GREEN_WAVE_CONFIGS[country as keyof typeof GREEN_WAVE_CONFIGS].provider); expect(unconfiguredSourceForCountry(country)).toBeNull(); }
+  test('models Sri Lanka SCL replacement and the 2488/69 applicability change without double-stacking the surcharge', () => {
+    const vehicle: PdfTariffLine = {
+      code: '87021053', description: 'Vehicle', source_pages: [601],
+      cells: { general: parsePublishedDuty('30%', 'LKR'), india: parsePublishedDuty('20%', 'LKR'), surcharge: parsePublishedDuty('50%', 'LKR'), scl_indicator: parsePublishedDuty('', 'LKR') },
+      raw_cells: { general: '30%', india: '20%', surcharge: '50%', scl_indicator: '' },
+    };
+    const operations: PdfAuthorityBundle['amendment_operations'] = [
+      { operation: 'ADD', code: '87', publication_date: '2026-05-15', effective_from: '2026-05-16', effective_to: '2026-08-14', precedence: 1, source_artifact: 'gazette-2488-56.pdf', classification: 'TARIFF_AFFECTING', cells: { surcharge: '50%' } },
+      { operation: 'AMEND_APPLICABILITY', code: '87', publication_date: '2026-05-17', effective_from: '2026-05-18', effective_to: '2026-08-14', precedence: 2, source_artifact: 'gazette-2488-69.pdf', classification: 'TARIFF_AFFECTING', cells: {}, conditions: { numeric_rate_unchanged: true } },
+      { operation: 'REPLACE', code: '87', publication_date: '2026-08-14', effective_from: '2026-08-15', effective_to: '2026-12-31', precedence: 3, source_artifact: 'gazette-2501-88.pdf', classification: 'TARIFF_AFFECTING', cells: { surcharge: '50%' } },
+    ];
+    const vehicleBundle = bundle('LK', new Map([[vehicle.code, vehicle]]), operations);
+    const at = (date: string) => buildGreenWaveMarketAccess({ country: 'LK', bundle: vehicleBundle, release_id: 'release', release_reference_date: new Date('2026-09-20'), retrieved_at: new Date('2026-09-20'), hs6: '870210', at: new Date(`${date}T12:00:00.000Z`), origin_country: 'IN' });
+    for (const [date, artifact, amended] of [['2026-05-17', '2488-56', false], ['2026-05-18', '2488-69', true], ['2026-08-15', '2501-88', false]] as const) {
+      const result = at(date); const surcharges = result.lines.filter((line) => line.conditions.customs_import_duty_surcharge === true);
+      expect(surcharges).toHaveLength(1);
+      expect(surcharges[0]).toMatchObject({ duty: { kind: 'ad_valorem', ad_valorem_rate_percent: 50 }, conditions: { numeric_rate_created_once: true, applicability_amended_by_2488_69: amended } });
+      expect(surcharges[0]!.source_reference).toContain(artifact);
+    }
+    expect(operations[1]).toMatchObject({ operation: 'AMEND_APPLICABILITY', classification: 'TARIFF_AFFECTING', cells: {} });
+
+    const scl: PdfTariffLine = {
+      code: '100590', description: 'Maize', source_pages: [58],
+      cells: { general: parsePublishedDuty('20%', 'LKR'), india: parsePublishedDuty('Free', 'LKR'), vat: parsePublishedDuty('18%', 'LKR'), scl_indicator: parsePublishedDuty('*', 'LKR') },
+      raw_cells: { general: '20%', india: 'Free', vat: '18%', scl_indicator: '*' },
+    };
+    const result = buildGreenWaveMarketAccess({ country: 'LK', bundle: bundle('LK', new Map([[scl.code, scl]]), operations), release_id: 'release', release_reference_date: new Date('2026-09-20'), retrieved_at: new Date('2026-09-20'), hs6: '100590', at: new Date('2026-09-20'), origin_country: 'IN' });
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]).toMatchObject({ duty: { kind: 'specific', specific_amount: 50, specific_currency: 'LKR', specific_unit: 'kg' }, conditions: { replaces_all_other_import_levies: true } });
+    expect(result.india_preference.applicability).toBe('unknown');
+  });
+
+  test('routes five qualified destinations and keeps the two acquisition failures isolated', () => {
+    for (const country of ['NP', 'BT', 'AL', 'MU', 'LK']) { expect(DESTINATION_ADAPTERS[country]?.provider_key).toBe(GREEN_WAVE_CONFIGS[country as keyof typeof GREEN_WAVE_CONFIGS].provider); expect(unconfiguredSourceForCountry(country)).toBeNull(); }
     expect(unconfiguredSourceForCountry('ME')?.reason).toBe('individual_investigation_required');
     expect(unconfiguredSourceForCountry('MK')?.reason).toBe('individual_investigation_required');
     expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(46);

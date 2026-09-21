@@ -23,7 +23,7 @@ export function greenWaveReleaseSource(country: GreenWaveCountry): AuthorityRele
   const config = GREEN_WAVE_CONFIGS[country];
   return Object.freeze({ source_family: config.source_family, authority: config.authority, destination_scope: [country],
     source_distribution: `${config.family}: ${config.dataset}, retained rights and India-treatment evidence`, source_format: 'zip+pdf+html+json',
-    content_type: 'application/zip', max_bundle_bytes: 96 * 1024 * 1024, reader_version: PDF_TABLE_READER_VERSION, parser_version: config.parser_version });
+    content_type: 'application/zip', max_bundle_bytes: (country === 'LK' ? 160 : 96) * 1024 * 1024, reader_version: PDF_TABLE_READER_VERSION, parser_version: config.parser_version });
 }
 
 export async function importGreenWaveRelease(country: GreenWaveCountry, args: { actor: Principal; bytes: Buffer; release_identifier: string; reference_date: Date; source_url: string; activate?: boolean; correlation_id: string; retrieved_at?: Date }) {
@@ -33,7 +33,7 @@ export async function importGreenWaveRelease(country: GreenWaveCountry, args: { 
     try { bundle = await readPdfAuthorityBundle({ bytes, release_identifier: args.release_identifier.trim(), country_code: country, expected_roles: expectedRoles(country) }); }
     catch (error) { if (error instanceof PdfTableBundleError) throw validationError([{ field: 'bundle', code: error.code, message: error.message }]); throw error; }
     const tariff = bundle.files.find((file) => file.url === config.tariff_url);
-    const expectedAmendments = country === 'MU' ? 6 : 0;
+    const expectedAmendments = country === 'MU' ? 6 : country === 'LK' ? 3 : 0;
     if (bundle.line_count !== config.profile.expected_line_count || tariff?.sha256 !== config.tariff_sha256
       || bundle.amendment_operations.length !== expectedAmendments) {
       throw validationError([{ field: 'bundle', code: 'qualification_controls_changed', message: `${country} bundle does not match the qualified tariff checksum, row count or amendment count.` }]);

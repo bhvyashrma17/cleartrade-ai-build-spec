@@ -13,7 +13,14 @@ export class PdfTableBundleError extends Error {
 }
 
 export interface PdfTextItem { str: string; x: number; y: number }
-export interface PdfTablePage { page_number: number; width: number; height: number; items: readonly PdfTextItem[] }
+export interface PdfTablePage {
+  page_number: number;
+  width: number;
+  height: number;
+  items: readonly PdfTextItem[];
+  /** A composite authority archive can contain several independently paginated PDFs. */
+  document_start?: boolean;
+}
 
 export interface PdfColumnProfile {
   key: string;
@@ -36,7 +43,7 @@ export interface PdfTableProfile {
   columns: readonly PdfColumnProfile[];
   code_tolerance_points: number;
   effective_from: string;
-  layout_strategy?: 'headers' | 'nepal_rate_headers' | 'mauritius_percent_row';
+  layout_strategy?: 'headers' | 'nepal_rate_headers' | 'mauritius_percent_row' | 'sri_lanka_multi_column';
 }
 
 export interface PdfTariffLine {
@@ -64,14 +71,17 @@ export interface PdfAuthorityBundle {
 }
 
 export interface AmendmentOperation {
-  operation: 'ADD' | 'REPLACE' | 'SUSPEND' | 'EXPIRE';
+  operation: 'ADD' | 'REPLACE' | 'AMEND_APPLICABILITY' | 'SUSPEND' | 'EXPIRE';
   code: string;
   publication_date: string;
   effective_from: string;
+  effective_to?: string;
   precedence: number;
   source_artifact: string;
   cells: Record<string, string>;
   description?: string;
+  classification?: string;
+  conditions?: Record<string, unknown>;
 }
 
 export interface BundleArtifact {
@@ -134,7 +144,12 @@ export function parsePublishedDuty(raw: string, currency: string): ParsedDuty {
   const repeatedTokens = value.split(' ').filter(Boolean);
   if (repeatedTokens.length > 1 && new Set(repeatedTokens).size === 1) value = repeatedTokens[0]!;
   if (!value) return duty('', { kind: 'none', note: 'The authority left this duty cell blank; absence is retained and is not reported as zero.' });
-  if (/^(?:0(?:[.,]0+)?|free|pa takse(?: \d+)?|exm|exempt)$/i.test(value)) return duty(value, { kind: 'ad_valorem', ad_valorem_rate_percent: 0, note: 'The authority expressly publishes a zero/free/exempt rate.' });
+  if (/^(?:0(?:[.,]0+)?|free|pa takse(?: \d+)?|ex|exm|exempt)$/i.test(value)) return duty(value, { kind: 'ad_valorem', ad_valorem_rate_percent: 0, note: 'The authority expressly publishes a zero/free/exempt rate.' });
+  const explicitPercent = /^(\d+(?:[.,]\d+)?)%$/.exec(value);
+  if (explicitPercent) {
+    const rate = Number(explicitPercent[1]!.replace(',', '.'));
+    return duty(value, { kind: 'ad_valorem', ad_valorem_rate_percent: rate });
+  }
   if (/^\d+(?:[.,]\d+)?,?$/.test(value)) {
     const rate = Number(value.replace(/,$/, '').replace(',', '.'));
     return duty(`${rate}%`, { kind: 'ad_valorem', ad_valorem_rate_percent: rate });
@@ -142,7 +157,7 @@ export function parsePublishedDuty(raw: string, currency: string): ParsedDuty {
 
   const percentMatches = [...value.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:%|percent|perent|perent)/gi)];
   const numericTerms = [...value.matchAll(/\b\d+(?:[.,]\d+)?\b/g)].map((match) => Number(match[0].replace(',', '.')));
-  const amountMatch = /(?:Rs\.?|Nu\.?)\s*([\d,]+(?:\.\d+)?)/i.exec(value);
+  const amountMatch = /(?:Rs\.?|Nu\.?)\s*([\d,]+(?:\.\d+)?)(?:\s*\/\s*=)?/i.exec(value);
   const centMatch = /(\d+(?:[.,]\d+)?)\s*cents?\s+per\s+(gram|kg|kilogram|lit(?:re|er)?)/i.exec(value);
   const unitMatch = /(?:per|\/)\s*(?:(\d+)\s*)?(lit(?:re|er)?|ltr\.?|kg|kilogram|gram|kl|mt|thousand(?:\s+sticks)?|unit|can)/i.exec(value);
   if ((centMatch && amountMatch) || (/\+/.test(value) && (centMatch || amountMatch))) {
@@ -199,6 +214,7 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
   let dataPages = 0;
   let previousCode: string | null = null;
   for (const page of pages) {
+    if (page.document_start) previousCode = null;
     if (page.page_number < profile.table_first_page || page.page_number > profile.table_last_page) continue;
     const possibleCodes = page.items.filter((item) => profile.code_pattern.test(stable(item.str)));
     if (!possibleCodes.length) continue;
@@ -236,6 +252,53 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
         }));
       }
     }
+    if (profile.layout_strategy === 'sri_lanka_multi_column') {
+      const exact = (token: string) => page.items
+        .filter((item) => stable(item.str).toUpperCase() === token)
+        .sort((a, b) => b.y - a.y || a.x - b.x);
+      const highestRow = (items: readonly PdfTextItem[]) => {
+        const top = items[0]?.y;
+        return top === undefined ? [] : items.filter((item) => Math.abs(item.y - top) <= 1.5).sort((a, b) => a.x - b.x);
+      };
+      const code = headerItem(page.items, /^HS Code$/i);
+      const description = headerItem(page.items, /^Description$/i);
+      const vat = headerItem(page.items, /^VAT$/i);
+      const sscl = headerItem(page.items, /^SSCL$/i);
+      const excise = headerItem(page.items, /^Excise(?:\s+\(S\.P\.D\))?$/i);
+      const preferential = highestRow(page.items.filter((item) => /^(?:AP|AD|BN|GT|IN|PK|SA|SF|SD|SG)$/i.test(stable(item.str))));
+      const allGen = [...exact('GEN'), ...exact('GENERAL')].sort((a, b) => a.x - b.x);
+      const allSg = exact('SG').sort((a, b) => a.x - b.x);
+      const dutyLabels = exact('DUTY').sort((a, b) => a.x - b.x);
+      const general = vat ? dutyLabels.filter((item) => item.x < vat.x).at(-1) ?? allGen.filter((item) => item.x < vat.x).at(-1) ?? null : null;
+      const preferenceByToken = new Map(preferential.filter((item) => !general || item.x < general.x).map((item) => [stable(item.str).toUpperCase(), item]));
+      const postVatGen = vat ? allGen.filter((item) => item.x > vat.x) : [];
+      const postVatSg = vat ? allSg.filter((item) => item.x > vat.x) : [];
+      const cessLabel = headerItem(page.items, /^Cess$/i);
+      const surchargeLabel = headerItem(page.items, /^Surcharge$/i);
+      const surchargeDuty = surchargeLabel ? dutyLabels.filter((item) => item.x >= surchargeLabel.x - 8).at(0) ?? surchargeLabel : null;
+      const sclLetters = highestRow(exact('S')).filter((item) => item.x > (sscl?.x ?? 0));
+      const scl = sclLetters[0] ?? (sscl ? { str: 'SCL', x: sscl.x + Math.max(25, page.width * 0.035), y: sscl.y } : null);
+      if (code && description && vat && sscl && excise && general && preferenceByToken.size >= 9) {
+        codeHeader = code;
+        descriptionHeader = description;
+        const unit = headerItem(page.items, /^(?:Unit|Stat\. Unit)$/i);
+        unitHeader = unit ?? { str: 'Unit', x: code.x + (description.x - code.x) * 1.9, y: code.y };
+        const syntheticSurcharge = surchargeDuty ?? { str: 'Surcharge', x: (excise.x + sscl.x) / 2, y: sscl.y };
+        const special = new Map<string, PdfTextItem | null>([
+          ['pref_ap', preferenceByToken.get('AP') ?? null], ['pref_ad', preferenceByToken.get('AD') ?? null],
+          ['pref_bn', preferenceByToken.get('BN') ?? null], ['pref_gt', preferenceByToken.get('GT') ?? null],
+          ['india', preferenceByToken.get('IN') ?? null], ['pref_pk', preferenceByToken.get('PK') ?? null],
+          ['pref_sa', preferenceByToken.get('SA') ?? null], ['pref_sf', preferenceByToken.get('SF') ?? null],
+          ['pref_sd', preferenceByToken.get('SD') ?? null], ['pref_sg', preferenceByToken.get('SG') ?? null],
+          ['general', general], ['vat', vat], ['pal_general', postVatGen[0] ?? null],
+          ['pal_sg', postVatSg[0] ?? null], ['cess_general', postVatGen[1] ?? cessLabel],
+          ['cess_sg', postVatSg[1] ?? (cessLabel ? { ...cessLabel, x: (cessLabel.x + excise.x) / 2 } : null)],
+          ['excise', excise], ['surcharge', syntheticSurcharge],
+          ['sscl', sscl], ['scl_indicator', scl],
+        ]);
+        columnHeaders = profile.columns.map((column) => ({ ...column, item: special.get(column.key) ?? null, rightItem: null }));
+      }
+    }
     // Exact row totals are the final completeness control. A notes/appendix page can contain
     // code-shaped references without the complete tariff header, so it is not parsed as a data
     // page; dropping a genuine data page necessarily trips the pinned row total below.
@@ -252,14 +315,15 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
       const right = column.rightItem ? Math.min(current[1], boundary(column.item!.x, column.rightItem.x)) : current[1];
       bounds.set(column.key, [left, right]);
     }
-    const anchors = possibleCodes.filter((item) => Math.abs(item.x - codeHeader.x) <= profile.code_tolerance_points)
+    const tableHeaderBottom = Math.min(codeHeader.y, descriptionHeader.y, unitHeader.y, ...columnHeaders.map((column) => column.item!.y));
+    const anchors = possibleCodes.filter((item) => item.y < tableHeaderBottom - 1)
+      .filter((item) => Math.abs(item.x - codeHeader.x) <= profile.code_tolerance_points)
       .filter((item, index, all) => all.findIndex((candidate) => candidate.str === item.str && Math.abs(candidate.x - item.x) < 0.01 && Math.abs(candidate.y - item.y) < 0.01) === index)
       .sort((a, b) => b.y - a.y);
     // Notes pages can cite complete national codes and even repeat a table-like word. They are
     // not rows unless a code appears in the calibrated code column.
     if (!anchors.length) continue;
     dataPages += 1;
-    const tableHeaderBottom = Math.min(codeHeader.y, descriptionHeader.y, unitHeader.y, ...columnHeaders.map((column) => column.item!.y));
     const ordinalCounts = new Map<number, number>();
     for (const item of page.items) {
       if (item.y >= tableHeaderBottom || item.y <= anchors[0]!.y || !/^\d{1,2}$/.test(item.str.trim())) continue;
@@ -267,7 +331,8 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
       ordinalCounts.set(y, (ordinalCounts.get(y) ?? 0) + 1);
     }
     const headerOrdinalYs = new Set([...ordinalCounts].filter(([, count]) => count >= 3).map(([y]) => y));
-    const cellItems = page.items.filter((item) => !headerOrdinalYs.has(Math.round(item.y)));
+    const cellItems = page.items.filter((item) => !headerOrdinalYs.has(Math.round(item.y)))
+      .filter((item) => profile.layout_strategy !== 'sri_lanka_multi_column' || (item.y > 65 && item.y < tableHeaderBottom - 1));
     // A line can continue at the top of the next physical page before the first new code. Join
     // that bounded region to the prior line before validating blanks or descriptions.
     if (previousCode) {
@@ -307,7 +372,18 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
       const existing = parsed.get(code);
       if (existing) {
         const sameMeasures = profile.columns.every((column) => canonicalCell(existing.raw_cells[column.key] ?? '') === canonicalCell(line.raw_cells[column.key] ?? ''));
-        if (!sameMeasures) throw new PdfTableBundleError('duplicate_code_conflict', `${profile.label} repeats ${code} with different tariff content on pages ${existing.source_pages.join(', ')} and ${page.page_number}: ${JSON.stringify(existing.raw_cells)} versus ${JSON.stringify(line.raw_cells)}.`);
+        const compatibleContinuation = profile.layout_strategy === 'sri_lanka_multi_column' && profile.columns.every((column) => {
+          const before = canonicalCell(existing.raw_cells[column.key] ?? '');
+          const after = canonicalCell(line.raw_cells[column.key] ?? '');
+          return !before || !after || before === after || before.includes(after) || after.includes(before);
+        });
+        if (!sameMeasures && !compatibleContinuation) throw new PdfTableBundleError('duplicate_code_conflict', `${profile.label} repeats ${code} with different tariff content on pages ${existing.source_pages.join(', ')} and ${page.page_number}: ${JSON.stringify(existing.raw_cells)} versus ${JSON.stringify(line.raw_cells)}.`);
+        if (compatibleContinuation && !sameMeasures) {
+          const completeness = (candidate: PdfTariffLine) => Object.values(candidate.raw_cells).reduce((total, value) => total + value.length, 0);
+          const selected = completeness(line) > completeness(existing) ? line : existing;
+          parsed.set(code, { ...selected, source_pages: [...new Set([...existing.source_pages, page.page_number])] });
+          return;
+        }
         // Some legal schedules print one code on adjacent rows for two equivalent descriptions.
         // Preserve both descriptions, but only when every published measure is identical.
         const description = existing.description === line.description ? existing.description : `${existing.description} / ${line.description}`;
@@ -406,7 +482,7 @@ export async function readPdfAuthorityBundle(args: { bytes: Buffer; release_iden
   catch { throw new PdfTableBundleError('invalid_normalized_rows', 'The normalized tariff rows are not valid JSON.'); }
   const lines = new Map<string, PdfTariffLine>();
   for (const [index, row] of rows.entries()) {
-    if (!row || !/^\d{8,10}$/.test(row.code) || !row.description?.trim() || !row.source_pages?.length || !row.cells || Object.values(row.cells).some((item) => !isDuty(item))) throw new PdfTableBundleError('invalid_normalized_row', `Normalized tariff row ${index + 1} is malformed.`);
+    if (!row || !/^(?:\d{6}|\d{8}|\d{10})$/.test(row.code) || !row.description?.trim() || !row.source_pages?.length || !row.cells || Object.values(row.cells).some((item) => !isDuty(item))) throw new PdfTableBundleError('invalid_normalized_row', `Normalized tariff row ${index + 1} is malformed.`);
     if (lines.has(row.code)) throw new PdfTableBundleError('duplicate_normalized_code', `Normalized rows repeat tariff code ${row.code}.`);
     lines.set(row.code, row);
   }
