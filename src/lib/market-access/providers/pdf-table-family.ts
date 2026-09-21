@@ -49,6 +49,8 @@ export interface PdfTableProfile {
 export interface PdfTariffLine {
   code: string;
   description: string;
+  /** Published statistical/schedule unit, where the source has one. */
+  unit?: string;
   cells: Readonly<Record<string, ParsedDuty>>;
   raw_cells: Readonly<Record<string, string>>;
   source_pages: readonly number[];
@@ -360,7 +362,9 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
       const top = anchor.y + 5;
       const bottom = nextY + 0.5;
       const [, descriptionRight] = bounds.get('description')!;
+      const [unitLeft, unitRight] = bounds.get('__unit')!;
       const description = itemsInCell(cellItems, codeHeader.x + profile.code_tolerance_points, descriptionRight, top, bottom).replace(/\.{3,}/g, '').trim();
+      const unit = itemsInCell(cellItems, unitLeft, unitRight, top, bottom);
       const rawCells: Record<string, string> = {};
       const cells: Record<string, ParsedDuty> = {};
       for (const column of profile.columns) {
@@ -368,7 +372,7 @@ export function parsePdfTablePages(profile: PdfTableProfile, pages: readonly Pdf
         rawCells[column.key] = itemsInCell(cellItems, left, right, top, bottom);
         cells[column.key] = parsePublishedDuty(rawCells[column.key]!, currency);
       }
-      const line: PdfTariffLine = { code, description, cells, raw_cells: rawCells, source_pages: [page.page_number] };
+      const line: PdfTariffLine = { code, description, unit, cells, raw_cells: rawCells, source_pages: [page.page_number] };
       const existing = parsed.get(code);
       if (existing) {
         const sameMeasures = profile.columns.every((column) => canonicalCell(existing.raw_cells[column.key] ?? '') === canonicalCell(line.raw_cells[column.key] ?? ''));

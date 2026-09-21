@@ -374,7 +374,7 @@ describe('unconfigured authoritative sources', () => {
 
   test('Mega-Wave C blockers remain precise for the 18 destinations not since activated', () => {
     const expectedReasons = {
-      MY: 'no_documented_machine_interface', ID: 'no_documented_machine_interface',
+      MY: 'license_pending', ID: 'no_documented_machine_interface',
       VN: 'no_documented_machine_interface', HK: 'license_pending', TR: 'source_insufficient',
       CH: 'source_insufficient', RS: 'individual_investigation_required',
       BA: 'source_insufficient', MD: 'source_insufficient', XK: 'individual_investigation_required',
@@ -484,7 +484,6 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       JO: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
       KW: 'no_documented_machine_interface', UZ: 'no_documented_machine_interface',
       SA: 'no_documented_machine_interface', QA: 'no_documented_machine_interface',
-      MY: 'no_documented_machine_interface',
       ID: 'no_documented_machine_interface', GH: 'no_documented_machine_interface',
       MA: 'no_documented_machine_interface', EC: 'no_documented_machine_interface',
       VN: 'no_documented_machine_interface', MV: 'no_documented_machine_interface',

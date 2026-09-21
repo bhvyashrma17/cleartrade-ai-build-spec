@@ -52,11 +52,11 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
   MY_JKDM_HS_EXPLORER: {
     jurisdiction: 'MY',
     country_codes: ['MY'],
-    authority: 'Royal Malaysian Customs Department (JKDM/RMCD) — JKDM HS Explorer',
-    reason: 'no_documented_machine_interface',
-    determination: 'JKDM HS Explorer exposes the current national tariff, including ad-valorem and specific import duties, sales tax, excise and other columns, through an interactive application. No documented API, bulk export, versioned release contract or historical snapshot interface was found. The Malaysia National Trade Repository confirms the subject matter but does not supply a supported tariff-data distribution. Private browser requests are not a release identity, and ASEAN/AHTN classification cannot substitute for Malaysia\'s national rates or prove AIFTA eligibility.',
-    references: ['https://ezhs.customs.gov.my/', 'https://www.customs.gov.my/en/business/facilitation/malaysia-national-trade-repository-mntr'],
-    unblocked_by: 'A documented JKDM bulk/API distribution with stable versioning and reuse terms, plus the complete current amendment chain and operative AIFTA concession and rules-of-origin instruments.',
+    authority: 'Royal Malaysian Customs Department (JKDM/RMCD) — Customs Duties Order 2025',
+    reason: 'license_pending',
+    determination: 'The official P.U. (A) 384/2025 PDF is a deterministic 1,466-page legal schedule and the local implementation parses 11,441 ten-digit First Schedule lines plus all 27 Appendix B TRQ lines. JKDM\'s published notice nevertheless requires prior written permission for commercial copying, distribution or use. No evidence establishes that this tariff has been released as a CC BY 4.0 dataset on data.gov.my. The implementation therefore remains local and transient: no retained normalized cache, AuthorityRelease activation, staging entry or destination route exists.',
+    references: ['https://www.customs.gov.my/images/06-prosedur/perintah-kastam/perintah/PUA_384.pdf', 'https://www.customs.gov.my/en/procedure/customs/customs', 'https://mycieds.customs.gov.my/safety-policy/', 'https://data.gov.my/'],
+    unblocked_by: 'Exact written JKDM permission authorizing ClearTrade to periodically acquire, retain, normalize, transform, redistribute and commercially display P.U. (A) 384/2025 tariff data and its updates, or a JKDM/data.gov.my release of that exact dataset under terms granting those rights; followed by independent rights review and a fresh currentness/replay qualification before any staging or routing change.',
   },
   ID_DJBC_BTKI: {
     jurisdiction: 'ID',
