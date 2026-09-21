@@ -16,8 +16,8 @@
 import { JobStatus } from '@prisma/client';
 import type { JobContext, JobOutcome } from '@/lib/jobs';
 import { persistMarketAccessIngest, type MarketAccessIngestResult } from '@/lib/market-access/contract';
-import { fetchUkMarketAccess } from '@/lib/market-access/uk-tariff';
-import { fetchUsMarketAccess } from '@/lib/market-access/us-hts';
+import { fetchUkMarketAccess, UK_TARIFF_DESTINATIONS } from '@/lib/market-access/uk-tariff';
+import { fetchUsMarketAccess, US_HTS_DESTINATIONS } from '@/lib/market-access/us-hts';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 import { EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess } from '@/lib/market-access/taric/service';
 import { fetchCanadaMarketAccess } from '@/lib/market-access/providers/canada-service';
@@ -50,12 +50,12 @@ export interface MarketAccessAdapter {
 
 const UK_ADAPTER: MarketAccessAdapter = {
   provider_key: 'uk_tariff',
-  fetch: (request) => fetchUkMarketAccess(request.hs6, { now: request.now }),
+  fetch: (request) => fetchUkMarketAccess(request.hs6, { now: request.now, destination_country: request.destination_country }),
 };
 
 const US_ADAPTER: MarketAccessAdapter = {
   provider_key: 'us_hts',
-  fetch: (request) => fetchUsMarketAccess(request.hs6, { now: request.now }),
+  fetch: (request) => fetchUsMarketAccess(request.hs6, { now: request.now, destination_country: request.destination_country }),
 };
 
 const EU_TARIC_ADAPTER: MarketAccessAdapter = {
@@ -176,8 +176,6 @@ const LK_ADAPTER: MarketAccessAdapter = { provider_key: 'lk_customs_tariff', fet
  * no such overlap today, and this is where a future one would first become visible.
  */
 export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>> = Object.freeze({
-  GB: UK_ADAPTER,
-  US: US_ADAPTER,
   CA: CANADA_ADAPTER,
   NZ: NZ_ADAPTER,
   JP: JAPAN_ADAPTER,
@@ -195,6 +193,8 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   BT: BHUTAN_ADAPTER,
   AL: ALBANIA_ADAPTER,
   MU: MAURITIUS_ADAPTER,
+  ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
+  ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 

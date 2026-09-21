@@ -312,8 +312,9 @@ describe('ingest shape and destination scoping', () => {
     expect(build('DE').general_duty?.expression).toBe(build('FR').general_duty?.expression);
   });
 
-  test('only EU member states are TARIC destinations', () => {
+  test('EU members and the two proved associated customs territories are TARIC destinations', () => {
     for (const inside of ['DE', 'FR', 'NL', 'IT', 'ES', 'PL']) expect(isEuTaricDestination(inside)).toBe(true);
+    for (const associated of ['AX', 'MC']) expect(isEuTaricDestination(associated)).toBe(true);
     for (const outside of ['GB', 'US', 'CH', 'NO', 'SA', 'IN', 'TR']) expect(isEuTaricDestination(outside)).toBe(false);
   });
 

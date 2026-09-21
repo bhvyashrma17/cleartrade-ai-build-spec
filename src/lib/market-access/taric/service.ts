@@ -36,9 +36,20 @@ const CIRCABC_GROUP = 'CIRCABC "TARIC & Quota Data and Information" (group 0e5f1
 const MAX_BUNDLE_BYTES = 200 * 1024 * 1024;
 
 /** EU member states, which all apply the EU common customs tariff. */
-export const EU_TARIC_DESTINATIONS: readonly string[] = [
+export const EU_TARIC_MEMBER_DESTINATIONS: readonly string[] = [
   'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT',
   'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+];
+
+/**
+ * Separate ISO destinations that legally apply the same tariff authority: Åland is inside the EU
+ * customs territory, and Monaco is treated as France for customs. Their fiscal/regulatory layers
+ * remain distinct and are deliberately not claimed by TARIC.
+ */
+export const EU_TARIC_ASSOCIATED_DESTINATIONS: readonly string[] = ['AX', 'MC'];
+export const EU_TARIC_DESTINATIONS: readonly string[] = [
+  ...EU_TARIC_MEMBER_DESTINATIONS,
+  ...EU_TARIC_ASSOCIATED_DESTINATIONS,
 ];
 
 export const TARIC_RELEASE_SOURCE: AuthorityReleaseSource = Object.freeze({

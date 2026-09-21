@@ -326,10 +326,12 @@ describe('unconfigured authoritative sources', () => {
       expect(unconfiguredSourceForCountry(member)).toBeNull();
       expect(isEuTaricDestination(member)).toBe(true);
     }
-    // A non-EU destination must never be served EU TARIC evidence.
+    // A destination outside both EU members and proved associated customs territories must never
+    // be served EU TARIC evidence.
     for (const outside of ['GB', 'US', 'SA', 'IN', 'CH', 'NO']) {
       expect(isEuTaricDestination(outside)).toBe(false);
     }
+    for (const associated of ['AX', 'MC']) expect(isEuTaricDestination(associated)).toBe(true);
   });
 
   test('Saudi and WTO each carry an explicit determination rather than silence', () => {

@@ -490,6 +490,8 @@ export function buildTaricIngest(args: {
       excluded_measures: resolution.excluded_from,
       candidate_count: resolution.candidates.length,
       measure_count: resolution.measures.length,
+      tariff_treatment_complete: Boolean(resolved.resolved_line),
+      regulatory_coverage_complete: false,
     },
   };
 }

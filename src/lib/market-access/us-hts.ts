@@ -24,6 +24,8 @@ import type { MarketAccessIngestResult, MarketAccessLineRecord } from './contrac
 const BASE = 'https://hts.usitc.gov/reststop';
 export const US_HTS_AUTHORITY = 'United States International Trade Commission — Harmonized Tariff Schedule';
 export const US_HTS_PARSER_VERSION = 'us-hts-v1';
+/** 19 CFR 101.1 defines the US customs territory as the States, DC and Puerto Rico. */
+export const US_HTS_DESTINATIONS: readonly string[] = ['US', 'PR'];
 
 interface HtsRow {
   htsno?: string;
@@ -54,10 +56,12 @@ function specialProgrammeSymbols(special: string | undefined): string[] {
 /** Two-letter tokens are ISO partner codes; anything else is a programme symbol. */
 const isCountrySymbol = (symbol: string) => /^[A-Z]{2}$/.test(symbol);
 
-export interface UsHtsFetchOptions { now?: Date }
+export interface UsHtsFetchOptions { now?: Date; destination_country?: string }
 
 export async function fetchUsMarketAccess(hs6: string, options: UsHtsFetchOptions = {}): Promise<MarketAccessIngestResult> {
   if (!/^\d{6}$/.test(hs6)) throw new Error('US market-access ingest requires an exact HS6.');
+  const destination = (options.destination_country ?? 'US').trim().toUpperCase();
+  if (!US_HTS_DESTINATIONS.includes(destination)) throw new Error(`${destination} is outside the customs territory of the United States.`);
   const now = options.now ?? new Date();
   const dotted = `${hs6.slice(0, 4)}.${hs6.slice(4, 6)}`;
   const url = `${BASE}/exportList?from=${dotted}.00.00&to=${dotted}.99.99&format=JSON&styles=false`;
@@ -109,7 +113,7 @@ export async function fetchUsMarketAccess(hs6: string, options: UsHtsFetchOption
   });
 
   return {
-    jurisdiction: 'US', country_code: 'US', hs6, hs_revision: 'HS2022',
+    jurisdiction: destination === 'US' ? 'US' : 'US_CUSTOMS_TERRITORY', country_code: destination, hs6, hs_revision: 'HS2022',
     provider: 'usitc_hts', source_authority: US_HTS_AUTHORITY,
     source_dataset: 'Harmonized Tariff Schedule of the United States', source_dataset_version: null,
     source_reference: url, national_code_system: 'US_HTS',
@@ -124,6 +128,10 @@ export async function fetchUsMarketAccess(hs6: string, options: UsHtsFetchOption
     // reported as "no restrictions found".
     requirements: [],
     regulatory_coverage_complete: false,
-    raw_evidence: raw,
+    raw_evidence: {
+      ...raw, destination_country: destination,
+      tariff_treatment_complete: Boolean(resolution.resolved_line),
+      regulatory_coverage_complete: false,
+    },
   };
 }

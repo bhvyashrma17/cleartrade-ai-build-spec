@@ -28,8 +28,14 @@ const fetchIsraelMarketAccess = vi.fn();
 const fetchPeruMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
-vi.mock('@/lib/market-access/uk-tariff', () => ({ fetchUkMarketAccess }));
-vi.mock('@/lib/market-access/us-hts', () => ({ fetchUsMarketAccess }));
+vi.mock('@/lib/market-access/uk-tariff', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/market-access/uk-tariff')>('@/lib/market-access/uk-tariff');
+  return { UK_TARIFF_DESTINATIONS: actual.UK_TARIFF_DESTINATIONS, fetchUkMarketAccess };
+});
+vi.mock('@/lib/market-access/us-hts', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/market-access/us-hts')>('@/lib/market-access/us-hts');
+  return { US_HTS_DESTINATIONS: actual.US_HTS_DESTINATIONS, fetchUsMarketAccess };
+});
 vi.mock('@/lib/market-access/taric/service', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/taric/service')>('@/lib/market-access/taric/service');
   return { EU_TARIC_DESTINATIONS: actual.EU_TARIC_DESTINATIONS, fetchEuTaricMarketAccess };
@@ -104,7 +110,7 @@ describe('market-access ingest routing', () => {
     persistMarketAccessIngest.mockResolvedValue({ id: 'snap-1', tariff_lines: [], evidence: [] });
     const outcome = await runMarketAccessIngest(ctx({ country_code: 'GB', hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
-    expect(fetchUkMarketAccess).toHaveBeenCalledWith('090111', { now: undefined });
+    expect(fetchUkMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, destination_country: 'GB' });
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('authoritative_public');
@@ -118,7 +124,7 @@ describe('market-access ingest routing', () => {
     persistMarketAccessIngest.mockResolvedValue({ id: 'snap-2', tariff_lines: [], evidence: [] });
     const outcome = await runMarketAccessIngest(ctx({ country_code: 'US', hs_code: '090111' }));
     expect(outcome.status).toBe(JobStatus.completed);
-    expect(fetchUsMarketAccess).toHaveBeenCalledWith('090111', { now: undefined });
+    expect(fetchUsMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, destination_country: 'US' });
     expect(fetchUkMarketAccess).not.toHaveBeenCalled();
     expect(fetchEuTaricMarketAccess).not.toHaveBeenCalled();
   });
@@ -234,6 +240,27 @@ describe('market-access ingest routing', () => {
     expect(fetchEuTaricMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, destination_country: country, origin_country: undefined });
     expect(fetchUkMarketAccess).not.toHaveBeenCalled();
     expect(fetchUsMarketAccess).not.toHaveBeenCalled();
+  });
+
+  test.each(['AX', 'MC'])('%s routes to TARIC while preserving the associated destination', async (country) => {
+    fetchEuTaricMarketAccess.mockResolvedValue(ingestFixture({ country_code: country, jurisdiction: 'EU', provider: 'eu_taric' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: `snap-${country}`, tariff_lines: [], evidence: [] });
+    await runMarketAccessIngest(ctx({ country_code: country, hs_code: '090111', origin_country: 'IN' }));
+    expect(fetchEuTaricMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, destination_country: country, origin_country: 'IN' });
+  });
+
+  test.each(['GG', 'IM', 'JE'])('%s routes to the UK common-external-tariff adapter with its own scope', async (country) => {
+    fetchUkMarketAccess.mockResolvedValue(ingestFixture({ country_code: country, jurisdiction: 'UK_CD_CUSTOMS_UNION' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: `snap-${country}`, tariff_lines: [], evidence: [] });
+    await runMarketAccessIngest(ctx({ country_code: country, hs_code: '090111' }));
+    expect(fetchUkMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, destination_country: country });
+  });
+
+  test('PR routes to the USITC schedule as its own destination inside US customs territory', async () => {
+    fetchUsMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'PR', jurisdiction: 'US_CUSTOMS_TERRITORY', provider: 'usitc_hts' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-PR', tariff_lines: [], evidence: [] });
+    await runMarketAccessIngest(ctx({ country_code: 'PR', hs_code: '090111' }));
+    expect(fetchUsMarketAccess).toHaveBeenCalledWith('090111', { now: undefined, destination_country: 'PR' });
   });
 
   test.each(['SA', 'AE', 'BR', 'UA', 'KZ', 'RU', 'BY', 'AM', 'KG', 'PH', 'CH', 'SG', 'TH'])('%s is a completed source/licence-or-credential determination, never evidence', async (country) => {

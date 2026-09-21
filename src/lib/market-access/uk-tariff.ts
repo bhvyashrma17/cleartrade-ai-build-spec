@@ -28,6 +28,12 @@ import type { MarketAccessIngestResult, MarketAccessLineRecord, MarketAccessRequ
 const BASE = 'https://www.trade-tariff.service.gov.uk/uk/api';
 export const UK_TARIFF_AUTHORITY = 'HM Revenue & Customs — UK Integrated Online Tariff';
 export const UK_TARIFF_PARSER_VERSION = 'uk-tariff-v2';
+/**
+ * The 2019 UK–Crown Dependencies customs arrangements require each Crown Dependency to apply
+ * the same external Customs Tariff as the UK. VAT, excise and domestic controls do not thereby
+ * become identical, so this list is tariff scope only and regulatory coverage stays separate.
+ */
+export const UK_TARIFF_DESTINATIONS: readonly string[] = ['GB', 'GG', 'IM', 'JE'];
 const ACCEPT = 'application/vnd.hmrc.2.0+json';
 
 /** Measure type identifiers published by the UK tariff. */
@@ -63,10 +69,15 @@ export interface UkTariffFetchOptions {
    */
   max_commodity_requests?: number;
   now?: Date;
+  destination_country?: string;
 }
 
 export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOptions = {}): Promise<MarketAccessIngestResult> {
   if (!/^\d{6}$/.test(hs6)) throw new Error('UK market-access ingest requires an exact HS6.');
+  const destination = (options.destination_country ?? 'GB').trim().toUpperCase();
+  if (!UK_TARIFF_DESTINATIONS.includes(destination)) {
+    throw new Error(`${destination} is outside the UK–Crown Dependencies common external tariff.`);
+  }
   const now = options.now ?? new Date();
   const cap = options.max_commodity_requests ?? 150;
 
@@ -86,11 +97,11 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
 
   if (!declarable.size) {
     const resolution = resolveNationalTariffLine([]);
-    return baseResult(hs6, now, searchUrl, resolution, null, { applicability: 'unknown', duty: null, geographic_area_id: null, basis: 'The UK tariff publishes no declarable commodity beneath this HS6, so no duty can be stated.' }, [], [], false, raw);
+    return baseResult(destination, hs6, now, searchUrl, resolution, null, { applicability: 'unknown', duty: null, geographic_area_id: null, basis: 'The UK tariff publishes no declarable commodity beneath this HS6, so no duty can be stated.' }, [], [], false, raw);
   }
   if (declarable.size > cap) {
     const resolution = resolveNationalTariffLine([]);
-    return baseResult(hs6, now, searchUrl, { ...resolution, candidate_count: declarable.size, reason: `HS6 has ${declarable.size} declarable UK commodity lines, above the ${cap}-document evaluation ceiling; equivalence cannot be established from a partial candidate set.` }, null, { applicability: 'unknown', duty: null, geographic_area_id: null, basis: 'The candidate line set was not fully evaluated.' }, [], [], false, raw);
+    return baseResult(destination, hs6, now, searchUrl, { ...resolution, candidate_count: declarable.size, reason: `HS6 has ${declarable.size} declarable UK commodity lines, above the ${cap}-document evaluation ceiling; equivalence cannot be established from a partial candidate set.` }, null, { applicability: 'unknown', duty: null, geographic_area_id: null, basis: 'The candidate line set was not fully evaluated.' }, [], [], false, raw);
   }
 
   const candidates: CandidateTariffLine[] = [];
@@ -219,10 +230,11 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
     unresolved_program_symbols: [],
   });
   const generalDuty = resolution.resolved_line ? resolution.resolved_line.general_duty : null;
-  return baseResult(hs6, now, searchUrl, resolution, generalDuty && generalDuty.kind !== 'none' ? generalDuty : null, preference, lines, requirements, regulatoryComplete, raw);
+  return baseResult(destination, hs6, now, searchUrl, resolution, generalDuty && generalDuty.kind !== 'none' ? generalDuty : null, preference, lines, requirements, regulatoryComplete, raw);
 }
 
 function baseResult(
+  destination: string,
   hs6: string,
   now: Date,
   sourceReference: string,
@@ -234,14 +246,22 @@ function baseResult(
   regulatoryComplete: boolean,
   raw: unknown,
 ): MarketAccessIngestResult {
+  // HMRC can describe the measures attached to the shared tariff line, but that cannot prove a
+  // Crown Dependency's separate domestic controls complete. Keep the two coverage axes honest.
+  const destinationRegulatoryComplete = destination === 'GB' ? regulatoryComplete : false;
   return {
-    jurisdiction: 'GB', country_code: 'GB', hs6, hs_revision: 'HS2022',
+    jurisdiction: destination === 'GB' ? 'GB' : 'UK_CD_CUSTOMS_UNION', country_code: destination, hs6, hs_revision: 'HS2022',
     provider: 'uk_trade_tariff', source_authority: UK_TARIFF_AUTHORITY,
     source_dataset: 'UK Integrated Online Tariff', source_dataset_version: 'vnd.hmrc.2.0',
     source_reference: sourceReference, national_code_system: 'UK_COMMODITY',
     parser_version: UK_TARIFF_PARSER_VERSION, retrieved_at: now,
     evidence_class: 'authoritative_public', recorded_by_id: null,
     resolution, general_duty: generalDuty, india_preference: preference,
-    lines, requirements, regulatory_coverage_complete: regulatoryComplete, raw_evidence: raw,
+    lines, requirements, regulatory_coverage_complete: destinationRegulatoryComplete,
+    raw_evidence: {
+      ...(raw as Record<string, unknown>), destination_country: destination,
+      tariff_treatment_complete: Boolean(resolution.resolved_line && generalDuty),
+      regulatory_coverage_complete: destinationRegulatoryComplete,
+    },
   };
 }
