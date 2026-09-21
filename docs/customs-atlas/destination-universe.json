@@ -1,8 +1,8 @@
 {
   "schema_version": "customs-atlas-destination-universe-v1",
-  "generated": "2026-09-02",
+  "generated": "2026-09-20",
   "note": "Every destination maps to a source_family (see source-families.md / authority-registry.json for the family or national record) or stands alone. research_status here is a summary pointer, not a re-statement of the full record; see authority-registry.json for anything beyond 'unresolved'.",
-  "total_destinations": 123,
+  "total_destinations": 125,
   "destinations": [
     {
       "destination_country": "United Kingdom",
@@ -247,7 +247,7 @@
       "destination_iso2": "OM",
       "destination_iso3": "OMN",
       "source_family": "GCC",
-      "research_status": "unresolved"
+      "research_status": "confirmed"
     },
     {
       "destination_country": "Brazil",
@@ -660,14 +660,14 @@
       "destination_iso2": "LK",
       "destination_iso3": "LKA",
       "source_family": "national",
-      "research_status": "unresolved"
+      "research_status": "confirmed"
     },
     {
       "destination_country": "Nepal",
       "destination_iso2": "NP",
       "destination_iso3": "NPL",
       "source_family": "national",
-      "research_status": "unresolved"
+      "research_status": "confirmed"
     },
     {
       "destination_country": "Pakistan",
@@ -793,7 +793,7 @@
       "destination_iso2": "MU",
       "destination_iso3": "MUS",
       "source_family": "national",
-      "research_status": "unresolved"
+      "research_status": "confirmed"
     },
     {
       "destination_country": "Zimbabwe",
@@ -864,6 +864,20 @@
       "destination_iso3": "DOM",
       "source_family": "national",
       "research_status": "unresolved"
+    },
+    {
+      "destination_country": "Bhutan",
+      "destination_iso2": "BT",
+      "destination_iso3": "BTN",
+      "source_family": "national",
+      "research_status": "confirmed"
+    },
+    {
+      "destination_country": "Albania",
+      "destination_iso2": "AL",
+      "destination_iso3": "ALB",
+      "source_family": "national",
+      "research_status": "confirmed"
     }
   ]
 }

@@ -15,8 +15,7 @@ export type UnconfiguredReason =
   | 'source_insufficient'
   | 'license_pending'
   | 'individual_investigation_required'
-  | 'credential_not_provisioned'
-  | 'configured';
+  | 'credential_not_provisioned';
 
 export interface UnconfiguredSource {
   jurisdiction: string;
@@ -352,18 +351,18 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     country_codes: ['MK'],
     authority: 'North Macedonia Customs Administration — Customs Tariff 2026',
     reason: 'individual_investigation_required',
-    determination: 'Implementation qualification on 15 September 2026 confirmed that Customs lists the 2026 annual decision archive and correlation workbooks, but its source certificate was expired. The files were observable only by disabling TLS verification, which is not an acceptable production acquisition. No unverified bytes were retained or activated. Copyright law Art. 16 clears official texts/facts, but rights do not cure an unauthenticated currentness chain. EU-CN alignment remains nomenclature alignment only.',
-    references: ['https://customs.gov.mk/zakon-za-carinska-tarifa.nspx', 'https://customs.gov.mk/content/Одлука%20за%20усогласување%20и%20менување%20на%20царинска%20тарифа%20за%202026.rar', 'https://www.wipo.int/wipolex/en/legislation/details/10641', 'https://www.wipo.int/wipolex/en/legislation/details/11672'],
-    unblocked_by: 'Customs must restore a valid TLS chain (or publish the identical archive on another authenticated official endpoint), after which the annual annex, correlations and amendments need real-file hash, schema, row-count and rate-semantic qualification.',
+    determination: 'Focused recheck on 20 September 2026 confirmed that both the Macedonian- and English-language Customs tariff pages still fail authenticated acquisition with an expired TLS certificate; certificate verification was not bypassed. The Customs index lists the 2026 annual decision (Official Gazette 261/25) and correlation workbooks, but the Ministry of Finance also records a tariff-changing law effective 1 July 2026 for 70 raw-material and intermediate-goods lines. No secure official alternative publication containing both the executable annual archive and the mid-year line-level amendment was located. Copyright law Art. 16 clears official texts/facts, but rights do not cure the acquisition and currentness gaps. EU-CN alignment remains nomenclature alignment only.',
+    references: ['https://customs.gov.mk/zakon-za-carinska-tarifa.nspx', 'https://customs.gov.mk/content/Одлука%20за%20усогласување%20и%20менување%20на%20царинска%20тарифа%20за%202026.rar', 'https://finance.gov.mk/en-GB/odnosi-so-javnost/novosti/mf-od-1-juli-2026-godina-se-vrsi-dopolnitelno-namaluvanje-i-celosno-usoglasuvanje-na-carinskite-stapki-so-eu-za-70-stoki-koi-kako-surovini-i-repromaterijali-se-koristat-vo-domasnata-industrija', 'https://www.wipo.int/wipolex/en/legislation/details/10641', 'https://www.wipo.int/wipolex/en/legislation/details/11672'],
+    unblocked_by: 'Customs must restore a valid TLS chain (or publish identical files on another authenticated official endpoint), and the exact enacted line-level 1 July amendment must be acquired and reconciled with the annual annex and correlations before real-file hash, schema, row-count and rate-semantic qualification.',
   },
   ME_CUSTOMS_TARICG: {
     jurisdiction: 'ME',
     country_codes: ['ME'],
     authority: 'Montenegro Revenue and Customs Administration — TARICG',
     reason: 'individual_investigation_required',
-    determination: 'Implementation qualification on 15 September 2026 located the enacted 2026 national tariff regulation (Official Gazette 157/2025) and its versioned Government WAPI PDF, but repeated authenticated HTTP/1.1 acquisition attempts to the official host timed out without returning any bytes. No artifact, page fingerprint, annex set or amendment/currentness chain could therefore be authenticated and retained. TARICG still exposes no supported export/history contract and credits ZZI software; EU-CN alignment does not create EU or India tariff treatment.',
-    references: ['https://www.gov.me/en/documents/c9ad2bc2-dfc4-4107-9fea-585c792b81af', 'https://wapi.gov.me/download/c9ad2bc2-dfc4-4107-9fea-585c792b81af?version=1.0', 'https://taric.carina.co.me/TariCG/'],
-    unblocked_by: 'The official WAPI artifact must become reliably retrievable (or be mirrored on another authenticated Government endpoint), followed by complete annex/amendment acquisition, PDF layout qualification and a separation of official tariff facts from TARICG software presentation.',
+    determination: 'Focused recheck on 20 September 2026 cleared the old WAPI timeout but exposed a stricter artifact gap. The enacted Government WAPI PDF for Official Gazette 157/2025 is stable (35,508 bytes; SHA-256 444d1d2f3f2cf1f6e98a87d08d51c6a7affd11871f1f7b8b75af724addd2edcb), but it is only four pages: the regulation plus headings for Annex I and appendices, with no executable tariff rows. A 727-page Government proposal PDF contains tariff tables, but a pre-enactment proposal cannot be substituted for the controlling final annex without an official identity/equivalence proof. TARICG still exposes no supported export/history contract and credits ZZI software; EU-CN alignment does not create EU or India tariff treatment.',
+    references: ['https://www.gov.me/en/documents/c9ad2bc2-dfc4-4107-9fea-585c792b81af', 'https://wapi.gov.me/download/c9ad2bc2-dfc4-4107-9fea-585c792b81af?version=1.0', 'https://www.gov.me/en/documents/7da4dc6c-49b9-4909-962e-e316c90a6000', 'https://taric.carina.co.me/TariCG/'],
+    unblocked_by: 'Publish or locate the enacted Annex I and appendices as authenticated official bytes, or obtain official proof that the 727-page proposal annex is byte-for-byte or legally identical to the enacted annex; then qualify the complete current amendment chain and PDF layout.',
   },
   TT_CUSTOMS_CET: {
     jurisdiction: 'TT',
@@ -430,14 +429,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     determination: 'The public 10-digit commodity pages expose current normal and agreement rates and measures, but no documented bulk export/API or immutable version-history contract was found. The portal expressly says AIFTA is under revision, so its absence cannot become no preference.',
     references: ['https://www.laotradeportal.gov.la/en-gb/site/listcommodity', 'https://www.laotradeportal.gov.la/en-gb/site/display/10'],
     unblocked_by: 'A supported full tariff export/API with release history, field semantics and a completed authoritative AIFTA schedule and rules-of-origin mapping.',
-  },
-  LK_CUSTOMS_IMPORT_TARIFF_2026: {
-    jurisdiction: 'LK', country_codes: ['LK'],
-    authority: 'Sri Lanka Customs — National Imports Tariff Guide 2026',
-    reason: 'configured',
-    determination: 'Customs publishes a deterministic 34 MB ZIP of 97 chapter PDFs (16 May 2026 baseline). Post-baseline gazettes enumerated and classified: 2488/56 (10A vehicle surcharge, TARIFF_AFFECTING), 2488/69 (grandfathering amendment, REGULATORY_ONLY), 2493/02 (fees/charges, REVIEWED_NO_TARIFF_EFFECT), 2497/06 (RPO confirmation, REVIEWED_NO_RATE_CHANGE), 2501/88 (vehicle surcharge extension, TARIFF_AFFECTING). VAT Act 14/2026: REVIEWED_NO_IMPORT_TARIFF_EFFECT. Complete enumeration through 2026-09-16 via Trade & Investment, Fiscal Policy, and Government Printer indexes. ISFTA preference column present; origin proof required.',
-    references: ['https://www.customs.gov.lk/customs-tariff/import-tariff/', 'https://www.customs.gov.lk/wp-content/uploads/2026/06/Import%20Tariff%20Guide%2016.05.2026.zip', 'https://www.treasury.gov.lk/web/trade-and-investment-policy-department-gazette/section/2026', 'https://www.treasury.gov.lk/web/fiscal-policy-department-gazette/section/2026', 'https://documents.gov.lk/view/egz/egz_2026.html'],
-    unblocked_by: 'Gate A (2497/06): REVIEWED_NO_RATE_CHANGE. Gate B (VAT Act 14/2026): REVIEWED_NO_IMPORT_TARIFF_EFFECT. Gate C (completeness): PASSED — all instruments enumerated and classified.',
   },
   MN_CUSTOMS_TARIFF: {
     jurisdiction: 'MN', country_codes: ['MN'],
