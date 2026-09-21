@@ -230,10 +230,11 @@ describe('Wave 2 candidates stopped with precise, distinct reasons', () => {
     expect(source!.determination).toMatch(/complete bulk Tares contract/i);
   });
 
-  test('Singapore stops because the portal licence does not attach to the tariff dataset', () => {
+  test('Singapore has a sanctioned SSO route but remains fail-closed pending lawful-window live qualification', () => {
     const source = unconfiguredSourceForCountry('SG');
-    expect(source?.reason).toBe('no_documented_machine_interface');
-    expect(source!.determination).toMatch(/cannot be transferred to this separate Customs application/);
+    expect(source?.reason).toBe('source_insufficient');
+    expect(source!.determination).toMatch(/03:00–07:00 Singapore Time/);
+    expect(source!.determination).toMatch(/no complete current SSO artifact has yet been acquired and qualified/);
   });
 
   test('Thailand records the newly discovered authority file feed but stops before bespoke delta replay', () => {

@@ -1,8 +1,19 @@
 # Customs Atlas staging-pending queue
 
-This is the single manifest for the next Railway batch. **None of these destinations is accepted
-operational yet.** Accepted operational count remains **45**. Candidate commit for the six new
-scope aliases is `81f2d2e`; Sri Lanka's implementation commit is `5ec745a`.
+This is the single manifest for a future staging qualification batch. **None of these destinations
+is accepted operational yet.** Accepted operational count remains **45 sovereign countries**.
+There are **7 pending destinations but only 2 pending sovereign states**: Sri Lanka and Monaco.
+Åland, Guernsey, Isle of Man, Jersey and Puerto Rico are associated territories/dependencies and
+must not inflate the sovereign-country metric. Candidate commit for the six scope aliases is
+`81f2d2e`; Sri Lanka's implementation commit is `5ec745a`.
+
+The 21 September dual-lane public-source pass added no row: Jordan, Lebanon, Kuwait, Uzbekistan,
+Saudi Arabia and Qatar each failed a hard acquisition/completeness/reuse gate and moved to
+[`human-access-required.md`](./human-access-required.md). No staging or production operation ran.
+
+Singapore is no longer a human-access case: SSO legislation supplies a sanctioned autonomous
+route. Its provider remains outside this queue and outside runtime routing until a complete live
+First Schedule acquisition passes during SSO's 03:00–07:00 Singapore Time automation window.
 
 | ISO | Authority / source family | Source and acquisition path | Expected rows/codes | Semantic canaries | Known limitation |
 |---|---|---|---|---|---|
@@ -21,3 +32,7 @@ artifact/response checksum, run ordinary/zero/specific-or-special/preference can
 other portal's read path, and verify idempotent repeat ingest. Promote only destinations whose
 staging evidence agrees with the authority source. One failure must not promote or contaminate
 another destination.
+
+If all seven destinations qualify, the operational destination count becomes **52**, while the
+operational sovereign-country count becomes **47**. Keep both metrics in reports; they answer
+different questions.

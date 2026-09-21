@@ -38,7 +38,8 @@ export type NationalCodeSystem =
   | 'BT_TRADE_CLASSIFICATION'
   | 'AL_COMBINED_NOMENCLATURE'
   | 'MU_INTEGRATED_TARIFF'
-  | 'LK_CUSTOMS_TARIFF';
+  | 'LK_CUSTOMS_TARIFF'
+  | 'SG_CUSTOMS_DUTIES_ORDER';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

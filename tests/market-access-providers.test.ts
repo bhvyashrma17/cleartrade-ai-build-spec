@@ -428,7 +428,7 @@ describe('unconfigured authoritative sources', () => {
 
   test('Mega-Wave D source gate covers all 30 destinations with precise fail-closed reasons', () => {
     const expectedReasons = {
-      CN: 'individual_investigation_required', SG: 'no_documented_machine_interface',
+      CN: 'individual_investigation_required', SG: 'source_insufficient',
 TH: 'individual_investigation_required', BN: 'individual_investigation_required',
       KH: 'source_insufficient', LA: 'no_documented_machine_interface', MN: 'no_documented_machine_interface',
       SA: 'no_documented_machine_interface', AE: 'individual_investigation_required', QA: 'no_documented_machine_interface',
@@ -476,6 +476,42 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       expect(result, countries[index]).not.toHaveProperty('general_duty_expression');
       expect(result, countries[index]).not.toHaveProperty('tariff_rate_percent');
       expect(result, countries[index]).not.toHaveProperty('evidence_count');
+    }
+  });
+
+  test('dual-lane access-queue destinations are explicit and fail closed', async () => {
+    const expectedReasons = {
+      JO: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
+      KW: 'no_documented_machine_interface', UZ: 'no_documented_machine_interface',
+      SA: 'no_documented_machine_interface', QA: 'no_documented_machine_interface',
+      MY: 'no_documented_machine_interface',
+      ID: 'no_documented_machine_interface', GH: 'no_documented_machine_interface',
+      MA: 'no_documented_machine_interface', EC: 'no_documented_machine_interface',
+      VN: 'no_documented_machine_interface', MV: 'no_documented_machine_interface',
+    } as const;
+
+    for (const [country, reason] of Object.entries(expectedReasons)) {
+      const source = unconfiguredSourceForCountry(country);
+      expect(source, country).not.toBeNull();
+      expect(source!.reason, country).toBe(reason);
+      expect(source!.references.length, country).toBeGreaterThan(0);
+      expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
+      expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
+    }
+
+    for (const country of ['UZ', 'MV']) {
+      const outcome = await runMarketAccessIngest({
+        job_id: `dual-lane-${country}`,
+        payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
+      } as never);
+      expect(outcome.status, country).toBe('completed');
+      expect(outcome.result, country).toMatchObject({
+        country_code: country,
+        snapshot_id: null,
+        provider_state: 'provider_unconfigured_or_license_pending',
+        next_step: 'authoritative_manual_capture',
+      });
+      expect(outcome.result, country).not.toHaveProperty('tariff_rate_percent');
     }
   });
 });
