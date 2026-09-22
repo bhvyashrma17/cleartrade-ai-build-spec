@@ -40,7 +40,8 @@ export type NationalCodeSystem =
   | 'MU_INTEGRATED_TARIFF'
   | 'LK_CUSTOMS_TARIFF'
   | 'SG_CUSTOMS_DUTIES_ORDER'
-  | 'MY_CUSTOMS_DUTIES_ORDER';
+  | 'MY_CUSTOMS_DUTIES_ORDER'
+  | 'ID_BTKI_2022';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

@@ -58,15 +58,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://www.customs.gov.my/images/06-prosedur/perintah-kastam/perintah/PUA_384.pdf', 'https://www.customs.gov.my/en/procedure/customs/customs', 'https://mycieds.customs.gov.my/safety-policy/', 'https://data.gov.my/'],
     unblocked_by: 'Exact written JKDM permission authorizing ClearTrade to periodically acquire, retain, normalize, transform, redistribute and commercially display P.U. (A) 384/2025 tariff data and its updates, or a JKDM/data.gov.my release of that exact dataset under terms granting those rights; followed by independent rights review and a fresh currentness/replay qualification before any staging or routing change.',
   },
-  ID_DJBC_BTKI: {
-    jurisdiction: 'ID',
-    country_codes: ['ID'],
-    authority: 'Directorate General of Customs and Excise (DJBC) — BTKI / Indonesia National Single Window',
-    reason: 'no_documented_machine_interface',
-    determination: 'DJBC identifies BTKI 2022 and its later PMK amendment as the national classification and MFN source, with FTA and other measures published separately. The available public surfaces are an interactive lookup and legal-document downloads; the documented CEISA APIs are declaration workflows requiring Indonesian business credentials, not a tariff-reference API. No supported complete machine release combining current MFN, national taxes/controls and AIFTA treatment was found. Regional AHTN is classification only.',
-    references: ['https://beacukai.go.id/btki-dan-tarif', 'https://www.insw.go.id/intr'],
-    unblocked_by: 'A documented DJBC/INSW tariff API or versioned bulk release with a field dictionary, complete amendment manifest and the operative India-origin concession and rules-of-origin layer.',
-  },
   VN_CUSTOMS_TARIFF: {
     jurisdiction: 'VN',
     country_codes: ['VN'],

@@ -33,12 +33,14 @@ import { fetchPeruMarketAccess } from '@/lib/market-access/providers/peru-servic
 import { fetchIcelandMarketAccess } from '@/lib/market-access/providers/iceland-service';
 import { fetchOmanMarketAccess } from '@/lib/market-access/providers/oman-service';
 import { fetchAlbaniaMarketAccess, fetchBhutanMarketAccess, fetchMauritiusMarketAccess, fetchNepalMarketAccess, fetchSriLankaMarketAccess } from '@/lib/market-access/providers/green-wave-service';
+import { fetchIndonesiaMarketAccess } from '@/lib/market-access/providers/indonesia-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
   /** Always the exact destination being ingested, even for a source that covers a whole bloc. */
   destination_country: string;
   origin_country?: string;
+  producer_or_exporter?: string;
   now?: Date;
 }
 
@@ -168,6 +170,7 @@ const BHUTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'bt_drc_tariff_pdf',
 const ALBANIA_ADAPTER: MarketAccessAdapter = { provider_key: 'al_customs_nomenclature_archive', fetch: (request) => fetchAlbaniaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const MAURITIUS_ADAPTER: MarketAccessAdapter = { provider_key: 'mu_mra_integrated_tariff', fetch: (request) => fetchMauritiusMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const LK_ADAPTER: MarketAccessAdapter = { provider_key: 'lk_customs_tariff', fetch: (request) => fetchSriLankaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const INDONESIA_ADAPTER: MarketAccessAdapter = { provider_key: 'id_kemenkeu_btki', fetch: (request) => fetchIndonesiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country, producer_or_exporter: request.producer_or_exporter }) };
 
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
@@ -193,13 +196,14 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   BT: BHUTAN_ADAPTER,
   AL: ALBANIA_ADAPTER,
   MU: MAURITIUS_ADAPTER,
+  ID: INDONESIA_ADAPTER,
   ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
   ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
 });
 
 export async function runMarketAccessIngest(ctx: JobContext): Promise<JobOutcome> {
-  const payload = ctx.payload as { country_code?: string; hs_code?: string; origin_country?: string };
+  const payload = ctx.payload as { country_code?: string; hs_code?: string; origin_country?: string; producer_or_exporter?: string };
   const country = (payload.country_code ?? '').trim().toUpperCase();
   const hs6 = (payload.hs_code ?? '').trim();
   if (!/^[A-Z]{2}$/.test(country)) return { status: JobStatus.failed, result: { error: 'Market access ingest requires an ISO alpha-2 destination.' } };
@@ -226,7 +230,7 @@ export async function runMarketAccessIngest(ctx: JobContext): Promise<JobOutcome
     return { status: JobStatus.failed, result: { error: `No authoritative market-access source is connected or documented for ${country}.`, country_code: country, hs_code: hs6 } };
   }
 
-  const result = await adapter.fetch({ hs6, destination_country: country, origin_country: payload.origin_country });
+  const result = await adapter.fetch({ hs6, destination_country: country, origin_country: payload.origin_country, producer_or_exporter: payload.producer_or_exporter });
   const snapshot = await persistMarketAccessIngest(result, { source_run_id: ctx.job_id });
   return {
     status: JobStatus.completed,
