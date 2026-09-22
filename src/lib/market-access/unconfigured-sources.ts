@@ -447,14 +447,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://customs.gov.mn/%D0%B3%D0%B0%D0%B0%D0%BB%D0%B8%D0%B9%D0%BD-%D1%82%D0%B0%D1%80%D0%B8%D1%84/'],
     unblocked_by: 'A documented full tariff export/API with effective dates, complete amendment history, national overlays and authoritative India-origin treatment.',
   },
-  QA_CUSTOMS_INTEGRATED_TARIFF: {
-    jurisdiction: 'QA', country_codes: ['QA'],
-    authority: 'Qatar General Authority of Customs — Integrated Customs Tariff',
-    reason: 'no_documented_machine_interface',
-    determination: 'Qatar exposes tariff search and separate executive decisions, including Decree 31/2026 amending the Integrated Customs Tariff. No supported full export/API, immutable version history or complete machine join to national decisions was found. The GCC schedule cannot substitute for Qatar execution.',
-    references: ['https://www.customs.gov.qa/english/pages/default.aspx', 'https://www.customs.gov.qa/English/Legislations/Pages/Executive-Decisions.aspx'],
-    unblocked_by: 'A complete documented Qatar tariff export/API tied to Decree 31/2026 and every later tariff-affecting decision, with effective dates and history.',
-  },
   KW_CUSTOMS_HS_TARIFF: {
     jurisdiction: 'KW', country_codes: ['KW'],
     authority: 'Kuwait General Administration of Customs — Harmonized System tariff search',
