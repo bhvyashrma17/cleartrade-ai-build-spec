@@ -34,6 +34,7 @@ import { fetchIcelandMarketAccess } from '@/lib/market-access/providers/iceland-
 import { fetchOmanMarketAccess } from '@/lib/market-access/providers/oman-service';
 import { fetchAlbaniaMarketAccess, fetchBhutanMarketAccess, fetchMauritiusMarketAccess, fetchNepalMarketAccess, fetchSriLankaMarketAccess } from '@/lib/market-access/providers/green-wave-service';
 import { fetchIndonesiaMarketAccess } from '@/lib/market-access/providers/indonesia-service';
+import { fetchSaudiMarketAccess } from '@/lib/market-access/providers/saudi-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -171,6 +172,7 @@ const ALBANIA_ADAPTER: MarketAccessAdapter = { provider_key: 'al_customs_nomencl
 const MAURITIUS_ADAPTER: MarketAccessAdapter = { provider_key: 'mu_mra_integrated_tariff', fetch: (request) => fetchMauritiusMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const LK_ADAPTER: MarketAccessAdapter = { provider_key: 'lk_customs_tariff', fetch: (request) => fetchSriLankaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const INDONESIA_ADAPTER: MarketAccessAdapter = { provider_key: 'id_kemenkeu_btki', fetch: (request) => fetchIndonesiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country, producer_or_exporter: request.producer_or_exporter }) };
+const SAUDI_ADAPTER: MarketAccessAdapter = { provider_key: 'sa_zatca_integrated_tariff', fetch: (request) => fetchSaudiMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
@@ -197,6 +199,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   AL: ALBANIA_ADAPTER,
   MU: MAURITIUS_ADAPTER,
   ID: INDONESIA_ADAPTER,
+  SA: SAUDI_ADAPTER,
   ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
   ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),

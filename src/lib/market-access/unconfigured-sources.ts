@@ -617,15 +617,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://www.gov.br/mdic/pt-br/assuntos/camex/se-camex/strat/tarifas/vigentes', 'https://api-docs.portalunico.siscomex.gov.br/pages/exemplos/ttce/documentacao-adicional-api-consulta-lote/', 'https://portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json'],
     unblocked_by: 'Provision supported Portal Único TTCE credentials and qualify the full treatment/history contract, including remedies, quotas and India-origin treatment; or prove an equivalent complete public artifact manifest.',
   },
-  SA_ZATCA: {
-    jurisdiction: 'SA',
-    country_codes: ['SA'],
-    authority: 'Zakat, Tax and Customs Authority (ZATCA) — Saudi Integrated Customs Tariff',
-    reason: 'no_documented_machine_interface',
-    determination: 'ZATCA publishes the GCC 12-digit Integrated Customs Tariff through a public inquiry and documents an Excel-download button for human users. No automated export/API contract, immutable release identity or complete national update/history feed is documented. Private browser endpoints are not a supported acquisition route, and a GCC schedule cannot replace Saudi national execution or establish India treatment.',
-    references: ['https://zatca.gov.sa/en/RulesRegulations/Taxes/Pages/Integrated-Tarrifs.aspx', 'https://www.zatca.gov.sa/en/eServices/Pages/eservices-220.aspx'],
-    unblocked_by: 'A documented ZATCA tariff export/API with version identity, complete amendment history, national tariff-affecting overlays and authoritative India-origin treatment.',
-  },
   WTO: {
     jurisdiction: 'WTO',
     country_codes: [],

@@ -334,8 +334,9 @@ describe('unconfigured authoritative sources', () => {
     for (const associated of ['AX', 'MC']) expect(isEuTaricDestination(associated)).toBe(true);
   });
 
-  test('Saudi and WTO each carry an explicit determination rather than silence', () => {
-    expect(unconfiguredSourceForCountry('SA')?.reason).toBe('no_documented_machine_interface');
+  test('Saudi is activated while WTO retains its explicit licensing determination', () => {
+    expect(unconfiguredSourceForCountry('SA')).toBeNull();
+    expect(DESTINATION_ADAPTERS.SA?.provider_key).toBe('sa_zatca_integrated_tariff');
     expect(UNCONFIGURED_MARKET_ACCESS_SOURCES.WTO!.reason).toBe('license_pending');
     // WTO licensing is not treated as approved anywhere.
     expect(UNCONFIGURED_MARKET_ACCESS_SOURCES.WTO!.determination).toMatch(/No approval is recorded/);
@@ -426,12 +427,12 @@ describe('unconfigured authoritative sources', () => {
     }
   });
 
-  test('Mega-Wave D source gate covers all 30 destinations with precise fail-closed reasons', () => {
+  test('Mega-Wave D source gate retains precise fail-closed reasons for destinations not activated later', () => {
     const expectedReasons = {
       CN: 'individual_investigation_required', SG: 'source_insufficient',
 TH: 'individual_investigation_required', BN: 'individual_investigation_required',
       KH: 'source_insufficient', LA: 'no_documented_machine_interface', MN: 'no_documented_machine_interface',
-      SA: 'no_documented_machine_interface', AE: 'individual_investigation_required', QA: 'no_documented_machine_interface',
+      AE: 'individual_investigation_required', QA: 'no_documented_machine_interface',
       KW: 'no_documented_machine_interface', LB: 'no_documented_machine_interface', BR: 'credential_not_provisioned',
       EC: 'no_documented_machine_interface', BO: 'individual_investigation_required', GT: 'no_documented_machine_interface',
       SV: 'individual_investigation_required', HN: 'no_documented_machine_interface', NI: 'no_documented_machine_interface',
@@ -440,7 +441,7 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       ZM: 'individual_investigation_required', BW: 'individual_investigation_required', NA: 'individual_investigation_required',
     } as const;
 
-    expect(Object.keys(expectedReasons)).toHaveLength(29);
+    expect(Object.keys(expectedReasons)).toHaveLength(28);
     for (const [country, reason] of Object.entries(expectedReasons)) {
       const source = unconfiguredSourceForCountry(country);
       expect(source, country).not.toBeNull();
@@ -456,13 +457,13 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
   });
 
   test('Mega-Wave D blockers complete independently without tariff evidence or invented zeroes', async () => {
-    const countries = ['CN', 'SG', 'TH', 'BN', 'KH', 'LA', 'MN', 'SA', 'AE', 'QA', 'KW', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
+    const countries = ['CN', 'SG', 'TH', 'BN', 'KH', 'LA', 'MN', 'AE', 'QA', 'KW', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-d-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(29);
+    expect(outcomes).toHaveLength(28);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
@@ -483,7 +484,7 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
     const expectedReasons = {
       JO: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
       KW: 'no_documented_machine_interface', UZ: 'no_documented_machine_interface',
-      SA: 'no_documented_machine_interface', QA: 'no_documented_machine_interface',
+      QA: 'no_documented_machine_interface',
       GH: 'no_documented_machine_interface',
       MA: 'no_documented_machine_interface', EC: 'no_documented_machine_interface',
       VN: 'no_documented_machine_interface', MV: 'no_documented_machine_interface',
