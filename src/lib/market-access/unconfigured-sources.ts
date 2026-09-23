@@ -447,14 +447,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://customs.gov.mn/%D0%B3%D0%B0%D0%B0%D0%BB%D0%B8%D0%B9%D0%BD-%D1%82%D0%B0%D1%80%D0%B8%D1%84/'],
     unblocked_by: 'A documented full tariff export/API with effective dates, complete amendment history, national overlays and authoritative India-origin treatment.',
   },
-  KW_CUSTOMS_HS_TARIFF: {
-    jurisdiction: 'KW', country_codes: ['KW'],
-    authority: 'Kuwait General Administration of Customs — Harmonized System tariff search',
-    reason: 'no_documented_machine_interface',
-    determination: 'The authority provides an interactive national tariff table, but no documented bulk/API, release date, immutable history or complete overlay feed was found. National execution cannot be inferred from the GCC nomenclature and no India preference is established.',
-    references: ['https://customs.gov.kw/KGO/HsCode'],
-    unblocked_by: 'A documented complete national tariff export/API with amendments, overlays, effective dates, source history and authoritative India treatment.',
-  },
   LB_CUSTOMS_INTEGRATED_TARIFF: {
     jurisdiction: 'LB', country_codes: ['LB'],
     authority: 'Lebanese Customs — Integrated Customs Tariff',
