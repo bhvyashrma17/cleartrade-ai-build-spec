@@ -142,15 +142,42 @@ describe('Qatar authority pack', () => {
     expect(additional?.duty.expression).not.toBe('');
   });
 
-  test('remedy manifest is bounded, non-invented and applies product/origin gates; register completeness is honestly false', () => {
+  test('remedy manifest is bounded, non-invented, complete and applies product/origin/exclusion gates', () => {
     expect(QATAR_ACTIVE_TRADE_REMEDY_MANIFEST.measures).toHaveLength(4);
-    expect(QATAR_ACTIVE_TRADE_REMEDY_MANIFEST.register_enumeration_complete).toBe(false);
+    expect(QATAR_ACTIVE_TRADE_REMEDY_MANIFEST.register_enumeration_complete).toBe(true);
+    expect(QATAR_ACTIVE_TRADE_REMEDY_MANIFEST.historical_measures).toHaveLength(1);
     expect(selectQatarTradeRemedies({ manifest: QATAR_ACTIVE_TRADE_REMEDY_MANIFEST, code: '853650000000', origin_country: 'CN', at: new Date('2026-09-23') }).status).toBe('producer_refinement_required');
     expect(selectQatarTradeRemedies({ manifest: QATAR_ACTIVE_TRADE_REMEDY_MANIFEST, code: '850710000000', origin_country: 'KR', at: new Date('2026-09-23') }).status).toBe('producer_refinement_required');
     expect(selectQatarTradeRemedies({ manifest: QATAR_ACTIVE_TRADE_REMEDY_MANIFEST, code: '850710000000', origin_country: 'FR', at: new Date('2026-09-23') }).status).toBe('not_applicable');
-    // Decision 107/2024 (ceramic tiles) is named in the intake brief but was never independently
-    // corroborated during acquisition, so it must never surface as an active measure.
+
+    // Decision 22/2024 (India batteries): named producers plus the legally specified all-other rate.
+    const indiaBatteries = selectQatarTradeRemedies({ manifest: QATAR_ACTIVE_TRADE_REMEDY_MANIFEST, code: '850710000000', origin_country: 'IN', at: new Date('2026-09-23') });
+    expect(indiaBatteries.status).toBe('producer_refinement_required');
+    if (indiaBatteries.status === 'producer_refinement_required') {
+      const india = indiaBatteries.candidates.find((m) => m.id === 'qa-batteries-in')!;
+      expect(india.producers.map((p) => p.rate_percent).sort((a, b) => a - b)).toEqual([8, 22.4, 28.5]);
+      expect(india.other_producers_rate_percent).toBe(41);
+      expect(india.excluded_battery_types).toEqual(['AGM', 'EFB']);
+    }
+
+    // Decision 21/2024 (Korea batteries): all four named producers plus the all-other rate.
+    const koreaBatteries = selectQatarTradeRemedies({ manifest: QATAR_ACTIVE_TRADE_REMEDY_MANIFEST, code: '850710000000', origin_country: 'KR', at: new Date('2026-09-23') });
+    if (koreaBatteries.status === 'producer_refinement_required') {
+      const korea = koreaBatteries.candidates.find((m) => m.id === 'qa-batteries-kr')!;
+      expect(korea.producers).toEqual(expect.arrayContaining([
+        { name: 'HANKOOK & COMPANY CO., LTD', rate_percent: 21 },
+        { name: 'DN AUTOMOTIVE CORPORATION', rate_percent: 25 },
+      ]));
+      expect(korea.other_producers_rate_percent).toBe(25);
+    }
+
+    // Decision 107/2024 (ceramic tiles) expired 2025-06-05: it must never surface as an active
+    // measure on the 2026-09-23 qualification date, but is retained as historical evidence.
     expect(QATAR_ACTIVE_TRADE_REMEDY_MANIFEST.measures.some((m) => m.id.includes('ceramic'))).toBe(false);
+    expect(selectQatarTradeRemedies({ manifest: QATAR_ACTIVE_TRADE_REMEDY_MANIFEST, code: '690710000000', origin_country: 'CN', at: new Date('2026-09-23') }).status).toBe('not_applicable');
+    const historicalCeramic = QATAR_ACTIVE_TRADE_REMEDY_MANIFEST.historical_measures.find((m) => m.id.includes('ceramic'))!;
+    expect(historicalCeramic.status).toBe('EXPIRED');
+    expect(historicalCeramic.effective_until).toBe('2025-06-05');
   });
 
   test('is deterministic, corruption-intolerant and registered as an active adapter', async () => {

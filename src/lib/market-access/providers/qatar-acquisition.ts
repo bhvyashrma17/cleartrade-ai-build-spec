@@ -16,7 +16,23 @@ export const QATAR_DECISION_19_2025_URL = 'https://www.customs.gov.qa/English/Le
 export const QATAR_DECISION_48_2026_URL = 'https://www.customs.gov.qa/English/Legislations/Documents/Executive%20Resolutions/2026/Decision%20of%20the%20Minister%20of%20Commerce%20and%20Industry%20No.%20%2848%29%20of%202026%20.pdf' as const;
 export const QATAR_AGREEMENTS_URL = 'https://www.customs.gov.qa/English/Legislations/Pages/Customs-Agreements.aspx' as const;
 export const QATAR_RIGHTS_URL = 'https://www.almeezan.qa/LawView.aspx?LawID=2637&language=en&opt=' as const;
-const ALLOWED_HOSTS = new Set(['www.customs.gov.qa', 'customs.gov.qa', 'www.almeezan.qa', 'almeezan.qa']);
+export const QATAR_DECISION_21_2024_URL = 'https://www.moci.gov.qa/sites/default/files/2026-06/%D9%82%D8%B1%D8%A7%D8%B1-21-%D9%84%D8%B3%D9%86%D8%A9-2024-%D8%A8%D8%B7%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D9%83%D9%88%D8%B1%D9%8A%D8%A747.pdf' as const;
+export const QATAR_DECISION_22_2024_URL = 'https://www.moci.gov.qa/sites/default/files/2026-06/%D9%82%D8%B1%D8%A7%D8%B1-22-%D9%84%D8%B3%D9%86%D8%A9-2024-%D8%A8%D8%B7%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%87%D9%86%D8%AF44.pdf' as const;
+export const QATAR_DECISION_107_2024_URL = 'https://www.moci.gov.qa/sites/default/files/2026-06/%D9%82%D8%B1%D8%A7%D8%B1-%D8%B1%D9%82%D9%85-107-%D9%84%D8%B3%D9%86%D8%A9-2024-%D8%B3%D9%8A%D8%B1%D8%A7%D9%85%D9%8A%D9%83-%D9%88%D9%85%D8%B1%D9%81%D9%82%D8%A7%D8%AA%D9%87.pdf' as const;
+const ALLOWED_HOSTS = new Set(['www.customs.gov.qa', 'customs.gov.qa', 'www.almeezan.qa', 'almeezan.qa', 'www.moci.gov.qa', 'moci.gov.qa']);
+
+/**
+ * Decisions 21/2024, 22/2024 and 107/2024 are scanned/image PDFs: MOCI's own text layer is only a
+ * decorative watermark, so content cannot be verified by extracting semantic text markers the way
+ * every other Qatar artifact in this acquisition is. They are instead pinned by exact byte length
+ * and SHA-256, matching the reviewed copies whose producer rate tables were read directly from the
+ * page images and hand-verified against the official artifact during this acquisition.
+ */
+const QATAR_PINNED_SCANNED_ARTIFACTS: Record<string, { bytes: number; sha256: string }> = {
+  'decision-21-2024.pdf': { bytes: 1_590_963, sha256: '7c3c99f0ce805f59741fab48b215153c05d3ce7b3bffe7b2097a67ebb3a765f8' },
+  'decision-22-2024.pdf': { bytes: 1_595_246, sha256: 'fce6b02bff34e5c90e60c90d6ea99348300c8a8624b695d014c5cb926a6b3893' },
+  'decision-107-2024.pdf': { bytes: 7_859_238, sha256: 'e2898326e3720c218cc32c7d8e5468b426c771978a8fdf58a4ca2bc957fdb5ab' },
+};
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
@@ -67,12 +83,20 @@ export async function acquireQatarAuthorityBundle(options: { release_identifier?
     ['decree-88.pdf', 'official_2024_expired_national_rate_overlay', QATAR_DECREE_88_URL],
     ['decision-19-2025.pdf', 'official_active_trade_remedy', QATAR_DECISION_19_2025_URL],
     ['decision-48-2026.pdf', 'official_active_trade_remedy', QATAR_DECISION_48_2026_URL],
+    ['decision-21-2024.pdf', 'official_active_trade_remedy', QATAR_DECISION_21_2024_URL],
+    ['decision-22-2024.pdf', 'official_active_trade_remedy', QATAR_DECISION_22_2024_URL],
+    ['decision-107-2024.pdf', 'official_expired_trade_remedy_historical_evidence', QATAR_DECISION_107_2024_URL],
     ['agreements.html', 'official_trade_agreement_inventory', QATAR_AGREEMENTS_URL],
     ['copyright-law.html', 'official_qatar_copyright_law_article_4', QATAR_RIGHTS_URL],
   ] as const;
   const raw = await Promise.all(sources.map(async ([name, role, url]) => ({ name, role, url: qatarOfficialUrl(url), bytes: await request(url, { fetch_impl, attempts, max_bytes: 40 * 1024 * 1024 }) })));
   const byName = (name: string) => raw.find(x => x.name === name)!.bytes;
   if (!byName('schedule.pdf').subarray(0, 5).equals(Buffer.from('%PDF-')) || !byName('decree-63.pdf').subarray(0, 5).equals(Buffer.from('%PDF-'))) throw new Error('Qatar official file source returned an unexpected content type.');
+  for (const [name, pin] of Object.entries(QATAR_PINNED_SCANNED_ARTIFACTS)) {
+    const bytes = byName(name);
+    if (!bytes.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw new Error(`Qatar official file source ${name} returned an unexpected content type.`);
+    if (bytes.length !== pin.bytes || sha256(bytes) !== pin.sha256) throw new Error(`Qatar official file source ${name} no longer matches its reviewed, hand-verified copy.`);
+  }
 
   const schedule = parseQatarSchedule(await pdfPages(byName('schedule.pdf')));
   const operations_2025 = parseQatarDecree63Tables(await pdfPages(byName('decree-63.pdf')));
@@ -111,6 +135,9 @@ export async function acquireQatarAuthorityBundle(options: { release_identifier?
     { name: 'decree-88.pdf', role: 'official_2024_expired_national_rate_overlay', url: QATAR_DECREE_88_URL, bytes: byName('decree-88.pdf') },
     { name: 'decision-19-2025.pdf', role: 'official_active_trade_remedy', url: QATAR_DECISION_19_2025_URL, bytes: byName('decision-19-2025.pdf') },
     { name: 'decision-48-2026.pdf', role: 'official_active_trade_remedy', url: QATAR_DECISION_48_2026_URL, bytes: byName('decision-48-2026.pdf') },
+    { name: 'decision-21-2024.pdf', role: 'official_active_trade_remedy', url: QATAR_DECISION_21_2024_URL, bytes: byName('decision-21-2024.pdf') },
+    { name: 'decision-22-2024.pdf', role: 'official_active_trade_remedy', url: QATAR_DECISION_22_2024_URL, bytes: byName('decision-22-2024.pdf') },
+    { name: 'decision-107-2024.pdf', role: 'official_expired_trade_remedy_historical_evidence', url: QATAR_DECISION_107_2024_URL, bytes: byName('decision-107-2024.pdf') },
     { name: 'normalized.json', role: 'deterministic_normalized_tariff_and_overlay_bundle', url: QATAR_SCHEDULE_URL, bytes: normalizedBytes },
   ];
 
@@ -128,9 +155,10 @@ export async function acquireQatarAuthorityBundle(options: { release_identifier?
     rights_evidence: { law_article: 'Qatar Copyright Law article 4', source: 'Al Meezan Qatari Legal Portal', rule: 'Official laws, legal provisions, administrative decisions, international treaties, official documents and un-collated data are excluded. ClearTrade retains narrowly normalized official tariff facts and instruments, not portal design, software, logos or creative arrangement.' },
     india_preference_evidence: { status: 'not_applicable', basis: 'Qatar Customs official Agreements register lists only a bilateral customs-cooperation (anti-smuggling/mutual-assistance) agreement with India, not a preferential goods tariff agreement, as at 2026-09-23.' },
     trade_remedy_evidence: {
-      register_enumeration_complete: false,
-      rate_confirmed_instruments: 2, scope_confirmed_rate_unconfirmed_instruments: 2,
-      note: 'moci.gov.qa did not respond to direct requests during acquisition and the customs.gov.qa Executive Decisions page only republishes a rolling recent window. Decisions 19/2025 and 48/2026 were independently retrieved in full. Decisions 21/2024 (Korea) and 22/2024 (India) are confirmed to exist and their product/origin/capacity scope by the official QNA newswire, but their primary legal text (rate table, expiry) was not retrievable; they are retained as active-but-unresolved rather than omitted or invented. Decision 107/2024 (ceramic tiles) named in the intake brief could not be independently corroborated by any source and is excluded rather than asserted.',
+      register_enumeration_complete: true,
+      enumeration_basis: 'moci.gov.qa/Industry decisions-and-circulars resource page (complete, non-paginated) cross-referenced against customs.gov.qa Executive Decisions circulars.',
+      active_instruments: 4, historical_expired_instruments: 1, active_safeguards: 0, active_countervailing: 0,
+      note: 'Decisions 19/2025 and 48/2026 were retrieved from customs.gov.qa with a machine-readable text layer. Decisions 21/2024 (Korea), 22/2024 (India) and 107/2024 (ceramic tiles, China/India) were located on moci.gov.qa/Industry and are scanned/image PDFs verified by exact byte-length and SHA-256 pin against a hand-verified reviewed copy, since their own text layer is only a decorative watermark. Decision 107/2024 expired 2025-06-05 per its own Article 4 and is retained as historical evidence only, excluded from the active manifest. An amendment chain asserted for Decision 22/2024 (Decision 2/2025, Decision 21/2025) could not be independently located on the same primary channel that hosts every other verified instrument; the original 2024 producer table is retained as the current legal state pending a verifiable amendment artifact.',
     },
     scope: { tariff_treatment_complete: true, regulatory_coverage_complete: false, omitted_regulatory_layer: 'Ordinary Qatar permits, prohibitions (beyond the tariff schedule’s own explicit PROHIBITED lines) and product controls are outside this tariff pack; absence is not evidence of no restriction.' },
   };
