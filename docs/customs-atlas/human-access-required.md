@@ -31,12 +31,11 @@ one-off spreadsheet without an update contract does not qualify.
 | Ghana (`GH`) | Ghana Revenue Authority Customs Division / ICUMS | [ICUMS](https://gra.gov.gh/customs/icums/) and public tariff/levy guidance | Calculators and band/levy guidance do not provide a complete commodity-line export/API, version history or commercial terms. | ICUMS classification/rate API or versioned bulk release with every national line, levy, exemption, special measure and historical effective date; commercial use terms. | `info@gra.gov.gh`, +233 24 243 5662/5663 on the official ICUMS page. | Yes, conditionally. | **Yes.** | Full national-line coverage beyond ECOWAS bands, schema, history, exemptions/remedies, India treatment, access/rate-limit terms and licence. |
 | Morocco (`MA`) | Administration des Douanes et Impôts Indirects (ADII) | [ADIL](https://www.douane.gov.ma/adil/) and [official application guide](https://www.douane.gov.ma/adil/pdf/adil.pdf) | Interactive tariff only; no supported bulk/API, stable version/history contract or replayable amendment feed. | ADIL API or versioned bulk release covering duties, taxes, preferences, regulatory measures and history, with commercial reuse permission. | `ADii@douane.gov.ma`, 080 100 7000 / +212 5 37 57 90 00, published in the ADIL guide. | Yes, conditionally. | **Yes.** | Field dictionary, completeness/line counts, effective-date and amendment model, origin-program semantics, India treatment, rate limits and rights. |
 | Ecuador (`EC`) | Servicio Nacional de Aduana del Ecuador (SENAE) | [National Tariff / service portal](https://mesadeservicios.aduana.gob.ec/arancel/) and [SENAE public site](https://www.aduana.gob.ec/) | A current interactive/live service exists, but there is no supported complete anonymous distribution contract, immutable history or permission for automated commercial caching and derived display. | SENAE machine-readable national tariff/API or versioned bulk release with COMEX amendment history, FODINFA/ICE, safeguards/remedies, field dictionary and commercial reuse authorization. | [SENAE Service Desk](https://mesadeservicios.aduana.gob.ec/otrs/customer.pl), the authority's official channel for requests. | Yes, conditionally. | **Yes—explicitly.** | Supported endpoint policy, complete national overlays, effective dates/history, quota/restriction semantics, India treatment, rate limits and reuse authorization. |
-| Vietnam (`VN`) | Department of Vietnam Customs / Ministry of Finance | [Vietnam Customs](https://www.customs.gov.vn/) and tariff/legal lookup surfaces. The public `CHMT_Service` WSDL was checked, but its opaque `TNP` operation has no tariff schema, version or evidence that it distributes the national tariff. | No supported complete current national tariff API/bulk release; baseline, 2026 amendments, special rates and AIFTA instruments remain separate. | Current machine-readable national tariff API or versioned bulk release with baseline and update history, all ordinary/preferential/absolute/mixed/out-of-quota fields, AIFTA treatment and commercial terms. | `webmaster@customs.gov.vn`, +84 24 39440833 on the official Customs portal. | Yes, conditionally. | **Yes.** | Documented tariff semantics, complete line count, amendment precedence/effective dates, specific/compound support, AIFTA/RoO mapping, access policy and rights. |
 | Maldives (`MV`) | Maldives Customs Service | [Tariff service](https://www.customs.gov.mv/eServices/Tariff) and current [export/import laws](https://trade.gov.mv/en/laws-and-regulations/) | A prior English HS2022 schedule exists, but deterministic HTTP now receives a Cloudflare challenge; no supported current 2026 API/bulk/history or reuse licence was found. | Current tariff API or versioned bulk release, accessible through a supported machine channel, with amendment history and explicit commercial reuse terms. | `info@customs.gov.mv`, +960 3322001 / 3334142 / 3334126, published by Maldives Customs. | Yes, conditionally. | **Yes.** | Current-year identity, full 10-digit line count, post-2024/2026 amendments, specific-duty semantics, India treatment, machine access/rate limits and reuse grant. |
 
 ## Counts and boundaries
 
-- Human-access queue: **7 sovereign countries**. Singapore was removed after the sanctioned SSO
+- Human-access queue: **6 sovereign countries**. Singapore was removed after the sanctioned SSO
   legislation route was established; its implementation remains fail-closed pending a complete
   live qualification during SSO's 03:00–07:00 Singapore Time automation window. Malaysia was
   removed because the official Customs Duties Order is now technically implemented; it remains
@@ -58,10 +57,17 @@ one-off spreadsheet without an update contract does not qualify.
   Annex 1 national nomenclature, with Law ZRU-42 article 8 as the rights basis (official documents
   are not objects of copyright) and a zero active-remedy enumeration over every page of lex.uz
   trade-remedy searches. It passed local qualification.
-- New locally qualified countries in this wave: **1** (Uzbekistan).
-- Existing staging-pending queue: **12 destinations**, of which **7 are sovereign states**
-  (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait and Uzbekistan).
+- Vietnam was removed on 24 September 2026. The executable source is the Official Gazette
+  (Công báo) text layer of the governing decrees, not a Customs lookup or the opaque `CHMT_Service`
+  WSDL: Decree 26/2023/NĐ-CP Annex II replayed through every amending and temporary instrument the
+  Government Portal's own document search returns, the AIFTA schedule of Decree 122/2022/NĐ-CP, and
+  a complete walk of the Trade Remedies Authority's measure-notice stream. The rights basis is the
+  Law on Intellectual Property article 15(2) (legal normative documents are not protected by
+  copyright). It passed local qualification.
+- New locally qualified countries in this wave: **2** (Uzbekistan, Vietnam).
+- Existing staging-pending queue: **13 destinations**, of which **8 are sovereign states**
+  (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan and Vietnam).
 - Accepted operational coverage: **45 sovereign countries**, unchanged.
-- Potential sovereign coverage after the existing staging queue is qualified: **52**.
-- Potential sovereign coverage if all 7 access requests later succeed and providers qualify: **59**.
+- Potential sovereign coverage after the existing staging queue is qualified: **53**.
+- Potential sovereign coverage if all 6 access requests later succeed and providers qualify: **59**.
 - Production was not read or written. Railway was not used.

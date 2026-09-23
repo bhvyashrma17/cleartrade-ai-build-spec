@@ -42,7 +42,8 @@ export type NationalCodeSystem =
   | 'SG_CUSTOMS_DUTIES_ORDER'
   | 'MY_CUSTOMS_DUTIES_ORDER'
   | 'ID_BTKI_2022'
-  | 'UZ_TN_VED';
+  | 'UZ_TN_VED'
+  | 'VN_AHTN_2022';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

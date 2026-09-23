@@ -376,7 +376,7 @@ describe('unconfigured authoritative sources', () => {
   test('Mega-Wave C blockers remain precise for the 17 destinations not since activated', () => {
     const expectedReasons = {
       MY: 'license_pending',
-      VN: 'no_documented_machine_interface', HK: 'license_pending', TR: 'source_insufficient',
+      HK: 'license_pending', TR: 'source_insufficient',
       CH: 'source_insufficient', RS: 'individual_investigation_required',
       BA: 'source_insufficient', MD: 'source_insufficient', XK: 'individual_investigation_required',
       CL: 'license_pending', MX: 'source_insufficient', ZA: 'license_pending',
@@ -404,13 +404,13 @@ describe('unconfigured authoritative sources', () => {
   });
 
   test('remaining Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
-    const countries = ['MY', 'VN', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH'];
+    const countries = ['MY', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'MA', 'EG', 'JO', 'BH'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-c-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(17);
+    expect(outcomes).toHaveLength(16);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
@@ -485,7 +485,7 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       JO: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
       GH: 'no_documented_machine_interface',
       MA: 'no_documented_machine_interface', EC: 'no_documented_machine_interface',
-      VN: 'no_documented_machine_interface', MV: 'no_documented_machine_interface',
+      MV: 'no_documented_machine_interface',
     } as const;
 
     for (const [country, reason] of Object.entries(expectedReasons)) {

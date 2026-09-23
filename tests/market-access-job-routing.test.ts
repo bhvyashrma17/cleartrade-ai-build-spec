@@ -30,6 +30,7 @@ const fetchSaudiMarketAccess = vi.fn();
 const fetchQatarMarketAccess = vi.fn();
 const fetchKuwaitMarketAccess = vi.fn();
 const fetchUzbekistanMarketAccess = vi.fn();
+const fetchVietnamMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', async () => {
@@ -58,6 +59,7 @@ vi.mock('@/lib/market-access/providers/saudi-service', () => ({ fetchSaudiMarket
 vi.mock('@/lib/market-access/providers/qatar-service', () => ({ fetchQatarMarketAccess }));
 vi.mock('@/lib/market-access/providers/kuwait-service', () => ({ fetchKuwaitMarketAccess }));
 vi.mock('@/lib/market-access/providers/uzbekistan-service', () => ({ fetchUzbekistanMarketAccess }));
+vi.mock('@/lib/market-access/providers/vietnam-service', () => ({ fetchVietnamMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -105,6 +107,7 @@ afterEach(() => {
   fetchQatarMarketAccess.mockReset();
   fetchKuwaitMarketAccess.mockReset();
   fetchUzbekistanMarketAccess.mockReset();
+  fetchVietnamMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -271,6 +274,15 @@ describe('market-access ingest routing', () => {
     const outcome = await runMarketAccessIngest(ctx({ country_code: 'UZ', hs_code: '100630', origin_country: 'IN' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect(fetchUzbekistanMarketAccess).toHaveBeenCalledWith('100630', { now: undefined, origin_country: 'IN' });
+    expect((outcome.result as Record<string, unknown>).provider_state).toBe('authoritative_public');
+  });
+
+  test('VN routes to the retained Official Gazette tariff adapter', async () => {
+    fetchVietnamMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'VN', jurisdiction: 'VN', provider: 'vn_congbao_tariff' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-vn', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'VN', hs_code: '690721', origin_country: 'IN' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchVietnamMarketAccess).toHaveBeenCalledWith('690721', { now: undefined, origin_country: 'IN' });
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('authoritative_public');
   });
 

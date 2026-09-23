@@ -58,15 +58,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://www.customs.gov.my/images/06-prosedur/perintah-kastam/perintah/PUA_384.pdf', 'https://www.customs.gov.my/en/procedure/customs/customs', 'https://mycieds.customs.gov.my/safety-policy/', 'https://data.gov.my/'],
     unblocked_by: 'Exact written JKDM permission authorizing ClearTrade to periodically acquire, retain, normalize, transform, redistribute and commercially display P.U. (A) 384/2025 tariff data and its updates, or a JKDM/data.gov.my release of that exact dataset under terms granting those rights; followed by independent rights review and a fresh currentness/replay qualification before any staging or routing change.',
   },
-  VN_CUSTOMS_TARIFF: {
-    jurisdiction: 'VN',
-    country_codes: ['VN'],
-    authority: 'Vietnam Customs / Ministry of Finance — preferential import tariff and Vietnam Trade Information Portal',
-    reason: 'no_documented_machine_interface',
-    determination: 'The authority publishes tariff lookup pages and the governing baseline and amendment decrees, including 2026 changes with explicit effective dates, but no documented bulk tariff release or public API was found. Reconstructing the current schedule from interactive/private endpoints and a changing decree chain would not be a deterministic supported acquisition. AHTN and the existence of AIFTA do not establish Vietnam\'s national line rate, additional measures or India-origin qualification.',
-    references: ['https://www.customs.gov.vn/', 'https://www.vietnamtradeportal.gov.vn/', 'https://kv20.customs.gov.vn/index.jsp?cid=1294&id=104614&pageId=3'],
-    unblocked_by: 'A supported, versioned Customs/Ministry tariff distribution or API covering the complete baseline and amendments, with national overlays and the current AIFTA concession and origin rules.',
-  },
   HK_CED_DUTIABLE_COMMODITIES: {
     jurisdiction: 'HK',
     country_codes: ['HK'],
