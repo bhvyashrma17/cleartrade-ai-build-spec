@@ -37,6 +37,7 @@ import { fetchIndonesiaMarketAccess } from '@/lib/market-access/providers/indone
 import { fetchSaudiMarketAccess } from '@/lib/market-access/providers/saudi-service';
 import { fetchQatarMarketAccess } from '@/lib/market-access/providers/qatar-service';
 import { fetchKuwaitMarketAccess } from '@/lib/market-access/providers/kuwait-service';
+import { fetchUzbekistanMarketAccess } from '@/lib/market-access/providers/uzbekistan-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -177,6 +178,7 @@ const INDONESIA_ADAPTER: MarketAccessAdapter = { provider_key: 'id_kemenkeu_btki
 const SAUDI_ADAPTER: MarketAccessAdapter = { provider_key: 'sa_zatca_integrated_tariff', fetch: (request) => fetchSaudiMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const QATAR_ADAPTER: MarketAccessAdapter = { provider_key: 'qa_customs_integrated_tariff', fetch: (request) => fetchQatarMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const KUWAIT_ADAPTER: MarketAccessAdapter = { provider_key: 'kw_customs_integrated_tariff', fetch: (request) => fetchKuwaitMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const UZBEKISTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'uz_lex_customs_tariff', fetch: (request) => fetchUzbekistanMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
@@ -206,6 +208,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   SA: SAUDI_ADAPTER,
   QA: QATAR_ADAPTER,
   KW: KUWAIT_ADAPTER,
+  UZ: UZBEKISTAN_ADAPTER,
   ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
   ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),

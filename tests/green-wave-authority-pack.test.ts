@@ -156,7 +156,7 @@ describe('green-wave country semantics and routing', () => {
     for (const country of ['NP', 'BT', 'AL', 'MU', 'LK']) { expect(DESTINATION_ADAPTERS[country]?.provider_key).toBe(GREEN_WAVE_CONFIGS[country as keyof typeof GREEN_WAVE_CONFIGS].provider); expect(unconfiguredSourceForCountry(country)).toBeNull(); }
     expect(unconfiguredSourceForCountry('ME')?.reason).toBe('individual_investigation_required');
     expect(unconfiguredSourceForCountry('MK')?.reason).toBe('individual_investigation_required');
-    // 45 accepted + Sri Lanka, Indonesia, Saudi Arabia, Qatar and Kuwait pending + six customs-territory aliases pending.
-    expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(56);
+    // 45 accepted + Sri Lanka, Indonesia, Saudi Arabia, Qatar, Kuwait and Uzbekistan pending + six customs-territory aliases pending.
+    expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(57);
   });
 });

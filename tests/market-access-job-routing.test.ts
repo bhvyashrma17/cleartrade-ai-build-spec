@@ -29,6 +29,7 @@ const fetchPeruMarketAccess = vi.fn();
 const fetchSaudiMarketAccess = vi.fn();
 const fetchQatarMarketAccess = vi.fn();
 const fetchKuwaitMarketAccess = vi.fn();
+const fetchUzbekistanMarketAccess = vi.fn();
 const persistMarketAccessIngest = vi.fn();
 
 vi.mock('@/lib/market-access/uk-tariff', async () => {
@@ -56,6 +57,7 @@ vi.mock('@/lib/market-access/providers/peru-service', () => ({ fetchPeruMarketAc
 vi.mock('@/lib/market-access/providers/saudi-service', () => ({ fetchSaudiMarketAccess }));
 vi.mock('@/lib/market-access/providers/qatar-service', () => ({ fetchQatarMarketAccess }));
 vi.mock('@/lib/market-access/providers/kuwait-service', () => ({ fetchKuwaitMarketAccess }));
+vi.mock('@/lib/market-access/providers/uzbekistan-service', () => ({ fetchUzbekistanMarketAccess }));
 vi.mock('@/lib/market-access/contract', async () => {
   const actual = await vi.importActual<typeof import('@/lib/market-access/contract')>('@/lib/market-access/contract');
   return { ...actual, persistMarketAccessIngest };
@@ -102,6 +104,7 @@ afterEach(() => {
   fetchSaudiMarketAccess.mockReset();
   fetchQatarMarketAccess.mockReset();
   fetchKuwaitMarketAccess.mockReset();
+  fetchUzbekistanMarketAccess.mockReset();
   persistMarketAccessIngest.mockReset();
 });
 
@@ -259,6 +262,15 @@ describe('market-access ingest routing', () => {
     const outcome = await runMarketAccessIngest(ctx({ country_code: 'KW', hs_code: '850710', origin_country: 'IN' }));
     expect(outcome.status).toBe(JobStatus.completed);
     expect(fetchKuwaitMarketAccess).toHaveBeenCalledWith('850710', { now: undefined, origin_country: 'IN' });
+    expect((outcome.result as Record<string, unknown>).provider_state).toBe('authoritative_public');
+  });
+
+  test('UZ routes to the retained Uzbekistan legal-instrument tariff adapter', async () => {
+    fetchUzbekistanMarketAccess.mockResolvedValue(ingestFixture({ country_code: 'UZ', jurisdiction: 'UZ', provider: 'uz_lex_customs_tariff' }));
+    persistMarketAccessIngest.mockResolvedValue({ id: 'snap-uz', tariff_lines: [], evidence: [] });
+    const outcome = await runMarketAccessIngest(ctx({ country_code: 'UZ', hs_code: '100630', origin_country: 'IN' }));
+    expect(outcome.status).toBe(JobStatus.completed);
+    expect(fetchUzbekistanMarketAccess).toHaveBeenCalledWith('100630', { now: undefined, origin_country: 'IN' });
     expect((outcome.result as Record<string, unknown>).provider_state).toBe('authoritative_public');
   });
 

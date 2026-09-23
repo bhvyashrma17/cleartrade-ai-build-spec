@@ -483,7 +483,6 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
   test('dual-lane access-queue destinations are explicit and fail closed', async () => {
     const expectedReasons = {
       JO: 'no_documented_machine_interface', LB: 'no_documented_machine_interface',
-      UZ: 'no_documented_machine_interface',
       GH: 'no_documented_machine_interface',
       MA: 'no_documented_machine_interface', EC: 'no_documented_machine_interface',
       VN: 'no_documented_machine_interface', MV: 'no_documented_machine_interface',
@@ -498,7 +497,7 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
 
-    for (const country of ['UZ', 'MV']) {
+    for (const country of ['MV']) {
       const outcome = await runMarketAccessIngest({
         job_id: `dual-lane-${country}`,
         payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },

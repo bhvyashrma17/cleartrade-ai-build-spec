@@ -13,9 +13,8 @@ The priority order was preserved. Each service received one focused public-autho
 |---|---|---|---|---|
 | 1 | Jordan (`JO`) | Jordan Customs' public Integrated Tariff is current, and ASYCUDA advertises PDF/Excel/CSV. A live CSV export returned only code, description and unit—not duties, taxes, preferences or measures. | Complete executable result, history and reuse. Jordan Customs expressly limits downloads to personal/in-house non-commercial use unless broader permission is granted. | `HUMAN_ACCESS_REQUIRED` |
 | 2 | Lebanon (`LB`) | Lebanese Customs exposes deterministic chapter pages with ad-valorem, specific/minimum duty, VAT, agreement and amendment columns. | The authority warns that published restrictions/prohibitions are incomplete; no supported full export, release identity, complete amendment manifest or reuse grant exists. | `HUMAN_ACCESS_REQUIRED` |
-| 3 | Uzbekistan (`UZ`) | The Integrated Tariff accepts HS, flow, dispatch, origin and trading-country context and exposes units/directories. | Only an interactive calculation surface is documented. No supported bulk/API/history contract; the attribution notice is paired with “all rights reserved,” not a commercial licence. | `HUMAN_ACCESS_REQUIRED` |
 
-The three remaining services above are genuinely public and useful to a human. None is safe for an autonomous
+The two remaining services above are genuinely public and useful to a human. None is safe for an autonomous
 customer-facing provider under the ten-gate standard. Therefore this wave adds **zero**
 `LOCAL_QUALIFIED_STAGING_PENDING` countries and creates no `OfficialPublicTariffProvider` family.
 
@@ -29,7 +28,6 @@ one-off spreadsheet without an update contract does not qualify.
 |---|---|---|---|---|---|---|---|---|
 | Jordan (`JO`) | Jordan Customs | [Integrated Customs Tariff](https://www.customs.gov.jo/EN/List/Integrated_customs_tariff), [ASYCUDA tariff](https://asytrade.customs.gov.jo/customs/tariff), and [copyright policy](https://www.customs.gov.jo/EN/Pages/Copyrights) | Export contains classification fields only; rate/measure data, version history and commercial rights are absent. | A complete rate-data API or versioned bulk release covering duties, taxes, preferences, units and national measures; amendment history/data dictionary; written permission for periodic commercial acquisition, retention, transformation and display. | [Jordan Customs contact page](https://www.customs.gov.jo/EN/Pages/Contact_Us); `customs@customs.gov.jo` is the address named by the copyright policy for broader-use requests. | Yes, conditionally. | **Yes—explicitly.** | Stable documented route, release/effective timestamps, pagination/completeness rules, historical versions, field semantics, India-origin treatment, rate limits and rights grant. |
 | Lebanon (`LB`) | Lebanese Customs | [Integrated Tariff](https://www.customs.gov.lb/tariff/tariff.aspx) and deterministic [chapter table](https://www.customs.gov.lb/Tariff/Tariff_Table.aspx?CH=1) | Published restrictions are expressly incomplete; no full distribution, immutable release or complete amendment manifest. | Supported full tariff database export/API with duty/VAT/specific-minimum expressions, preferences, amendments and the complete restrictions/prohibitions layer; version history and commercial reuse terms. | [Lebanese Customs contact directory](https://customs.gov.lb/Contact.aspx); `info@customs.gov.lb` / call centre `1703`. | Yes, if complete. | **Yes.** | Field/code dictionary, effective dates, full chapter/line count, amendment precedence, unavailable-vs-zero semantics, India-origin mapping and reuse grant. |
-| Uzbekistan (`UZ`) | Customs Committee of the Republic of Uzbekistan | [Integrated Tariff](https://tarif.customs.uz/en), [HS/unit directory](https://tarif.customs.uz/en/directory/tnved), and [country directory](https://tarif.customs.uz/en/directory/countries) | Interactive calculations only; no documented full export/API/history. Attribution plus “all rights reserved” does not grant commercial reuse. | Supported API or versioned bulk release carrying HS line, import/export direction, dispatch/origin/trading-country treatment, duties, units and non-tariff measures; update history and commercial licence. | `info@customs.uz`, shown on the official tariff service; 11-08 hotline. | Yes, conditionally. | **Yes.** | Authentication/rate-limit docs if applicable, schema and code lists, complete-result rules, effective dates, immutable versions, India-origin semantics and rights. |
 | Ghana (`GH`) | Ghana Revenue Authority Customs Division / ICUMS | [ICUMS](https://gra.gov.gh/customs/icums/) and public tariff/levy guidance | Calculators and band/levy guidance do not provide a complete commodity-line export/API, version history or commercial terms. | ICUMS classification/rate API or versioned bulk release with every national line, levy, exemption, special measure and historical effective date; commercial use terms. | `info@gra.gov.gh`, +233 24 243 5662/5663 on the official ICUMS page. | Yes, conditionally. | **Yes.** | Full national-line coverage beyond ECOWAS bands, schema, history, exemptions/remedies, India treatment, access/rate-limit terms and licence. |
 | Morocco (`MA`) | Administration des Douanes et Impôts Indirects (ADII) | [ADIL](https://www.douane.gov.ma/adil/) and [official application guide](https://www.douane.gov.ma/adil/pdf/adil.pdf) | Interactive tariff only; no supported bulk/API, stable version/history contract or replayable amendment feed. | ADIL API or versioned bulk release covering duties, taxes, preferences, regulatory measures and history, with commercial reuse permission. | `ADii@douane.gov.ma`, 080 100 7000 / +212 5 37 57 90 00, published in the ADIL guide. | Yes, conditionally. | **Yes.** | Field dictionary, completeness/line counts, effective-date and amendment model, origin-program semantics, India treatment, rate limits and rights. |
 | Ecuador (`EC`) | Servicio Nacional de Aduana del Ecuador (SENAE) | [National Tariff / service portal](https://mesadeservicios.aduana.gob.ec/arancel/) and [SENAE public site](https://www.aduana.gob.ec/) | A current interactive/live service exists, but there is no supported complete anonymous distribution contract, immutable history or permission for automated commercial caching and derived display. | SENAE machine-readable national tariff/API or versioned bulk release with COMEX amendment history, FODINFA/ICE, safeguards/remedies, field dictionary and commercial reuse authorization. | [SENAE Service Desk](https://mesadeservicios.aduana.gob.ec/otrs/customer.pl), the authority's official channel for requests. | Yes, conditionally. | **Yes—explicitly.** | Supported endpoint policy, complete national overlays, effective dates/history, quota/restriction semantics, India treatment, rate limits and reuse authorization. |
@@ -38,7 +36,7 @@ one-off spreadsheet without an update contract does not qualify.
 
 ## Counts and boundaries
 
-- Human-access queue: **8 sovereign countries**. Singapore was removed after the sanctioned SSO
+- Human-access queue: **7 sovereign countries**. Singapore was removed after the sanctioned SSO
   legislation route was established; its implementation remains fail-closed pending a complete
   live qualification during SSO's 03:00–07:00 Singapore Time automation window. Malaysia was
   removed because the official Customs Duties Order is now technically implemented; it remains
@@ -54,10 +52,16 @@ one-off spreadsheet without an update contract does not qualify.
 - Kuwait was removed after its live public HS Code 12-digit tariff portal (7,510 unique codes),
   Copyright Law article 4 rights basis and a complete anti-dumping register (customs.gov.kw's
   complete non-paginated instructions archive) passed local qualification.
-- New locally qualified countries in this wave: **1**.
-- Existing staging-pending queue: **11 destinations**, of which **6 are sovereign states**
-  (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar and Kuwait).
+- Uzbekistan was removed on 23 September 2026. The executable source is now the legal instruments
+  on lex.uz (National Database of Legislation), not the interactive tarif.customs.uz calculator that
+  failed the earlier gates: PP-3818 Annex 1 (PP-58/2026 consolidated edition) over the PP-181
+  Annex 1 national nomenclature, with Law ZRU-42 article 8 as the rights basis (official documents
+  are not objects of copyright) and a zero active-remedy enumeration over every page of lex.uz
+  trade-remedy searches. It passed local qualification.
+- New locally qualified countries in this wave: **1** (Uzbekistan).
+- Existing staging-pending queue: **12 destinations**, of which **7 are sovereign states**
+  (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait and Uzbekistan).
 - Accepted operational coverage: **45 sovereign countries**, unchanged.
-- Potential sovereign coverage after the existing staging queue is qualified: **51**.
-- Potential sovereign coverage if all 8 access requests later succeed and providers qualify: **59**.
+- Potential sovereign coverage after the existing staging queue is qualified: **52**.
+- Potential sovereign coverage if all 7 access requests later succeed and providers qualify: **59**.
 - Production was not read or written. Railway was not used.

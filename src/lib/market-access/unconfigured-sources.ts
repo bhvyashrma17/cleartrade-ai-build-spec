@@ -184,15 +184,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://customs.gov.jo/EN/List/Integrated_customs_tariff', 'https://asytrade.customs.gov.jo/customs/tariff?lang=en', 'https://www.customs.gov.jo/EN/Pages/Copyrights'],
     unblocked_by: 'A documented Jordan Customs tariff API or complete versioned bulk release containing rates and overlays, with history and field semantics, plus written permission for periodic commercial acquisition, retention, transformation and display and authoritative India-origin treatment.',
   },
-  UZ_CUSTOMS_INTEGRATED_TARIFF: {
-    jurisdiction: 'UZ',
-    country_codes: ['UZ'],
-    authority: 'Customs Committee of the Republic of Uzbekistan — Integrated Tariff',
-    reason: 'no_documented_machine_interface',
-    determination: 'The public Integrated Tariff accepts HS code, import/export direction, sending country, country of origin and trading country and displays national units and related measures. The site exposes only an interactive calculation and directory surface; no documented tariff API, supported full export, immutable release identity or historical update contract was found. Its footer requires attribution while also reserving all rights, so it is not treated as a commercial reuse grant. Private browser calls are not used as an acquisition contract.',
-    references: ['https://tarif.customs.uz/en', 'https://tarif.customs.uz/en/directory/tnved', 'https://tarif.customs.uz/en/directory/countries'],
-    unblocked_by: 'A supported Uzbekistan tariff API or complete versioned bulk release covering rates, units, origin/trade-country treatment and non-tariff measures, with update history, field semantics and explicit commercial reuse terms.',
-  },
   BH_CUSTOMS_UNIFIED_TARIFF: {
     jurisdiction: 'BH',
     country_codes: ['BH'],
