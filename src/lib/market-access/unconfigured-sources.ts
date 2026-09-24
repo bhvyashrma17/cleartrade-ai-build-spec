@@ -148,15 +148,7 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://ikesra.kra.go.ke/items/538c6b1f-8c90-42da-ae0e-f20ea1d1fa6a', 'https://www.kra.go.ke/news-center/public-notices/1733-implementation-of-the-2022-harmonized-system-the-2022-east-african-community-common-external-tariff', 'https://www.kra.go.ke/component/search/common'],
     unblocked_by: 'A complete KRA national tariff distribution or supported API with an exhaustive EAC-and-Kenya amendment/overlay manifest, field semantics, reuse basis and authoritative India treatment.',
   },
-  MA_ADII_ADIL: {
-    jurisdiction: 'MA',
-    country_codes: ['MA'],
-    authority: 'Morocco Customs and Indirect Tax Administration (ADII) — ADIL integrated economic tariff',
-    reason: 'no_documented_machine_interface',
-    determination: 'ADII presents tariff rates, taxes, preferences and regulatory measures through the ADIL interactive application. The authority documentation found describes the web application but not a supported bulk dataset, public API, stable versioned release or historical replay contract. Driving private endpoints would not establish deterministic acquisition. Morocco\'s national overlays and any India treatment therefore remain unknown rather than inferred from regional or agreement summaries.',
-    references: ['https://www.douane.gov.ma/adil/', 'https://www.douane.gov.ma/adil/pdf/adil.pdf'],
-    unblocked_by: 'A documented ADII API or versioned bulk tariff release with reuse terms, full field dictionary, amendment/history mechanism and authoritative India concession and origin instruments.',
-  },
+
   EG_CUSTOMS_INTEGRATED_TARIFF: {
     jurisdiction: 'EG',
     country_codes: ['EG'],
