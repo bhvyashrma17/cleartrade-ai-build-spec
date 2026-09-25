@@ -44,7 +44,8 @@ export type NationalCodeSystem =
   | 'ID_BTKI_2022'
   | 'UZ_TN_VED'
   | 'VN_AHTN_2022'
-  | 'MA_TDI_2022';
+  | 'MA_TDI_2022'
+  | 'TN_NDP_2022';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

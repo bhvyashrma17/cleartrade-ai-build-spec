@@ -69,10 +69,14 @@ one-off spreadsheet without an update contract does not qualify.
   Law circular, with remedies enumerated from the complete ADII circular record and the Ministry of
   Industry and Commerce notice streams. The rights basis is Law 2-00 article 8 (official texts are not
   protected). It passed local qualification.
-- New locally qualified countries in this wave: **3** (Uzbekistan, Vietnam, Morocco).
-- Existing staging-pending queue: **14 destinations**, of which **9 are sovereign states**
-  (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam and Morocco).
+- New locally qualified countries in the 23 September wave: **3** (Uzbekistan, Vietnam, Morocco).
+- The 24 September eight-country wave qualified **1** (Tunisia, which was an unconfigured source rather
+  than a human-access case: Tarifweb 2026's server-rendered line pages, reconciled with the Finance Law
+  2026, and Law 94-36 Article premier as the rights basis). The UAE, Pakistan, Bangladesh, Panama, Uruguay
+  and Nigeria failed the source gate and keep their fail-closed entries; Ecuador stays in this queue.
+- Existing staging-pending queue: **15 destinations**, of which **10 are sovereign states**
+  (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia).
 - Accepted operational coverage: **45 sovereign countries**, unchanged.
-- Potential sovereign coverage after the existing staging queue is qualified: **54**.
-- Potential sovereign coverage if all 5 access requests later succeed and providers qualify: **59**.
+- Potential sovereign coverage after the existing staging queue is qualified: **55**.
+- Potential sovereign coverage if all 5 access requests later succeed and providers qualify: **60**.
 - Production was not read or written. Railway was not used.

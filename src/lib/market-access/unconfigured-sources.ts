@@ -284,15 +284,6 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://aranceles.ana.gob.pa/', 'https://aranceles-api.ana.gob.pa/', 'https://aranceles.ana.gob.pa/assets/documentos_aduanas/manual/Manual%20Herramienta%20Arancel%20Interactivo_Dic2020_V1.pdf', 'https://www.wipo.int/wipolex/en/legislation/details/15426'],
     unblocked_by: 'A supported complete export or reproducible official baseline-plus-Gazette pipeline with field dictionary and every effective amendment through the query date, preserving faithful text and source attribution.',
   },
-  TN_CUSTOMS_TARIFWEB: {
-    jurisdiction: 'TN',
-    country_codes: ['TN'],
-    authority: 'Tunisian Customs — Tarif Web 2026',
-    reason: 'source_insufficient',
-    determination: 'Tunisia Law 94-36, as amended, Art. 1 excludes official texts from copyright. Tarifweb2026 nevertheless self-identifies its underlying update as 17 June 2025 and the sixth nomenclature while Finance Law 2026 changes rates through 2028. No supported bulk/history contract or reconciled 2026 amendment state was established. National 10-character classification, conventional/autonomous duties and separate tax or regulatory measures cannot safely be reconstructed from the label alone.',
-    references: ['https://www.douane.gov.tn/tarifweb2026/', 'https://www.douane.gov.tn/consultation-tarifweb/', 'https://www.douane.gov.tn/tarif-douanier/', 'https://www.wipo.int/wipolex/en/legislation/details/21148'],
-    unblocked_by: 'A supported complete extraction or official baseline-plus-amendment chain that reconciles Tarifweb\'s stated 2025 update with Finance Law 2026, including field/code definitions and rate precedence.',
-  },
   DO_DGA_CUSTOMS_TARIFF: {
     jurisdiction: 'DO',
     country_codes: ['DO'],

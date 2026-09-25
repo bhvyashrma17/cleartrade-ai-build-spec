@@ -350,7 +350,6 @@ describe('unconfigured authoritative sources', () => {
       NG: /wipolex\/en\/legislation\/details\/21820/,
       JM: /laws\.moj\.gov\.jm\/legislation\/statutes\/C\/The%20Copyright%20Act\.pdf/,
       PA: /wipolex\/en\/legislation\/details\/15426/,
-      TN: /wipolex\/en\/legislation\/details\/21148/,
       DO: /wipolex\/en\/legislation\/details\/1191/,
       MK: /wipolex\/en\/legislation\/details\/10641/,
       TT: /wipolex\/en\/legislation\/details\/6639/,
