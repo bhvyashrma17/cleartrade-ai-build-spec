@@ -1,6 +1,6 @@
 # Dominican Republic (DO) — acquisition gate, 6 October 2026
 
-**Status: `MANUAL_ACQUISITION_REQUIRED`.** Not qualified. No provider, parser or route was added.
+**Status: `RIGHTS_PENDING` (see "Rights gate re-opened"); acquisition suspended.** Not qualified. No provider, parser or route was added.
 Ledger unchanged: ACCEPTED 45, LOCAL_QUALIFIED_STAGING_PENDING 10, ENGINEERING_COMPLETE 55.
 
 This is not a source failure. The official sources exist and are published for normal browsers;
@@ -68,12 +68,60 @@ Save into `.artifacts/customs-atlas/dominican-republic/`. Each is checksummed on
 
 Hacienda (Cloudflare CAPTCHA) is needed only if items 3–5 point to a Hacienda-only instrument.
 
+## Rights gate re-opened — 7 October 2026
+
+**Status: `RIGHTS_PENDING` — one decisive document.** The bundle request above is suspended until
+this resolves.
+
+**Why it re-opened.** Law 65-00 art. 41 permits reproduction of laws, decrees, regulations and
+administrative acts only "siempre y cuando no esté prohibido". The DGA 2022 tariff publication
+carries its own specific notice: total or partial reproduction is prohibited without prior DGA
+authorization, and DGA asserts edition and reproduction rights in the publication and its Spanish HS
+nomenclature. That is a specific prohibition, not a generic portal footer. **The DGA edition
+therefore cannot be the commercial base**, whether the facts are extracted or the text reproduced.
+"Facts are not copyrightable" is not accepted as project policy.
+
+**Routes checked:**
+
+1. **Statutory instrument — candidate.** The current nomenclature was not enacted by the DGA
+   publication. **Ministerio de Hacienda Resolución Núm. 004-2022** "incorpora la VII Enmienda de
+   la Nomenclatura del Sistema Armonizado de Designación y Codificación de Mercancías versión 2022"
+   to the Dominican tariff, under the Law 146-00 delegation to Hacienda (on DGA recommendation) to
+   create or eliminate subheadings and adapt the nomenclature. As an administrative act it falls
+   within art. 41. The DGA prohibition attaches to DGA's edition, not to Hacienda's act. Official
+   copy (7.9 MB, posted 7 March 2023):
+   `https://www.hacienda.gob.do/transparencia/wp-content/uploads/2023/03/Resolucio%CC%81n-004-2022-que-incorpora-la-VII-Enmienda-de-la-Nomenclatura-del-Sistema-Armonizado-de-Designacio%CC%81n-y-Codificacio%CC%81n-de-Mercanci%CC%81as-v2022.pdf`.
+   Hacienda serves a Cloudflare CAPTCHA to this network, and WebFetch is refused too, so the
+   contents are **unread**. This route clears the gate only if, read from the document itself:
+   - the resolution (or an annex that forms part of it) contains the operative 8-digit codes **and**
+     their gravamen. If it contains only nomenclature, the rates must also come from Law 146-00
+     and its later legal instruments;
+   - the document carries no reproduction prohibition of its own;
+   - nothing in it adopts the DGA edition as the official text, which would carry the prohibition
+     over.
+2. **Official open-data dataset — none.** No tariff dataset was found on the national open-data
+   portal or DGA transparency material, with or without a licence.
+3. **Other statutory schedule.** Law 146-00 (Congress, Gaceta Oficial) is covered by art. 41, but
+   its annex predates HS 2022. It can supply rates only where Res. 004-2022 maps current codes to
+   them. WTO tariff data is not national execution and is not a substitute.
+   Third-party copies (Scribd, PDFCoffee, AnyFlip) are unusable.
+4. **Explicit DGA permission — none on record.**
+
+**What clears the block if route 1 fails.** Written authorization from the Dirección General de
+Aduanas (the notice requires prior DGA authorization). Contact: `ayuda@aduanas.gob.do`. The
+authorization would need to permit ClearTrade, commercially, to extract, normalize, retain (with
+checksums), and display or redistribute to its customers the tariff codes, national descriptions
+and duty rates of the *Arancel de Aduanas 7ma Enmienda 2022* and its updates. Alternatively, a
+published open licence of equivalent scope from DGA or Hacienda.
+
+If route 1 fails and no such permission exists: **`BLOCKED_RIGHTS`**.
+
 ## Unchanged positions (source-confirmed, carried forward)
 
 - India: no Dominican tariff-preference instrument with India. The 2025 AEO mutual-recognition
   arrangement is trade facilitation, not preferential origin. Expected `not_applicable`. Origin
   `IN` never activates a preference.
-- Rights: Law 65-00 art. 41 permits reproduction of laws, decrees, regulations and administrative
+- Rights (superseded 7 Oct, see above): Law 65-00 art. 41 permits reproduction of laws, decrees, regulations and administrative
   acts with source identification and textual fidelity. The DGA portal's generic IP terms do not
   remove that permission for covered official instruments, and do not extend it to unrelated
   portal material.
