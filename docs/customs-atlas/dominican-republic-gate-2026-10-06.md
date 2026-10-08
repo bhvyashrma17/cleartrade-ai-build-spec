@@ -1,6 +1,6 @@
 # Dominican Republic (DO) — acquisition gate, 6 October 2026
 
-**Status: `RIGHTS_PENDING` (see "Rights gate re-opened"); acquisition suspended.** Not qualified. No provider, parser or route was added.
+**Status: `BLOCKED_RIGHTS` (8 Oct; see "Rights gate outcome"); acquisition suspended.** Not qualified. No provider, parser or route was added.
 Ledger unchanged: ACCEPTED 45, LOCAL_QUALIFIED_STAGING_PENDING 10, ENGINEERING_COMPLETE 55.
 
 This is not a source failure. The official sources exist and are published for normal browsers;
@@ -115,6 +115,60 @@ and duty rates of the *Arancel de Aduanas 7ma Enmienda 2022* and its updates. Al
 published open licence of equivalent scope from DGA or Hacienda.
 
 If route 1 fails and no such permission exists: **`BLOCKED_RIGHTS`**.
+
+## Rights gate outcome — 8 October 2026: `BLOCKED_RIGHTS`
+
+**Input.** Res. 004-2022 was inspected from Hacienda's official PDF (by the user). It is an
+administrative act with no reproduction prohibition. It carries SA-8 codes and NMF/gravámenes **only
+for the modifications it orders**. Its Article Sixth refers separately to communicating "la
+nomenclatura arancelaria según la VII Enmienda versión 2022". It is not the complete schedule.
+
+**1. A separate Hacienda publication of the complete nomenclature — not found.** Indexed official
+material surfaces only Res. 004-2022 for the 2022 tariff. The complete schedule appears only as the
+joint *Ministerio de Hacienda – Dirección General de Aduanas* edition, and that edition carries the
+reproduction prohibition. The 2017 (VI Amendment) edition was published the same way, as "Ministerio
+de Hacienda – DGA, enero 2017". Residual check that would reopen this item: Hacienda's own *Base
+legal* listing (`/transparencia/base-legal-de-la-institucion/`) could not be read from this network
+(Cloudflare CAPTCHA). If a browser shows a separate Hacienda nomenclature/annex file there, the gate
+reopens.
+
+**2. Statutory reconstruction — not possible.** The chain would have to start at Law 146-00 Annex I
+(the full code and gravamen schedule; Arts. 1–2). The official Senate archive copy
+(`memoriahistorica.senadord.gob.do`, retained as `ley-146-00-senado-cuerpo.pdf`, SHA-256
+`9e499f231048360d28e442ae45e798d12de0c37f8c8ada2ec8c5d9e3d1c4b254`) is the 7-page body **without
+Annex I**. No official repository reachable here holds the annex. The intermediate HS-amendment
+incorporations (2002, 2007, 2012, 2017) were not located as standalone legal acts. Res. 004-2022
+covers only changed lines; every unchanged 2022 line inherits its code, description and rate from
+the prior edition, which exists only in the restricted joint edition. Laws 12-01 and 557-05 change
+rates but supply no nomenclature.
+
+**3. Completeness cannot be proved without the restricted edition.** All 7,697 operative codes, their
+current NMF rates and every intermediate amendment would be needed. The unchanged lines, which are
+most of the schedule, have no covered source.
+
+**4. Descriptions.** Law 146-00 art. 1 states the national designation "se basa en la Nomenclatura de
+la Versión Única en Español del Sistema Armonizado", which is WCO-derived Spanish text, and DGA
+asserts rights in that nomenclature. The Atlas precedent (Japan, Australia, Norway) keeps WCO
+material out of scope and normalizes only the authority's own tariff data. Here the authority's
+complete national data exists only in the edition with the specific prohibition. Removing
+descriptions would not cure that, because codes and rates for unchanged lines come from the same
+restricted source.
+
+**Result: outcome C — `BLOCKED_RIGHTS`.** The complete current tariff inevitably requires DGA's
+restricted joint edition.
+
+**Unblocker (any one):**
+- Written authorization from the Dirección General de Aduanas, with Ministerio de Hacienda as
+  co-publisher of the edition (`ayuda@aduanas.gob.do`). It would need to permit ClearTrade to
+  commercially extract, normalize, retain (checksummed copies), update, and display or redistribute
+  to its customers the national tariff codes, national descriptions and duty rates of the *Arancel
+  de Aduanas 7ma Enmienda 2022* and its later editions. It should state how the WCO Spanish HS text
+  is treated: Atlas excludes WCO explanatory material.
+- An explicit commercial or open licence of equivalent scope published by DGA or Hacienda.
+- An official Hacienda publication of the complete nomenclature and rates without a reproduction
+  prohibition (see the residual check above).
+
+Do not re-request the manual bundle (remedies, TRQs, avisos, Gaceta) until one of these exists.
 
 ## Unchanged positions (source-confirmed, carried forward)
 
