@@ -64,3 +64,6 @@ playwright-report/
 # The .p8 is a long-lived key that can mint credentials until revoked — never commit it.
 .env.apple.secret
 *.p8
+
+# Retained authority source artifacts and acquisition caches (docs/customs-atlas): large, never committed.
+.artifacts/
