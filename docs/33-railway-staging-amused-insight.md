@@ -68,7 +68,7 @@ TCP-proxy URLs and their identity pins recomputed. It lives only in the gitignor
 | `scripts/verify-staging-scanner.ts` | 6/6 (clean accepted, EICAR blocked, unavailable and timeout not clean) |
 | Scanner without / with wrong token | 401 / 401 |
 | Comtrade job on the deployed worker | completed, 39 `TradeFlow` rows (chapter 09, India exports, 2024) |
-| Customs Atlas | 52/55 sovereigns — see the acceptance record |
+| Customs Atlas | 54/55 sovereigns (Korea awaits its manual workbook) — see the acceptance record |
 
 ## 5. Hazards found, not fixed here
 

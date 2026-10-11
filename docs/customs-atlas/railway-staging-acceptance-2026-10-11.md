@@ -2,9 +2,10 @@
 
 **Decision:** the ten staging-pending sovereigns are `ACCEPTED`.
 Ledger: **ACCEPTED 55, LOCAL_QUALIFIED_STAGING_PENDING 0, ENGINEERING_COMPLETE 55.**
-Staging currently reproduces **52/55**: Iceland, Korea and Mauritius were accepted earlier and
-stay accepted, but their qualified artifacts cannot be reloaded into this fresh staging database
-today (below). They fail closed — no release, no snapshot, no invented duty.
+Staging reproduces **54/55**. Iceland and Mauritius had moved to new authority editions and were
+requalified the same day ([Iceland](./iceland-october-2026-requalification.md),
+[Mauritius](./mauritius-october-2026-requalification.md)); Korea still needs its manually downloaded
+workbook and fails closed — no release, no snapshot, no invented duty.
 
 Environment: Railway `amused-insight` / `staging`, branch `staging/railway`, deployed commit
 `933614fa`; staging-only Postgres and bucket (`docs/33`). Associated territories (AX, GG, IM, JE,
@@ -55,15 +56,15 @@ The first run expected Monaco 100630 to require refinement. The real September e
 `all_children_equivalent` (`taric-memory-closure.md`), which is what staging returned; the check was
 corrected and 220421 added as the documented refinement case.
 
-## Accepted forty-five — 42 reproduce
+## Accepted forty-five — 44 reproduce
 
-All pass except:
+First run: 42/45. The three gaps and their resolution:
 
-| ISO | Why staging cannot reload it today |
-|---|---|
-| IS | Skatturinn republished `TSKINN01092026.zip` in place on 16 Sep 2026: it now holds `TollskIR20260901A.txt` (SHA-256 `dc9affd9…`), not the qualified `Tollsk20260901.txt` key file (`fc664a01…`). The adapter and canary refuse it. Re-qualification of the revised file is required. |
-| MU | MRA no longer serves the pinned tariff PDF (`TariffInf130826.pdf` → HTTP 404). Re-qualification against MRA's current publication is required. |
-| KR | Manual source: the KCS XLSX from data.go.kr dataset 15051179 must be downloaded by a person through the portal's interactive download (not automated; the API route needs an unprovisioned `KCS_DATA_GO_KR_SERVICE_KEY`). Once placed in `.artifacts/customs-atlas/korea/`, run `import-korea-release.ts` → `qualify-bulk-release.ts --family=KR_KCS` → activate. |
+| ISO | Cause | Resolution |
+|---|---|---|
+| IS | Skatturinn reissued the qualified 1 September key file in place (16 Sep) and now publishes 1 October 2026 as current, under a new entry-naming scheme. | Requalified on 1 October 2026 (`99a248a7`). Deployed check: 020110 `30.00 % + 357.00 ISK / kg`. |
+| MU | MRA withdrew the 13 August baseline (404) and publishes the Integrated Tariff as at 01 October 2026. | Requalified on 1 October 2026 (`34f94210`, `2d2994c9`); edition-aware reading keeps production's August release valid. Deployed check: 010121 `0`, CECPA requires origin proof. |
+| KR | Manual source: the KCS XLSX from data.go.kr dataset 15051179 must be downloaded by a person through the portal's interactive download (not automated; the API route needs an unprovisioned `KCS_DATA_GO_KR_SERVICE_KEY`). | Open. The importer is pinned to the 11 February 2026 workbook (sheets `1.1` and `2.12`). Once the workbook is in `.artifacts/customs-atlas/korea/`: `import-korea-release.ts` → `qualify-bulk-release.ts --family=KR_KCS` → activate. A later workbook needs its own requalification. |
 
-No accepted country was demoted: acceptance records a qualification that happened; these three are a
-staging-reproduction gap with named causes.
+No accepted country was demoted: acceptance records a qualification that happened; Korea is a
+staging-reproduction gap with a named cause.
