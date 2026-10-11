@@ -106,8 +106,13 @@ export async function readIcelandAuthorityBundle(args: { bytes: Buffer; release_
   try { rawZip = await JSZip.loadAsync(rawZipBytes); }
   catch { throw new IcelandBundleError('corrupt_tariff_keys', 'The retained Skatturinn tariff-key artifact is not a readable ZIP archive.'); }
   const rawEntries = Object.values(rawZip.files).filter((entry) => !entry.dir);
-  const expectedRawName = `Tollsk${args.release_identifier.replaceAll('-', '')}.txt`;
-  if (rawEntries.length !== 1 || rawEntries[0]!.name !== expectedRawName) throw new IcelandBundleError('unexpected_tariff_key_manifest', `The tariff-key ZIP must contain exactly ${expectedRawName}.`);
+  // Skatturinn's own entry naming: `Tollsk20260901.txt` up to the 1 September 2026 release, then
+  // a two-letter infix and an optional revision suffix (`TollskIP20261001.txt`, and the in-place
+  // reissue `TollskIR20260901A.txt`). The infix and suffix carry no meaning this reader relies on;
+  // the effective date in the name must still be the release being read.
+  const releaseDigits = args.release_identifier.replaceAll('-', '');
+  const rawNamePattern = new RegExp(`^Tollsk(?:I[A-Z])?${releaseDigits}[A-Z]?\\.txt$`);
+  if (rawEntries.length !== 1 || !rawNamePattern.test(rawEntries[0]!.name)) throw new IcelandBundleError('unexpected_tariff_key_manifest', `The tariff-key ZIP must contain exactly one Tollsk${releaseDigits}.txt entry (optionally with Skatturinn's two-letter infix and revision suffix).`);
   const raw = Buffer.from(await rawEntries[0]!.async('nodebuffer')).toString('latin1');
   const records = raw.split(/\r?\n/).filter((line) => line.length > 0);
   if (!records.length) throw new IcelandBundleError('empty_release', 'The Skatturinn tariff-key file contains no records.');

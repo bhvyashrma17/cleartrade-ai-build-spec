@@ -6,15 +6,19 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { OrgTier } from '@prisma/client';
-import { acquireIcelandAuthorityBundle, ICELAND_KEYS_URL } from '@/lib/market-access/providers/iceland-acquisition';
+import { acquireIcelandAuthorityBundle, icelandKeysUrlForRelease } from '@/lib/market-access/providers/iceland-acquisition';
 import { readIcelandAuthorityBundle } from '@/lib/market-access/providers/iceland-bundle';
 import { fetchIcelandMarketAccess, importIcelandRelease, reparseIcelandAuthorityRelease } from '@/lib/market-access/providers/iceland-service';
 import { prisma } from '@/lib/prisma';
 import { validateRuntimeEnvironment } from '@/lib/runtime-config';
 import type { Principal } from '@/types';
 
-const RELEASE = '2026-09-01';
-const EXPECTED_KEYS_SHA256 = 'fc664a01b46622ab282e1c37935d163a193d6fd6df4e0f42c1be051518e6f48f';
+// Qualified 11 Oct 2026 (docs/customs-atlas/iceland-october-2026-requalification.md). The 1 September
+// release (keys fc664a01…, 29,671 records) was reissued in place on 16 Sep and is no longer published.
+const RELEASE = '2026-10-01';
+const KEYS_URL = icelandKeysUrlForRelease(RELEASE);
+const EXPECTED_KEYS_SHA256 = '65466de4a4a4b08da025187c8f1202f307ab0469ae32cc0ffc394a2010e3d7b5';
+const EXPECTED_PHYSICAL_RECORDS = 31_483;
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 async function main() {
@@ -24,20 +28,20 @@ async function main() {
   if (!user) throw new Error('Seed or configure ICELAND_CANARY_ACTOR_EMAIL as an existing staging ops/admin user.');
   const actor: Principal = { id: user.id, email: user.email, name: user.name ?? '', role: user.role, exporter_org_id: user.exporter_org_id, tier: OrgTier.paid };
 
-  const firstBytes = await acquireIcelandAuthorityBundle();
-  const secondBytes = await acquireIcelandAuthorityBundle();
+  const firstBytes = await acquireIcelandAuthorityBundle({ release_identifier: RELEASE });
+  const secondBytes = await acquireIcelandAuthorityBundle({ release_identifier: RELEASE });
   if (!firstBytes.equals(secondBytes)) throw new Error('Two acquisitions of the unchanged live Iceland sources were not byte-identical.');
   const bundle = await readIcelandAuthorityBundle({ bytes: firstBytes, release_identifier: RELEASE });
   const keys = bundle.files.find((file) => file.name === 'tariff-keys.zip');
-  if (keys?.sha256 !== EXPECTED_KEYS_SHA256 || bundle.lines.size !== 9_442 || bundle.physical_record_count !== 29_671) {
-    throw new Error('The live Skatturinn release no longer matches the qualified 1 September 2026 controls.');
+  if (keys?.sha256 !== EXPECTED_KEYS_SHA256 || bundle.lines.size !== 9_442 || bundle.physical_record_count !== EXPECTED_PHYSICAL_RECORDS) {
+    throw new Error('The live Skatturinn release no longer matches the qualified 1 October 2026 controls.');
   }
 
   const now = new Date();
   const importArgs = {
     actor, bytes: firstBytes, release_identifier: RELEASE,
     reference_date: new Date(`${RELEASE}T00:00:00.000Z`), retrieved_at: now,
-    source_url: ICELAND_KEYS_URL, activate: true, correlation_id: randomUUID(),
+    source_url: KEYS_URL, activate: true, correlation_id: randomUUID(),
   };
   const imported = await importIcelandRelease(importArgs);
   const repeated = await importIcelandRelease({ ...importArgs, correlation_id: randomUUID() });

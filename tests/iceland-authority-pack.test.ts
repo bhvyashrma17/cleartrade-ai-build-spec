@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from 'vitest';
 import {
   acquireIcelandAuthorityBundle,
   ICELAND_KEYS_URL,
+  icelandKeysUrlForRelease,
 } from '@/lib/market-access/providers/iceland-acquisition';
 import { ICELAND_BUNDLE_READER_VERSION, IcelandBundleError, readIcelandAuthorityBundle, readIcelandAuthorityRelease } from '@/lib/market-access/providers/iceland-bundle';
 import { buildIcelandMarketAccess } from '@/lib/market-access/providers/iceland-parser';
@@ -37,13 +38,14 @@ function controlRecord(code: string, options: { fee?: Measure; permit?: string; 
 
 function quantityRecord(code: string, quantity = 'KGM') { return `5${code}${quantity}`.padEnd(250, ' '); }
 
-async function rawTariffZip(lines: string[]) {
+async function rawTariffZip(lines: string[], entryName = 'Tollsk20260901.txt') {
   const zip = new JSZip();
-  zip.file('Tollsk20260901.txt', Buffer.from(`${lines.join('\r\n')}\r\n`, 'latin1'), { date: new Date('1980-01-01T00:00:00.000Z') });
+  zip.file(entryName, Buffer.from(`${lines.join('\r\n')}\r\n`, 'latin1'), { date: new Date('1980-01-01T00:00:00.000Z') });
   return Buffer.from(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', platform: 'UNIX' }));
 }
 
-async function fixtureBytes(chrome = 'fixture') {
+async function fixtureBytes(chrome = 'fixture', options: { entry_name?: string; release_identifier?: string } = {}) {
+  const keysUrl = options.release_identifier ? icelandKeysUrlForRelease(options.release_identifier) : ICELAND_KEYS_URL;
   const keys = await rawTariffZip([
     dutyRecord('1', '61091000', [{ code: 'A', percent: 1000 }, { code: 'YX' }]),
     controlRecord('61091000', { fee: { code: 'RF', percent: 250 }, permit: 'MST', prohibition: 'TKR', base: 'K', net: true }),
@@ -58,15 +60,15 @@ async function fixtureBytes(chrome = 'fixture') {
     controlRecord('10063009'),
     dutyRecord('1', '99999999', [{ code: 'YX' }]),
     controlRecord('99999999'),
-  ]);
+  ], options.entry_name);
   const fetchImpl = vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
-    if (url === ICELAND_KEYS_URL) return new Response(keys, { status: 200 });
+    if (url === keysUrl) return new Response(keys, { status: 200 });
     if (url.includes('india') || url.includes('indland')) return new Response(`<html><div id="${chrome}"></div><!-- eplica-contentid 1-5534-MainContent --><div class="article box" data-aid="5534"><p>Indland 1. október 2025</p></div><hr class="stream" /><div id="dynamic-${chrome}"></div></html>`, { status: 200 });
     if (url.endsWith('.pdf')) return new Response(Buffer.from('%PDF-1.7 reviewed Iceland authority fixture'), { status: 200 });
     return new Response(`<html><div id="${chrome}"></div><!-- eplica-contentid 1-3430-MainContent --><div class="article box" data-aid="3430"><p>tollskrárlyklar release history</p></div><hr class="stream" /><div id="dynamic-${chrome}"></div></html>`, { status: 200 });
   }) as typeof fetch;
-  return { bytes: await acquireIcelandAuthorityBundle({ fetch_impl: fetchImpl }), fetchImpl };
+  return { bytes: await acquireIcelandAuthorityBundle({ fetch_impl: fetchImpl, ...(options.release_identifier ? { release_identifier: options.release_identifier } : {}) }), fetchImpl };
 }
 
 async function parsed() {
@@ -112,6 +114,17 @@ describe('Iceland retained authority bundle', () => {
     const tampered = Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
     await expect(readIcelandAuthorityBundle({ bytes: tampered, release_identifier: RELEASE })).rejects.toEqual(expect.objectContaining<Partial<IcelandBundleError>>({ code: 'artifact_hash_mismatch' }));
     expect(() => readIcelandAuthorityRelease({ bytes, release_identifier: RELEASE, reader_version: 'future-reader' })).toThrow(expect.objectContaining({ code: 'unsupported_reader_version' }));
+  });
+  test("accepts Skatturinn's later entry naming only for the release's own effective date", async () => {
+    const october = await fixtureBytes('fixture', { entry_name: 'TollskIP20261001.txt', release_identifier: '2026-10-01' });
+    await expect(readIcelandAuthorityBundle({ bytes: october.bytes, release_identifier: '2026-10-01' })).resolves.toMatchObject({ release_identifier: '2026-10-01' });
+    const reissue = await fixtureBytes('fixture', { entry_name: 'TollskIR20260901A.txt' });
+    await expect(readIcelandAuthorityBundle({ bytes: reissue.bytes, release_identifier: RELEASE })).resolves.toMatchObject({ release_identifier: RELEASE });
+
+    for (const entry_name of ['TollskIP20261001.txt', 'Tollsk20260901.csv', 'TollskIPX20260901.txt', 'Tollsk20260901AB.txt', 'other.txt']) {
+      const { bytes } = await fixtureBytes('fixture', { entry_name });
+      await expect(readIcelandAuthorityBundle({ bytes, release_identifier: RELEASE })).rejects.toEqual(expect.objectContaining<Partial<IcelandBundleError>>({ code: 'unexpected_tariff_key_manifest' }));
+    }
   });
 });
 
