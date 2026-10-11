@@ -2,10 +2,11 @@
 
 **Decision:** the ten staging-pending sovereigns are `ACCEPTED`.
 Ledger: **ACCEPTED 55, LOCAL_QUALIFIED_STAGING_PENDING 0, ENGINEERING_COMPLETE 55.**
-Staging reproduces **54/55**. Iceland and Mauritius had moved to new authority editions and were
-requalified the same day ([Iceland](./iceland-october-2026-requalification.md),
-[Mauritius](./mauritius-october-2026-requalification.md)); Korea still needs its manually downloaded
-workbook and fails closed — no release, no snapshot, no invented duty.
+Staging reproduces **55/55** in one full run of `canary-staging-atlas.ts` through the deployed
+worker and API (45/45 accepted, 10/10 previously pending, fail-closed probes pass). Iceland and
+Mauritius had moved to new authority editions and were requalified the same day
+([Iceland](./iceland-october-2026-requalification.md), [Mauritius](./mauritius-october-2026-requalification.md));
+Korea was loaded from its manually downloaded qualified workbook.
 
 Environment: Railway `amused-insight` / `staging`, branch `staging/railway`, deployed commit
 `933614fa`; staging-only Postgres and bucket (`docs/33`). Associated territories (AX, GG, IM, JE,
@@ -56,7 +57,7 @@ The first run expected Monaco 100630 to require refinement. The real September e
 `all_children_equivalent` (`taric-memory-closure.md`), which is what staging returned; the check was
 corrected and 220421 added as the documented refinement case.
 
-## Accepted forty-five — 44 reproduce
+## Accepted forty-five — 45 reproduce
 
 First run: 42/45. The three gaps and their resolution:
 
@@ -64,7 +65,6 @@ First run: 42/45. The three gaps and their resolution:
 |---|---|---|
 | IS | Skatturinn reissued the qualified 1 September key file in place (16 Sep) and now publishes 1 October 2026 as current, under a new entry-naming scheme. | Requalified on 1 October 2026 (`99a248a7`). Deployed check: 020110 `30.00 % + 357.00 ISK / kg`. |
 | MU | MRA withdrew the 13 August baseline (404) and publishes the Integrated Tariff as at 01 October 2026. | Requalified on 1 October 2026 (`34f94210`, `2d2994c9`); edition-aware reading keeps production's August release valid. Deployed check: 010121 `0`, CECPA requires origin proof. |
-| KR | Manual source: the KCS XLSX from data.go.kr dataset 15051179 must be downloaded by a person through the portal's interactive download (not automated; the API route needs an unprovisioned `KCS_DATA_GO_KR_SERVICE_KEY`). | Open. The importer is pinned to the 11 February 2026 workbook (sheets `1.1` and `2.12`). Once the workbook is in `.artifacts/customs-atlas/korea/`: `import-korea-release.ts` → `qualify-bulk-release.ts --family=KR_KCS` → activate. A later workbook needs its own requalification. |
+| KR | Manual source: the KCS XLSX from data.go.kr dataset 15051179 must be downloaded by a person (the API route needs an unprovisioned `KCS_DATA_GO_KR_SERVICE_KEY`). | Loaded from the qualified 11 February 2026 workbook (`be4450ba…`): 380,216 rows, 4 rows added and 13 same-identity corrections between sheets `1.1` and `2.12` exactly as in `korea-semantic-closure.md`; bulk-qualified (321 MB peak), activated, re-import `UNCHANGED`. Deployed check: 270900 `3% (관세율)`, India requires origin proof. A later workbook needs its own requalification. |
 
-No accepted country was demoted: acceptance records a qualification that happened; Korea is a
-staging-reproduction gap with a named cause.
+No accepted country was demoted.
