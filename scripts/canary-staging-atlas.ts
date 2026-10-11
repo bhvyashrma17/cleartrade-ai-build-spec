@@ -15,7 +15,11 @@
  * repository's own canary scripts or qualification records state them.
  *
  *   STAGING_BASE_URL=https://… ATLAS_VERIFY_EMAIL=… ATLAS_VERIFY_PASSWORD=… \
- *     npx tsx --env-file=<staging operator env> scripts/verify-staging-atlas.ts [--only=QA,TN] [--out=report.json]
+ *     npx tsx --env-file=<staging operator env> scripts/canary-staging-atlas.ts [--only=QA,TN] [--out=report.json]
+ *
+ * Named `canary-*`, not `verify-*`: `src/lib/prisma.ts` refuses any `verify-*` entrypoint against a
+ * real (staging/production) database, because those are fixture verifiers. This one reads only
+ * real authority releases, refuses every environment except staging, and creates no fixtures.
  *
  * Exit code 1 unless every requested sovereign passes.
  */
@@ -51,7 +55,13 @@ const blankNotZero = (code: string): Check => (ctx) => ctx.lines.some((line) => 
 const EU_ORDINARY = '610910';
 export const CASES: Record<string, { hs6: string; checks?: Check[] }[]> = {
   ...Object.fromEntries(['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'].map((country) => [country, [{ hs6: EU_ORDINARY }]])),
-  MC: [{ hs6: EU_ORDINARY }, { hs6: '100630', checks: [resolution('classification_refinement_required')] }],
+  // docs/customs-atlas/taric-memory-closure.md, observed in the September 2026 extraction:
+  // 100630 is `175.000 EUR / 1 tonne`, all_children_equivalent; 220421 requires refinement.
+  MC: [
+    { hs6: EU_ORDINARY },
+    { hs6: '100630', checks: [generalKind('specific'), resolution('all_children_equivalent')] },
+    { hs6: '220421', checks: [resolution('classification_refinement_required')] },
+  ],
   GB: [{ hs6: '100630' }],
   US: [{ hs6: '460290', checks: [lineAv('4602', 3.5)] }],
   CA: [{ hs6: '610910' }], AU: [{ hs6: '610910' }], JP: [{ hs6: '610910' }], NO: [{ hs6: '610910' }], TW: [{ hs6: '610910' }],
@@ -89,7 +99,7 @@ async function login(base: string, email: string, password: string) {
 
 async function main() {
   const database = validateDatabaseEnvironment('worker');
-  if (database.environment !== 'staging') throw new Error('verify-staging-atlas runs only against staging.');
+  if (database.environment !== 'staging') throw new Error('canary-staging-atlas runs only against staging.');
   const base = (process.env.STAGING_BASE_URL ?? '').replace(/\/$/, '');
   if (!/^https:\/\//.test(base)) throw new Error('STAGING_BASE_URL must be the https staging origin.');
   const cookie = await login(base, process.env.ATLAS_VERIFY_EMAIL ?? '', process.env.ATLAS_VERIFY_PASSWORD ?? '');

@@ -1,8 +1,13 @@
 # Customs Atlas staging-pending queue
 
-This is the single manifest for a future staging qualification batch. **None of these destinations
-is accepted operational yet.** Accepted operational count remains **45 sovereign countries**.
-There are **15 pending destinations but only 10 pending sovereign states**: Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia.
+This is the manifest for the staging qualification batch.
+
+**11 October 2026 — the ten sovereign states below are `ACCEPTED`** on Railway staging
+(`amused-insight`/`staging`, commit `933614fa`): Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar,
+Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia. Accepted operational count is **55 sovereign
+countries**; LOCAL_QUALIFIED_STAGING_PENDING is **0**. Evidence:
+[`railway-staging-acceptance-2026-10-11.md`](./railway-staging-acceptance-2026-10-11.md).
+The five associated territories/dependencies remain pending; that run did not exercise them.
 Åland, Guernsey, Isle of Man, Jersey and Puerto Rico are associated territories/dependencies and
 must not inflate the sovereign-country metric. Candidate commit for the six scope aliases is
 `81f2d2e`; Sri Lanka's implementation commit is `5ec745a`.
@@ -55,8 +60,8 @@ other portal's read path, and verify idempotent repeat ingest. Promote only dest
 staging evidence agrees with the authority source. One failure must not promote or contaminate
 another destination.
 
-If all fifteen destinations qualify, the operational destination count becomes **60**, while the
-operational sovereign-country count becomes **55**. Keep both metrics in reports; they answer
+With the ten sovereigns accepted, the operational sovereign-country count is **55**. If the five
+associated territories also qualify, the operational destination count becomes **60**. Keep both metrics in reports; they answer
 different questions.
 
 ## Operational note: Tunisian Customs TLS chain

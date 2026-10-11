@@ -170,6 +170,7 @@ govern every PR.
 | `docs/13-blueprint-reconciliation.md` | **Read before Phase 0.** Where the two sources conflict, what's missing from each, and 10 decisions this raises |
 | `docs/14-guest-and-tiers.md` | **Read before any permission, auth or access-control work.** Guest/freemium tiers, the capability matrix, guest lifecycle from mint through upgrade, retention, and the abuse surface. Supersedes the "all access is authenticated" assumption in `docs/01`–`docs/13` |
 | `docs/31-global-country-screening.md` | Phase 1F Stage A: the derived country universe, Country Screening Policy v1, screening rank, quota planning and the handoff into the deep Country Truth pipeline |
+| `docs/33-railway-staging-amused-insight.md` | Railway staging as deployed: services, isolation from production, empty-database bootstrap, verification, open production hazards |
 | `docs/32-latest-usable-period.md` | Phase 1G: per-country latest-usable-period selection, the fallback walk and its four semantics, mixed-vintage ranking, per-reporter deep analysis windows, and freshness-weighted confidence |
 
 ## Build order (don't build portal-by-portal)

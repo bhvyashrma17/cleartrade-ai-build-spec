@@ -76,7 +76,8 @@ one-off spreadsheet without an update contract does not qualify.
   and Nigeria failed the source gate and keep their fail-closed entries; Ecuador stays in this queue.
 - Existing staging-pending queue: **15 destinations**, of which **10 are sovereign states**
   (Sri Lanka, Monaco, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia).
-- Accepted operational coverage: **45 sovereign countries**, unchanged.
-- Potential sovereign coverage after the existing staging queue is qualified: **55**.
+- Accepted operational coverage: **45 sovereign countries** at the time of this record; **55** since
+  the 11 October 2026 Railway staging acceptance ([`railway-staging-acceptance-2026-10-11.md`](./railway-staging-acceptance-2026-10-11.md)).
+- Potential sovereign coverage after the existing staging queue is qualified: **55** (reached 11 Oct 2026).
 - Potential sovereign coverage if all 5 access requests later succeed and providers qualify: **60**.
 - Production was not read or written. Railway was not used.
