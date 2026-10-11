@@ -45,7 +45,8 @@ export async function importGreenWaveRelease(country: GreenWaveCountry, args: { 
     try { bundle = await readPdfAuthorityBundle({ bytes, release_identifier: args.release_identifier.trim(), country_code: country, expected_roles: expectedRoles(country) }); }
     catch (error) { if (error instanceof PdfTableBundleError) throw validationError([{ field: 'bundle', code: error.code, message: error.message }]); throw error; }
     const tariff = bundle.files.find((file) => file.url === config.tariff_url);
-    const expectedAmendments = country === 'MU' ? 6 : country === 'LK' ? 3 : 0;
+    // Mauritius' 1 October 2026 edition already incorporates every published change (no post-baseline layer).
+    const expectedAmendments = country === 'LK' ? 3 : 0;
     if (bundle.line_count !== config.profile.expected_line_count || tariff?.sha256 !== config.tariff_sha256
       || bundle.amendment_operations.length !== expectedAmendments) {
       throw validationError([{ field: 'bundle', code: 'qualification_controls_changed', message: `${country} bundle does not match the qualified tariff checksum, row count or amendment count.` }]);
