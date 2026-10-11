@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
-import { buildPdfAuthorityBundle, extractPdfTablePages, parsePdfTablePages, type AmendmentOperation, type BundleArtifact, type PdfTariffLine } from './pdf-table-family';
+import { buildPdfAuthorityBundle, extractPdfTablePages, parsePdfTablePages, type AmendmentOperation, type BundleArtifact } from './pdf-table-family';
 import { GREEN_WAVE_CONFIGS, GREEN_WAVE_SCOPE, type GreenWaveConfig, type GreenWaveCountry } from './green-wave-config';
 
 const MAX_ARTIFACT_BYTES = 80 * 1024 * 1024;
@@ -33,35 +33,6 @@ async function fetchBytes(url: string, fetchImpl: typeof fetch, attempts: number
     }
   }
   throw new Error(`Authority acquisition failed for ${url} after ${attempts} attempt(s): ${last instanceof Error ? last.message : String(last)}`, { cause: last });
-}
-
-const MAURITIUS_AMENDMENT_PROFILE = {
-  country_code: 'MU', label: 'Mauritius 4 September 2026 VAT amendment annex', expected_pdf_pages: 1,
-  table_first_page: 1, table_last_page: 1, expected_line_count: 6,
-  code_pattern: /^\d{4}\.\d{2}\.\d{2}$/, code_header: /^H\.S\. Code$/i, description_header: /^Description$/i, unit_header: /^(?:Unit|Statistical)$/i,
-  columns: [
-    { key: 'general', header: /^General$/i, required: true },
-    { key: 'excise_duty', header: /^Excise$/i, right_header: /^Levy$/i, required: false },
-    { key: 'vat', header: /^VAT$/i, required: true },
-    { key: 'india', header: /^INDIA$/i, required: true },
-  ], code_tolerance_points: 28, effective_from: '2026-09-04',
-} as const;
-
-function applyMauritiusAmendments(lines: ReadonlyMap<string, PdfTariffLine>, replacements: ReadonlyMap<string, PdfTariffLine>) {
-  const current = new Map(lines);
-  const operations: AmendmentOperation[] = [];
-  for (const replacement of replacements.values()) {
-    const baseline = current.get(replacement.code);
-    if (!baseline) throw new Error(`Mauritius VAT amendment replaces ${replacement.code}, which is absent from the retained 13 August baseline.`);
-    const merged: PdfTariffLine = {
-      ...baseline, description: replacement.description, cells: { ...baseline.cells, ...replacement.cells },
-      raw_cells: { ...baseline.raw_cells, ...replacement.raw_cells }, source_pages: [...baseline.source_pages],
-    };
-    current.set(replacement.code, merged);
-    operations.push({ operation: 'REPLACE', code: replacement.code, publication_date: '2026-09-04', effective_from: '2026-09-04',
-      precedence: operations.length + 1, source_artifact: 'annex-vat-2026-09-04.pdf', cells: { ...replacement.raw_cells }, description: replacement.description });
-  }
-  return { lines: current, operations };
 }
 
 const SRI_LANKA_CHAPTER = /Chap_(\d{2})(?:N)?\.pdf$/i;
@@ -147,16 +118,10 @@ export async function acquireGreenWaveAuthorityBundle(country: GreenWaveCountry,
   }
   const tariff = artifacts[0]!.bytes;
   if (sha256(tariff) !== config.tariff_sha256) throw new Error(`${config.profile.label} checksum changed from the reviewed ${config.tariff_sha256}.`);
-  let lines = parsePdfTablePages(config.profile, country === 'LK' ? (sriLankaArchive ??= await readSriLankaArchive(tariff)).pages : await extractPdfTablePages(tariff), config.currency);
-  let operations: AmendmentOperation[] = [];
-  if (country === 'MU') {
-    const annex = artifacts.find((artifact) => artifact.name === 'annex-vat-2026-09-04.pdf')!;
-    const replacements = parsePdfTablePages(MAURITIUS_AMENDMENT_PROFILE, await extractPdfTablePages(annex.bytes), config.currency);
-    const applied = applyMauritiusAmendments(lines, replacements);
-    lines = applied.lines;
-    operations = applied.operations;
-  }
-  if (country === 'LK') operations = sriLankaAmendments();
+  const lines = parsePdfTablePages(config.profile, country === 'LK' ? (sriLankaArchive ??= await readSriLankaArchive(tariff)).pages : await extractPdfTablePages(tariff), config.currency);
+  // Mauritius' 1 October 2026 integrated tariff already incorporates every published change, so
+  // its post-baseline amendment layer is empty (docs/customs-atlas/mauritius-october-2026-requalification.md).
+  const operations: AmendmentOperation[] = country === 'LK' ? sriLankaAmendments() : [];
   return buildPdfAuthorityBundle({ family: config.family, profile: config.profile, release_identifier: releaseIdentifier,
     source_url: config.tariff_url, artifacts, lines, amendments: operations, rights_evidence: config.rights_evidence,
     preference_evidence: config.preference_evidence, scope: GREEN_WAVE_SCOPE });

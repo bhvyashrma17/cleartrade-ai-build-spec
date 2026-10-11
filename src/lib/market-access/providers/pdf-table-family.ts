@@ -60,6 +60,8 @@ export interface PdfAuthorityBundle {
   checksum: string;
   size_bytes: number;
   release_identifier: string;
+  /** The edition's own effective date, as recorded in the retained manifest at acquisition. */
+  effective_from?: string;
   source_url: string;
   files: readonly { name: string; size_bytes: number; sha256: string; role: string; url: string }[];
   lines: ReadonlyMap<string, PdfTariffLine>;
@@ -493,7 +495,7 @@ export async function readPdfAuthorityBundle(args: { bytes: Buffer; release_iden
   if (lines.size !== manifest.line_count) throw new PdfTableBundleError('row_count_changed', `Manifest records ${manifest.line_count} lines but the normalized artifact contains ${lines.size}.`);
   return {
     checksum: sha256(args.bytes), size_bytes: args.bytes.length, release_identifier: args.release_identifier,
-    source_url: manifest.source_url, files, lines, line_count: lines.size,
+    effective_from: manifest.effective_from, source_url: manifest.source_url, files, lines, line_count: lines.size,
     reader_version: PDF_TABLE_READER_VERSION, acquisition_version: PDF_TABLE_ACQUISITION_VERSION,
     amendment_operations: manifest.amendment_operations ?? [], rights_evidence: manifest.rights_evidence,
     preference_evidence: manifest.preference_evidence, scope: manifest.scope,

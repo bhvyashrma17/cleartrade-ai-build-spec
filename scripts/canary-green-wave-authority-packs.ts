@@ -22,7 +22,9 @@ const CASES: Record<GreenWaveCountry, { ordinary: string; unusual: string; expec
   MU: { ordinary: '010121', unusual: '090230', expected_general: 0, expected_unusual_kind: 'mixed' },
   LK: { ordinary: '030233', unusual: '100191', expected_general: 20, expected_unusual_kind: 'mixed' },
 };
-const releaseIdentifier = (country: GreenWaveCountry) => country === 'LK' ? '2026-09-20' : RELEASE;
+// Mauritius was requalified on its 1 October 2026 edition (acquired 11 October); a 15 September
+// acquisition date would precede that edition's effective date.
+const releaseIdentifier = (country: GreenWaveCountry) => country === 'LK' ? '2026-09-20' : country === 'MU' ? '2026-10-11' : RELEASE;
 
 async function actor(): Promise<Principal> {
   const email = process.env.GREEN_WAVE_CANARY_ACTOR_EMAIL?.trim().toLowerCase();

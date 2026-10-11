@@ -19,6 +19,18 @@ const cacheFor = (country: GreenWaveCountry) => {
 };
 const expectedRoles = (country: GreenWaveCountry) => Object.fromEntries(GREEN_WAVE_CONFIGS[country].artifacts.map((artifact) => [artifact.name, artifact.role]));
 
+/** Reads a retained release against the current artifact set, then against each retired edition's. */
+async function readRetainedGreenWaveRelease(country: GreenWaveCountry, args: Omit<Parameters<typeof readPdfAuthorityRelease>[0], 'expected_roles' | 'country_code'>) {
+  const roleSets = [expectedRoles(country), ...(GREEN_WAVE_CONFIGS[country].retired_artifact_sets ?? [])];
+  for (const [index, expected_roles] of roleSets.entries()) {
+    try { return await readPdfAuthorityRelease({ ...args, country_code: country, expected_roles }); }
+    catch (error) {
+      if (!(error instanceof PdfTableBundleError) || error.code !== 'unexpected_manifest' || index === roleSets.length - 1) throw error;
+    }
+  }
+  throw new Error(`No ${country} artifact set is configured.`);
+}
+
 export function greenWaveReleaseSource(country: GreenWaveCountry): AuthorityReleaseSource {
   const config = GREEN_WAVE_CONFIGS[country];
   return Object.freeze({ source_family: config.source_family, authority: config.authority, destination_scope: [country],
@@ -61,7 +73,7 @@ async function loadBundle(country: GreenWaveCountry, releaseId?: string) {
   if (release.source_family !== config.source_family || release.authority !== config.authority) throw validationError([{ field: 'release', code: 'wrong_authority', message: `That release is not a ${config.authority} tariff release.` }]);
   const cache = cacheFor(country); const cached = cache.get(release.checksum); if (cached) return { release, bundle: cached };
   const loaded = await loadAuthorityReleaseArtifact(release.id);
-  const bundle = await readPdfAuthorityRelease({ bytes: loaded.bytes, release_identifier: release.release_identifier, country_code: country, expected_roles: expectedRoles(country), reader_version: release.reader_version });
+  const bundle = await readRetainedGreenWaveRelease(country, { bytes: loaded.bytes, release_identifier: release.release_identifier, reader_version: release.reader_version });
   if (bundle.checksum !== release.checksum) throw new Error(`Decoded ${country} bundle ${release.id} does not match its recorded checksum.`);
   cache.set(release.checksum, bundle); return { release, bundle };
 }
@@ -90,4 +102,4 @@ export const fetchAlbaniaMarketAccess = (hs6: string, options?: Parameters<typeo
 export const fetchMauritiusMarketAccess = (hs6: string, options?: Parameters<typeof fetchGreenWaveMarketAccess>[2]) => fetchGreenWaveMarketAccess('MU', hs6, options);
 export const fetchSriLankaMarketAccess = (hs6: string, options?: Parameters<typeof fetchGreenWaveMarketAccess>[2]) => fetchGreenWaveMarketAccess('LK', hs6, options);
 
-export const __test__ = { caches };
+export const __test__ = { caches, readRetainedGreenWaveRelease };

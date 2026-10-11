@@ -26,6 +26,11 @@ export interface GreenWaveConfig {
   tariff_sha256: string;
   profile: PdfTableProfile;
   artifacts: readonly GreenWaveSourceArtifact[];
+  /**
+   * Artifact sets (name -> role) of earlier qualified editions. Their retained releases stay
+   * readable after the current edition moves on; new imports must match `artifacts`.
+   */
+  retired_artifact_sets?: readonly Readonly<Record<string, string>>[];
   general_column: string;
   india_column: string | null;
   india_area_id: string | null;
@@ -114,13 +119,13 @@ export const GREEN_WAVE_CONFIGS: Readonly<Record<GreenWaveCountry, GreenWaveConf
   },
   MU: {
     country_code: 'MU', jurisdiction: 'MU', family: 'BASELINE_PLUS_AMENDMENTS', source_family: 'MU_MRA_TARIFF',
-    authority: 'Mauritius Revenue Authority, Customs Department', dataset: 'Integrated Tariff as at 13 August 2026 plus ordered post-baseline notices', provider: 'mu_mra_integrated_tariff',
+    authority: 'Mauritius Revenue Authority, Customs Department', dataset: 'Integrated Tariff as at 01 October 2026 (no post-baseline notices through 11 October 2026)', provider: 'mu_mra_integrated_tariff',
     national_code_system: 'MU_INTEGRATED_TARIFF', parser_version: 'mu-mra-baseline-amendments-parser-v1', currency: 'MUR',
-    tariff_url: 'https://www.mra.mu/download/TariffInf130826.pdf',
-    tariff_sha256: '26c0e4c6764096639bfb3cbc4dd683eb389c99d45758d2344f7df17c9e65fe11',
+    tariff_url: 'https://www.mra.mu/download/TariffInf011026.pdf',
+    tariff_sha256: 'c631ca50bfe4d5e8117983c35822af2dca858aa19285f5ce7d25de23141b035a',
     profile: {
-      country_code: 'MU', label: 'Mauritius Integrated Tariff as at 13 August 2026', expected_pdf_pages: 807,
-      table_first_page: 21, table_last_page: 806, expected_line_count: 6920,
+      country_code: 'MU', label: 'Mauritius Integrated Tariff as at 01 October 2026', expected_pdf_pages: 810,
+      table_first_page: 21, table_last_page: 809, expected_line_count: 6938,
       code_pattern: /^\d{4}\.\d{2}\.\d{2}$/, code_header: /^(?:H\.S\. Code|H\.S\.)$/i, description_header: /^Descr/i, unit_header: /^(?:Unit|U|Statisti|Statist|Stati|Stat)$/i,
       columns: [
         { key: 'general', header: /^(?:General|Genera|Gener|Gen)$/i, required: false },
@@ -128,23 +133,41 @@ export const GREEN_WAVE_CONFIGS: Readonly<Record<GreenWaveCountry, GreenWaveConf
         { key: 'vat', header: /^VAT$/i, required: false },
         { key: 'india', header: /^INDIA$/i, required: false },
       ],
-      code_tolerance_points: 28, effective_from: '2026-08-13', layout_strategy: 'mauritius_percent_row',
+      code_tolerance_points: 28, effective_from: '2026-10-01', layout_strategy: 'mauritius_percent_row',
     },
     artifacts: [
-      { name: 'integrated-tariff-2026-08-13.pdf', role: 'official_integrated_tariff_baseline', url: 'https://www.mra.mu/download/TariffInf130826.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-index.json', role: 'reviewed_official_complete_dated_post_baseline_notice_index', url: 'https://www.mra.mu/customs1/notice-to-stakeholders', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-15', baseline_date: '2026-08-13', through_date: '2026-09-15', retained_notices: ['2026-08-14 tariff rulings', '2026-08-21 vehicle display procedure', '2026-08-26 processing fee', '2026-08-26 payment timing', '2026-09-03 conditional exemptions', '2026-09-04 VAT replacement annex', '2026-09-08 classification-ruling withdrawal'] } },
-      { name: 'notice-vat-2026-09-04.pdf', role: 'official_post_baseline_vat_amendment_notice', url: 'https://www.mra.mu/download/NotceVATAct040926.pdf', kind: 'pdf', markers: [] },
-      { name: 'annex-vat-2026-09-04.pdf', role: 'official_post_baseline_vat_replacement_rows', url: 'https://www.mra.mu/download/AnxIVATAct040626.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-finance-act-2026-09-03.pdf', role: 'official_conditional_excise_and_vat_exemption_notice', url: 'https://www.mra.mu/download/Notice030926.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-processing-fee-2026-08-26.pdf', role: 'official_processing_fee_notice_not_a_commodity_rate', url: 'https://www.mra.mu/download/NotEntries260826.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-payment-2026-08-26.pdf', role: 'official_payment_timing_notice_not_a_commodity_rate', url: 'https://www.mra.mu/download/FullPymnt260826.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-vehicle-display-2026-08-21.pdf', role: 'official_procedure_code_notice_not_a_commodity_rate', url: 'https://www.mra.mu/download/Notice210826.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-rulings-2026-08-14.pdf', role: 'official_tariff_ruling_validity_notice', url: 'https://www.mra.mu/download/NotRulings140826.pdf', kind: 'pdf', markers: [] },
-      { name: 'notice-classification-2026-09-08.pdf', role: 'official_product_specific_classification_ruling_withdrawal', url: 'https://www.mra.mu/download/NoticeMcCain070926.pdf', kind: 'pdf', markers: [] },
+      { name: 'integrated-tariff-2026-10-01.pdf', role: 'official_integrated_tariff_baseline', url: 'https://www.mra.mu/download/TariffInf011026.pdf', kind: 'pdf', markers: [] },
+      { name: 'notice-index.json', role: 'reviewed_official_complete_dated_post_baseline_notice_index', url: 'https://www.mra.mu/customs1/notice-to-stakeholders', kind: 'evidence_json', markers: [], evidence: {
+        reviewed_on: '2026-10-11', baseline_date: '2026-10-01', through_date: '2026-10-11', post_baseline_notices: [],
+        pre_baseline_changes_verified_in_baseline: ['2026-09-04 VAT replacement annex (general duty identical on all six rows)', '2026-09-29 plastic-bottle excise and tariff restructuring effective 2026-10-01 (Annex I and II codes present; 3923.30.10 excise Rs 2 per unit)'],
+        non_rate_notices_reviewed: ['2026-09-29 refrigerating-appliance minimum energy performance standards (GN 56 of 2026; product control, not a commodity rate)', '2026-09-30 ruling and electronic-seal fees (not a commodity rate)'],
+      } },
+      { name: 'notice-plastic-bottles-2026-09-29.pdf', role: 'official_pre_baseline_tariff_restructuring_notice_verified_in_baseline', url: 'https://www.mra.mu/download/NotPlasticBottles.pdf', kind: 'pdf', markers: [] },
+      { name: 'annex-i-plastic-bottles-2026-09-29.pdf', role: 'official_pre_baseline_excise_code_changes_verified_in_baseline', url: 'https://www.mra.mu/download/Anx1PlasticBottles.pdf', kind: 'pdf', markers: [] },
+      { name: 'annex-ii-plastic-bottles-2026-09-29.pdf', role: 'official_pre_baseline_tariff_code_changes_verified_in_baseline', url: 'https://www.mra.mu/download/Anx2PlasticBottles.pdf', kind: 'pdf', markers: [] },
+      { name: 'notice-energy-standards-2026-09-29.pdf', role: 'official_product_control_notice_not_a_commodity_rate', url: 'https://www.mra.mu/download/NoticeEnergy.pdf', kind: 'pdf', markers: [] },
       { name: 'india-cecpa-notice.pdf', role: 'official_india_cecpa_implementation_notice', url: 'https://www.mra.mu/download/NoticeCECPA260321.pdf', kind: 'pdf', markers: [] },
       { name: 'government-copyright-policy.json', role: 'reviewed_government_reuse_policy_citation', url: 'https://www.govmu.org/EN/Pages/Copyright.aspx', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-15', finding: 'Government material may be reproduced accurately with source acknowledgement; third-party content is excluded.' } },
       { name: 'copyright-act-record.json', role: 'reviewed_wipo_lex_statutory_official_text_and_data_citation', url: 'https://www.wipo.int/wipolex/en/legislation/details/15447', kind: 'evidence_json', markers: [], evidence: { reviewed_on: '2026-09-15', finding: 'Official texts and mere data are separately excluded; protected site presentation and software are not claimed.' } },
     ],
+    // The 13 August 2026 edition (TariffInf130826.pdf, 6,920 lines, plus the 4 September VAT
+    // annex applied as a post-baseline amendment). MRA no longer serves it; releases already
+    // retained from it stay readable.
+    retired_artifact_sets: [{
+      'integrated-tariff-2026-08-13.pdf': 'official_integrated_tariff_baseline',
+      'notice-index.json': 'reviewed_official_complete_dated_post_baseline_notice_index',
+      'notice-vat-2026-09-04.pdf': 'official_post_baseline_vat_amendment_notice',
+      'annex-vat-2026-09-04.pdf': 'official_post_baseline_vat_replacement_rows',
+      'notice-finance-act-2026-09-03.pdf': 'official_conditional_excise_and_vat_exemption_notice',
+      'notice-processing-fee-2026-08-26.pdf': 'official_processing_fee_notice_not_a_commodity_rate',
+      'notice-payment-2026-08-26.pdf': 'official_payment_timing_notice_not_a_commodity_rate',
+      'notice-vehicle-display-2026-08-21.pdf': 'official_procedure_code_notice_not_a_commodity_rate',
+      'notice-rulings-2026-08-14.pdf': 'official_tariff_ruling_validity_notice',
+      'notice-classification-2026-09-08.pdf': 'official_product_specific_classification_ruling_withdrawal',
+      'india-cecpa-notice.pdf': 'official_india_cecpa_implementation_notice',
+      'government-copyright-policy.json': 'reviewed_government_reuse_policy_citation',
+      'copyright-act-record.json': 'reviewed_wipo_lex_statutory_official_text_and_data_citation',
+    }],
     general_column: 'general', india_column: 'india', india_area_id: 'IN_CECPA', india_basis: 'direct_requires_origin',
     rights_evidence: { artifact: 'government-copyright-policy.json', statutory_cross_check: 'copyright-act-record.json', rule: 'Mauritius government material may be reproduced accurately with source acknowledgement. Official texts and mere data are separately excluded by statute. ClearTrade excludes third-party content, site presentation and software.' },
     preference_evidence: { artifact: 'india-cecpa-notice.pdf', programme: 'Mauritius–India CECPA', direct_tariff_column: 'INDIA', requires_origin_proof: true, origin_qualification_not_established_by_origin_country: true },

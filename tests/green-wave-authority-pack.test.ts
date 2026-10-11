@@ -6,6 +6,7 @@ import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-s
 import { GREEN_WAVE_CONFIGS } from '@/lib/market-access/providers/green-wave-config';
 import { acquireGreenWaveAuthorityBundle } from '@/lib/market-access/providers/green-wave-acquisition';
 import { buildGreenWaveMarketAccess } from '@/lib/market-access/providers/green-wave-parser';
+import { __test__ as greenWaveService } from '@/lib/market-access/providers/green-wave-service';
 import {
   buildPdfAuthorityBundle, parsePdfTablePages, parsePublishedDuty,
   readPdfAuthorityBundle, readPdfAuthorityRelease, type PdfAuthorityBundle, type PdfTablePage, type PdfTableProfile, type PdfTariffLine,
@@ -158,5 +159,40 @@ describe('green-wave country semantics and routing', () => {
     expect(unconfiguredSourceForCountry('MK')?.reason).toBe('individual_investigation_required');
     // 45 accepted + Sri Lanka, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia pending + six customs-territory aliases pending.
     expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(60);
+  });
+});
+
+describe('Mauritius edition change (13 August -> 1 October 2026)', () => {
+  async function muBundle(roles: Readonly<Record<string, string>>, effectiveFrom: string) {
+    const artifacts = Object.entries(roles).map(([name, role]) => ({ name, role, url: 'https://www.mra.mu/download/fixture.pdf', bytes: Buffer.from(`%PDF-${name}`) }));
+    return buildPdfAuthorityBundle({ family: 'BASELINE_PLUS_AMENDMENTS', profile: { ...profile, country_code: 'MU', expected_line_count: 1, effective_from: effectiveFrom },
+      release_identifier: '2026-09-15', source_url: artifacts[0]!.url, artifacts, lines: fixtureLines(),
+      rights_evidence: { artifact: 'government-copyright-policy.json' }, preference_evidence: { requires_origin_proof: true },
+      scope: { tariff_treatment_complete: true, regulatory_coverage_complete: false } });
+  }
+
+  test('a retained 13 August release stays readable and keeps its own effective date', async () => {
+    const retired = GREEN_WAVE_CONFIGS.MU.retired_artifact_sets![0]!;
+    expect(Object.keys(retired)).toContain('integrated-tariff-2026-08-13.pdf');
+    const bytes = await muBundle(retired, '2026-08-13');
+    const read = await greenWaveService.readRetainedGreenWaveRelease('MU', { bytes, release_identifier: '2026-09-15', reader_version: 'customs-atlas-pdf-table-bundle-reader-v1' });
+    expect(read.effective_from).toBe('2026-08-13');
+    const at = new Date('2026-09-20T00:00:00.000Z');
+    const result = buildGreenWaveMarketAccess({ country: 'MU', bundle: read, release_id: 'august', release_reference_date: at, retrieved_at: at, hs6: '010121', at, origin_country: 'IN' });
+    expect(result.lines.length).toBeGreaterThan(0);
+    // Without its recorded date the same lines would be dated to the current (1 October) edition and hidden on 20 September.
+    const undated = buildGreenWaveMarketAccess({ country: 'MU', bundle: { ...read, effective_from: undefined }, release_id: 'august', release_reference_date: at, retrieved_at: at, hs6: '010121', at, origin_country: 'IN' });
+    expect(undated.lines).toHaveLength(0);
+  });
+
+  test('the current edition reads, and an unknown artifact set still fails closed', async () => {
+    const current = Object.fromEntries(GREEN_WAVE_CONFIGS.MU.artifacts.map((artifact) => [artifact.name, artifact.role]));
+    expect(GREEN_WAVE_CONFIGS.MU.profile.effective_from).toBe('2026-10-01');
+    const bytes = await muBundle(current, '2026-10-01');
+    await expect(greenWaveService.readRetainedGreenWaveRelease('MU', { bytes, release_identifier: '2026-09-15', reader_version: 'customs-atlas-pdf-table-bundle-reader-v1' }))
+      .resolves.toMatchObject({ effective_from: '2026-10-01' });
+    const unknown = await muBundle({ 'integrated-tariff-2026-07-01.pdf': 'official_integrated_tariff_baseline', 'government-copyright-policy.json': 'reviewed_government_reuse_policy_citation' }, '2026-07-01');
+    await expect(greenWaveService.readRetainedGreenWaveRelease('MU', { bytes: unknown, release_identifier: '2026-09-15', reader_version: 'customs-atlas-pdf-table-bundle-reader-v1' }))
+      .rejects.toMatchObject({ code: 'unexpected_manifest' });
   });
 });

@@ -67,7 +67,8 @@ export function buildGreenWaveMarketAccess(args: {
   const config = GREEN_WAVE_CONFIGS[args.country];
   const hs6 = args.hs6.trim();
   const origin = (args.origin_country ?? 'IN').trim().toUpperCase();
-  const effectiveFrom = new Date(`${config.profile.effective_from}T00:00:00.000Z`);
+  // A retained release carries its own edition date; the live config describes only the current edition.
+  const effectiveFrom = new Date(`${args.bundle.effective_from ?? config.profile.effective_from}T00:00:00.000Z`);
   const entries = args.at < effectiveFrom ? [] : [...args.bundle.lines.values()].filter((line) => line.code.startsWith(hs6)).sort((a, b) => a.code.localeCompare(b.code));
   const isDeclarable = (line: PdfTariffLine) => !entries.some((candidate) => candidate.code.length > line.code.length && candidate.code.startsWith(line.code));
   const generalDuty = (line: PdfTariffLine) => config.country_code === 'LK' ? sriLankaSclDuty(line) ?? line.cells[config.general_column]! : line.cells[config.general_column]!;
