@@ -47,6 +47,7 @@
     "ingest:market-access": "tsx --env-file=.env.local scripts/ingest-market-access.ts",
     "ingest:authority-release": "tsx --env-file-if-exists=.env.local scripts/ingest-authority-release.ts",
     "canary:green-wave": "tsx scripts/canary-green-wave-authority-packs.ts",
+    "gate:phase-1": "tsx --env-file-if-exists=.env.local scripts/gate-phase-1.ts",
     "verify:cbp": "tsx --env-file=.env.local scripts/verify-cbp-manifest-ingest.ts",
     "verify:buyer-intelligence": "tsx --env-file=.env.local scripts/verify-buyer-intelligence.ts",
     "buyers:build": "tsx --env-file=.env.local scripts/run-buyer-intelligence.ts"
