@@ -108,6 +108,28 @@ fingerprint prefix only — no secrets, no personal data.
 **Residual.** First CI result pending (and the first CI ever to reach typecheck/lint/tests/build, so
 pre-existing failures may surface); pushes pending the GitHub App.
 
+### E-003 · 2026-10-12 · Deployment footprint (GitHub deployments API, read-only)
+
+Railway reports its deployments to GitHub. Across all recorded deployments:
+
+| Railway project / environment | Deployments | First | Last | Refs |
+|---|---|---|---|---|
+| `amused-insight / production` | 11 | 2026-08-17 | 2026-08-24 | `master` era |
+| `amused-insight / staging` | 87 | 2026-08-17 | 2026-10-11 | every push to `staging/railway`, docs-only commits included (newest `f29fcf52`) |
+| `cleartrade-staging / staging` | 2 | 2026-10-09 | 2026-10-09 | `09c663a3`, `933614fa` (environment `ea0c9716-…`) |
+
+- **Every merge into `staging/railway` redeploys staging** (web and worker, each running
+  `npm run migrate:deploy` before start). A change with no migration redeploys harmlessly; one with a
+  migration applies it to the staging database on merge.
+- A **second Railway project, `cleartrade-staging`**, deployed this branch twice on 9 Oct and none of the
+  seven pushes on 11 Oct, so it no longer appears to auto-deploy. Its database target and whether it
+  still exists are unknown; docs/33 records that an earlier staging service carried production's
+  database URL. → R-09.
+- No pull request has ever existed, so whether Railway **PR environments** are enabled — and from which
+  base environment they would copy variables — cannot be read from here. A PR environment copied from
+  production would run this branch's pre-deploy migrations against production's database. → R-10.
+  The agent opens no PR until the owner confirms PR environments are off or based on staging.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
@@ -120,3 +142,5 @@ pre-existing failures may surface); pushes pending the GitHub App.
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Clock resolved (D-004); others open | WP2 design and tests |
 | R-07 | Operator's local-only work unverified | Open | Operator confirmation |
 | R-08 | Gate thresholds unapproved | Open | Owner approval PR |
+| R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Open | Owner/WP5 inventory: confirm disconnected or deleted |
+| R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Open — blocks opening PRs | Owner confirms PR environments off, or based on staging |
