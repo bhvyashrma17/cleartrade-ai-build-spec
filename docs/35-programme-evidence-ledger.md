@@ -283,12 +283,21 @@ all 36 added tests pass (27 gate, 8 tariff acquisition, 1 config route). The sam
 - Route to staging still open: a PR into `staging/railway` runs CI but needs R-10 answered first; a
   direct push to `staging/railway` cannot create a PR environment but lands without CI.
 
+### E-008 · 2026-10-12 · Production build of WP1 + WP2 (`0ff4b10`) compiles
+
+`next build` (Next.js 15.5.23) on a clean tree at `0ff4b10`: compiled, lint and type validity passed,
+77 pages generated, no warnings, exit 0 (2 min 25 s). The only change from the Dockerfile's
+`npm run build` is Next's own test hook `NEXT_FONT_GOOGLE_MOCKED_RESPONSES`, which answers the three
+`next/font/google` CSS requests from a local file so nothing is fetched from the blocked font hosts;
+font bytes are therefore placeholders, which a compile check does not depend on. Every route is
+dynamic (ƒ), so the build ran no database query. Railway's own build remains the deploy-time check.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
 |---|---|---|---|
 | R-01 | CI has never run tests or build; unknown pre-existing failures may surface | Open — env fix in WP1; the one order-dependent failure CI would hit is fixed on WP1 (E-006); three tests are unverifiable locally | First CI run on the WP1 PR |
-| R-02 | Agent session cannot run DB tests or build (blocked hosts) | Partly mitigated — a local harness now runs the full DB suite (E-006), not canonically; build still not run | Green CI on each WP PR |
+| R-02 | Agent session cannot run DB tests or build (blocked hosts) | Partly mitigated — a local harness runs the full DB suite (E-006) and the build compiles with mocked font CSS (E-008); neither is canonical | Green CI on each WP PR |
 | R-03 | Staging DB, Railway state and sanctions snapshots unverified from the agent session | Open | Operator read-only inventory (WP3/WP5) |
 | R-04 | Production hazards (docs/33 §5): scanner URL → staging, failed scanner deploy, 8 Oct migration by old staging web, root `railway.json` move, shared Resend key | Open, unchanged | WP5 read-only inventory |
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
