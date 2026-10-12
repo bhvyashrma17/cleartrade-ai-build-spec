@@ -113,6 +113,29 @@ function validIdentity(identity: CalculationIdentity) {
   }
 }
 
+/**
+ * The scope tariff selection runs in. Without a separate tariff clock it is the calculation scope
+ * itself. With one, it must describe the same question at a later-or-equal instant — anything else
+ * would let a tariff for another market, product or tenant through.
+ */
+function resolveTariffScope(scope: ExactFactScope, tariffScope: ExactFactScope | undefined): ExactFactScope {
+  if (!tariffScope) return scope;
+  const asOf = timestamp(scope.as_of_date);
+  const tariffAsOf = timestamp(tariffScope.as_of_date);
+  if (
+    tariffScope.country_code !== scope.country_code ||
+    tariffScope.hs6 !== scope.hs6 ||
+    tariffScope.hs_revision !== scope.hs_revision ||
+    (tariffScope.exporter_org_id ?? null) !== (scope.exporter_org_id ?? null) ||
+    asOf == null ||
+    tariffAsOf == null ||
+    tariffAsOf < asOf
+  ) {
+    throw new Error('A tariff scope must match the calculation scope and must not precede its clock.');
+  }
+  return tariffScope;
+}
+
 function validScope(scope: ExactFactScope) {
   return (
     /^[A-Z]{2}$/.test(scope.country_code) &&
@@ -694,6 +717,12 @@ export interface MarketAccessV2Input {
   tariffs: readonly ScopedFact<TariffFactValue>[];
   requirements: readonly ScopedFact<MarketAccessRequirementValue>[];
   regulatory_coverage?: ScopedFact<RegulatoryCoverageValue>;
+  /**
+   * The scope tariff facts are evaluated in when the run admits tariff evidence on its own clock
+   * (WP2, owner decision D-004 in docs/35). Identical to `scope` except for a later-or-equal
+   * `as_of_date`. Only tariff selection uses it; every other fact is evaluated in `scope`.
+   */
+  tariff_scope?: ExactFactScope;
 }
 
 export interface MarketAccessBlocker {
@@ -750,7 +779,8 @@ export function calculateMarketAccessV2(
 
   const excluded: ExcludedFact[] = [];
   const used: ScopedFact<unknown>[] = [];
-  const tariff = selectApplicableIndiaTariff(input.scope, input.tariffs, policy.tariff_policy);
+  const tariffScope = resolveTariffScope(input.scope, input.tariff_scope);
+  const tariff = selectApplicableIndiaTariff(tariffScope, input.tariffs, policy.tariff_policy);
   excluded.push(...tariff.provenance.excluded_facts);
   const tariffFacts = input.tariffs.filter((fact) => tariff.provenance.used_fact_ids.includes(fact.id));
   used.push(...tariffFacts);
@@ -899,6 +929,7 @@ export function calculateMarketAccessV2(
     provenance: provenance(policy, input.scope, used, excluded, {
       tariff_basis: tariff.tariff_basis,
       tariff_rate_percent: tariff.rate_percent,
+      ...(input.tariff_scope ? { tariff_as_of_date: tariffScope.as_of_date } : {}),
       regulatory_coverage_proved_complete: coverageUsable,
       absent_requirement_is_unknown_without_complete_coverage: true,
       blockers_are_not_weighted: true,
@@ -1023,6 +1054,12 @@ export interface ExportEconomicsV3Input {
   cost_components: readonly ScopedFact<ExportCostComponentValue>[];
   fx_rates: readonly ScopedFact<FxRateValue>[];
   customs_valuation_basis?: ScopedFact<CustomsValuationBasisValue>;
+  /**
+   * The scope tariff facts are evaluated in when the run admits tariff evidence on its own clock
+   * (WP2, owner decision D-004 in docs/35). Identical to `scope` except for a later-or-equal
+   * `as_of_date`. Only tariff selection uses it; every other fact is evaluated in `scope`.
+   */
+  tariff_scope?: ExactFactScope;
 }
 
 export interface ExportEconomicsComponentBreakdown {
@@ -1420,7 +1457,8 @@ export function calculateExportEconomicsV3(
     );
   }
 
-  const tariff = selectApplicableIndiaTariff(input.scope, input.tariffs, policy.tariff_policy);
+  const tariffScope = resolveTariffScope(input.scope, input.tariff_scope);
+  const tariff = selectApplicableIndiaTariff(tariffScope, input.tariffs, policy.tariff_policy);
   if (tariff.status !== 'available' || tariff.rate_percent == null) {
     return unavailableEconomics(
       input,
@@ -1486,6 +1524,7 @@ export function calculateExportEconomicsV3(
         duty_base: `${basis.toLowerCase()}_customs_value`,
         tariff_basis: tariff.tariff_basis,
         tariff_rate_percent: tariff.rate_percent,
+        ...(input.tariff_scope ? { tariff_as_of_date: tariffScope.as_of_date } : {}),
         missing_cost_components: missing.sort(),
         benchmark_valuation_basis: 'CIF',
         score_basis: 'total_landed_cost_including_duty_divided_by_cif_import_benchmark',

@@ -388,9 +388,9 @@ export async function loadPhase1GateArchetypeEvidence(
           .map(record)
           .flatMap((entry) => (entry && text(entry.fact_id) && text(entry.reason) ? [{ fact_id: text(entry.fact_id)!, reason: text(entry.reason)! }] : [])),
       },
-      // A market-access clock, when the run recorded one separately from the trade clock, is what
-      // tariff evidence was admitted against; otherwise the single assessment clock was.
-      tariff_clock: text(factsScope?.market_access_as_of_date) ?? text(factsScope?.as_of_date) ?? iso(facts?.as_of_date) ?? iso(row.as_of_date),
+      // A separate tariff clock (WP2, D-004), when the run recorded one, is what tariff evidence was
+      // admitted and evaluated against; otherwise the single assessment clock was.
+      tariff_clock: text(factsScope?.tariff_as_of_date) ?? text(factsScope?.as_of_date) ?? iso(facts?.as_of_date) ?? iso(row.as_of_date),
       tariff_evidence: tariffEvidence,
       rejected_tariff_rows: array(factsPayload?.rejected_rows)
         .map(record)

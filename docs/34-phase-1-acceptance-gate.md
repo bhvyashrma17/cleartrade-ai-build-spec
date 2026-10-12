@@ -85,9 +85,10 @@ fact it used resolves to a `MarketAccessEvidence` row, every row and its snapsho
 (`public_real`, `imported_real`), and every row is within the age limit (TARIC 45 days, others 180)
 measured at the **tariff clock**.
 
-**Tariff clock** — the clock tariff evidence was admitted against. Today that is the run's single
-assessment clock, which is the screen's as-of date. Once WP2 records a separate market-access clock
-(owner decision, 12 Oct 2026), the loader reads `facts_payload.scope.market_access_as_of_date`.
+**Tariff clock** — the clock tariff evidence was admitted and evaluated against. For a single-clock
+run that is the run's assessment clock, which is the screen's as-of date. For a run with WP2 tariff
+acquisition enabled (owner decision D-004), it is the run's own tariff clock, recorded as
+`facts_payload.scope.tariff_as_of_date` in each fact manifest.
 
 Why "≥ 1 market", not "every market": the Phase 1H tariff calculation (`selectApplicableIndiaTariff`)
 publishes a rate only when India's preference is explicitly determined — `confirmed_applicable` with a

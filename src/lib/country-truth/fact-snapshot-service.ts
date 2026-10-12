@@ -30,6 +30,12 @@ import { deriveClearTradeFeeComponent, loadOperationalCostRows, selectOperationa
 
 export const COUNTRY_TRUTH_FACTS_SCHEMA_VERSION = 'country-truth-facts-v1' as const;
 
+/**
+ * Recorded in a manifest's scope and key only when the run admitted tariff evidence on its own
+ * clock (WP2, docs/35 D-004). Manifests without it are single-clock and unchanged.
+ */
+export const COUNTRY_TRUTH_TARIFF_CLOCK_VERSION = 'separate-tariff-clock-v1' as const;
+
 /** India is the only origin ClearTrade assesses; it is stated rather than inferred. */
 export const COUNTRY_TRUTH_ORIGIN_COUNTRY = 'IN' as const;
 
@@ -43,6 +49,11 @@ export interface CountryTruthFactSnapshotRequest {
   hs6: string;
   hs_revision: string;
   as_of_date: Date;
+  /**
+   * WP2 separate tariff clock (D-004): tariff evidence retrieved up to this instant is admitted and
+   * evaluated at it. Every other evidence class stays on `as_of_date`. Omit for single-clock runs.
+   */
+  tariff_as_of_date?: Date | null;
   exporter_snapshot: CountryTruthExporterFactSnapshot;
   exporter_snapshot_checksum: string;
   policy: { value: CountryTruthPhase1HPolicy; version: number };
@@ -101,13 +112,16 @@ async function loadEvidenceRows(
   const origins = allowedEvidenceOrigins(request.env);
   const scopes = hsScopeCandidates(request.hs6);
   const asOf = request.as_of_date;
+  // Market-access rows are read up to the later clock; selection applies each evidence class's own
+  // clock and records why a row was rejected, so nothing read here is admitted by being read.
+  const marketAccessReadUntil = request.tariff_as_of_date ?? asOf;
 
   const [snapshots, fitBenchmarks, routes, refinements, fxQuotes, customsBases, fxObservations] = await Promise.all([
     prisma.marketAccessEvidenceSnapshot.findMany({
       where: {
         country_code: request.country_code,
         hs_code_scope: { in: scopes },
-        retrieved_at: { lte: asOf },
+        retrieved_at: { lte: marketAccessReadUntil },
         evidence_origin: { in: origins },
       },
       orderBy: { id: 'asc' },
@@ -194,7 +208,7 @@ async function loadEvidenceRows(
           // Each row carries its own origin. Inheriting the snapshot's would let a fixture row
           // filed under a real retrieval serve a production assessment.
           evidence_origin: { in: origins },
-          retrieved_at: { lte: asOf },
+          retrieved_at: { lte: marketAccessReadUntil },
         },
         orderBy: { id: 'asc' },
       })
@@ -493,6 +507,9 @@ export function buildCountryTruthFactsPayload(
       hs6: request.hs6,
       hs_revision: request.hs_revision,
       as_of_date: request.as_of_date.toISOString(),
+      ...(request.tariff_as_of_date
+        ? { tariff_as_of_date: request.tariff_as_of_date.toISOString(), tariff_clock_version: COUNTRY_TRUTH_TARIFF_CLOCK_VERSION }
+        : {}),
     },
     exporter_snapshot_checksum: request.exporter_snapshot_checksum,
     facts: {
@@ -529,6 +546,10 @@ export async function resolveCountryTruthFactSnapshot(
     throw new Error('The frozen exporter snapshot describes a different HS revision.');
   }
 
+  if (request.tariff_as_of_date && !(request.tariff_as_of_date.getTime() >= request.as_of_date.getTime())) {
+    throw new Error('A separate tariff clock must not precede the assessment clock.');
+  }
+
   const rows = await loadEvidenceRows({ ...request, country_code: countryCode });
   const facts = selectCountryTruthFacts({
     scope: {
@@ -538,6 +559,7 @@ export async function resolveCountryTruthFactSnapshot(
       hs6: request.hs6,
       hs_revision: hsRevision,
       as_of_date: request.as_of_date.toISOString(),
+      ...(request.tariff_as_of_date ? { tariff_as_of_date: request.tariff_as_of_date.toISOString() } : {}),
     },
     exporter_snapshot: request.exporter_snapshot,
     evidence: rows,
@@ -547,8 +569,19 @@ export async function resolveCountryTruthFactSnapshot(
     { ...request, country_code: countryCode, hs_revision: hsRevision },
     facts,
   );
+  // Under a separate tariff clock the clock is a parameter of the selection, so it is part of the
+  // recorded selection policy and its hash. That keeps one manifest per input identity — the
+  // `CountryTruthFactSnapshot_input_identity_key` unique index on (metrics, exporter snapshot,
+  // selection policy hash, calculation version) — when the same question is acquired again at a
+  // later tariff clock, without a schema change. Single-clock snapshots and hashes are unchanged.
+  const selectionSnapshot = request.tariff_as_of_date
+    ? {
+        ...selectionPolicySnapshot(request.policy.value),
+        tariff_clock: { version: COUNTRY_TRUTH_TARIFF_CLOCK_VERSION, tariff_as_of_date: request.tariff_as_of_date.toISOString() },
+      }
+    : selectionPolicySnapshot(request.policy.value);
   const selectionPolicyHash = canonicalHash({
-    ...selectionPolicySnapshot(request.policy.value),
+    ...selectionSnapshot,
     config_version: request.policy.version,
   });
   // Everything that can change the meaning of this manifest is in the key: the frozen question,
@@ -569,6 +602,10 @@ export async function resolveCountryTruthFactSnapshot(
     exporter_snapshot_checksum: request.exporter_snapshot_checksum,
     selection_policy_version: request.policy.version,
     selection_policy_hash: selectionPolicyHash,
+    // Present only for separate-clock runs, so every single-clock key is unchanged.
+    ...(request.tariff_as_of_date
+      ? { tariff_as_of_date: request.tariff_as_of_date.toISOString(), tariff_clock_version: COUNTRY_TRUTH_TARIFF_CLOCK_VERSION }
+      : {}),
   });
 
   const existing = await prisma.countryTruthFactSnapshot.findUnique({ where: { snapshot_key: snapshotKey } });
@@ -597,7 +634,7 @@ export async function resolveCountryTruthFactSnapshot(
     exporter_snapshot_checksum: request.exporter_snapshot_checksum,
     selection_policy_version: request.policy.version,
     selection_policy_hash: selectionPolicyHash,
-    selection_policy_snapshot: selectionPolicySnapshot(request.policy.value) as Prisma.InputJsonValue,
+    selection_policy_snapshot: selectionSnapshot as Prisma.InputJsonValue,
     facts_payload: payload as unknown as Prisma.InputJsonValue,
     facts_checksum: checksum,
     evidence_origins: evidenceOriginsOf(rows, facts) as never,

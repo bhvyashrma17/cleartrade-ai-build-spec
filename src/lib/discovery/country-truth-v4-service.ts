@@ -15,7 +15,8 @@ export interface CountryTruthV4Context{
   exporter_unit_value?:V4ScoringInput['exporter_unit_value'];
   exporter_snapshot?:Record<string,unknown>;
   exporter_snapshot_checksum?:string;
-  fact_snapshot?:{id:string;checksum:string;snapshot_key:string;policy_version:number;policy_hash:string};
+  /** `tariff_as_of_date` is present only when the run admitted tariff evidence on its own clock (WP2, docs/35 D-004). */
+  fact_snapshot?:{id:string;checksum:string;snapshot_key:string;policy_version:number;policy_hash:string;tariff_as_of_date?:string};
   blockers?:Array<{pillar:string;code:string;subject:string|null;evidence_fact_ids:string[]}>;
 }
 

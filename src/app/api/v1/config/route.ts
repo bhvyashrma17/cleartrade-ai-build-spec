@@ -15,6 +15,7 @@ import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
+import { marketAccessOrchestrationPolicyProblems } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { updateConfigSchema, zodFieldErrors } from '@/lib/validators';
 
@@ -37,6 +38,11 @@ export async function POST(request: NextRequest) {
       if (!Number.isInteger(target) || Number(target) < 1 || Number(target) > 500) {
         throw validationError([{ field: 'target_exporters_per_agent', code: 'invalid', message: 'Enter a whole-number target from 1 to 500.' }]);
       }
+    }
+
+    if (key === 'country_truth.market_access_orchestration') {
+      const problems = marketAccessOrchestrationPolicyProblems(value);
+      if (problems.length) throw validationError(problems.map((message) => ({ field: 'value', code: 'invalid', message })));
     }
 
     const created = await prisma.$transaction(async (tx) => {

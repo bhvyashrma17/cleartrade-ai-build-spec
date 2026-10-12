@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { createCountryEvidencePlan,executeCountryEvidencePlan } from '@/lib/country-evidence/service';
 import { canonicalHash } from '@/lib/country-evidence/planner';
 import { calculateAndPersistCountryTradeMetrics,calculateIndiaOriginUnitValueSupplement } from '@/lib/country-trade-metrics/service';
-import type { CountryEvidencePolicy,CountryTradeMetricPolicy,CountryTruthPhase1HPolicy,CountryTruthScoringV4Policy } from '@/lib/config';
+import { marketAccessOrchestrationPolicyProblems,type CountryEvidencePolicy,type CountryTradeMetricPolicy,type CountryTruthMarketAccessOrchestrationPolicy,type CountryTruthPhase1HPolicy,type CountryTruthScoringV4Policy } from '@/lib/config';
 import { importBenchmarkFromTradeMetrics,resolveCountryTruthFactSnapshot } from '@/lib/country-truth/fact-snapshot-service';
 import { calculateCountryTruthPillars } from '@/lib/country-truth/pillars';
+import { acquireTariffEvidence,tariffClockFor,type TariffAcquisitionOutcome } from '@/lib/country-truth/tariff-acquisition';
 import { COUNTRY_TRUTH_EXPORTER_FACTS_SCHEMA_VERSION,countryTruthExporterFactSnapshotChecksum,type CountryTruthExporterFactSnapshot } from '@/lib/country-truth/exporter-fact-snapshot';
 import { toIso2 } from '@/lib/comtrade/areas';
 import { createCountryTruthV4Assessments,type CountryTruthV4Context } from '@/lib/discovery/country-truth-v4-service';
@@ -45,11 +46,19 @@ const payloadSchema=z.object({
     country_trade_metrics:policyIdentitySchema.extend({policy_version:z.string().min(1),calculation_version:z.string().min(1),snapshot:z.record(z.string(),z.unknown())}),
     country_truth_scoring:policyIdentitySchema.extend({model_version:z.literal('market-attractiveness-v4'),formula_version:z.string().min(1),snapshot:z.record(z.string(),z.unknown())}),
     country_truth_phase_1h:policyIdentitySchema.extend({policy_version:z.string().min(1),calculation_version:z.string().min(1),snapshot:z.record(z.string(),z.unknown())}),
+    /** WP2 (docs/35 E-004): present only when tariff acquisition was enabled at request time. */
+    market_access_orchestration:policyIdentitySchema.extend({policy_version:z.string().min(1),snapshot:z.record(z.string(),z.unknown())}).optional(),
   }),
 });
 
 type Payload=z.infer<typeof payloadSchema>;
-type Checkpoint={schema_version:'country-truth-discovery-checkpoint-v3';country_evidence_plan_id?:string;country_evidence_manifest_id?:string;country_trade_metrics_ids?:string[];country_truth_fact_snapshot_ids?:string[];discovery_run_id?:string;assessment_ids?:string[]};
+type Checkpoint={schema_version:'country-truth-discovery-checkpoint-v3';country_evidence_plan_id?:string;country_evidence_manifest_id?:string;country_trade_metrics_ids?:string[];country_truth_fact_snapshot_ids?:string[];discovery_run_id?:string;assessment_ids?:string[];
+  /** WP2: retained releases are resolved at this frozen instant, so a retry resolves identically. */
+  tariff_resolution_at?:string;
+  /** WP2: one outcome per finished destination; a retry does not acquire these again. */
+  tariff_acquisitions?:TariffAcquisitionOutcome[];
+  /** WP2: the frozen tariff clock (D-004). Once set, acquisition is complete for this job. */
+  tariff_as_of?:string};
 const json=(value:unknown)=>value as Prisma.InputJsonValue;
 const hashPolicy=(value:object,version:number)=>canonicalHash(Object.assign({},value,{config_version:version}));
 
@@ -62,6 +71,12 @@ async function validatePolicyIdentities(payload:Payload){
     ['Country Truth Phase 1H',payload.policies.country_truth_phase_1h.policy_version===phase1h.policy_version&&payload.policies.country_truth_phase_1h.calculation_version===phase1h.calculation_version&&payload.policies.country_truth_phase_1h.policy_hash===hashPolicy(phase1h,payload.policies.country_truth_phase_1h.config_version)],
   ] as const;
   const mismatch=checks.find(([,valid])=>!valid);if(mismatch)throw new Error(`${mismatch[0]} policy identity no longer matches the frozen job payload.`);
+  const orchestration=payload.policies.market_access_orchestration;
+  if(orchestration){
+    const snapshot=orchestration.snapshot as unknown as CountryTruthMarketAccessOrchestrationPolicy;
+    if(orchestration.policy_version!==snapshot.policy_version||orchestration.policy_hash!==hashPolicy(snapshot,orchestration.config_version))throw new Error('Market access orchestration policy identity no longer matches the frozen job payload.');
+    const problems=marketAccessOrchestrationPolicyProblems(snapshot);if(problems.length)throw new Error(`Frozen market access orchestration policy is invalid: ${problems.join(' ')}`);
+  }
 }
 
 async function validateFrozenIdentity(ctx:JobContext,payload:Payload){
@@ -78,6 +93,12 @@ async function validateFrozenIdentity(ctx:JobContext,payload:Payload){
   if(frozen.identity.exporter_org_id!==payload.exporter_org_id||frozen.identity.product_id!==payload.product_id||frozen.identity.product_classification_id!==payload.product_classification_id||frozen.identity.classification_revision!==classification.revision||frozen.identity.hs6!==payload.hs6||frozen.identity.hs_revision!==payload.hs_revision.toUpperCase())throw new Error('Country Truth exporter fact snapshot scope does not match the job identity.');
   await validatePolicyIdentities(payload);
   return {product,checkpoint:((job.checkpoint??{schema_version:'country-truth-discovery-checkpoint-v3'}) as unknown) as Checkpoint};
+}
+
+/** What the run records about its own tariff acquisition: both clocks' policy, every outcome, and a tally. */
+function tariffAcquisitionRecord(policy:CountryTruthMarketAccessOrchestrationPolicy,policyHash:string,tariffClock:Date,outcomes:TariffAcquisitionOutcome[]){
+  const counts:Record<string,number>={};for(const item of outcomes)counts[item.outcome]=(counts[item.outcome]??0)+1;
+  return {schema_version:'country-truth-tariff-acquisition-v1',policy_version:policy.policy_version,policy_hash:policyHash,tariff_as_of:tariffClock.toISOString(),outcome_counts:counts,snapshot_ids:[...new Set(outcomes.flatMap(item=>item.snapshot_id?[item.snapshot_id]:[]))].sort(),outcomes};
 }
 
 export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcome>{
@@ -110,7 +131,24 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   await stage('calculating_metrics',70);
   const metrics=await calculateAndPersistCountryTradeMetrics(acquisition.manifest.id,{value:payload.policies.country_trade_metrics.snapshot as unknown as CountryTradeMetricPolicy,version:payload.policies.country_trade_metrics.config_version});
   if(metrics.length!==payload.candidates.length||metrics.some(metric=>metric.metric_policy_version!==payload.policies.country_trade_metrics.policy_version||metric.calculation_version!==payload.policies.country_trade_metrics.calculation_version||metric.metric_policy_hash!==payload.policies.country_trade_metrics.policy_hash))throw new Error('CountryTradeMetrics identities do not match the frozen job payload.');
-  const metricIds=metrics.map(metric=>metric.id).sort();await stage('freezing_facts',78,{country_trade_metrics_ids:metricIds});
+  const metricIds=metrics.map(metric=>metric.id).sort();
+  // WP2 (docs/35 E-004, D-004): acquire tariff evidence for this run's own shortlist, inline — the
+  // single worker runs one job at a time, so waiting on child ingest jobs would deadlock it. The
+  // resolution instant, every finished destination and the tariff clock are checkpointed, so a
+  // retry neither re-acquires nor moves a clock.
+  const orchestrationPolicy=payload.policies.market_access_orchestration?.snapshot as unknown as CountryTruthMarketAccessOrchestrationPolicy|undefined;
+  let tariffClock:Date|null=null,tariffAcquisitions:TariffAcquisitionOutcome[]=[];
+  if(orchestrationPolicy?.enabled){
+    if(checkpoint.tariff_as_of&&checkpoint.tariff_acquisitions){tariffClock=new Date(checkpoint.tariff_as_of);tariffAcquisitions=checkpoint.tariff_acquisitions;}
+    else{
+      const resolutionAt=checkpoint.tariff_resolution_at?new Date(checkpoint.tariff_resolution_at):new Date();
+      await stage('acquiring_tariffs',74,{country_trade_metrics_ids:metricIds,tariff_resolution_at:resolutionAt.toISOString()});
+      tariffAcquisitions=await acquireTariffEvidence({job_id:ctx.job_id,hs6:payload.hs6,destinations:payload.candidates.map(candidate=>candidate.country_code),resolution_clock:resolutionAt,policy:orchestrationPolicy,completed:checkpoint.tariff_acquisitions??[],onOutcome:async outcomes=>{await stage('acquiring_tariffs',74,{tariff_acquisitions:outcomes});},correlation_id:ctx.correlation_id});
+      tariffClock=tariffClockFor(scoringClock,tariffAcquisitions);
+    }
+    if(Number.isNaN(tariffClock.getTime())||tariffClock.getTime()<scoringClock.getTime())throw new Error('Checkpointed tariff clock is invalid or precedes the scoring clock.');
+  }
+  await stage('freezing_facts',78,{country_trade_metrics_ids:metricIds,...(tariffClock?{tariff_acquisitions:tariffAcquisitions,tariff_as_of:tariffClock.toISOString()}:{})});
   const phase1hPolicy={value:payload.policies.country_truth_phase_1h.snapshot as unknown as CountryTruthPhase1HPolicy,version:payload.policies.country_truth_phase_1h.config_version};
   const frozenExporterFacts=payload.exporter_fact_snapshot as unknown as CountryTruthExporterFactSnapshot;
   const shipment=frozenExporterFacts.commercial.standard_shipment;
@@ -141,6 +179,7 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
       hs6:payload.hs6,
       hs_revision:payload.hs_revision,
       as_of_date:record.as_of_date,
+      ...(tariffClock?{tariff_as_of_date:tariffClock}:{}),
       exporter_snapshot:frozenExporterFacts,
       exporter_snapshot_checksum:payload.exporter_fact_snapshot_checksum,
       policy:phase1hPolicy,
@@ -157,13 +196,13 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
       blockers:pillars.blockers,
       exporter_snapshot:payload.exporter_fact_snapshot,
       exporter_snapshot_checksum:payload.exporter_fact_snapshot_checksum,
-      fact_snapshot:{id:resolved.record.id,checksum:resolved.facts_checksum,snapshot_key:resolved.snapshot_key,policy_version:phase1hPolicy.version,policy_hash:resolved.record.selection_policy_hash},
+      fact_snapshot:{id:resolved.record.id,checksum:resolved.facts_checksum,snapshot_key:resolved.snapshot_key,policy_version:phase1hPolicy.version,policy_hash:resolved.record.selection_policy_hash,...(tariffClock?{tariff_as_of_date:tariffClock.toISOString()}:{})},
     };
   }
   await stage('scoring',85,{country_truth_fact_snapshot_ids:factSnapshotIds.sort()});
   let run=checkpoint.discovery_run_id?await prisma.discoveryRun.findUnique({where:{id:checkpoint.discovery_run_id}}):await prisma.discoveryRun.findFirst({where:{job_id:ctx.job_id}});
   if(run&&(run.exporter_org_id!==payload.exporter_org_id||run.product_id!==payload.product_id))throw new Error('Checkpointed DiscoveryRun does not match the frozen Country Truth job.');
-  if(!run)run=await prisma.discoveryRun.create({data:{exporter_org_id:payload.exporter_org_id,product_id:payload.product_id,job_id:ctx.job_id,requested_by_id:payload.requested_by_agent_id,status:JobStatus.processing,started_at:new Date(),as_of_date:scoringClock,filters:{candidate_countries:payload.candidates.map(candidate=>candidate.country_code)},input_snapshot:json({schema_version:'country-truth-discovery-run-v2',job_payload:payload,screening_provenance:payload.provenance??null,exporter_fact_snapshot:payload.exporter_fact_snapshot,exporter_fact_snapshot_checksum:payload.exporter_fact_snapshot_checksum,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds})}});
+  if(!run)run=await prisma.discoveryRun.create({data:{exporter_org_id:payload.exporter_org_id,product_id:payload.product_id,job_id:ctx.job_id,requested_by_id:payload.requested_by_agent_id,status:JobStatus.processing,started_at:new Date(),as_of_date:scoringClock,filters:{candidate_countries:payload.candidates.map(candidate=>candidate.country_code)},input_snapshot:json({schema_version:'country-truth-discovery-run-v2',job_payload:payload,screening_provenance:payload.provenance??null,exporter_fact_snapshot:payload.exporter_fact_snapshot,exporter_fact_snapshot_checksum:payload.exporter_fact_snapshot_checksum,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds,...(tariffClock?{tariff_acquisition:tariffAcquisitionRecord(orchestrationPolicy!,payload.policies.market_access_orchestration!.policy_hash,tariffClock,tariffAcquisitions)}:{})})}});
   await stage('scoring',90,{discovery_run_id:run.id});
   let assessments=await prisma.marketAssessment.findMany({where:{run_id:run.id},orderBy:{country_code:'asc'}});
   if(assessments.length){const assessmentMetricIds=assessments.map(item=>item.country_trade_metrics_id).filter((id):id is string=>Boolean(id)).sort();if(assessments.length!==metricIds.length||JSON.stringify(assessmentMetricIds)!==JSON.stringify(metricIds)||assessments.some(item=>item.model_version!=='market-attractiveness-v4'))throw new Error('Checkpointed Country Truth assessments are incomplete or incompatible.');}
@@ -171,7 +210,7 @@ export async function runCountryTruthDiscovery(ctx:JobContext):Promise<JobOutcom
   const assessmentIds=assessments.map(item=>item.id).sort(),partial=acquisition.status!=='metric_ready'||assessments.some(item=>item.country_truth_assessment_state!=='rankable');
   await prisma.discoveryRun.update({where:{id:run.id},data:{status:partial?JobStatus.partial:JobStatus.completed,completed_at:new Date()}});
   await stage('completed',100,{assessment_ids:assessmentIds});
-  return {status:partial?JobStatus.partial:JobStatus.completed,result:json({schema_version:'country-truth-discovery-result-v3',stage:'completed',screening_run_id:payload.provenance?.screening_run_id??null,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds,country_truth_fact_snapshot_ids:[...factSnapshotIds].sort(),discovery_run_id:run.id,assessment_ids:assessmentIds,evidence_status:acquisition.status,physical_calls:acquisition.physical_calls})};
+  return {status:partial?JobStatus.partial:JobStatus.completed,result:json({schema_version:'country-truth-discovery-result-v3',stage:'completed',screening_run_id:payload.provenance?.screening_run_id??null,country_evidence_plan_id:plan.id,country_evidence_manifest_id:acquisition.manifest.id,country_trade_metrics_ids:metricIds,country_truth_fact_snapshot_ids:[...factSnapshotIds].sort(),discovery_run_id:run.id,assessment_ids:assessmentIds,evidence_status:acquisition.status,physical_calls:acquisition.physical_calls,...(tariffClock?{tariff_acquisition:tariffAcquisitionRecord(orchestrationPolicy!,payload.policies.market_access_orchestration!.policy_hash,tariffClock,tariffAcquisitions)}:{})})};
 }
 
 export const __test__={payloadSchema,validatePolicyIdentities};

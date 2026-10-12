@@ -15,6 +15,8 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-002 | 2026-10-12 | Pull the one-line CI fix (`DIRECT_DATABASE_URL` in `ci.yml`) forward into WP1's first PR; the rest of WP4 stays in sequence. | Owner | WP1, WP4 |
 | D-003 | 2026-10-12 | Build the Phase 1 gate on the audit defaults (supervised posture; rice `100630`, brassware `741810`, carpets `570110`; ≥ 5 rankable markets and ≥ 1 Atlas-backed tariff per archetype) **marked proposed**. A release `PASS` needs owner approval of the policy. | Owner | WP1 |
 | D-004 | 2026-10-12 | WP2 tariff clock: trade evidence stays as of the screen; tariff evidence is admitted up to the deep run's acquisition time; both clocks recorded on every assessment (a versioned Phase 1H selection-rule change). | Owner | WP2 |
+| D-005 | 2026-10-12 | Claude GitHub App installed; the agent pushes work branches (verified, E-007). | Owner | All WPs |
+| D-006 | 2026-10-12 | Deploy WP1 + WP2 to `amused-insight / staging`. Route (PR with CI, or direct push) still to be chosen — E-007. | Owner | WP1, WP2, WP3 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -130,17 +132,170 @@ Railway reports its deployments to GitHub. Across all recorded deployments:
   production would run this branch's pre-deploy migrations against production's database. → R-10.
   The agent opens no PR until the owner confirms PR environments are off or based on staging.
 
+### E-004 · 2026-10-12 · WP2 Customs Atlas orchestration — scoped plan
+
+**Objective.** The deep Country Truth run acquires tariff evidence for its own shortlisted markets and its
+assessments cite the exact snapshots, under the separate tariff clock (D-004). Branch
+`wp2/atlas-orchestration`, stacked on WP1.
+
+**Design.**
+1. *Switch.* New policy `country_truth.market_access_orchestration` (default `enabled: false`), frozen into
+   the job payload **only when enabled**. With it off, payloads, dedupe keys, fact manifests and
+   assessments are byte-identical to today — the existing read path is the rollback.
+2. *Worker-owned, inline.* A new stage `acquiring_tariffs`, after trade metrics and before facts are frozen,
+   runs each shortlisted destination's Atlas adapter inside the deep job. Child `market_access_ingest`
+   jobs are not used: staging runs one worker, which runs one job at a time, so a deep job waiting on
+   children would deadlock (E-001).
+3. *Clocks.* Release-backed adapters resolve at the acquisition start time (frozen in the checkpoint, so a
+   retry yields the same `ingest_identity` and reuses the snapshot). The live UK and US APIs are called at
+   real time, because they stamp `retrieved_at` with it and must never be backdated. The **tariff clock** is
+   frozen when acquisition ends.
+4. *Tariff evidence only.* Fact selection admits `destination_tariff` and `preferential_tariff_india` rows
+   retrieved up to the tariff clock and scopes those facts to it; tariff selection in the Market Access and
+   Export Economics pillars evaluates admission and in-force at that clock. Requirements, regulatory
+   coverage, certification benchmarks and every other fact stay on the screen clock — an exporter fact or
+   quote recorded after the screen is still not admitted. The fact manifest records `tariff_as_of_date`
+   and `tariff_clock_version` (key and payload, only when present); assessments carry it in their
+   fact-manifest context.
+5. *Degraded mode.* A destination with no Atlas source, an unconfigured source, an adapter error or a live
+   timeout is recorded with its reason and the run continues; its market access stays unavailable with a
+   reason, never zero. Tariff evidence is a gate requirement (≥ 1 market, docs/34), not a run requirement.
+6. *Retries.* Each destination's outcome is checkpointed as it completes; a retry skips finished
+   destinations and reuses both clocks. A crash between persisting a live UK/US snapshot and checkpointing
+   it can leave one duplicate snapshot; selection stays deterministic (newest wins).
+7. *Trace.* Snapshots created by the run carry `source_run_id` = deep job id; the job result, the
+   `DiscoveryRun.input_snapshot` and structured log events record every destination outcome.
+
+**No migration.** New fields live in existing JSON (job payload/checkpoint/result, fact payload) and a new
+`ConfigSetting` key with a code default.
+
+**External calls.** UK Trade Tariff and USITC HTS public APIs, only for shortlisted GB/GG/IM/JE/US/PR
+markets; release-backed sources read retained artifacts (no network). Comtrade calls unchanged.
+
+**Acceptance criteria.**
+1. Switch off: no adapter is called, and payload, fact-manifest and assessment identities match pre-WP2.
+2. Switch on: a run-acquired release-backed snapshot and a live snapshot fetched **after** the screen clock
+   are both cited by their assessments (tariff facts in `used_fact_ids`, `source_run_id` = the job) and show
+   a tariff signal; the same live row is rejected (`retrieved_after_assessment_clock`) with the switch off.
+3. Non-tariff evidence retrieved between the two clocks is still rejected.
+4. Adapter failure, timeout and missing source each produce a recorded reason and a completed/partial run.
+5. A retry reuses checkpointed outcomes and clocks: no second adapter call, the same fact manifests and the
+   same assessments.
+6. The Phase 1 gate reads the tariff clock and reports the run-acquired snapshot as an Atlas tariff signal.
+7. Typecheck, lint and the full suite green in CI. Staging proof (an assessment citing a run-acquired
+   snapshot) is WP3 evidence.
+
+**Rollback.** Leave the switch off (default) or deactivate the config version; acquired snapshots and
+manifests stay as history; nothing is rewritten.
+
+### E-005 · 2026-10-12 · WP2 Customs Atlas orchestration — implementation (in review)
+
+**Branch.** `wp2/atlas-orchestration`, stacked on WP1 (`e02802a`). Design as E-004; decision D-004.
+
+**Files.** New `src/lib/country-truth/tariff-acquisition.ts` (per-destination acquisition, outcomes,
+tariff clock) and `tests/country-truth-tariff-acquisition.test.ts`. Changed:
+`job-handlers/country-truth-discovery.ts` (stage `acquiring_tariffs`; outcomes and both clocks
+checkpointed; trace in the job result and `DiscoveryRun.input_snapshot`);
+`country-truth/{fact-selection,fact-snapshot-service,phase-1h-calculations,pillars}.ts` (tariff-only
+clock, `separate-tariff-clock-v1`, folded into the selection-policy hash so the manifest key stays
+unique without a migration); `config.ts`, `validators/index.ts`, `api/v1/config/route.ts` (switch
+`country_truth.market_access_orchestration`, default off, shape-validated, written only through the
+audited config API — not an Ops-console setting); `country-truth-discovery-request.ts` (frozen into
+the payload only when on); `job-handlers/market-access.ts` (each adapter declares `live_fetch` or
+`retained_release`); `discovery/country-truth-v4-service.ts` (context type); `phase-1-gate/load.ts` and
+docs/34 (the gate reads `tariff_as_of_date`); `tests/admin-settings.test.ts` (route test). No schema
+change, no migration.
+
+**Acceptance criteria (E-004).**
+
+| # | Result | Evidence |
+|---|---|---|
+| 1 | PASS — structural | Switch off: no adapter call; the payload keeps its four policies; manifests carry no tariff clock. Byte-identity with a pre-WP2 run holds by construction (every new field is conditional) and through the unchanged pre-existing suites (E-006); it was not measured against a pre-WP2 run. |
+| 2 | PASS | A release-backed DE snapshot and a live US snapshot fetched after the screen clock, both with `source_run_id` = the job, are cited in `used_fact_ids` with the tariff basis recorded. **Correction to E-004:** a switch-off run does not reject those live rows as `retrieved_after_assessment_clock`; it never loads them, because single-clock reads bound every market-access query by the screen clock (unchanged from before WP2). The test asserts that instead: US tariffs empty and market access unavailable, while the DE release (retrieved before the screen) stays cited. |
+| 3 | PASS | The live US `import_restriction` row is rejected `retrieved_after_assessment_clock` in the same run whose tariffs were admitted. |
+| 4 | PASS | Adapter error → `failed` with a one-line reason; a hanging live fetch → `timed_out` at the policy timeout; UAE → `unconfigured_source` with its documented authority reason; the run completes; each market access is unavailable with a reason and a null score. Over the cap → `skipped_over_cap`. |
+| 5 | PASS | Second attempt: no adapter call; identical manifests, assessments and acquisition record. A checkpoint holding only Germany resumes with the USA alone, at the same resolution instant, and cites the German snapshot from the first attempt. |
+| 6 | PASS | The gate loader reads `tariff_as_of_date`; the run-acquired live US snapshot counts as an Atlas tariff signal, age 0 days. |
+| 7 | Partial | `prisma validate`, typecheck and full-repo lint PASS against the standard client. Full suite: no regressions under the local harness (E-006). **GitHub CI not yet run.** |
+
+**Mutation check.** Three deliberate breaks each failed exactly the intended test and were reverted
+(checksums verified): tariff selection forced onto the screen clock → switch-on test; the
+checkpointed clock ignored → retry test; checkpointed destinations ignored → retry test.
+
+**Defect found by running the DB tests.** The test fixture created its `AuthorityRelease` as `active`
+without `activated_at`, which `TaricRelease_active_is_timestamped` rejects (and a second fixture would
+have hit the one-active-per-source index). Fixed to the default `imported`, as
+`tests/market-access-providers.test.ts` does.
+
+**External calls.** None in tests (in-process doubles; `tests/setup.ts` denies the network). At run time,
+only the UK and US public APIs, for shortlisted destinations, once the switch is on.
+
+**Rollback.** As E-004. **Residual.** Enabling the switch on staging and the archetype runs are WP3. A
+crash between persisting a live snapshot and checkpointing it can leave one duplicate snapshot (newest
+wins). R-11 unchanged.
+
+### E-006 · 2026-10-12 · First full-suite runs, in CI's file order — baseline vs WP1+WP2
+
+**Method.** Prisma's native engines cannot be downloaded in the agent workspace, and GitHub CI runs
+only on pull requests (R-10 blocks opening one). A local harness — kept under `node_modules/`, never
+committed — generates the same schema with Prisma's Rust-free client (`engineType = "client"`, the
+WASM query compiler shipped in the npm package) over `@prisma/adapter-pg@6.19.3`; applies all 80
+migrations in order through `pg` into a throwaway schema behind the same guards as
+`tests/global-setup.ts`; reuses `tests/setup.ts` (network denied); and orders files as CI will — with
+no results cache, vitest's `BaseSequencer` runs files largest first. It is **not** `npm test` and does
+not replace CI.
+
+| Tree | Files | Tests | Pass | Fail | Skipped |
+|---|---|---|---|---|---|
+| `staging/railway@f29fcf52` | 120 | 1,995 | 1,986 | 4 | 5 |
+| WP1 + WP2 working tree | 122 | 2,031 | 2,022 | 4 | 5 |
+
+Compared test by test: nothing that passes on the baseline fails on WP1 + WP2, nothing is missing, and
+all 36 added tests pass (27 gate, 8 tariff acquisition, 1 config route). The same four fail on both:
+
+- `country-truth-discovery-handler` › "is registered and executes…" — **pre-existing, and CI would hit
+  it.** It claimed with `claimNextJob` and assumed an empty queue; `country-truth-deep-request`
+  (15,195 B) runs before it (13,432 B) in CI's order and leaves queued deep jobs. On the unmodified
+  baseline it passes alone and fails after deep-request. Fixed test-only in `e02802a` on the WP1
+  branch, so the first CI run is meaningful (an agent call in the spirit of D-002 — the owner may
+  veto): the fixture's job goes to the front of the queue and the real claim path is still exercised.
+  The pair passes in CI order on both trees.
+- `market-scan-requests` and `pilot-e2e` — both read `information_schema` identifiers (type `name`),
+  which the pg driver adapter cannot deserialize. Harness artifact; expected to pass on the native
+  engine; **unverified until CI**.
+- `staff-provisioning` › "refuses two pending LEGACY invitations" — matches PostgreSQL's key detail
+  ("already exists"), which the driver adapter's error text omits. Harness artifact; **unverified until
+  CI**.
+
+### E-007 · 2026-10-12 · Owner update: push access, deployment target, staging topology
+
+- The Claude GitHub App is installed (D-005). `wp1/phase-1-acceptance-gate` pushed (`fb0c3a0`, then
+  `e02802a`); no CI ran (CI triggers on pull requests and on pushes to `main`/`master` only) and nothing
+  deployed (no Railway service tracks a work branch).
+- The owner directs WP1 + WP2 to `amused-insight / staging` (D-006). Staging per the owner's dashboard
+  screenshot (14:17 IST): `cleartrade-ai-build-spec` (web), `cleartrade-worker` and `cleartrade-scanner`
+  (GitHub sources, Online); `Postgres` (Online, volume `postgres-volume-oQRq`); buckets
+  `cleartrade-staging-env` (554.1 MB) and `cleartrade-staging` (185.5 MB); a volume `postgres-volume`
+  shown without a service.
+- The owner also commits, pushes and deploys from a local clone. `origin/staging/railway` was still
+  `f29fcf52` at 08:50 UTC, so WP1 and WP2 need no rebase. That machine's local-only state is being
+  gathered read-only by the owner's local Claude Code, not from this workspace (R-12).
+- Route to staging still open: a PR into `staging/railway` runs CI but needs R-10 answered first; a
+  direct push to `staging/railway` cannot create a PR environment but lands without CI.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
 |---|---|---|---|
-| R-01 | CI has never run tests or build; unknown pre-existing failures may surface | Open — env fix in WP1 PR | First CI run on the WP1 PR |
-| R-02 | Agent session cannot run DB tests or build (blocked hosts) | Open — mitigated by CI (D-001) | Green CI on each WP PR |
+| R-01 | CI has never run tests or build; unknown pre-existing failures may surface | Open — env fix in WP1; the one order-dependent failure CI would hit is fixed on WP1 (E-006); three tests are unverifiable locally | First CI run on the WP1 PR |
+| R-02 | Agent session cannot run DB tests or build (blocked hosts) | Partly mitigated — a local harness now runs the full DB suite (E-006), not canonically; build still not run | Green CI on each WP PR |
 | R-03 | Staging DB, Railway state and sanctions snapshots unverified from the agent session | Open | Operator read-only inventory (WP3/WP5) |
 | R-04 | Production hazards (docs/33 §5): scanner URL → staging, failed scanner deploy, 8 Oct migration by old staging web, root `railway.json` move, shared Resend key | Open, unchanged | WP5 read-only inventory |
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
-| R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Clock resolved (D-004); others open | WP2 design and tests |
+| R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Open | Operator confirmation |
 | R-08 | Gate thresholds unapproved | Open | Owner approval PR |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Open | Owner/WP5 inventory: confirm disconnected or deleted |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Open — blocks opening PRs | Owner confirms PR environments off, or based on staging |
+| R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs) | Keep one worker until staleness is heartbeat-based (WP5) |
+| R-12 | The owner's local clone may hold unpushed commits or local-only work that conflicts with agent branches | Open | Owner's local read-only inventory (E-007) |
