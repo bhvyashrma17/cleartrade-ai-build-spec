@@ -292,19 +292,62 @@ all 36 added tests pass (27 gate, 8 tariff acquisition, 1 config route). The sam
 font bytes are therefore placeholders, which a compile check does not depend on. Every route is
 dynamic (ƒ), so the build ran no database query. Railway's own build remains the deploy-time check.
 
+### E-009 · 2026-10-13 · Owner's local read-only inventory (machine, Railway, staging database)
+
+**Source.** The owner's local Claude Code ran the read-only inventory requested in this conversation (12
+Oct) and reported on 13 Oct, 11:51 IST. The full report is a file on the owner's machine; the agent
+received its summary plus one correction to the active-release table (D5), not the full tables.
+Reported conduct: no repository file created, edited or deleted (`git status` clean; the only git write
+was `git fetch origin`); Railway read-only and the folder's project link unchanged; the staging database
+host was checked against production's (Neon) host before any query, and every query ran in a read-only
+transaction; no secret printed (database hosts as host, port and name only).
+
+**Owner's machine.**
+- Not on GitHub: `wip/switzerland-tares` (1 commit; touches `src/lib/job-handlers/market-access.ts`) and
+  `scanner-clamd-listener-diagnostics` (2 commits). `tmp/rw/` holds secrets; `.artifacts/` holds 1.4 GB
+  of tariff source files. → R-07, R-12.
+- WP2 adds a required `retrieval` field to every adapter in `market-access.ts`. Rebased after WP2, the
+  Swiss branch's adapter must declare it (`retained_release` for a retained TARES release); the
+  typecheck names it if missed.
+
+**Staging database (amused-insight / staging).**
+- Migrations 80 / 80 applied, matching `staging/railway`.
+- Phase 1 has never run there: 0 confirmed classifications, 0 screening runs, 0 `country_screening` or
+  `country_truth_discovery` jobs.
+- No sanctions data. No `ConfigSetting` rows, so every policy is its code default and
+  `country_truth.market_access_orchestration` does not exist (off).
+- Customs Atlas authority releases are active; the per-source table is in the owner's report. The
+  corrected row: `AL_CUSTOMS_ARCHIVE`, Albanian Customs Administration, release `2026-10-11`, reference
+  2026-10-11, retrieved and activated 2026-10-11 09:58:39.473.
+
+**Railway.**
+- `amused-insight`: PR environments **off**, so opening a PR creates no environment (R-10 closed).
+  Wait-for-CI is off on every deploy trigger. Production web auto-deploys from `master` on a Neon
+  database separate from staging's. Production has no worker. The production scanner has no deploy
+  trigger, and its last deploy (24 Aug) failed. **Production web's `STORAGE_BUCKET` names the bucket
+  `cleartrade-staging`;** which environment's bucket that resolves to is unverified (R-13). Staging's
+  volume `postgres-volume` is attached to nothing.
+- `cleartrade-staging` project: deleted between 9 and 10 Oct (R-09 closed). Its database host can no
+  longer be read.
+- Unverified: whether the root `railway.json` still applies to production web; a per-trigger
+  auto-deploy toggle the API does not expose (auto-deploy inferred from the trigger existing); what the
+  dashboard flag `focusedPrEnvironments=true` means. The agent reads it as a PR-environment sub-option,
+  inert while PR environments are off — an interpretation, not verified.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
 |---|---|---|---|
 | R-01 | CI has never run tests or build; unknown pre-existing failures may surface | Open — env fix in WP1; the one order-dependent failure CI would hit is fixed on WP1 (E-006); three tests are unverifiable locally | First CI run on the WP1 PR |
 | R-02 | Agent session cannot run DB tests or build (blocked hosts) | Partly mitigated — a local harness runs the full DB suite (E-006) and the build compiles with mocked font CSS (E-008); neither is canonical | Green CI on each WP PR |
-| R-03 | Staging DB, Railway state and sanctions snapshots unverified from the agent session | Open | Operator read-only inventory (WP3/WP5) |
-| R-04 | Production hazards (docs/33 §5): scanner URL → staging, failed scanner deploy, 8 Oct migration by old staging web, root `railway.json` move, shared Resend key | Open, unchanged | WP5 read-only inventory |
+| R-03 | Staging DB, Railway state and sanctions snapshots unverified from the agent session | Partly resolved (E-009): migrations current; Phase 1 never run; no sanctions data; no config rows | WP3 staging runs and sanctions refresh |
+| R-04 | Production hazards (docs/33 §5): scanner URL → staging, failed scanner deploy, 8 Oct migration by old staging web, root `railway.json` move, shared Resend key; production has no worker; production scanner has no deploy trigger and its last deploy (24 Aug) failed (E-009) | Open, unchanged | WP5 read-only inventory |
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
-| R-07 | Operator's local-only work unverified | Open | Operator confirmation |
+| R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
 | R-08 | Gate thresholds unapproved | Open | Owner approval PR |
-| R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Open | Owner/WP5 inventory: confirm disconnected or deleted |
-| R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Open — blocks opening PRs | Owner confirms PR environments off, or based on staging |
+| R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
+| R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs) | Keep one worker until staleness is heartbeat-based (WP5) |
-| R-12 | The owner's local clone may hold unpushed commits or local-only work that conflicts with agent branches | Open | Owner's local read-only inventory (E-007) |
+| R-12 | The owner's local clone holds unpushed work; `wip/switzerland-tares` touches `market-access.ts`, where WP2 adds a required `retrieval` field | Open (E-009) | Owner rebases after WP2 lands; the typecheck names a missing field |
+| R-13 | Production web's `STORAGE_BUCKET` names the bucket `cleartrade-staging`; if it resolves to staging's bucket, production files land in staging storage (or the reverse) | Open — unverified (E-009) | Owner dashboard check; WP5 read-only inventory |
