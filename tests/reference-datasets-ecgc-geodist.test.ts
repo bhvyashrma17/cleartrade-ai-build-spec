@@ -226,9 +226,12 @@ describe('importing derived reference files', () => {
   });
 
   test('a derived file needs its original; the original is stored with the release and must not change on a repeat', async () => {
-    const bytes = real('ecgc-country-risk-st-2026-07-01.txt');
-    const entry = manifestEntryFor(readReferenceManifest(), bytes)!;
+    const file = real('ecgc-country-risk-st-2026-07-01.txt');
+    const entry = manifestEntryFor(readReferenceManifest(), file)!;
     expect(entry.dataset_key).toBe(ECGC_COUNTRY_RISK_KEY);
+    // A suffix the parser ignores makes these bytes this suite's own in the shared schema, where
+    // another suite may already have imported, and superseded, the file itself.
+    const bytes = Buffer.concat([file, Buffer.from(`\nsuite ${randomUUID()}\n`)]);
     const args = { actor, dataset_key: ECGC_COUNTRY_RISK_KEY, bytes, source_url: entry.derived_from!.url, retrieved_at: new Date('2026-10-13T00:00:00Z'), correlation_id: randomUUID(), evidence_origin: EvidenceOrigin.fixture };
     await expect(importReferenceDataset(args)).rejects.toThrow(/state that original file/);
     await expect(importReferenceDataset({ ...args, derived_from: { ...entry.derived_from!, sha256: 'not-a-hash' } })).rejects.toThrow(/state that original file/);

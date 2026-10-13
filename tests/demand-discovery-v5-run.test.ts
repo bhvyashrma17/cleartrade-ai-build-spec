@@ -201,10 +201,13 @@ describe('Demand Discovery v5 runs', () => {
     await reference('comtrade:availability:2024', getDa(2024, [[842, 'USA'], [276, 'DEU'], [784, 'ARE']]));
     await reference('comtrade:availability:2025', getDa(2025, [[842, 'USA']]));
     await reference('india:trade-agreements', readFileSync(join(__dirname, '..', 'data', 'reference', 'india-trade-agreements-v1.json')));
-    // The real ECGC list and GeoDist capitals, with the originals the manifest records.
-    for (const file of ['ecgc-country-risk-st-2026-07-01.txt', 'geo_cepii.csv']) {
-      const bytes = readFileSync(join(__dirname, '..', 'data', 'reference', file));
-      const entry = manifestEntryFor(readReferenceManifest(), bytes)!;
+    // The real ECGC list and GeoDist capitals, with the originals the manifest records. A suffix the
+    // parsers ignore makes this suite's bytes its own: another suite importing — and superseding —
+    // the same file in the shared schema would otherwise make these bytes un-importable here.
+    for (const [file, suffix] of [['ecgc-country-risk-st-2026-07-01.txt', `\n${MARKER}\n`], ['geo_cepii.csv', '\n']] as const) {
+      const real = readFileSync(join(__dirname, '..', 'data', 'reference', file));
+      const entry = manifestEntryFor(readReferenceManifest(), real)!;
+      const bytes = Buffer.concat([real, Buffer.from(suffix)]);
       expect(await importReferenceDataset({ actor: ops, dataset_key: entry.dataset_key, bytes, source_url: entry.derived_from!.url, retrieved_at: new Date('2026-10-13T00:00:00Z'), correlation_id: randomUUID(), evidence_origin: EvidenceOrigin.fixture, derived_from: entry.derived_from })).toMatchObject({ change: 'NEW' });
     }
     expect(await demandDiscoveryV5Availability()).toEqual({ available: true });
