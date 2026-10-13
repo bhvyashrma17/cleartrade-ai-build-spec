@@ -126,6 +126,12 @@ govern every PR.
   `files/v1/app/reference/Reporters.json`), and ISO/M49 stays the geographic identity. When you
   need a provider's internal id, fetch its reference table — never derive one from a mapping built
   for the opposite direction.
+- **A `BEFORE DELETE` trigger must `RETURN OLD`.** `NEW` is NULL in a delete trigger, and a BEFORE
+  trigger that returns NULL cancels the row silently — no error, `DELETE 0`, and an `ON DELETE
+  CASCADE` parent delete leaves the child orphaned. The `MarketAssessment` lineage guard did exactly
+  this for a month (fixed in `20261013181000`, ledger E-012): retries appended duplicate result sets
+  and deleted runs left their assessments behind. When a guard covers `UPDATE OR DELETE`, branch on
+  `TG_OP`, and test that a permitted delete actually removes the row.
 - **Restart the WORKER after adding a `JobType`, or it strands jobs in `processing` forever.**
   A long-running `npm run worker` holds a Prisma client generated before the new enum value
   existed. It still claims the new job (the candidate query selects only `id`, so nothing
