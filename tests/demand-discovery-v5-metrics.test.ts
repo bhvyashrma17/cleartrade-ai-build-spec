@@ -230,9 +230,10 @@ describe('v5 access, risk and exporter-fit metrics', () => {
 describe('v5 duty inputs', () => {
   /** Invented agreements for the test; the curated list cites each real one's source. */
   const agreements: IndiaTradeAgreement[] = [
-    { name: 'Agreement A', partners: ['AE'], scope: 'comprehensive', in_force_from: '2022-05-01', in_force_until: null, source_url: 'https://example.test/a' },
-    { name: 'Agreement B', partners: ['AE', 'BD'], scope: 'partial', in_force_from: '2006-01-01', in_force_until: null, source_url: 'https://example.test/b' },
-    { name: 'Agreement C', partners: ['GB'], scope: 'comprehensive', in_force_from: '2027-01-01', in_force_until: null, source_url: 'https://example.test/c' },
+    { agreement: 'Agreement A', partner_iso2: 'AE', scope: 'comprehensive', in_force_from: '2022-05-01', in_force_until: null, source_url: 'https://example.test/a' },
+    { agreement: 'Agreement B', partner_iso2: 'AE', scope: 'partial', in_force_from: '2006-01-01', in_force_until: null, source_url: 'https://example.test/b' },
+    { agreement: 'Agreement B', partner_iso2: 'BD', scope: 'partial', in_force_from: '2006-01-01', in_force_until: null, source_url: 'https://example.test/b' },
+    { agreement: 'Agreement C', partner_iso2: 'GB', scope: 'comprehensive', in_force_from: '2027-01-01', in_force_until: null, source_url: 'https://example.test/c' },
   ];
 
   test('chapters 01–27 use the primary-products tariff, the rest the manufactured one', () => {
@@ -244,10 +245,10 @@ describe('v5 duty inputs', () => {
 
   test('the strongest agreement in force on the run date applies; one not yet in force does not', () => {
     const asOf = new Date('2026-10-13T00:00:00Z');
-    expect(agreementInForce(agreements, 'AE', asOf)?.name).toBe('Agreement A');
-    expect(agreementInForce(agreements, 'BD', asOf)?.name).toBe('Agreement B');
+    expect(agreementInForce(agreements, 'AE', asOf)?.agreement).toBe('Agreement A');
+    expect(agreementInForce(agreements, 'BD', asOf)?.agreement).toBe('Agreement B');
     expect(agreementInForce(agreements, 'GB', asOf)).toBeNull();
-    expect(agreementInForce(agreements, 'AE', new Date('2020-01-01T00:00:00Z'))?.name).toBe('Agreement B');
+    expect(agreementInForce(agreements, 'AE', new Date('2020-01-01T00:00:00Z'))?.agreement).toBe('Agreement B');
   });
 
   test('official evidence wins; otherwise a labelled estimate; with no sector average, nothing', () => {

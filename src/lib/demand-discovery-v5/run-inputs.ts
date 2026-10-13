@@ -19,7 +19,7 @@ import { prerequisitesNotMet } from '@/lib/errors';
 import { appEnvironment } from '@/lib/evidence-environment';
 import { deriveFxRate } from '@/lib/fx/ecb';
 import { prisma } from '@/lib/prisma';
-import { comtradeAvailabilityRowSchema, wdiRowSchema } from '@/lib/reference-datasets/parsers';
+import { comtradeAvailabilityRowSchema, indiaTradeAgreementRowSchema, wdiRowSchema } from '@/lib/reference-datasets/parsers';
 import { activeReferenceRows } from '@/lib/reference-datasets/service';
 import { BACI_PROVIDER, type BaciHsRevision } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease, readProductFlows } from '@/lib/trade-datasets/service';
@@ -164,15 +164,17 @@ export async function loadRunInputs(args: {
   const latest = chosen.release.last_year;
 
   // --- reference datasets ---------------------------------------------------------------------
-  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest] = await Promise.all([
+  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest, agreements] = await Promise.all([
     referenceMap('wdi:LP.LPI.OVRL.XQ'), referenceMap('wdi:TM.TAX.TCOM.SM.AR.ZS'), referenceMap('wdi:TM.TAX.MANF.SM.AR.ZS'),
-    availability(latest), availability(latest + 1),
+    availability(latest), availability(latest + 1), activeReferenceRows('india:trade-agreements', indiaTradeAgreementRowSchema),
   ]);
-  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active]) if (reference) origins.add(reference.evidence_origin);
+  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active, agreements]) if (reference) origins.add(reference.evidence_origin);
+  if (!agreements) notes.push("India's trade agreements are not imported, so duty estimates assume no agreement.");
   if (!lpi.active) notes.push('Logistics scores are missing: the World Bank logistics index is not imported.');
   if (!primary.active && !manufactured.active) notes.push('Duty estimates are missing: the World Bank tariff averages are not imported.');
   if (!availabilityLatest.active) notes.push(`Comtrade's ${latest} reporting list is not imported, so every market is treated as estimated from partners' figures.`);
   notes.push('Country risk and distance are not scored yet: the ECGC list and capital coordinates are not imported.');
+
   const reported: ReportedYears = new Map([[latest, availabilityLatest.codes], [latest + 1, availabilityNewest.codes]]);
 
   // --- Comtrade: newest year and market-level fallback (§3.3, §5.3) ---------------------------
@@ -231,7 +233,7 @@ export async function loadRunInputs(args: {
     coordinates: new Map(),
     lpi: new Map([...lpi.map].map(([iso2, row]) => [iso2, row.value])),
     ecgc: new Map(),
-    duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: new Map(), primary_tariffs: primary.map, manufactured_tariffs: manufactured.map, agreements: [], policy }),
+    duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: new Map(), primary_tariffs: primary.map, manufactured_tariffs: manufactured.map, agreements: agreements?.rows ?? [], policy }),
     exporter: {
       usd_per_kg: price.value, yearly_kg: volume.value,
       price_reason: price.value == null ? price.reason : null, volume_reason: volume.value == null ? volume.reason : null,
@@ -250,7 +252,8 @@ export async function loadRunInputs(args: {
       'wdi:LP.LPI.OVRL.XQ': lpi.frozen, 'wdi:TM.TAX.TCOM.SM.AR.ZS': primary.frozen, 'wdi:TM.TAX.MANF.SM.AR.ZS': manufactured.frozen,
       [`comtrade:availability:${latest}`]: availabilityLatest.active ? { release_id: availabilityLatest.active.release_id, rows_sha256: availabilityLatest.active.rows_sha256 } : null,
       [`comtrade:availability:${latest + 1}`]: availabilityNewest.active ? { release_id: availabilityNewest.active.release_id, rows_sha256: availabilityNewest.active.rows_sha256 } : null,
-      ecgc: null, geo_cepii: null, india_trade_agreements: null,
+      ecgc: null, geo_cepii: null,
+      'india:trade-agreements': agreements ? { release_id: agreements.release_id, version: agreements.version, rows_sha256: agreements.rows_sha256 } : null,
     },
     comtrade: frozenComtrade,
     fallback_markets: [...fallback.keys()],

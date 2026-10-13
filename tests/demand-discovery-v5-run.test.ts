@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -160,6 +160,7 @@ describe('Demand Discovery v5 runs', () => {
     await reference('wdi:TM.TAX.TCOM.SM.AR.ZS', wdi('TM.TAX.TCOM.SM.AR.ZS', [['USA', 4], ['DEU', 9], ['ARE', 5], ['NPL', 12]]));
     await reference('comtrade:availability:2024', getDa(2024, [[842, 'USA'], [276, 'DEU'], [784, 'ARE']]));
     await reference('comtrade:availability:2025', getDa(2025, [[842, 'USA']]));
+    await reference('india:trade-agreements', readFileSync(join(__dirname, '..', 'data', 'reference', 'india-trade-agreements-v1.json')));
     expect(await demandDiscoveryV5Availability()).toEqual({ available: true });
 
     const free = await paidProduct(OrgTier.free);
@@ -207,6 +208,8 @@ describe('Demand Discovery v5 runs', () => {
     expect((by.get('US')!.reasons as unknown[]).length).toBe(3);
     const duty = (by.get('DE')!.score_breakdown as unknown as Breakdown).metrics.find((metric) => metric.key === 'duty');
     expect(duty).toMatchObject({ estimated: true, inputs: { duty_percent: 9, basis: 'estimate', agreement_scope: 'none' } });
+    const uaeDuty = (by.get('AE')!.score_breakdown as unknown as Breakdown).metrics.find((metric) => metric.key === 'duty');
+    expect(uaeDuty).toMatchObject({ inputs: { duty_percent: 2.5, agreement_scope: 'comprehensive', agreement: 'India–UAE CEPA' } });
     const ranks = assessments.filter((row) => row.rank != null).map((row) => row.rank!).sort((a, b) => a - b);
     expect(ranks).toEqual(Array.from({ length: ranks.length }, (_, index) => index + 1));
     expect(closed.summary).toMatchObject({ markets: 218, excluded: 1, ranked: ranks.length, handed_off: expect.arrayContaining([expect.objectContaining({ market: 'US', rank: 1 })]) });

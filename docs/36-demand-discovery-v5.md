@@ -238,10 +238,16 @@ reads the frozen releases and passes their rows in).
   and returns status, rank, live points, data year, parts, labels, reasons and flags. `/app/markets`
   shows the ranked list (top 10 first), the not-ranked markets apart with why, and what the run could
   not use; the market page shows the five parts and twelve measures, a gap as a gap.
+- **India's agreements.** Curated in `data/reference/india-trade-agreements-v1.json`, one row per
+  agreement and partner, each citing the source of its entry-into-force date (DGFT Appendix 2A for
+  the older agreements; PIB, EFTA, the Welsh Government and NZ reporting for the 2022–2026 ones).
+  Imported per environment as `india:trade-agreements`; GSTP, SAPTA, the Thailand early harvest,
+  the Nepal treaty, APTA for Mongolia and the not-yet-in-force EU FTA are listed as excluded with
+  the reason. Pakistan has no row (trade suspended since August 2019).
 - **Not yet wired.** Official Customs Atlas duty (every duty is the labelled estimate until then),
-  the ECGC list, GeoDist coordinates and India's agreements (country risk and distance are
-  unavailable, and the estimate uses factor 1, until their parsers land), the release-level Comtrade
-  fallback (a run without BACI fails), and the agent and ops views of v5 fields.
+  the ECGC list and GeoDist coordinates (country risk and distance are unavailable until their
+  parsers land), the release-level Comtrade fallback (a run without BACI fails), and the agent and
+  ops views of v5 fields.
 
 ## 8. Verification
 

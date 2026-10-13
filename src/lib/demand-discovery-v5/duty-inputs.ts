@@ -7,21 +7,15 @@
  * factor for India's trade agreement with the market, if one covering goods is in force on the
  * run's date. No sector average means no estimate: the metric is unavailable, never zero.
  */
+import type { IndiaTradeAgreementRow } from '@/lib/reference-datasets/parsers';
 import type { DemandDiscoveryV5Policy } from './policy';
 import type { DutyInput } from './metrics';
 
-export interface IndiaTradeAgreement {
-  name: string;
-  /** Markets the agreement covers, ISO alpha-2. */
-  partners: string[];
-  /** `comprehensive`: an FTA/CEPA/CECA covering most goods; `partial`: a preferential list only. */
-  scope: 'comprehensive' | 'partial';
-  /** ISO date the goods provisions entered into force for India. */
-  in_force_from: string;
-  /** Null while in force. */
-  in_force_until: string | null;
-  source_url: string;
-}
+/**
+ * One agreement for one partner (`data/reference/india-trade-agreements-v1.json`). `comprehensive`:
+ * an FTA/CEPA/CECA covering most goods; `partial`: preferences on listed lines only.
+ */
+export type IndiaTradeAgreement = Pick<IndiaTradeAgreementRow, 'agreement' | 'partner_iso2' | 'scope' | 'in_force_from' | 'in_force_until' | 'source_url'>;
 
 export interface SectorTariff {
   /** Simple mean applied tariff, percent. */
@@ -39,8 +33,8 @@ export function tariffSector(hs6: string, policy: DemandDiscoveryV5Policy): 'pri
 /** The strongest agreement in force for `market` on `asOf`: comprehensive before partial, then by name. */
 export function agreementInForce(agreements: readonly IndiaTradeAgreement[], market: string, asOf: Date): IndiaTradeAgreement | null {
   const day = asOf.toISOString().slice(0, 10);
-  const candidates = agreements.filter((agreement) => agreement.partners.includes(market) && agreement.in_force_from <= day && (agreement.in_force_until == null || day < agreement.in_force_until));
-  candidates.sort((a, b) => (a.scope === b.scope ? a.name.localeCompare(b.name) : a.scope === 'comprehensive' ? -1 : 1));
+  const candidates = agreements.filter((agreement) => agreement.partner_iso2 === market && agreement.in_force_from <= day && (agreement.in_force_until == null || day < agreement.in_force_until));
+  candidates.sort((a, b) => (a.scope === b.scope ? a.agreement.localeCompare(b.agreement) : a.scope === 'comprehensive' ? -1 : 1));
   return candidates[0] ?? null;
 }
 
@@ -66,7 +60,7 @@ export function dutyInputs(args: {
     const average = averages.get(market);
     if (!average || !(average.value >= 0)) continue;
     const agreement = agreementInForce(args.agreements, market, args.as_of);
-    result.set(market, { kind: 'estimate', sector_average_percent: average.value, agreement_scope: agreement?.scope ?? 'none', agreement_name: agreement?.name ?? null });
+    result.set(market, { kind: 'estimate', sector_average_percent: average.value, agreement_scope: agreement?.scope ?? 'none', agreement_name: agreement?.agreement ?? null });
   }
   return result;
 }

@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { EvidenceOrigin, OrgTier, ReferenceDatasetReleaseStatus, UserRole } from '@prisma/client';
 import { prisma } from '../src/lib/prisma';
-import { parseComtradeAvailability, parseWdiIndicator, wdiRowSchema } from '../src/lib/reference-datasets/parsers';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parseComtradeAvailability, parseIndiaTradeAgreements, parseWdiIndicator, wdiRowSchema } from '../src/lib/reference-datasets/parsers';
 import { referenceDatasetDefinition } from '../src/lib/reference-datasets/registry';
 import { activeReferenceRows, importReferenceDataset } from '../src/lib/reference-datasets/service';
 import type { Principal } from '../src/types';
@@ -51,6 +53,32 @@ describe('Comtrade data availability parser', () => {
     const rows = parseComtradeAvailability(getDaResponse(2025, [{ code: 842, iso: 'USA', total: 900 }, { code: 20, iso: 'AND', total: 48315 }]), 2025);
     expect(rows.map((row) => [row.reporter_code, row.reporter_iso3, row.total_records])).toEqual([['20', 'AND', 48315], ['842', 'USA', 900]]);
     expect(() => parseComtradeAvailability(getDaResponse(2024, [{ code: 842, iso: 'USA', total: 1 }]), 2025)).toThrow(/not 2025/);
+  });
+});
+
+describe("India's trade agreements (curated file)", () => {
+  const file = readFileSync(join(__dirname, '..', 'data', 'reference', 'india-trade-agreements-v1.json'));
+
+  test('the checked-in list parses: every row has a source, a date and a known scope', () => {
+    const parsed = parseIndiaTradeAgreements(file);
+    expect(parsed.rows.length).toBeGreaterThan(30);
+    expect(parsed.rows.every((row) => row.source_url.startsWith('https://'))).toBe(true);
+    const find = (iso2: string, agreement: string) => parsed.rows.find((row) => row.partner_iso2 === iso2 && row.agreement.includes(agreement));
+    expect(find('AE', 'UAE CEPA')).toMatchObject({ scope: 'comprehensive', in_force_from: '2022-05-01' });
+    expect(find('GB', 'UK CETA')).toMatchObject({ scope: 'comprehensive', in_force_from: '2026-07-15' });
+    expect(find('VN', 'ASEAN')).toMatchObject({ in_force_from: '2010-06-01' });
+    expect(parsed.rows.some((row) => row.partner_iso2 === 'PK')).toBe(false);
+    expect(parsed.excluded.map((item) => item.agreement)).toEqual(expect.arrayContaining(['India–EU FTA', 'Global System of Trade Preferences (GSTP)']));
+    expect(referenceDatasetDefinition('india:trade-agreements').parse(file).rows).toHaveLength(parsed.rows.length);
+  });
+
+  test('refuses a row without a source, a duplicate pair and an end before its start', () => {
+    const doc = (rows: unknown[]) => Buffer.from(JSON.stringify({ schema_version: 'india-trade-agreements-v1', compiled_on: '2026-10-13', excluded: [], rows }));
+    const row = { agreement: 'Agreement A', partner_iso2: 'AE', scope: 'comprehensive', in_force_from: '2022-05-01', in_force_until: null, source_url: 'https://example.test', note: null };
+    expect(() => parseIndiaTradeAgreements(doc([{ ...row, source_url: 'example' }]))).toThrow(/source_url/);
+    expect(() => parseIndiaTradeAgreements(doc([row, row]))).toThrow(/repeats Agreement A for AE/);
+    expect(() => parseIndiaTradeAgreements(doc([{ ...row, in_force_until: '2021-01-01' }]))).toThrow(/ends before it starts/);
+    expect(() => parseIndiaTradeAgreements(doc([{ ...row, scope: 'broad' }]))).toThrow(/scope/);
   });
 });
 

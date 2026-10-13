@@ -120,3 +120,48 @@ export function parseComtradeAvailability(bytes: Buffer, expectedPeriod: number)
     });
   }).sort((a, b) => Number(a.reporter_code) - Number(b.reporter_code) || a.classification_code.localeCompare(b.classification_code));
 }
+
+// --- India's trade agreements (curated, docs/36 §4.7) -----------------------------------------
+
+export const INDIA_AGREEMENTS_PARSER_VERSION = 'india-trade-agreements-parser-v1';
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), 'not a calendar date');
+
+export const indiaTradeAgreementRowSchema = z.object({
+  agreement: z.string().min(3),
+  partner_iso2: z.string().regex(/^[A-Z]{2}$/),
+  scope: z.enum(['comprehensive', 'partial']),
+  in_force_from: isoDate,
+  in_force_until: isoDate.nullable(),
+  source_url: z.string().url().startsWith('https://'),
+  note: z.string().nullable(),
+});
+export type IndiaTradeAgreementRow = z.infer<typeof indiaTradeAgreementRowSchema>;
+
+/**
+ * The curated list in `data/reference/india-trade-agreements-v1.json`: one row per agreement and
+ * partner, each with the source that states its entry into force. A row without a source, a
+ * duplicate agreement–partner pair or an end before its start refuses the whole file.
+ */
+export function parseIndiaTradeAgreements(bytes: Buffer): { compiled_on: string; rows: IndiaTradeAgreementRow[]; excluded: { agreement: string; reason: string }[] } {
+  const envelope = z.object({
+    schema_version: z.literal('india-trade-agreements-v1'),
+    compiled_on: isoDate,
+    rows: z.array(z.unknown()).min(1),
+    excluded: z.array(z.object({ agreement: z.string(), reason: z.string().min(3) })),
+  }).safeParse(JSON.parse(bytes.toString('utf8')));
+  if (!envelope.success) throw new ReferenceDatasetFormatError(`Not an india-trade-agreements-v1 file: ${envelope.error.issues[0]?.message ?? 'invalid'}.`);
+  const seen = new Set<string>();
+  const rows = envelope.data.rows.map((raw, index) => {
+    const parsed = indiaTradeAgreementRowSchema.safeParse(raw);
+    if (!parsed.success) throw new ReferenceDatasetFormatError(`Agreement row ${index}: ${parsed.error.issues[0]?.path.join('.') ?? ''} ${parsed.error.issues[0]?.message ?? 'invalid'}.`);
+    const row = parsed.data;
+    const key = `${row.agreement}:${row.partner_iso2}`;
+    if (seen.has(key)) throw new ReferenceDatasetFormatError(`Agreement row ${index} repeats ${row.agreement} for ${row.partner_iso2}.`);
+    seen.add(key);
+    if (row.in_force_until && row.in_force_until <= row.in_force_from) throw new ReferenceDatasetFormatError(`Agreement row ${index} ends before it starts.`);
+    return row;
+  });
+  rows.sort((a, b) => a.partner_iso2.localeCompare(b.partner_iso2) || a.agreement.localeCompare(b.agreement));
+  return { compiled_on: envelope.data.compiled_on, rows, excluded: envelope.data.excluded };
+}

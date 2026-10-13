@@ -451,6 +451,19 @@ before other suites that import the same dataset key.
 release-level Comtrade fallback; agent and ops views of v5 fields; a staging run (needs the BACI
 import on the owner's machine or the Railway worker).
 
+### E-013 · 2026-10-13 · India's trade agreements, curated for the duty estimate
+
+`data/reference/india-trade-agreements-v1.json` (43 agreement–partner rows), checked against:
+DGFT Appendix 2A (FTAs/PTAs signed and in force, with dates, including ASEAN's staggered entry);
+PIB, Aug 2026 (`static.pib.gov.in/…/2026/aug/doc2026818961401.pdf`): UAE CEPA in force 1 May 2022,
+Australia ECTA 29 Dec 2022, EFTA TEPA operational Oct 2025, Oman CEPA implemented June 2026, New
+Zealand FTA "signed, yet to be effective"; EFTA joint communiqué: TEPA in force 1 Oct 2025; PIB blog
+(2 Jun 2026): Oman CEPA from 1 June; Welsh Government business news: UK CETA in force 15 Jul 2026;
+NZ reporting (21 Sep 2026): ratified, in force 20 Oct 2026 (so not yet applied on 13 Oct). Scope
+(comprehensive 0.5 / partial 0.8, D-017) is the agent's classification by agreement type, recorded
+per row; SAFTA counts as partial because of its sensitive lists. Owner review welcome; nothing is
+imported anywhere yet.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |

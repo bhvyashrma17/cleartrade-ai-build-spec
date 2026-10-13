@@ -4,7 +4,8 @@
  */
 import type { z } from 'zod';
 import {
-  COMTRADE_AVAILABILITY_PARSER_VERSION, WDI_PARSER_VERSION, comtradeAvailabilityRowSchema, parseComtradeAvailability, parseWdiIndicator, wdiRowSchema,
+  COMTRADE_AVAILABILITY_PARSER_VERSION, INDIA_AGREEMENTS_PARSER_VERSION, WDI_PARSER_VERSION, comtradeAvailabilityRowSchema, indiaTradeAgreementRowSchema,
+  parseComtradeAvailability, parseIndiaTradeAgreements, parseWdiIndicator, wdiRowSchema,
 } from './parsers';
 
 export interface ParsedReferenceDataset {
@@ -63,10 +64,28 @@ function comtradeAvailability(period: number): ReferenceDatasetDefinition {
   };
 }
 
+/** India's trade agreements, curated in the repository with a source per row (docs/36 §2). */
+const INDIA_TRADE_AGREEMENTS: ReferenceDatasetDefinition = {
+  key: 'india:trade-agreements',
+  description: "India's trade agreements in force, by partner, for the labelled duty estimate",
+  licence: 'curated-from-public-sources',
+  parser_version: INDIA_AGREEMENTS_PARSER_VERSION,
+  row_schema: indiaTradeAgreementRowSchema,
+  parse(bytes) {
+    const parsed = parseIndiaTradeAgreements(bytes);
+    return {
+      version: `india-trade-agreements-v1 compiled ${parsed.compiled_on}`,
+      rows: parsed.rows,
+      validation: { partners: new Set(parsed.rows.map((row) => row.partner_iso2)).size, agreements: new Set(parsed.rows.map((row) => row.agreement)).size, excluded: parsed.excluded },
+    };
+  },
+};
+
 export function referenceDatasetDefinition(key: string): ReferenceDatasetDefinition {
+  if (key === INDIA_TRADE_AGREEMENTS.key) return INDIA_TRADE_AGREEMENTS;
   const wdiMatch = /^wdi:(.+)$/.exec(key);
   if (wdiMatch && wdiMatch[1] in WDI_INDICATORS) return wdi(wdiMatch[1] as WdiIndicatorId);
   const availability = /^comtrade:availability:(\d{4})$/.exec(key);
   if (availability) return comtradeAvailability(Number(availability[1]));
-  throw new Error(`Unknown reference dataset ${key}. Registered: ${[...Object.keys(WDI_INDICATORS).map((id) => `wdi:${id}`), 'comtrade:availability:<year>'].join(', ')}.`);
+  throw new Error(`Unknown reference dataset ${key}. Registered: ${[...Object.keys(WDI_INDICATORS).map((id) => `wdi:${id}`), 'comtrade:availability:<year>', INDIA_TRADE_AGREEMENTS.key].join(', ')}.`);
 }
