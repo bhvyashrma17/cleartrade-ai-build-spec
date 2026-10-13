@@ -29,7 +29,11 @@ export interface DemandDiscoveryV5Policy {
   foothold: { share_weight: number; trend_weight: number; zero_share_score: number; full_share_percent: number; trend_floor_pp_per_year: number; trend_ceiling_pp_per_year: number; minimum_trend_points: number };
   prices: { neutral_ratio: number; full_ratio: number; minimum_suppliers_with_quantity: number; outlier_iqr_multiple: number };
   openness: { supplier_coverage_min: number; supplier_coverage_max: number };
-  duty: { ceiling_percent: number; comprehensive_agreement_factor: number; partial_agreement_factor: number; primary_hs_chapters_through: number };
+  /**
+   * `official_minimum_confidence`: the evidence confidence (percent) an official tariff row needs,
+   * the deep assessment's own minimum (`country_truth.phase_1h` tariff policy).
+   */
+  duty: { ceiling_percent: number; comprehensive_agreement_factor: number; partial_agreement_factor: number; primary_hs_chapters_through: number; official_minimum_confidence: number };
   distance: { minimum_weight_covered: number };
   logistics: { lpi_min: number; lpi_max: number };
   risk: { grade_scores: Record<string, number>; restricted_group_i_cap: number; restricted_group_ii_cap: number };
@@ -46,7 +50,8 @@ export interface DemandDiscoveryV5Policy {
 }
 
 export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
-  policy_version: 'demand-discovery-v5-policy-v1',
+  // v2 (13 Oct 2026): adds duty.official_minimum_confidence for Customs Atlas duty. No run used v1.
+  policy_version: 'demand-discovery-v5-policy-v2',
   model_version: DEMAND_DISCOVERY_V5_MODEL,
   points: {
     market_size: 20, growth: 10, stability: 5,
@@ -69,7 +74,7 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   foothold: { share_weight: 70, trend_weight: 30, zero_share_score: 40, full_share_percent: 10, trend_floor_pp_per_year: -5, trend_ceiling_pp_per_year: 5, minimum_trend_points: 3 },
   prices: { neutral_ratio: 1, full_ratio: 1.5, minimum_suppliers_with_quantity: 3, outlier_iqr_multiple: 1.5 },
   openness: { supplier_coverage_min: 0.95, supplier_coverage_max: 1.05 },
-  duty: { ceiling_percent: 25, comprehensive_agreement_factor: 0.5, partial_agreement_factor: 0.8, primary_hs_chapters_through: 27 },
+  duty: { ceiling_percent: 25, comprehensive_agreement_factor: 0.5, partial_agreement_factor: 0.8, primary_hs_chapters_through: 27, official_minimum_confidence: 50 },
   distance: { minimum_weight_covered: 0.8 },
   logistics: { lpi_min: 1, lpi_max: 5 },
   risk: { grade_scores: { A1: 100, A2: 85, B1: 70, B2: 55, C1: 40, C2: 20, D: 0 }, restricted_group_i_cap: 40, restricted_group_ii_cap: 20 },
@@ -108,4 +113,5 @@ export function assertPolicy(policy: DemandDiscoveryV5Policy) {
   if (!(policy.ranking.minimum_live_points > 0 && policy.ranking.minimum_live_points <= 100)) throw new Error('Minimum live points must be in (0, 100].');
   if (policy.ranking.required_metrics.some((key) => !(key in policy.points))) throw new Error('Required metrics must be policy metrics.');
   if (!(policy.window_years >= 2)) throw new Error('The window needs at least two years.');
+  if (!(policy.duty.official_minimum_confidence >= 0 && policy.duty.official_minimum_confidence <= 100)) throw new Error('The official duty confidence minimum must be a percentage.');
 }

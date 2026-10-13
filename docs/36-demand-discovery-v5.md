@@ -268,9 +268,23 @@ reads the frozen releases and passes their rows in).
   holds no valid code and ISO pairs the two both ways, lists each such row in the release
   validation (`iso2_from_iso3`), and refuses a row whose two ISO cells disagree. No release was
   imported with v1.
-- **Not yet wired.** Official Customs Atlas duty (every duty is the labelled estimate until then),
-  the release-level Comtrade fallback (a run without BACI fails), and the agent and ops views of v5
-  fields.
+- **Official duty (13 Oct 2026, E-015).** A run reads the Customs Atlas evidence already stored for
+  the product's exact HS6 in each market (`MarketAccessEvidenceSnapshot`/`MarketAccessEvidence`,
+  allowed evidence origins, retrieved before the run's clock) and admits it with the deep
+  assessment's own rules (`selectTariffFactsOnly`: clock, status, supersession, exact HS6 line,
+  licensed-content approval; authoritative public assertions only; confidence ≥
+  `duty.official_minimum_confidence`, policy v2). The scored rate is the market's ordinary
+  (third-country) duty — what Indian goods pay without claiming a preference. A preference
+  published for India is shown beside it ("0% may apply with proof of Indian origin") and not
+  scored, because a published preferential line is not applicability (`tariff-semantics.ts`). An
+  ad-valorem duty is used as published; a specific duty per kg or tonne is converted with the ECB
+  rate frozen on the run and, in the score, the market's median supplier unit value (the reason
+  shows the published expression); compound, mixed, per-litre or per-item duties and currencies
+  without an ECB rate fall back to the labelled estimate with the reason recorded. v5 does not
+  acquire tariffs itself: a market has official duty only where evidence was ingested earlier
+  (`ingest:market-access` or a deep run with the WP2 switch on); the run says when there is none.
+- **Not yet wired.** Tariff acquisition inside v5 runs, the release-level Comtrade fallback (a run
+  without BACI fails), and the agent and ops views of v5 fields.
 
 ## 8. Verification
 
@@ -287,6 +301,11 @@ reads the frozen releases and passes their rows in).
 - BACI ends in 2024; the newest-year chain-link covers only markets Comtrade has for 2025.
 - Unit values at HS6 mix cheap and premium goods; price metrics carry 15 of 100 points for that reason.
 - Duty estimates (§4.7) can be wrong for a specific product; they are always labelled.
+- The official duty is the ordinary rate even where an Indian preference may apply, so it can
+  overstate the duty an exporter who qualifies under rules of origin would pay; the preference is
+  shown. The estimate path, by contrast, assumes an agreement in force is used (§4.7).
+- A specific duty's percentage uses the FOB unit value of the market's suppliers; customs value is
+  usually CIF, so the derived percentage reads slightly high.
 - The weights are judgment until deal outcomes exist; refit them then.
 - Licence: R-14 (Comtrade, accepted by the owner), R-15 (BACI built on Comtrade data; legal check),
   ECGC and World Bank terms to confirm.

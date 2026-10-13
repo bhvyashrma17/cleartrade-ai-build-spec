@@ -28,7 +28,7 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
   const run = await prisma.discoveryRun.findUnique({ where: { id: runId }, select: { id: true, product_id: true, exporter_org_id: true, input_snapshot: true, as_of_date: true, model_version: true } });
   if (!run) throw new Error(`Discovery run ${runId} no longer exists.`);
   if (run.model_version !== DEMAND_DISCOVERY_V5_MODEL) throw new Error(`Discovery run ${runId} is not a v5 run.`);
-  const snapshot = (run.input_snapshot ?? {}) as { hs_code?: string; v5_product_facts?: V5ProductFacts };
+  const snapshot = (run.input_snapshot ?? {}) as { hs_code?: string; classification_version?: string | null; v5_product_facts?: V5ProductFacts };
   if (!snapshot.hs_code || !/^\d{6}$/.test(snapshot.hs_code) || !snapshot.v5_product_facts) throw new Error(`Discovery run ${runId} has no frozen HS6 and product facts.`);
   const asOf = run.as_of_date ?? new Date();
 
@@ -36,7 +36,10 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
   try {
     const { value: config, version } = await getConfigWithVersion('demand_discovery.v5');
     await ctx.reportProgress(10);
-    const loaded = await loadRunInputs({ hs6: snapshot.hs_code, as_of: asOf, product: snapshot.v5_product_facts, config, storage: storageOverride ?? undefined });
+    const loaded = await loadRunInputs({
+      hs6: snapshot.hs_code, as_of: asOf, product: snapshot.v5_product_facts, config, storage: storageOverride ?? undefined,
+      exporter_org_id: run.exporter_org_id, hs_revision: (snapshot.classification_version ?? 'unknown').trim().toUpperCase() || 'UNKNOWN',
+    });
     await ctx.reportProgress(70);
     const result = assessMarkets(loaded.input);
     await ctx.reportProgress(85);

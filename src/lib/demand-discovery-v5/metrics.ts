@@ -191,23 +191,65 @@ export function scoreOpenness(series: MarketSeries, year: number, quality: numbe
 
 // --- 7–9 access -------------------------------------------------------------------------------
 
+/** A preference published for Indian goods: shown beside the official duty, never scored. */
+export interface DutyPreferenceNote { applicability: string; duty_expression: string | null; percent: number | null }
+
+/** §4.7: the sector average times the agreement factor. `official_note` says why an official duty was not usable. */
+export interface EstimatedDuty {
+  kind: 'estimate';
+  sector_average_percent: number;
+  agreement_scope: 'comprehensive' | 'partial' | 'none';
+  agreement_name: string | null;
+  official_note?: string | null;
+}
+
 export type DutyInput =
-  | { kind: 'official'; duty_percent: number; source: string }
-  | { kind: 'estimate'; sector_average_percent: number; agreement_scope: 'comprehensive' | 'partial' | 'none'; agreement_name: string | null }
+  | { kind: 'official'; duty_percent: number; source: string; preference?: DutyPreferenceNote | null }
+  /** A specific duty per kilogram, in USD; the score divides it by the market's unit value. */
+  | { kind: 'official_specific'; usd_per_kg: number; expression: string; source: string; preference?: DutyPreferenceNote | null; estimate: EstimatedDuty | null }
+  | EstimatedDuty
+  /** Official evidence exists but yields no rate, and nothing to estimate from. */
+  | { kind: 'unusable'; reason: string }
   | null;
 
-export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number }): MetricResult {
-  if (!input) return unavailable('duty', 'No official tariff source and no sector average to estimate from.');
+function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Policy, quality: number, officialNote: string | null): MetricResult {
   const ceiling = policy.duty.ceiling_percent;
-  if (input.kind === 'official') {
-    return { key: 'duty', score: round(100 * (1 - Math.min(input.duty_percent, ceiling) / ceiling), 4), quality: quality.official, reason: null, inputs: { duty_percent: round(input.duty_percent, 4), basis: 'official', source: input.source } };
-  }
   const factor = input.agreement_scope === 'comprehensive' ? policy.duty.comprehensive_agreement_factor : input.agreement_scope === 'partial' ? policy.duty.partial_agreement_factor : 1;
   const estimate = input.sector_average_percent * factor;
   return {
-    key: 'duty', score: round(100 * (1 - Math.min(estimate, ceiling) / ceiling), 4), quality: quality.estimate, reason: null, estimated: true,
-    inputs: { duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), agreement_scope: input.agreement_scope, agreement: input.agreement_name },
+    key: 'duty', score: round(100 * (1 - Math.min(estimate, ceiling) / ceiling), 4), quality, reason: null, estimated: true,
+    inputs: {
+      duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), agreement_scope: input.agreement_scope, agreement: input.agreement_name,
+      ...(officialNote ? { official_note: officialNote } : {}),
+    },
   };
+}
+
+/**
+ * Duty on Indian goods. `marketUsdPerKg` — the market's median supplier unit value — turns an
+ * official specific duty into its ad-valorem equivalent; without it that duty falls back to the
+ * estimate, saying so.
+ */
+export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number }, marketUsdPerKg: number | null = null): MetricResult {
+  if (!input) return unavailable('duty', 'No official tariff source and no sector average to estimate from.');
+  if (input.kind === 'unusable') return unavailable('duty', input.reason);
+  const ceiling = policy.duty.ceiling_percent;
+  const official = (percent: number, extra: Record<string, string | number>, preference: DutyPreferenceNote | null | undefined): MetricResult => ({
+    key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: quality.official, reason: null,
+    inputs: {
+      duty_percent: round(percent, 4), basis: 'official', ...extra,
+      ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4) } : {}),
+    },
+  });
+  if (input.kind === 'official') return official(input.duty_percent, { source: input.source }, input.preference);
+  if (input.kind === 'official_specific') {
+    if (marketUsdPerKg != null && marketUsdPerKg > 0) {
+      return official((input.usd_per_kg / marketUsdPerKg) * 100, { source: input.source, duty_expression: input.expression, duty_usd_per_kg: round(input.usd_per_kg, 6), market_usd_per_kg: round(marketUsdPerKg, 6) }, input.preference);
+    }
+    const note = `The official duty (${input.expression}) is charged per kilogram and this market's unit value is unknown, so it cannot be turned into a percentage.`;
+    return input.estimate ? scoreEstimatedDuty(input.estimate, policy, quality.estimate, note) : unavailable('duty', note);
+  }
+  return scoreEstimatedDuty(input, policy, quality.estimate, input.official_note ?? null);
 }
 
 export function scoreDistanceFit(

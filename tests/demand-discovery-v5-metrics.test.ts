@@ -8,6 +8,7 @@ import {
 } from '../src/lib/demand-discovery-v5/metrics';
 import { agreementInForce, dutyInputs, tariffSector, type IndiaTradeAgreement } from '../src/lib/demand-discovery-v5/duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg, kgPerUnit } from '../src/lib/demand-discovery-v5/exporter-inputs';
+import type { OfficialDutyResolution } from '../src/lib/demand-discovery-v5/official-duty';
 
 const WINDOW = [2019, 2020, 2021, 2022, 2023, 2024];
 const flow = (year: number, exporter: string, importer: string, value_usd: number, quantity_kg: number | null = null): TradeFlowInput => ({ year, exporter, importer, value_usd, quantity_kg });
@@ -183,6 +184,17 @@ describe('v5 access, risk and exporter-fit metrics', () => {
     expect(scoreDuty(null, POLICY, duty).score).toBeNull();
   });
 
+  test('duty: an official specific duty becomes its ad-valorem equivalent at the market unit value, or falls back to the estimate', () => {
+    const specific = { kind: 'official_specific' as const, usd_per_kg: 0.2, expression: '175.00 EUR / 1000 kg', source: 'EU TARIC 1006309800', estimate: { kind: 'estimate' as const, sector_average_percent: 4, agreement_scope: 'none' as const, agreement_name: null } };
+    expect(scoreDuty(specific, POLICY, duty, 0.8)).toMatchObject({ score: 0, quality: 1, inputs: { duty_percent: 25, basis: 'official', duty_expression: '175.00 EUR / 1000 kg', market_usd_per_kg: 0.8 } });
+    expect(scoreDuty(specific, POLICY, duty, 2)).toMatchObject({ score: 60, inputs: { duty_percent: 10 } });
+    expect(scoreDuty(specific, POLICY, duty, null)).toMatchObject({ score: 84, estimated: true, inputs: { basis: 'estimate', official_note: expect.stringMatching(/charged per kilogram/) } });
+    expect(scoreDuty({ ...specific, estimate: null }, POLICY, duty, null)).toMatchObject({ score: null, reason: expect.stringMatching(/charged per kilogram/) });
+    expect(scoreDuty({ kind: 'unusable', reason: 'Compound duty.' }, POLICY, duty)).toMatchObject({ score: null, reason: 'Compound duty.' });
+    expect(scoreDuty({ kind: 'official', duty_percent: 5, source: 'atlas', preference: { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: '0%', percent: 0 } }, POLICY, duty).inputs)
+      .toMatchObject({ duty_percent: 5, basis: 'official', preference_percent: 0, preference_applicability: 'potentially_applicable_requires_origin_proof' });
+  });
+
   test('distance fit is 100 when India is no farther than the usual supplier, else e^−Δ in log distance', () => {
     const coordinates = new Map([['DE', { lat: 0, lon: 0 }], ['IN', { lat: 0, lon: 10 }], ['CN', { lat: 0, lon: 20 }], ['VN', { lat: 0, lon: 5 }]]);
     const far = buildMarketSeries([flow(2024, 'CN', 'DE', 100)], ['DE']).get('DE')!;
@@ -252,18 +264,26 @@ describe('v5 duty inputs', () => {
   });
 
   test('official evidence wins; otherwise a labelled estimate; with no sector average, nothing', () => {
+    const resolved = { source: 'authority-release:us', national_line: null, preference: null, fact_ids: ['market_access_tariff:a'], snapshot_ids: ['s1'] };
     const inputs = dutyInputs({
-      markets: ['US', 'AE', 'BD', 'GB', 'TV'], hs6: '741810', as_of: new Date('2026-10-13T00:00:00Z'),
-      official: new Map([['US', { kind: 'official' as const, duty_percent: 3, source: 'authority-release:us' }]]),
+      markets: ['US', 'AE', 'BD', 'GB', 'TV', 'NP'], hs6: '741810', as_of: new Date('2026-10-13T00:00:00Z'),
+      official: new Map<string, OfficialDutyResolution>([
+        ['US', { status: 'percent', duty_percent: 3, ...resolved }],
+        ['GB', { status: 'specific', usd_per_kg: 0.16, expression: '121.00 GBP / 1000 kg', fx: { currency: 'GBP', usd_per_unit: 1.3 }, ...resolved, source: 'UK Trade Tariff' }],
+        ['BD', { status: 'unusable', reason: 'Compound duty.', expression: '12% + 50 EUR / 100 kg', ...resolved }],
+        ['TV', { status: 'unusable', reason: 'Per litre.', expression: '2 AUD / l', ...resolved }],
+        ['NP', { status: 'none', reason: 'No official tariff evidence is stored for this market and product.' }],
+      ]),
       primary_tariffs: new Map([['AE', { value: 99, year: 2022 }]]),
       manufactured_tariffs: new Map([['AE', { value: 5, year: 2022 }], ['BD', { value: 12, year: 2022 }], ['GB', { value: 4, year: 2022 }], ['US', { value: 2, year: 2022 }]]),
       agreements, policy: POLICY,
     });
     expect(Object.fromEntries(inputs)).toEqual({
-      US: { kind: 'official', duty_percent: 3, source: 'authority-release:us' },
+      US: { kind: 'official', duty_percent: 3, source: 'authority-release:us', preference: null },
       AE: { kind: 'estimate', sector_average_percent: 5, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
-      BD: { kind: 'estimate', sector_average_percent: 12, agreement_scope: 'partial', agreement_name: 'Agreement B' },
-      GB: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null },
+      BD: { kind: 'estimate', sector_average_percent: 12, agreement_scope: 'partial', agreement_name: 'Agreement B', official_note: 'Compound duty.' },
+      GB: { kind: 'official_specific', usd_per_kg: 0.16, expression: '121.00 GBP / 1000 kg', source: 'UK Trade Tariff', preference: null, estimate: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null } },
+      TV: { kind: 'unusable', reason: 'Per litre.' },
     });
   });
 });

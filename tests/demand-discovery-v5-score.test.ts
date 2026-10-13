@@ -127,6 +127,9 @@ describe('v5 labels and reasons', () => {
     expect(metricSentence(metric('price_fit', 20, { inputs: { ratio: 0.8 } }))).toBe('Your price is about 25% above what this market usually pays.');
     expect(metricSentence(metric('distance_fit', 40, { inputs: { india_km: 6543, usual_supplier_km: 2100 } }))).toBe('India is farther away than its usual suppliers (6,540 km against 2,100 km).');
     expect(metricSentence(metric('country_risk', 20, { inputs: { grade: 'C1', cover: 'restricted_group_ii' } }))).toBe('High payment risk: ECGC rates the country C1, with restricted ECGC cover.');
+    expect(metricSentence(metric('duty', 80, { inputs: { duty_percent: 5, basis: 'official', preference_percent: 0, preference_applicability: 'potentially_applicable_requires_origin_proof' } }))).toBe('Duty on Indian goods is 5%; duty-free entry may apply with proof of Indian origin.');
+    expect(metricSentence(metric('duty', 0, { inputs: { duty_percent: 25.4, basis: 'official', duty_expression: '175.00 EUR / 1000 kg' } }))).toBe("Duty on Indian goods is about 25.4% (175.00 EUR / 1000 kg at this market's prices).");
+    expect(metricSentence(metric('duty', 82, { estimated: true, inputs: { duty_percent: 4.5, basis: 'estimate' } }))).toBe('Duty on Indian goods is 4.5% (estimated).');
     expect(metricSentence(metric('market_size', 10, { inputs: { average_imports_usd: 330_000 } }), 'costs')).toBe('It is a small market: imports averaged $330,000 a year over the last three years.');
     expect(metricSentence(metric('growth', 62.5, { inputs: { cagr_percent: 5, momentum_percent: 5, cagr_years: 5 } }), 'costs')).toBe('Imports grew a modest 5% a year over 5 years.');
     expect(metricSentence(metric('growth', 50, { inputs: { cagr_percent: 0.2, momentum_percent: 0, cagr_years: 5 } }))).toBe('Imports have been flat over 5 years.');

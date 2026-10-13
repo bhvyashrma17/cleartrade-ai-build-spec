@@ -522,6 +522,48 @@ cannot be downloaded from this session (blob storage refused); annotations can. 
 **Not verified.** How the two derived files were made: the ECGC command is inferred from the text's
 layout and the GeoDist export tool was not recorded (R-19). ECGC's reuse terms.
 
+### E-015 · 2026-10-13 · v5: official Customs Atlas duty for Indian goods
+
+**Built** on `dd5/demand-discovery-v5` (docs/36 §7.1, §9):
+- `selectTariffFactsOnly` (`src/lib/country-truth/fact-selection.ts`): the deep assessment's own
+  admission rules for tariff rows, exported for callers without an exporter fact snapshot. The
+  selection logic is unchanged.
+- `src/lib/demand-discovery-v5/official-duty.ts`: per market, the newest current ordinary duty on the
+  exact HS6 line (authoritative public, confidence ≥ policy minimum); ad valorem as published; a
+  specific duty per kg or tonne converted to USD/kg at the frozen ECB rate; anything else official
+  but unusable, with the reason. A preference published for India is noted, never scored.
+- The score turns USD/kg into a percentage with the market's median supplier unit value and falls
+  back to the labelled estimate (saying why) when that value is unknown. Reasons read "Duty on
+  Indian goods is 5%; duty-free entry may apply with proof of Indian origin" and "about 7.7% (175.00
+  EUR / 1000 kg at this market's prices)".
+- Runs freeze, per market, the resolution, fact ids, snapshot ids and FX used; the policy is v2
+  (`duty.official_minimum_confidence: 50`, the deep assessment's value). No run ever used v1.
+
+**Engineering choice inside D-017 (owner may reverse in code).** The scored official rate is the
+ordinary (MFN) duty, because the deep assessment already rules that a published preference is not
+applicability (rules of origin and quotas are shipment facts) and because Korea, Japan and the UK
+publish quota-only preferences the evidence rows do not flag structurally. Consequence: for a
+market with official evidence and an Indian preference, v5 can read higher than the estimate path,
+which assumes an agreement in force is used (§4.7). The alternative — score the published
+preference where it is not a quota — needs the quota condition persisted at ingest first.
+
+**Not built (decision for the owner).** v5 reads stored tariff evidence only; it does not acquire
+it. A market has an official duty only where evidence was ingested earlier, so until acquisition is
+switched on somewhere, every v5 duty is the labelled estimate and the run says so. Acquiring inside
+v5 means up to 53 adapter runs per product (two of them live fetches with 60 s timeouts) and the
+WP2 orchestration switch is still off.
+
+**Checks run.** `tsc --noEmit` clean; ESLint clean on every changed file. Vitest on the local
+harness: `demand-discovery-v5-official-duty` (6, new: admission through the deep assessment's rules,
+ad valorem, specific with FX, compound / per-litre / no-FX, heading-level, late, expired,
+preference-only, unapproved licensed content, newest wins, low confidence), `metrics` (29),
+`score` (19), `assess` (10), `run` (2; seeds Germany's EUR 175/t and Nepal's 10% with a 0%
+preference: Germany scores 7.7% against its USD 2.50/kg unit value, Nepal 10% with the preference
+noted), and the deep-run suites `country-truth-fact-integrity` (23), `country-truth-phase-1h-
+assessment` (11), `phase-1h-operational-pillars` (4), `licensed-tariff-evidence` (25),
+`demand-discovery-ui` (22): all passing. The run suite now scores HS 100890, which no other suite
+uses, because market-access evidence is immutable and stays in the shared test schema.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |

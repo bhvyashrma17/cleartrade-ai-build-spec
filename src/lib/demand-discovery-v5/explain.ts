@@ -156,7 +156,12 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
     case 'duty': {
       const duty = num(inputs.duty_percent) ?? 0;
       const estimated = result.estimated ? ' (estimated)' : '';
-      return duty === 0 ? `Indian goods enter duty-free${estimated}.` : `Duty on Indian goods is ${formatPercent(duty)}${estimated}.`;
+      // An official specific duty is shown with what it is per kilogram: the percentage is derived.
+      const specific = typeof inputs.duty_expression === 'string' ? ` (${inputs.duty_expression} at this market's prices)` : '';
+      const sentence = duty === 0 ? `Indian goods enter duty-free${estimated}` : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific}${estimated}`;
+      const preference = num(inputs.preference_percent);
+      if (preference != null && preference < duty) return `${sentence}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} may apply with proof of Indian origin.`;
+      return `${sentence}.`;
     }
     case 'distance_fit':
       return result.score === 100

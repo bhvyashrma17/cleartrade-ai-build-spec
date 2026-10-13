@@ -194,12 +194,13 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
     const flag = ecgcFlag(rating);
     const gate: MarketGate = { excluded_reason: context.excluded_reason, no_recorded_demand: context.no_recorded_demand, flag_reasons: flag ? [flag] : [] };
     const metrics: MetricResult[] = [];
+    let marketUv: number | null = null;
     if (!context.excluded_reason && !context.no_recorded_demand) {
       const linkedQuality = context.link?.linked ? quality.chain_linked : context.quality;
       const indiaQuality = context.link?.linked?.india_usd != null ? quality.chain_linked : context.quality;
       if (context.series && structureYear != null) {
         const series = context.series;
-        const marketUv = marketMedianUnitValue(marketUnitValues(series, structureYear), policy);
+        marketUv = marketMedianUnitValue(marketUnitValues(series, structureYear), policy);
         const valuation = context.source === 'comtrade_fallback' ? 'cif' : 'fob';
         const priced = (result: MetricResult): MetricResult => (result.score == null ? result : { ...result, inputs: { ...result.inputs, market_valuation: valuation, year: structureYear } });
         // The exporter-input reasons say exactly which product fact is missing or unusable.
@@ -220,7 +221,7 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
         for (const key of ['market_size', 'growth', 'stability', 'india_foothold', 'price_headroom', 'openness', 'distance_fit', 'price_fit', 'volume_fit'] as const) metrics.push(unavailableTrade(key, reason));
       }
       metrics.push(
-        scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate }),
+        scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate }, marketUv),
         scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy),
         scoreCountryRisk(rating ?? null, quality.official, policy),
       );
