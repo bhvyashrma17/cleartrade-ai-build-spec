@@ -38,7 +38,9 @@ jobs:
       AUTH_SECRET: ci-only-not-a-production-secret
       COMTRADE_CLIENT: mock
       DISCOVERY_ENGINE: warehouse
-      IMPORT_BUYER_REF_SECRET: ci-only-buyer-reference-secret
+      # src/lib/import-identity.ts refuses a buyer-reference secret under 32 characters. The previous
+      # 30-character value failed tests/buyer.test.ts on the first CI run that reached `npm test`.
+      IMPORT_BUYER_REF_SECRET: ci-only-buyer-reference-secret-not-a-real-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
