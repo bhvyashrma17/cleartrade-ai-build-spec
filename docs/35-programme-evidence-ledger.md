@@ -17,6 +17,19 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-004 | 2026-10-12 | WP2 tariff clock: trade evidence stays as of the screen; tariff evidence is admitted up to the deep run's acquisition time; both clocks recorded on every assessment (a versioned Phase 1H selection-rule change). | Owner | WP2 |
 | D-005 | 2026-10-12 | Claude GitHub App installed; the agent pushes work branches (verified, E-007). | Owner | All WPs |
 | D-006 | 2026-10-12 | Deploy WP1 + WP2 to `amused-insight / staging`. Route (PR with CI, or direct push) still to be chosen — E-007. | Owner | WP1, WP2, WP3 |
+| D-007 | 2026-10-13 | Launch-ready programme instead of a one-week target: all 218 markets first, then regional discovery (US first), then buyer discovery. The agent works primary from the cloud; the owner's local Claude Code handles the Mac and live systems from agent-written prompts. Free data until deals fund paid sources. | Owner | Programme |
+| D-008 | 2026-10-13 | Demand Discovery v5 scores all 218 markets in depth for every product; the 20-market shortlist is dropped (E-010). | Owner | Demand Discovery v5 |
+| D-009 | 2026-10-13 | Trade data: CEPII BACI primary, UN Comtrade API as fallback (the owner's change to the proposal "BACI instead of Comtrade"). | Owner | Demand Discovery v5 |
+| D-010 | 2026-10-13 | Comtrade-derived figures go live for customers now; the owner sends UNSD a written-permission request in parallel and accepts the licence risk (R-14). | Owner | Demand Discovery v5 |
+| D-011 | 2026-10-13 | Where Comtrade has a newer year than BACI, that year changes the score (docs/36 §5.3). | Owner | Demand Discovery v5 |
+| D-012 | 2026-10-13 | Score parts: Demand 35, India's opportunity 25, Access 20, Risk 10, Exporter fit 10. | Owner | Demand Discovery v5 |
+| D-013 | 2026-10-13 | India's existing import share counts as a plus, not as crowding. | Owner | Demand Discovery v5 |
+| D-014 | 2026-10-13 | Market size = 3-year average on a log scale against the product's largest market. | Owner | Demand Discovery v5 |
+| D-015 | 2026-10-13 | Prices compared FOB to FOB: the market against India's usual export price, and against the exporter's own price. | Owner | Demand Discovery v5 |
+| D-016 | 2026-10-13 | Risk = ECGC short-term rating; markets ECGC won't cover are flagged; markets under comprehensive UN sanctions are excluded. | Owner | Demand Discovery v5 |
+| D-017 | 2026-10-13 | Duty from official Customs Atlas sources where configured; elsewhere a labelled estimate built on India's trade agreements (R-16). | Owner | Demand Discovery v5 |
+| D-018 | 2026-10-13 | Discovery starts automatically when the HS code is confirmed; agents review and flag, never approve a run. | Owner | Demand Discovery v5 |
+| D-019 | 2026-10-13 | A market is ranked at ≥ 60 live points including size and growth; the top 10 go on to regional and buyer discovery. | Owner | Demand Discovery v5 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -334,6 +347,46 @@ transaction; no secret printed (database hosts as host, port and name only).
   dashboard flag `focusedPrEnvironments=true` means. The agent reads it as a PR-environment sub-option,
   inert while PR environments are off — an interpretation, not verified.
 
+### E-010 · 2026-10-13 · Demand Discovery v5: research, design and owner decisions
+
+**Source.** The design doc "Demand Discovery: Final Design" (Claude Doc, 13 Oct) and its "Decision
+comparison" tab. The owner marked each decision in the doc's table and answered three follow-ups in
+chat (D-009 to D-011, D-017). Engineering spec: docs/36.
+
+**Findings, each page opened or command run on 13 Oct.**
+- Comtrade free key: 500 calls a day, up to 100,000 records a call (`uncomtrade.org/docs/subscriptions/`;
+  rOpenSci `comtradr` documentation). One call may name many reporters and up to 12 years.
+- Comtrade data availability, public `getDa` endpoint: 99 reporters have annual HS data for 2025 and
+  139 for 2024 (the 2024 list includes group entries such as the EU and "Other Asia, nes").
+- Comtrade licence (`comtrade.un.org/licenseagreement.html`): commercial exploitation is prohibited
+  without the UN's prior written permission. Premium plans are "Internal Use"; re-dissemination needs a
+  Premium Pro subscription ($12,000 a year for the private sector), with no fee for small extracts or
+  free public dashboards (`shop.un.org/de/node/55`). Nothing in the repository records a permission. → R-14.
+- Today's cost per product: 218 screen calls, plus fallback waves for markets without the preferred
+  year (docs/32's example: 122, then the rest), plus about 11 calls for each of 20 deep markets — about
+  600 calls against a 450-a-day budget. `CanonicalComtradeRequest` carries one reporter per call
+  (`src/lib/comtrade/request.ts`); staff approval of a scan exists to ration those calls
+  (`src/lib/country-discovery/scan-requests.ts`, header).
+- CEPII BACI V202601 (`cepii.fr`, item 37, and `DescriptionBACI.html`): 200 countries, about 5,000 HS6
+  products; HS17 file 2017–2024, HS22 file 2022–2024; `v` in thousand current USD (reconciled, FOB),
+  `q` in metric tons; numeric codes inherited from Comtrade; Taiwan = 490; licence Etalab 2.0, which
+  allows commercial reuse with credit and the update date. → R-15.
+- CEPII GeoDist (item 6): 225 countries, Etalab 2.0. ECGC short-term list from 1 Jul 2026: 239
+  countries and territories, grades A1 to D, Restricted Cover Groups I and II, Pakistan off cover.
+  WDI `LP.LPI.OVRL.XQ` and `TM.TAX.MANF.SM.AR.ZS`: latest 2022, CC BY 4.0. LPI 2.0 (2025 edition) has
+  no single country score.
+- Customs Atlas inside the 218-market universe (`DESTINATION_ADAPTERS`,
+  `UNCONFIGURED_MARKET_ACCESS_SOURCES` and `buildCountryScreeningUniverse`, run locally): 53 markets
+  have an adapter (51 retained releases; live GB and US); 7 adapter codes are territories outside the
+  universe (AX, GG, IM, JE, MC, PR, TW: no Comtrade reporter identity); 62 documented-blocked; 103 not
+  researched. Uncovered markets include AE, CN, BD, SG, MY and BR.
+- Tiers: `buyer_discovery.run` has been absent from `CAPABILITY_MIN_TIER` (so paid) since `3ebb37f`
+  (14 Aug), while docs/14 still lists it as guest. Recorded only; no change made.
+- `cepii.fr` is unreachable from the agent session (`curl`, 13 Oct). → R-17.
+
+**Decisions.** D-007 to D-019. Work branch `dd5/demand-discovery-v5`, stacked on
+`wp2/atlas-orchestration` while PR #1 is open.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
@@ -351,3 +404,7 @@ transaction; no secret printed (database hosts as host, port and name only).
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs) | Keep one worker until staleness is heartbeat-based (WP5) |
 | R-12 | The owner's local clone holds unpushed work; `wip/switzerland-tares` touches `market-access.ts`, where WP2 adds a required `retrieval` field | Open (E-009) | Owner rebases after WP2 lands; the typecheck names a missing field |
 | R-13 | Production web's `STORAGE_BUCKET` names the bucket `cleartrade-staging`; if it resolves to staging's bucket, production files land in staging storage (or the reverse) | Open — unverified (E-009) | Owner dashboard check; WP5 read-only inventory |
+| R-14 | UN Comtrade's licence prohibits commercial use without the UN's written permission; D-010 shows Comtrade-derived figures to customers before permission | Open — accepted by the owner (D-010); permission request drafted for the owner to send | UNSD's reply; Comtrade display stays switchable in config |
+| R-15 | BACI is built from Comtrade data; Etalab 2.0 is CEPII's licence, and the position of the underlying UN data is unverified | Open (E-010) | Legal check before the production launch |
+| R-16 | Agreement-based duty estimates can be wrong for a specific product | Accepted (D-017); always labelled, evidence quality 0.5 | Calibration on the three archetype products |
+| R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Open (E-010) | Imports run on the owner's machine or the Railway worker |
