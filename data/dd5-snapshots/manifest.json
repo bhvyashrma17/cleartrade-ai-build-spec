@@ -1,0 +1,78 @@
+{
+  "purpose": "Demand Discovery v5 public reference sources (docs/36-demand-discovery-v5.md)",
+  "hash_algorithm": "sha256 (shasum -a 256)",
+  "files": [
+    {
+      "file": "BACI_HS17_V202601.zip",
+      "url": "https://www.cepii.fr/DATA_DOWNLOAD/baci/data/BACI_HS17_V202601.zip",
+      "retrieved_at_utc": "2026-10-13T11:28:26Z",
+      "http_status": 200,
+      "content_type": "application/x-zip-compressed",
+      "bytes": 794583540,
+      "sha256": "16aaa22d3b000cc87744c2c28ac97ce44394c3adf315ec259451d5bb4fcae609"
+    },
+    {
+      "file": "BACI_HS22_V202601.zip",
+      "url": "https://www.cepii.fr/DATA_DOWNLOAD/baci/data/BACI_HS22_V202601.zip",
+      "retrieved_at_utc": "2026-10-13T11:30:48Z",
+      "http_status": 200,
+      "content_type": "application/x-zip-compressed",
+      "bytes": 301386611,
+      "sha256": "376f9b4cda53710a580f347b9bae69c5fb16911d0ae19b50896c109bd5dfb1f7"
+    },
+    {
+      "file": "geo_cepii.xls",
+      "url": "https://www.cepii.fr/distance/geo_cepii.xls",
+      "retrieved_at_utc": "2026-10-13T11:30:49Z",
+      "http_status": 200,
+      "content_type": "application/vnd.ms-excel",
+      "bytes": 146432,
+      "sha256": "aa43be56e85a0f67459dc2fd1e841710b600b6133cde76536c42bac07c35c9d9"
+    },
+    {
+      "file": "geo_cepii.dta",
+      "url": "https://www.cepii.fr/distance/geo_cepii.dta",
+      "retrieved_at_utc": "2026-10-13T11:30:52Z",
+      "http_status": 200,
+      "content_type": "application/octet-stream",
+      "bytes": 97730,
+      "sha256": "60071d3a6b74621f7a6808ed69f618df695b189aea5cd2a55481f7b7182826ff"
+    },
+    {
+      "file": "Country-Risk-Classification-List-ST-w.e.f.-01.07.2026.pdf",
+      "url": "https://main.ecgc.in/wp-content/uploads/2026/07/Country-Risk-Classification-List-ST-w.e.f.-01.07.2026.pdf",
+      "retrieved_at_utc": "2026-10-13T11:30:52Z",
+      "http_status": 200,
+      "content_type": "application/pdf",
+      "bytes": 423651,
+      "sha256": "7635fdc64bc07c1127c89c57d8d8b5e0505a9efa8d16d2096cb25ffc1439ac62"
+    },
+    {
+      "file": "worldbank-LP.LPI.OVRL.XQ.json",
+      "url": "https://api.worldbank.org/v2/country/all/indicator/LP.LPI.OVRL.XQ?format=json&per_page=20000&mrnev=1",
+      "retrieved_at_utc": "2026-10-13T11:30:53Z",
+      "http_status": 200,
+      "content_type": "application/json;charset=utf-8",
+      "bytes": 49715,
+      "sha256": "d44b7fd4d60ede0d2c1981c84237d8a4c4d42dcfb8b584dd4b0bf9e90a518eea"
+    },
+    {
+      "file": "worldbank-TM.TAX.MANF.SM.AR.ZS.json",
+      "url": "https://api.worldbank.org/v2/country/all/indicator/TM.TAX.MANF.SM.AR.ZS?format=json&per_page=20000&mrnev=1",
+      "retrieved_at_utc": "2026-10-13T11:31:09Z",
+      "http_status": 200,
+      "content_type": "application/json;charset=utf-8",
+      "bytes": 44734,
+      "sha256": "ed0c03e455b48bd39f4c25836e02c511ef94ba87454fcdc4704252abc2c590a8"
+    },
+    {
+      "file": "worldbank-TM.TAX.TCOM.SM.AR.ZS.json",
+      "url": "https://api.worldbank.org/v2/country/all/indicator/TM.TAX.TCOM.SM.AR.ZS?format=json&per_page=20000&mrnev=1",
+      "retrieved_at_utc": "2026-10-13T11:31:28Z",
+      "http_status": 200,
+      "content_type": "application/json;charset=utf-8",
+      "bytes": 43815,
+      "sha256": "e292f1e0b675ef20746590b5f5d5dce1bef0a003c25ffe7bc4f4fdc236069249"
+    }
+  ]
+}
