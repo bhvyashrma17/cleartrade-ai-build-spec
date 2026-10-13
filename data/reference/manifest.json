@@ -1,0 +1,41 @@
+{
+  "schema_version": "reference-files-v1",
+  "files": [
+    {
+      "file": "ecgc-country-risk-st-2026-07-01.txt",
+      "dataset_key": "ecgc:country-risk:short-term",
+      "sha256": "7985b79e392e2b2144aea565c5fbe5f867a03ecc2c55680b2da3ac3c77f40311",
+      "bytes": 42550,
+      "derived_from": {
+        "url": "https://main.ecgc.in/wp-content/uploads/2026/07/Country-Risk-Classification-List-ST-w.e.f.-01.07.2026.pdf",
+        "sha256": "7635fdc64bc07c1127c89c57d8d8b5e0505a9efa8d16d2096cb25ffc1439ac62",
+        "bytes": 423651,
+        "retrieved_at": "2026-10-13T11:30:52Z",
+        "method": "Text of the PDF as written by `pdftotext -layout` (Poppler), UTF-8, otherwise unchanged. Made on the owner's machine (snapshot commit 50834cd); re-running the same command on the PDF should give the same sha256."
+      },
+      "note": "ECGC Country Risk Classification List (short term) with effect from 1 July 2026. Public circular; ECGC states no reuse terms (docs/36 §9)."
+    },
+    {
+      "file": "geo_cepii.csv",
+      "dataset_key": "cepii:geo_cepii",
+      "sha256": "cd6398aef5bdf655e09e646a7082d2c844f3d2fab47d37c6fd6922cfed4afe93",
+      "bytes": 36311,
+      "derived_from": {
+        "url": "https://www.cepii.fr/distance/geo_cepii.dta",
+        "sha256": "60071d3a6b74621f7a6808ed69f618df695b189aea5cd2a55481f7b7182826ff",
+        "bytes": 97730,
+        "retrieved_at": "2026-10-13T11:30:52Z",
+        "method": "geo_cepii.dta exported to UTF-8 CSV with its header row, all 34 columns and all 238 rows, values as stored. Made on the owner's machine (snapshot commit 50834cd); the exporting tool was not recorded."
+      },
+      "note": "CEPII GeoDist, Mayer & Zignago (2011), CEPII Working Paper 2011-25. Etalab Open Licence 2.0: credit CEPII."
+    },
+    {
+      "file": "india-trade-agreements-v1.json",
+      "dataset_key": "india:trade-agreements",
+      "sha256": "0e2588c971dd25605033f74cfb62e94b2d4b17486560e54ad104919d678d8075",
+      "bytes": 18223,
+      "derived_from": null,
+      "note": "Curated by ClearTrade; every row cites its own source (docs/36 §7.1)."
+    }
+  ]
+}

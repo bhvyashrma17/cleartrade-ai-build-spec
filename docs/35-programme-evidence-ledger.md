@@ -464,6 +464,64 @@ NZ reporting (21 Sep 2026): ratified, in force 20 Oct 2026 (so not yet applied o
 per row; SAFTA counts as partial because of its sensitive lists. Owner review welcome; nothing is
 imported anywhere yet.
 
+### E-014 · 2026-10-13 · v5: ECGC country risk and CEPII capitals wired; BACI parser v2 keeps Namibia
+
+**Built** on `dd5/demand-discovery-v5` (docs/36 §3.2, §7.1):
+- `src/lib/reference-datasets/ecgc.ts`: the ECGC short-term list from the circular's
+  `pdftotext -layout` text — four tables, wrapped names, footnotes, table notes; strict checks
+  (effective date on every page, "Page n of N" complete, serials 1…n per table, no row-like line
+  left unread, every name on one ISO code). `geodist.ts`: one capital per country from
+  `geo_cepii`; withdrawn 2011 codes map to the successor with the same capital, checked on the city.
+- Both registered (`ecgc:country-risk:short-term`, `cepii:geo_cepii`) as
+  `derived_from_publisher_file`: importable only with the original's URL, sha256, bytes, retrieval
+  time and method, which `data/reference/manifest.json` records and the release stores
+  (`validation.derived_from`); a repeat import claiming another original is refused.
+  `scripts/import-reference-dataset.ts` reads that provenance from the manifest.
+- `data/reference/`: `ecgc-country-risk-st-2026-07-01.txt` and `geo_cepii.csv`, byte-identical
+  to the owner's snapshot branch (`50834cd`), and `manifest.json` for all three reference files.
+- v5 runs read both: country risk for 217 of 218 markets (Saint Barthélemy is not on ECGC's list),
+  distance fit for 212 (no 2011 capital row for BL, BQ, ME, SS, SX, VA). BACI 490 is placed at
+  Taipei because CEPII documents it as Taiwan and GeoDist numbers Taiwan 490; 697 and 711 stay off
+  the map. The frozen inputs name both releases and the placement.
+
+**Defect found and fixed (real-file conformance, before any import).** CEPII's V202601 country file
+leaves Namibia's `country_iso2` empty — its code "NA" is the usual not-available token — while
+`country_iso3` is NAM. Parser v1 kept the empty cell, so Namibia had no ISO identity and would have
+looked uncovered by BACI. v2 (`cepii-baci-parser-v2`) takes the alpha-2 from the file's own alpha-3
+when ISO pairs them both ways, lists each case in the release validation, and refuses a row whose
+two ISO cells disagree (none in the real file). No release was ever imported with v1.
+
+**Engineering choices inside approved decisions** (each reversible in code):
+- Text forms of the ECGC PDF and the Stata table rather than PDF or Stata readers in the app: no
+  new dependency, and the parsers are tested here on the real files. The alternative is parsing the
+  publisher's bytes directly (pdf.js, a .dta reader).
+- 32 hand-reviewed ECGC spellings; the Channel Isles row rates both GG and JE; the Canary Islands
+  row is left out (Spain has its own row; same grade, A2).
+- A territory with no 2011 capital row gets no distance score; no neighbour's coordinates are borrowed.
+- With risk now live, a market no trade dataset covers can show a partial score from its ECGC grade
+  alone (`not_enough_data`, never ranked), as docs/36 §5.2 specifies.
+
+**Checks run.** `tsc --noEmit` clean; ESLint clean on every changed file. Vitest on the local
+harness: `reference-datasets-ecgc-geodist` (11, new: synthetic edge cases, the real files, the
+manifest, derived-file imports), `trade-dataset-baci` (11, two new incl. the real country file),
+`demand-discovery-v5-run` (2; now imports the real ECGC and GeoDist files: US risk 100, Nepal 55,
+US distance from five suppliers with full coverage, Taiwan placed), `reference-datasets` (8),
+`trade-dataset-import` (8), `trade-dataset-zip-reader` (6), v5 `assess` (10), `metrics` (28),
+`score` (19), `country-screening-universe` (19), `architecture-guards` (13),
+`customs-territory-aliases` (3): all passing.
+
+**CI record (GitHub Actions, `pull_request`).** PR #1 (`wp2/atlas-orchestration` → `staging/railway`):
+run 38356527288 on `f480198` failed in `npm test` — annotation: the CI-only
+`IMPORT_BUYER_REF_SECRET` was under 32 characters (`src/lib/import-identity.ts`); run
+38357458483 on `75788e5` (the fix) passed. PR #2 (draft, `dd5/demand-discovery-v5` → PR #1's
+branch): 38389783915 on `6342cd0` passed; 38392419416 on `048bee5` cancelled by the next push;
+38393057935 on `d015675`, 38397537823 on `002de14` and 38398854225 on `205ca26` passed. Job logs
+cannot be downloaded from this session (blob storage refused); annotations can. CI notices:
+`ubuntu-latest` moves to Ubuntu 26 from 19 Oct 2026, and the Node 20 actions now run on Node 24.
+
+**Not verified.** How the two derived files were made: the ECGC command is inferred from the text's
+layout and the GeoDist export tool was not recorded (R-19). ECGC's reuse terms.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
@@ -486,3 +544,4 @@ imported anywhere yet.
 | R-16 | Agreement-based duty estimates can be wrong for a specific product | Accepted (D-017); always labelled, evidence quality 0.5 | Calibration on the three archetype products |
 | R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Open (E-010) | Imports run on the owner's machine or the Railway worker |
 | R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |
+| R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Open (E-014) — originals' sha256 recorded in `data/reference/manifest.json` | Owner re-derives both from the originals and compares sha256 (runbook); a mismatch is diffed before import |

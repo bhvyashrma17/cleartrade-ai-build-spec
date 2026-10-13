@@ -19,7 +19,10 @@ import { prerequisitesNotMet } from '@/lib/errors';
 import { appEnvironment } from '@/lib/evidence-environment';
 import { deriveFxRate } from '@/lib/fx/ecb';
 import { prisma } from '@/lib/prisma';
+import { ecgcRatingRowSchema } from '@/lib/reference-datasets/ecgc';
+import { capitalRowSchema } from '@/lib/reference-datasets/geodist';
 import { comtradeAvailabilityRowSchema, indiaTradeAgreementRowSchema, wdiRowSchema } from '@/lib/reference-datasets/parsers';
+import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
 import { activeReferenceRows } from '@/lib/reference-datasets/service';
 import { BACI_PROVIDER, type BaciHsRevision } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease, readProductFlows } from '@/lib/trade-datasets/service';
@@ -30,6 +33,7 @@ import { comtradePartnerIdentity, fallbackMarketSeries, newestYearInputs, type R
 import { dutyInputs, type SectorTariff } from './duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg } from './exporter-inputs';
 import { policyHash } from './policy';
+import { coordinateInputs, ecgcInputs } from './reference-inputs';
 import { testHsRevision, worldTotals, type HsRevisionTest } from './hs-revision';
 import type { TradeFlowInput } from './series';
 
@@ -73,6 +77,7 @@ async function baciRelease(revision: BaciHsRevision, hs6: string, storage?: Docu
   const converted = baciFlowsToTradeFlows(read.flows, countries);
   return {
     release, read, converted,
+    provider_codes_without_iso: countries.filter((country) => !country.iso2).map((country) => country.provider_code),
     frozen: {
       release_id: release.id, dataset_version: release.dataset_version, hs_revision: release.hs_revision, archive_sha256: release.archive_sha256,
       manifest_sha256: release.manifest_sha256, first_year: release.first_year, last_year: release.last_year, licence: release.licence,
@@ -164,16 +169,19 @@ export async function loadRunInputs(args: {
   const latest = chosen.release.last_year;
 
   // --- reference datasets ---------------------------------------------------------------------
-  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest, agreements] = await Promise.all([
+  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest, agreements, ecgc, capitals] = await Promise.all([
     referenceMap('wdi:LP.LPI.OVRL.XQ'), referenceMap('wdi:TM.TAX.TCOM.SM.AR.ZS'), referenceMap('wdi:TM.TAX.MANF.SM.AR.ZS'),
     availability(latest), availability(latest + 1), activeReferenceRows('india:trade-agreements', indiaTradeAgreementRowSchema),
+    activeReferenceRows(ECGC_COUNTRY_RISK_KEY, ecgcRatingRowSchema), activeReferenceRows(GEO_CEPII_KEY, capitalRowSchema),
   ]);
-  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active, agreements]) if (reference) origins.add(reference.evidence_origin);
+  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active, agreements, ecgc, capitals]) if (reference) origins.add(reference.evidence_origin);
   if (!agreements) notes.push("India's trade agreements are not imported, so duty estimates assume no agreement.");
   if (!lpi.active) notes.push('Logistics scores are missing: the World Bank logistics index is not imported.');
   if (!primary.active && !manufactured.active) notes.push('Duty estimates are missing: the World Bank tariff averages are not imported.');
   if (!availabilityLatest.active) notes.push(`Comtrade's ${latest} reporting list is not imported, so every market is treated as estimated from partners' figures.`);
-  notes.push('Country risk and distance are not scored yet: the ECGC list and capital coordinates are not imported.');
+  if (!ecgc) notes.push('Country risk is not scored: the ECGC country risk list is not imported.');
+  if (!capitals) notes.push('Distance fit is not scored: capital coordinates (CEPII GeoDist) are not imported.');
+  const coordinates = coordinateInputs({ capitals: capitals?.rows ?? [], provider_codes_without_iso: chosen.provider_codes_without_iso });
 
   const reported: ReportedYears = new Map([[latest, availabilityLatest.codes], [latest + 1, availabilityNewest.codes]]);
 
@@ -230,9 +238,9 @@ export async function loadRunInputs(args: {
     fallback,
     reported_latest_year: availabilityLatest.codes.size ? new Set(marketReporters.filter((entry) => availabilityLatest.codes.has(entry.reporter_code)).map((entry) => entry.iso2)) : new Set(),
     newest_year: newestYear,
-    coordinates: new Map(),
+    coordinates: coordinates.map,
     lpi: new Map([...lpi.map].map(([iso2, row]) => [iso2, row.value])),
-    ecgc: new Map(),
+    ecgc: ecgcInputs(ecgc?.rows ?? []),
     duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: new Map(), primary_tariffs: primary.map, manufactured_tariffs: manufactured.map, agreements: agreements?.rows ?? [], policy }),
     exporter: {
       usd_per_kg: price.value, yearly_kg: volume.value,
@@ -252,9 +260,11 @@ export async function loadRunInputs(args: {
       'wdi:LP.LPI.OVRL.XQ': lpi.frozen, 'wdi:TM.TAX.TCOM.SM.AR.ZS': primary.frozen, 'wdi:TM.TAX.MANF.SM.AR.ZS': manufactured.frozen,
       [`comtrade:availability:${latest}`]: availabilityLatest.active ? { release_id: availabilityLatest.active.release_id, rows_sha256: availabilityLatest.active.rows_sha256 } : null,
       [`comtrade:availability:${latest + 1}`]: availabilityNewest.active ? { release_id: availabilityNewest.active.release_id, rows_sha256: availabilityNewest.active.rows_sha256 } : null,
-      ecgc: null, geo_cepii: null,
       'india:trade-agreements': agreements ? { release_id: agreements.release_id, version: agreements.version, rows_sha256: agreements.rows_sha256 } : null,
+      [ECGC_COUNTRY_RISK_KEY]: ecgc ? { release_id: ecgc.release_id, version: ecgc.version, rows_sha256: ecgc.rows_sha256 } : null,
+      [GEO_CEPII_KEY]: capitals ? { release_id: capitals.release_id, version: capitals.version, rows_sha256: capitals.rows_sha256 } : null,
     },
+    provider_coordinates: capitals ? { placed: coordinates.provider_links, unplaced: coordinates.unplaced_provider_codes } : null,
     comtrade: frozenComtrade,
     fallback_markets: [...fallback.keys()],
     official_duty: { status: 'not_wired', reason: 'Customs Atlas evidence is not read by v5 yet; every duty is the labelled estimate.' },

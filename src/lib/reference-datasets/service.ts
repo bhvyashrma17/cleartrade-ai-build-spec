@@ -14,7 +14,7 @@ import { forbidden, notFound, validationError } from '@/lib/errors';
 import { appEnvironment } from '@/lib/evidence-environment';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
-import { referenceDatasetDefinition } from './registry';
+import { derivedSourceSchema, referenceDatasetDefinition, type DerivedSource } from './registry';
 
 export const REFERENCE_DATASET_IMPORT_PRINCIPALS: readonly UserRole[] = [UserRole.ops_supervisor, UserRole.admin];
 
@@ -36,6 +36,8 @@ export interface ImportReferenceDatasetArgs {
   retrieved_at: Date;
   correlation_id: string;
   evidence_origin?: EvidenceOrigin;
+  /** Required for, and only accepted by, datasets read from a derived text form. */
+  derived_from?: DerivedSource | null;
 }
 
 export async function importReferenceDataset(args: ImportReferenceDatasetArgs): Promise<{ change: 'NEW' | 'UNCHANGED'; release_id: string; row_count: number; version: string }> {
@@ -43,6 +45,18 @@ export async function importReferenceDataset(args: ImportReferenceDatasetArgs): 
   const definition = referenceDatasetDefinition(args.dataset_key);
   const environment = appEnvironment();
   const sourceSha256 = createHash('sha256').update(args.bytes).digest('hex');
+  let derivedFrom: DerivedSource | null = null;
+  if (definition.source_form === 'derived_from_publisher_file') {
+    const parsed = derivedSourceSchema.safeParse(args.derived_from);
+    if (!parsed.success) {
+      const message = `${definition.key} is read from a text form of the publisher's file; state that original file (URL, sha256, bytes, retrieval time, how the text was made).`;
+      throw validationError([{ field: 'derived_from', code: args.derived_from ? 'invalid' : 'required', message }], message);
+    }
+    derivedFrom = parsed.data;
+  } else if (args.derived_from) {
+    const message = `${definition.key} is imported from the ${definition.source_form === 'curated' ? 'curated file' : "publisher's own file"}; it has no derived-from source.`;
+    throw validationError([{ field: 'derived_from', code: 'not_applicable', message }], message);
+  }
 
   const existing = await prisma.referenceDatasetRelease.findFirst({
     where: { dataset_key: definition.key, source_sha256: sourceSha256, parser_version: definition.parser_version, environment },
@@ -51,6 +65,11 @@ export async function importReferenceDataset(args: ImportReferenceDatasetArgs): 
     if (existing.status !== ReferenceDatasetReleaseStatus.active) {
       throw validationError([{ field: 'file', code: 'superseded', message: `These bytes were imported as release ${existing.id}, since superseded. Re-activating an older source is not supported.` }],
         `These bytes were imported as release ${existing.id}, since superseded. Re-activating an older source is not supported.`);
+    }
+    const recordedOriginal = (existing.validation as { derived_from?: { sha256?: string } | null } | null)?.derived_from?.sha256 ?? null;
+    if (recordedOriginal !== (derivedFrom?.sha256 ?? null)) {
+      const message = `These bytes were imported as release ${existing.id} from original ${recordedOriginal ?? 'none'}, not ${derivedFrom?.sha256 ?? 'none'}. One text cannot come from two different originals; check the manifest.`;
+      throw validationError([{ field: 'derived_from', code: 'conflict', message }], message);
     }
     await writeAuditEvent({
       actor: args.actor, action: 'acquisition_unchanged', object_type: 'reference_dataset_release', object_id: existing.id,
@@ -74,7 +93,7 @@ export async function importReferenceDataset(args: ImportReferenceDatasetArgs): 
       data: {
         dataset_key: definition.key, version: parsed.version, source_url: args.source_url, source_sha256: sourceSha256, source_bytes: args.bytes.length,
         licence: definition.licence, retrieved_at: args.retrieved_at, parser_version: definition.parser_version, row_count: rows.length,
-        rows, rows_sha256: rowsSha256(parsed.rows), validation: parsed.validation as Prisma.InputJsonValue, environment,
+        rows, rows_sha256: rowsSha256(parsed.rows), validation: { ...parsed.validation, source_form: definition.source_form, derived_from: derivedFrom } as Prisma.InputJsonValue, environment,
         evidence_origin: args.evidence_origin ?? EvidenceOrigin.imported_real, imported_by_id: args.actor.id, correlation_id: args.correlation_id,
       },
     });

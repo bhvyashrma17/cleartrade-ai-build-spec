@@ -71,6 +71,14 @@ A run reads 6–8 small partitions for one product. Nothing per product calls a 
 `rows_checksum`), keyed by `dataset_key`, source sha256 and parser version. Each key has its own
 parser and zod schema. A run freezes the release ids it read.
 
+Each definition states what its bytes are (`source_form`): the publisher's own file (WDI JSON,
+getDa JSON), a curated list (India's agreements), or a text form of a publisher file that has no
+machine-readable edition — the ECGC circular's PDF text (`pdftotext -layout`) and the GeoDist
+`.dta` table as CSV. A derived file is imported only from `data/reference/`, where
+`manifest.json` lists it with its sha256 and the original it was made from (URL, sha256, bytes,
+retrieval time, method); the release stores that original in `validation.derived_from`, and a
+repeat import claiming a different original is refused.
+
 ### 3.3 Comtrade, batched
 
 One request covers every reporter: `reporterCode` omitted, `partnerCode` omitted (all partners,
@@ -244,10 +252,25 @@ reads the frozen releases and passes their rows in).
   Imported per environment as `india:trade-agreements`; GSTP, SAPTA, the Thailand early harvest,
   the Nepal treaty, APTA for Mongolia and the not-yet-in-force EU FTA are listed as excluded with
   the reason. Pakistan has no row (trade suspended since August 2019).
+- **Country risk and distance (13 Oct 2026, E-014).** `ecgc:country-risk:short-term` parses the
+  1 July 2026 list: 12 pages, 239 published rows in four tables (open 185, Restricted Group I 29,
+  Group II 24, off cover 1), wrapped names, the Iran footnote and Pakistan's withdrawal note.
+  Names map to ISO through `i18n-iso-countries` and a reviewed table of 32 ECGC spellings
+  (`Tokealu`, `St. Christopher and Nevis`, …); the Channel Isles row covers GG and JE; the Canary
+  Islands row is left out (part of Spain, which has its own row). 217 of the 218 markets are rated;
+  Saint Barthélemy is not on the list. `cepii:geo_cepii` keeps one capital per country (225); four
+  withdrawn 2011 codes map to the successor with the same capital (ZR→CD Kinshasa, AN→CW Willemstad,
+  YU→RS Belgrade, TP→TL Dili), checked against the row's city. Six markets have no capital row
+  (BL, BQ, ME, SS, SX, VA) and their distance fit is unavailable. BACI's 490 ("Other Asia, nes") is
+  placed at Taipei only because CEPII documents it as Taiwan and GeoDist numbers Taiwan 490 too.
+- **BACI parser v2.** V202601's country file leaves Namibia's `country_iso2` empty ("NA" read as
+  missing) with `country_iso3` NAM. v2 takes the alpha-2 from the file's own alpha-3 when the cell
+  holds no valid code and ISO pairs the two both ways, lists each such row in the release
+  validation (`iso2_from_iso3`), and refuses a row whose two ISO cells disagree. No release was
+  imported with v1.
 - **Not yet wired.** Official Customs Atlas duty (every duty is the labelled estimate until then),
-  the ECGC list and GeoDist coordinates (country risk and distance are unavailable until their
-  parsers land), the release-level Comtrade fallback (a run without BACI fails), and the agent and
-  ops views of v5 fields.
+  the release-level Comtrade fallback (a run without BACI fails), and the agent and ops views of v5
+  fields.
 
 ## 8. Verification
 
@@ -267,3 +290,8 @@ reads the frozen releases and passes their rows in).
 - The weights are judgment until deal outcomes exist; refit them then.
 - Licence: R-14 (Comtrade, accepted by the owner), R-15 (BACI built on Comtrade data; legal check),
   ECGC and World Bank terms to confirm.
+- GeoDist dates from 2011: South Sudan, Montenegro, Bonaire, Sint Maarten, Saint Barthélemy and the
+  Holy See have no capital row, so their distance fit is unavailable. The ECGC list does not rate
+  Saint Barthélemy.
+- The ECGC parser reads one layout. A new circular that changes it fails the import with the line
+  that broke; it is never half-read.

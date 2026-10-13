@@ -13,6 +13,7 @@ import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, runClaimedJob } from '../src/lib/jobs';
 import { prisma } from '../src/lib/prisma';
 import { confirmClassification, proposeClassification } from '../src/lib/product-classification';
+import { manifestEntryFor, readReferenceManifest } from '../src/lib/reference-datasets/manifest';
 import { importReferenceDataset } from '../src/lib/reference-datasets/service';
 import { importTradeDatasetRelease } from '../src/lib/trade-datasets/service';
 import type { Principal } from '../src/types';
@@ -85,10 +86,12 @@ let ops: Principal;
 /** The parts of the stored JSON this suite reads. */
 interface FrozenInputs {
   baci: { revision_test: unknown; base_years: number[] };
+  reference: Record<string, { release_id: string } | null>;
+  provider_coordinates: unknown;
   comtrade: { newest_year: { evidence_ids: string[] }; market_fallback: unknown };
   exporter: { usd_per_kg: unknown; yearly_kg: unknown };
 }
-interface Breakdown { newest_year: unknown; metrics: { key: string }[] }
+interface Breakdown { newest_year: unknown; metrics: { key: string; score: number | null; inputs: Record<string, unknown> }[] }
 
 async function importBaci(revision: 'HS17' | 'HS22', years: number[]) {
   const dir = mkdtempSync(join(tmpdir(), 'dd5-run-'));
@@ -161,6 +164,12 @@ describe('Demand Discovery v5 runs', () => {
     await reference('comtrade:availability:2024', getDa(2024, [[842, 'USA'], [276, 'DEU'], [784, 'ARE']]));
     await reference('comtrade:availability:2025', getDa(2025, [[842, 'USA']]));
     await reference('india:trade-agreements', readFileSync(join(__dirname, '..', 'data', 'reference', 'india-trade-agreements-v1.json')));
+    // The real ECGC list and GeoDist capitals, with the originals the manifest records.
+    for (const file of ['ecgc-country-risk-st-2026-07-01.txt', 'geo_cepii.csv']) {
+      const bytes = readFileSync(join(__dirname, '..', 'data', 'reference', file));
+      const entry = manifestEntryFor(readReferenceManifest(), bytes)!;
+      expect(await importReferenceDataset({ actor: ops, dataset_key: entry.dataset_key, bytes, source_url: entry.derived_from!.url, retrieved_at: new Date('2026-10-13T00:00:00Z'), correlation_id: randomUUID(), evidence_origin: EvidenceOrigin.fixture, derived_from: entry.derived_from })).toMatchObject({ change: 'NEW' });
+    }
     expect(await demandDiscoveryV5Availability()).toEqual({ available: true });
 
     const free = await paidProduct(OrgTier.free);
@@ -204,7 +213,8 @@ describe('Demand Discovery v5 runs', () => {
     expect(by.get('KP')).toMatchObject({ market_status: 'excluded', eligibility_status: 'ineligible', overall_score: null, rank: null });
     expect(by.get('NP')).toMatchObject({ market_status: 'ranked' });
     expect((by.get('NP')!.labels as { key: string }[]).map((label) => label.key)).toContain('estimated_from_partners');
-    expect(by.get('TV')).toMatchObject({ market_status: 'not_enough_data', live_points: 0, overall_score: null });
+    // No trade dataset covers Tuvalu here; only its ECGC grade (C1, 40) is live: a partial score, never ranked.
+    expect(by.get('TV')).toMatchObject({ market_status: 'not_enough_data', live_points: 10, overall_score: 40, rank: null });
     expect((by.get('US')!.reasons as unknown[]).length).toBe(3);
     const duty = (by.get('DE')!.score_breakdown as unknown as Breakdown).metrics.find((metric) => metric.key === 'duty');
     expect(duty).toMatchObject({ estimated: true, inputs: { duty_percent: 9, basis: 'estimate', agreement_scope: 'none' } });
@@ -213,7 +223,15 @@ describe('Demand Discovery v5 runs', () => {
     const ranks = assessments.filter((row) => row.rank != null).map((row) => row.rank!).sort((a, b) => a - b);
     expect(ranks).toEqual(Array.from({ length: ranks.length }, (_, index) => index + 1));
     expect(closed.summary).toMatchObject({ markets: 218, excluded: 1, ranked: ranks.length, handed_off: expect.arrayContaining([expect.objectContaining({ market: 'US', rank: 1 })]) });
-    expect((closed.summary as { notes: string[] }).notes).toEqual(expect.arrayContaining([expect.stringMatching(/ECGC list and capital coordinates/)]));
+    expect((closed.summary as { notes: string[] }).notes.filter((note) => /ECGC|coordinates/.test(note))).toEqual([]);
+    const metric = (market: string, key: string) => (by.get(market)!.score_breakdown as unknown as Breakdown).metrics.find((item) => item.key === key);
+    expect(metric('US', 'country_risk')).toMatchObject({ score: 100, inputs: { grade: 'A1', cover: 'open' } });
+    expect(metric('NP', 'country_risk')).toMatchObject({ score: 55, inputs: { grade: 'B2', cover: 'open' } });
+    // US suppliers: China, Viet Nam, India, the UAE and BACI 490 placed at Taipei — all on the map.
+    expect(metric('US', 'distance_fit')).toMatchObject({ score: expect.any(Number), inputs: { covered_share: 1 } });
+    expect(frozen.reference['ecgc:country-risk:short-term']).toMatchObject({ release_id: expect.any(String) });
+    expect(frozen.reference['cepii:geo_cepii']).toMatchObject({ release_id: expect.any(String) });
+    expect(frozen.provider_coordinates).toEqual({ placed: [{ identity: 'cepii_baci:490', iso2: 'TW', city: 'Taipei' }], unplaced: [] });
 
     // A retry replaces the result set rather than appending to it.
     await prisma.job.update({ where: { id: run.job_id! }, data: { status: JobStatus.queued, dedupe_key: null } });

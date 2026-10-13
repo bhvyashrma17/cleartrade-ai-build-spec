@@ -10,11 +10,20 @@
  *
  * Parsing is strict. A row that does not match these facts fails the import with its line number;
  * nothing is skipped or repaired silently.
+ *
+ * v2 (13 Oct 2026): the V202601 country file leaves Namibia's `country_iso2` empty — its ISO code
+ * is the string "NA", which spreadsheet and statistics tools read as "not available" — while its
+ * `country_iso3` is NAM. v1 kept the empty cell, so Namibia had no ISO identity and looked
+ * uncovered by BACI. v2 takes the alpha-2 from the file's own alpha-3 when, and only when, the
+ * alpha-2 cell holds no valid code and ISO 3166-1 maps that alpha-3 to an alpha-2 and back; each
+ * such row is reported in the release validation. A row whose two ISO cells contradict each other
+ * fails.
  */
+import { alpha2ToAlpha3, alpha3ToAlpha2 } from 'i18n-iso-countries';
 
 export const BACI_PROVIDER = 'cepii_baci';
 export const BACI_LICENCE = 'etalab-2.0';
-export const BACI_PARSER_VERSION = 'cepii-baci-parser-v1';
+export const BACI_PARSER_VERSION = 'cepii-baci-parser-v2';
 export const BACI_DATA_HEADER = ['t', 'i', 'j', 'k', 'v', 'q'] as const;
 /** Quantity tokens that mean "not reported" rather than zero. */
 const MISSING_QUANTITY = new Set(['', 'NA', 'NaN']);
@@ -136,12 +145,34 @@ export function formatBaciDataLine(flow: BaciFlow, rawValue: string, rawQuantity
   return `${flow.year},${flow.exporter},${flow.importer},${flow.product},${rawValue},${MISSING_QUANTITY.has(rawQuantity) ? '' : rawQuantity}`;
 }
 
+/** A country whose alpha-2 cell held no valid code and v2 took the code from the file's own alpha-3. */
+export type BaciIso2FromIso3 = {
+  provider_code: string;
+  /** The alpha-2 cell exactly as published (empty for Namibia in V202601). */
+  iso2_cell: string;
+  iso3: string;
+  iso2: string;
+};
+
+export interface BaciCountryFile {
+  countries: BaciCountry[];
+  iso2_from_iso3: BaciIso2FromIso3[];
+}
+
 /**
  * The country file. Two documented layouts are accepted: the current one
  * (`country_code,country_name,country_iso2,country_iso3`) and the older one
  * (`country_code,country_name_abbreviation,country_name_full,iso_2digit_alpha,iso_3digit_alpha`).
+ *
+ * Codes the file gives no ISO identity (490 "Other Asia, nes", 697 "Europe EFTA, nes", 711 SACU)
+ * keep none. Historical codes the file labels with withdrawn ISO codes (CS, DD, AN, SU, PU) are
+ * kept as published: ISO no longer maps them, so there is nothing to check them against.
  */
 export function parseBaciCountries(text: string, member: string): BaciCountry[] {
+  return readBaciCountryFile(text, member).countries;
+}
+
+export function readBaciCountryFile(text: string, member: string): BaciCountryFile {
   const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((line) => line.trim().length);
   if (!lines.length) throw new BaciFormatError(`${member} is empty.`);
   const header = splitCsvLine(lines[0]);
@@ -157,7 +188,8 @@ export function parseBaciCountries(text: string, member: string): BaciCountry[] 
     throw new BaciFormatError(`${member}: header ${JSON.stringify(header)} is not a documented BACI country layout.`);
   }
   const seen = new Set<string>();
-  return lines.slice(1).map((line, offset) => {
+  const iso2FromIso3: BaciIso2FromIso3[] = [];
+  const countries = lines.slice(1).map((line, offset) => {
     const fields = splitCsvLine(line);
     const context = `${member} line ${offset + 2}`;
     if (fields.length !== header.length) throw new BaciFormatError(`${context}: expected ${header.length} fields, found ${fields.length}.`);
@@ -166,15 +198,22 @@ export function parseBaciCountries(text: string, member: string): BaciCountry[] 
     const providerCode = String(Number(code));
     if (seen.has(providerCode)) throw new BaciFormatError(`${context}: duplicate country code ${providerCode}.`);
     seen.add(providerCode);
-    const iso2 = fields[iso2Index].toUpperCase();
-    const iso3 = fields[iso3Index].toUpperCase();
-    return {
-      provider_code: providerCode,
-      name: fields[nameIndex],
-      iso2: /^[A-Z]{2}$/.test(iso2) ? iso2 : null,
-      iso3: /^[A-Z]{3}$/.test(iso3) ? iso3 : null,
-    };
+    const iso2Cell = fields[iso2Index].toUpperCase();
+    const iso3Cell = fields[iso3Index].toUpperCase();
+    const iso3 = /^[A-Z]{3}$/.test(iso3Cell) ? iso3Cell : null;
+    let iso2 = /^[A-Z]{2}$/.test(iso2Cell) ? iso2Cell : null;
+    // ISO 3166-1's own alpha-3 → alpha-2 pairing; undefined for withdrawn and non-ISO codes.
+    const isoPair = iso3 ? alpha3ToAlpha2(iso3) : undefined;
+    if (iso2 && isoPair && isoPair !== iso2) {
+      throw new BaciFormatError(`${context}: code ${providerCode} lists ISO alpha-2 ${iso2} but alpha-3 ${iso3}, which ISO pairs with ${isoPair}.`);
+    }
+    if (!iso2 && iso3 && isoPair && alpha2ToAlpha3(isoPair) === iso3) {
+      iso2 = isoPair;
+      iso2FromIso3.push({ provider_code: providerCode, iso2_cell: fields[iso2Index], iso3, iso2 });
+    }
+    return { provider_code: providerCode, name: fields[nameIndex], iso2, iso3 };
   });
+  return { countries, iso2_from_iso3: iso2FromIso3 };
 }
 
 /** Number of product rows in a product-codes file, after checking its header. Descriptions are not stored. */

@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
-  assertBaciDataHeader, classifyBaciMember, countBaciProducts, formatBaciDataLine, parseBaciCountries, parseBaciDataLine, splitCsvLine,
+  assertBaciDataHeader, classifyBaciMember, countBaciProducts, formatBaciDataLine, parseBaciCountries, parseBaciDataLine, readBaciCountryFile, splitCsvLine,
 } from '../src/lib/trade-datasets/baci';
 
 describe('BACI member names', () => {
@@ -62,6 +64,30 @@ describe('BACI reference files', () => {
     ]);
     const older = parseBaciCountries('country_code,country_name_abbreviation,country_name_full,iso_2digit_alpha,iso_3digit_alpha\n4,Afghanistan,Afghanistan,AF,AFG\n', 'countries');
     expect(older).toEqual([{ provider_code: '4', name: 'Afghanistan', iso2: 'AF', iso3: 'AFG' }]);
+  });
+
+  test("takes an empty alpha-2 from the file's own alpha-3 and reports it, and refuses contradicting ISO cells", () => {
+    const file = readBaciCountryFile('country_code,country_name,country_iso2,country_iso3\n516,Namibia,,NAM\n490,"Other Asia, nes",,S19\n530,Netherlands Antilles (...2010),AN,ANT\n', 'countries');
+    expect(file.countries).toEqual([
+      { provider_code: '516', name: 'Namibia', iso2: 'NA', iso3: 'NAM' },
+      { provider_code: '490', name: 'Other Asia, nes', iso2: null, iso3: null },
+      { provider_code: '530', name: 'Netherlands Antilles (...2010)', iso2: 'AN', iso3: 'ANT' },
+    ]);
+    expect(file.iso2_from_iso3).toEqual([{ provider_code: '516', iso2_cell: '', iso3: 'NAM', iso2: 'NA' }]);
+    expect(() => parseBaciCountries('country_code,country_name,country_iso2,country_iso3\n4,Afghanistan,AL,AFG\n', 'countries')).toThrow(/alpha-2 AL but alpha-3 AFG, which ISO pairs with AF/);
+  });
+
+  test('the real V202601 country file: Namibia has its ISO identity; only the three non-ISO codes lack one', () => {
+    // Extracted from BACI_HS17_V202601.zip (sha256 16aaa22d…) on the owner's machine, 13 Oct 2026;
+    // CEPII, Etalab Open Licence 2.0.
+    const file = readBaciCountryFile(readFileSync(resolve('tests/fixtures/cepii-baci/country_codes_V202601.csv'), 'utf8'), 'country_codes_V202601.csv');
+    expect(file.countries).toHaveLength(238);
+    expect(file.iso2_from_iso3).toEqual([{ provider_code: '516', iso2_cell: '', iso3: 'NAM', iso2: 'NA' }]);
+    expect(file.countries.filter((country) => !country.iso2).map((country) => country.provider_code)).toEqual(['490', '697', '711']);
+    const byCode = new Map(file.countries.map((country) => [country.provider_code, country]));
+    expect(byCode.get('699')).toMatchObject({ iso2: 'IN', iso3: 'IND' });
+    expect(byCode.get('516')).toMatchObject({ name: 'Namibia', iso2: 'NA' });
+    expect(byCode.get('490')).toMatchObject({ iso2: null });
   });
 
   test('refuses an unknown country layout and duplicate codes', () => {

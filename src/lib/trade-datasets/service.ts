@@ -18,7 +18,7 @@ import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 import {
   BACI_LICENCE, BACI_PARSER_VERSION, BACI_PROVIDER, BaciFormatError, assertBaciDataHeader, classifyBaciMember,
-  countBaciProducts, parseBaciCountries, parseBaciDataLine, type BaciCountry, type BaciFlow, type BaciHsRevision, type BaciMember,
+  countBaciProducts, parseBaciDataLine, readBaciCountryFile, type BaciCountry, type BaciFlow, type BaciHsRevision, type BaciMember,
 } from './baci';
 import { readLines, readPartitionFlows, rawValueTokens, YearPartitionWriter, type EncodedPartition } from './partitions';
 import { listZipEntries, openZipEntry, ZIP_READER_VERSION, type ZipEntry } from './zip-reader';
@@ -158,7 +158,8 @@ export async function importTradeDatasetRelease(args: ImportTradeDatasetArgs): P
   log(`release ${release.id}: ${plan.data.length} year files, ${entries.length} members`);
 
   try {
-    const countries = parseBaciCountries(await readMemberText(args.file_path, byName.get(plan.countries.name)!), plan.countries.name);
+    const countryFile = readBaciCountryFile(await readMemberText(args.file_path, byName.get(plan.countries.name)!), plan.countries.name);
+    const countries = countryFile.countries;
     const known = new Set(countries.map((country) => country.provider_code));
     if (!countries.some((country) => country.iso2 === 'IN')) throw new BaciFormatError('The country file has no India (ISO IN) entry.');
     const productCount = plan.products ? countBaciProducts(await readMemberText(args.file_path, byName.get(plan.products.name)!), plan.products.name) : null;
@@ -213,6 +214,7 @@ export async function importTradeDatasetRelease(args: ImportTradeDatasetArgs): P
             members: entries.map((entry) => ({ name: entry.name, bytes: entry.uncompressedSize })),
             years: plan.data.map((member) => member.year),
             country_count: countries.length,
+            iso2_from_iso3: countryFile.iso2_from_iso3,
             product_count: productCount,
             unrecognised_members: plan.other,
           },
