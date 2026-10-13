@@ -54,7 +54,8 @@ export interface AssessMarketsInput {
   lpi: ReadonlyMap<string, number>;
   ecgc: ReadonlyMap<string, EcgcRating>;
   duty: ReadonlyMap<string, Exclude<DutyInput, null>>;
-  exporter: { usd_per_kg: number | null; yearly_kg: number | null };
+  /** The exporter's own figures; a missing one may carry the specific reason it is missing. */
+  exporter: { usd_per_kg: number | null; yearly_kg: number | null; price_reason?: string | null; volume_reason?: string | null };
 }
 
 export interface AssessedMarket extends ScoredMarket {
@@ -201,6 +202,8 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
         const marketUv = marketMedianUnitValue(marketUnitValues(series, structureYear), policy);
         const valuation = context.source === 'comtrade_fallback' ? 'cif' : 'fob';
         const priced = (result: MetricResult): MetricResult => (result.score == null ? result : { ...result, inputs: { ...result.inputs, market_valuation: valuation, year: structureYear } });
+        // The exporter-input reasons say exactly which product fact is missing or unusable.
+        const because = (result: MetricResult, missing: boolean, reason: string | null | undefined): MetricResult => (result.score == null && missing && reason ? { ...result, reason } : result);
         metrics.push(
           scoreMarketSize(context.average_imports, largest, linkedQuality, policy),
           scoreGrowth(context.demand_series!, context.demand_window, linkedQuality, policy),
@@ -209,8 +212,8 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
           priced(scorePriceHeadroom(marketUv, indiaUv(structureYear), context.quality, policy)),
           scoreOpenness(series, structureYear, context.quality, policy),
           scoreDistanceFit(series, structureYear, input.coordinates, context.quality, policy),
-          priced(scorePriceFit(marketUv, input.exporter.usd_per_kg, context.quality, policy)),
-          scoreVolumeFit(series, structureYear, input.exporter.yearly_kg, context.quality, policy),
+          because(priced(scorePriceFit(marketUv, input.exporter.usd_per_kg, context.quality, policy)), input.exporter.usd_per_kg == null, input.exporter.price_reason),
+          because(scoreVolumeFit(series, structureYear, input.exporter.yearly_kg, context.quality, policy), input.exporter.yearly_kg == null, input.exporter.volume_reason),
         );
       } else {
         const reason = 'No trade dataset covers this market.';

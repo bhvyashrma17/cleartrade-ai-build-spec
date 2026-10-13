@@ -67,7 +67,12 @@ beforeAll(async () => {
   actor = { id, email: `${id}@test.local`, name: 'Dataset Operator', role: UserRole.ops_supervisor, exporter_org_id: null, tier: OrgTier.paid };
 });
 
-afterAll(async () => { await prisma.$disconnect(); });
+afterAll(async () => {
+  // Leave no ready release behind: a ready BACI release makes Demand Discovery v5 available, which
+  // would change what later suites sharing this schema see (auto-start on classification).
+  await prisma.tradeDatasetRelease.updateMany({ where: { dataset_version: { startsWith: 'V2099' }, status: TradeDatasetReleaseStatus.ready }, data: { status: TradeDatasetReleaseStatus.superseded, superseded_at: new Date() } });
+  await prisma.$disconnect();
+});
 
 describe('trade dataset import (BACI)', () => {
   test('imports, partitions by year and chapter, and reads one product back with verified checksums', async () => {

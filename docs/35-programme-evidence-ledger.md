@@ -418,6 +418,39 @@ and outside the overall, never zero) plus the 29 data-foundation tests, all pass
 `data/dd5-reference-snapshots` branch for the real file formats); the batched Comtrade client;
 the run job, auto-start and screens (task 18); a staging run on the three archetype products.
 
+### E-012 · 2026-10-13 · Demand Discovery v5: runs wired end to end (in review), and a delete-guard defect
+
+**Built** on `dd5/demand-discovery-v5` (docs/36 §7.1): the batched Comtrade client
+(`src/lib/comtrade/batch.ts`: split by period then reporter halves at the cap, never truncated);
+v5 persistence (migration `20261013180000`: `DiscoveryRun` model, trigger, classification, frozen
+inputs, summary; `MarketAssessment` status, rank, live points, data year, breakdown, labels, reasons,
+flags, hand-off, with CHECKs and a unique rank per run); JobType `demand_discovery_v5` (costed);
+config `demand_discovery.v5`; auto-start from `confirmClassification` (paid tier, v5 available,
+audited either way); `POST /api/v1/discovery-runs` routes to v5 where a BACI release is ready; the
+results API and the `/app/markets` and market-detail screens.
+
+**Defect found and fixed (pre-existing since `20260829120000`).** The `MarketAssessment` lineage
+guard ran `BEFORE UPDATE OR DELETE` and returned `NEW` on every path; in a delete trigger `NEW` is
+NULL, so every delete of a non-v4 assessment was cancelled silently. Probed in a scratch schema:
+`DELETE` of a `model_version = 'test'` row reported `DELETE 0`; deleting its run reported
+`DELETE 1` and left the assessment pointing at a run that no longer exists. Consequences: a
+discovery retry's `deleteMany` appended a second result set instead of replacing the first, and
+deleting a run, product or organisation (including the guest purge) left orphaned assessments.
+Migration `20261013181000` returns `OLD` for permitted deletes and keeps every v4 protection
+(`tests/market-assessment-delete-guard.test.ts`). It deletes nothing; existing orphans are R-18.
+
+**Checks run.** `tsc --noEmit` and ESLint `--max-warnings=0` clean. Full suite in CI's file order on
+the local harness: 2,120 passed, 5 skipped, 3 failed — the same three local-harness-only failures as
+the baseline in E-006 (`market-scan-requests`, `pilot-e2e`, `staff-provisioning`); none involve this
+work. New: an end-to-end v5 run test (two synthetic BACI archives, reference releases, a fake
+Comtrade endpoint; auto-start for paid only; 218 assessments; retry replaces rather than appends).
+`reference-datasets.test.ts` now reads only its own releases, so it no longer depends on running
+before other suites that import the same dataset key.
+
+**Not yet:** official Customs Atlas duty in v5; ECGC, GeoDist and agreements parsers; the
+release-level Comtrade fallback; agent and ops views of v5 fields; a staging run (needs the BACI
+import on the owner's machine or the Railway worker).
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |
@@ -439,3 +472,4 @@ the run job, auto-start and screens (task 18); a staging run on the three archet
 | R-15 | BACI is built from Comtrade data; Etalab 2.0 is CEPII's licence, and the position of the underlying UN data is unverified | Open (E-010) | Legal check before the production launch |
 | R-16 | Agreement-based duty estimates can be wrong for a specific product | Accepted (D-017); always labelled, evidence quality 0.5 | Calibration on the three archetype products |
 | R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Open (E-010) | Imports run on the owner's machine or the Railway worker |
+| R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |

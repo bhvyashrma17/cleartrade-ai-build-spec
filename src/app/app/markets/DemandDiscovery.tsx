@@ -15,6 +15,7 @@ import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import { useJobPoll } from '@/hooks';
 import type { ListResponse } from '@/types';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
+import { V5Results, type V5Row } from './V5Results';
 
 type Tier = 'guest' | 'free' | 'paid';
 
@@ -284,7 +285,7 @@ export function DemandDiscovery({
 // Job progress + results
 // ---------------------------------------------------------------------------
 
-interface AssessmentRow {
+interface AssessmentRow extends Partial<Omit<V5Row, 'id' | 'country_code' | 'overall_score'>> {
   id: string;
   country_code: string;
   overall_score: number;
@@ -294,7 +295,10 @@ interface AssessmentRow {
   rationale: string | null;
   price_band: { min: string; max: string | null; currency: string | null } | null;
   evidence_warning?: string;
+  model_version?: string;
 }
+
+const V5_MODEL = 'market-opportunity-v5';
 
 const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
 const countryName = (code: string) => {
@@ -346,7 +350,8 @@ function RunProgress({
       .finally(() => setLoadingRows(false));
   }, [finished, runId, rows, loadingRows]);
 
-  const result = job?.result as { provenance?: { note?: string }; missing?: string[] } | null;
+  const result = job?.result as { provenance?: { note?: string }; missing?: string[]; model_version?: string } | null;
+  const isV5 = result?.model_version === V5_MODEL || Boolean(rows?.some((row) => row.model_version === V5_MODEL));
 
   return (
     <section className="mt-5 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
@@ -403,7 +408,7 @@ function RunProgress({
       ) : null}
 
       {/* `partial` renders what came back AND names what didn't — never silently short. */}
-      {status === 'partial' && result?.missing?.length ? (
+      {status === 'partial' && result?.missing?.length && !isV5 ? (
         <ul className="mt-3 list-inside list-disc text-sm text-[var(--color-text-secondary)]">
           {result.missing.map((m) => (
             <li key={m}>{m}</li>
@@ -421,6 +426,16 @@ function RunProgress({
         <div className="mt-5">
           {loadingRows && !rows ? (
             <Skeleton variant="text" lines={3} />
+          ) : rows && rows.length > 0 && isV5 ? (
+            <V5Results
+              rows={rows.map((row) => ({
+                id: row.id, country_code: row.country_code, overall_score: row.overall_score, confidence_score: row.confidence_score ?? 0,
+                market_status: row.market_status ?? null, rank: row.rank ?? null, live_points: row.live_points ?? null, data_year: row.data_year ?? null,
+                labels: row.labels ?? [], reasons: row.reasons ?? [], flag_reasons: row.flag_reasons ?? [], handed_off: row.handed_off ?? false,
+              }))}
+              notes={result?.missing ?? []}
+              provenanceNote={result?.provenance?.note ?? null}
+            />
           ) : rows && rows.length > 0 ? (
             <>
               <ol className="space-y-3">

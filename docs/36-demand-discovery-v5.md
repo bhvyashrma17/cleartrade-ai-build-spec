@@ -215,6 +215,34 @@ reads the frozen releases and passes their rows in).
 - Tier gates are unchanged (`demand_discovery.run` paid; docs/14). The guest market estimate moves to
   BACI under the same framing rule: observed values and price bands only, no ranking, no projection.
 
+### 7.1 As built (13 Oct 2026, E-012)
+
+- **When v5 runs.** `demand_discovery.v5` config: `enabled`, `auto_start_on_classification`,
+  `comtrade_newest_year`, `comtrade_market_fallback` (the R-14 switches), `comtrade_max_records`,
+  `fx_max_lookback_days` and the scoring `policy`. v5 is *available* when it is enabled and a ready
+  BACI release exists in the environment; otherwise `POST /api/v1/discovery-runs` keeps using the
+  earlier engine, so an environment without BACI keeps working.
+- **Auto-start.** `confirmClassification` calls `autoStartDemandDiscoveryV5` after its transaction
+  commits. It starts a run only for a paid tenant (costed work) with v5 available, never throws, and
+  audits `demand_discovery_auto_start` with whether it started and why not. One run per
+  classification may be in flight (`dedupe_key demand_discovery_v5:<product>:<classification>`).
+- **The run.** `startDemandDiscoveryV5` freezes the product facts the score uses into
+  `input_snapshot.v5_product_facts`; the job (`demand_discovery_v5`, costed) reads the newest ready
+  BACI HS17 and HS22 releases, runs §3.4, reads the active reference releases, makes at most two
+  batched Comtrade calls (newest year; uncovered markets) with quota reserved per call and every
+  page stored as `SourceEvidence`, derives the exporter's USD/kg price (ECB rate frozen) and yearly
+  kg, scores every universe market, and writes all `MarketAssessment` rows and the run's
+  `frozen_inputs`, `summary` and policy hash in one transaction. A failed Comtrade step makes the run
+  `partial` with the reason; a missing BACI release fails it.
+- **Results.** `GET /api/v1/discovery-runs/:id/market-assessments` orders by `rank`, then score,
+  and returns status, rank, live points, data year, parts, labels, reasons and flags. `/app/markets`
+  shows the ranked list (top 10 first), the not-ranked markets apart with why, and what the run could
+  not use; the market page shows the five parts and twelve measures, a gap as a gap.
+- **Not yet wired.** Official Customs Atlas duty (every duty is the labelled estimate until then),
+  the ECGC list, GeoDist coordinates and India's agreements (country risk and distance are
+  unavailable, and the estimate uses factor 1, until their parsers land), the release-level Comtrade
+  fallback (a run without BACI fails), and the agent and ops views of v5 fields.
+
 ## 8. Verification
 
 - Unit tests for every metric, the score, the chain-link, the HS revision test and each parser, on

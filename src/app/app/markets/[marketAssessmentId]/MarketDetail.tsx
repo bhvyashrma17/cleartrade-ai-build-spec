@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { Button, MetricCard, StatusChip, UpgradeNotice } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
+import { V5Breakdown, type V5Detail } from './V5Breakdown';
 
 type Tier = 'guest' | 'free' | 'paid';
 
@@ -35,7 +36,8 @@ interface AssessmentDetail {
   generated_at: string;
   is_selected: boolean;
   is_saved: boolean;
-  rank: number;
+  /** Null for a v5 market that is not ranked (not enough data, no recorded demand, excluded). */
+  rank: number | null;
   total_ranked: number;
   evidence_warning: string | null;
 }
@@ -54,11 +56,14 @@ export function MarketDetail({
   assessment,
   buyerDiscoveryHref,
   productDescription,
+  v5 = null,
 }: {
   tier: Tier;
   assessment: AssessmentDetail;
   buyerDiscoveryHref: { productId: string | null; countryCode: string };
   productDescription: string | null;
+  /** Present for a Demand Discovery v5 assessment, which replaces the earlier score breakdown. */
+  v5?: V5Detail | null;
 }) {
   const buyersUrl = buyerDiscoveryHref.productId
     ? `/app/buyers?product_id=${encodeURIComponent(buyerDiscoveryHref.productId)}&country=${buyerDiscoveryHref.countryCode}`
@@ -74,13 +79,15 @@ export function MarketDetail({
 
       {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
 
-      {assessment.rationale ? (
+      {v5 ? <V5Breakdown detail={v5} /> : null}
+
+      {!v5 && assessment.rationale ? (
         <p className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm text-[var(--color-text-secondary)]">
           {assessment.rationale}
         </p>
       ) : null}
 
-      <section className="mt-6">
+      {!v5 ? <section className="mt-6">
         <SectionTitle>Score breakdown</SectionTitle>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard label="Overall" value={assessment.overall_score == null ? 'Ineligible' : `${assessment.overall_score}/100`} secondaryText={assessment.overall_score == null ? 'Hard eligibility filter' : 'Weighted rank score'} />
@@ -109,7 +116,7 @@ export function MarketDetail({
             <DataGap label="India's share" />
           )}
         </div>
-      </section>
+      </section> : null}
 
       <section className="mt-6">
         <SectionTitle>Requirements</SectionTitle>
@@ -172,7 +179,7 @@ function DecisionHeader({ tier, assessment }: { tier: Tier; assessment: Assessme
           {assessment.is_selected ? <StatusChip label="Selected target" tone="positive" icon="check" size="sm" /> : null}
         </div>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Rank {assessment.rank} of {assessment.total_ranked} · {assessment.overall_score == null ? 'Ineligible' : `Score ${assessment.overall_score}/100`} · Generated{' '}
+          {assessment.rank ? `Rank ${assessment.rank} of ${assessment.total_ranked}` : 'Not ranked'} · {assessment.overall_score == null ? 'Ineligible' : `Score ${assessment.overall_score}/100`} · Generated{' '}
           {format(new Date(assessment.generated_at), 'dd MMM yyyy')}
         </p>
       </div>

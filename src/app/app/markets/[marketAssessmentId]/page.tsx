@@ -16,6 +16,7 @@ import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { tenantScopeVia } from '@/lib/permissions';
 import { MarketDetail } from './MarketDetail';
+import type { V5Detail } from './V5Breakdown';
 import { allowedEvidenceOrigins, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
 export default async function MarketDetailPage({
@@ -51,6 +52,26 @@ export default async function MarketDetailPage({
   });
   const rank = siblings.findIndex((s) => s.id === assessment.id) + 1;
 
+  // Demand Discovery v5 rows carry their own rank, status and five-part breakdown (docs/36).
+  const breakdown = assessment.score_breakdown as { parts?: V5Detail['parts']; metrics?: V5Detail['metrics'] } | null;
+  const v5: V5Detail | null = assessment.model_version === 'market-opportunity-v5' && assessment.market_status
+    ? {
+        market_status: assessment.market_status as V5Detail['market_status'],
+        rank: assessment.rank,
+        total_ranked: await prisma.marketAssessment.count({ where: { run_id: assessment.run_id, market_status: 'ranked' } }),
+        overall_score: assessment.overall_score,
+        confidence_score: assessment.confidence_score,
+        live_points: assessment.live_points,
+        data_year: assessment.data_year,
+        labels: assessment.labels as unknown as V5Detail['labels'],
+        reasons: assessment.reasons as unknown as V5Detail['reasons'],
+        flag_reasons: assessment.flag_reasons as unknown as string[],
+        handed_off: assessment.handed_off,
+        parts: breakdown?.parts ?? [],
+        metrics: breakdown?.metrics ?? [],
+      }
+    : null;
+
   const snapshot = assessment.run.input_snapshot as { description?: string | null } | null;
 
   return (
@@ -79,8 +100,8 @@ export default async function MarketDetailPage({
         generated_at: assessment.generated_at.toISOString(),
         is_selected: assessment.is_selected,
         is_saved: assessment.saved_at !== null,
-        rank,
-        total_ranked: siblings.length,
+        rank: v5 ? v5.rank : rank,
+        total_ranked: v5 ? v5.total_ranked : siblings.length,
         evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
       }}
       buyerDiscoveryHref={{
@@ -88,6 +109,7 @@ export default async function MarketDetailPage({
         countryCode: assessment.country_code,
       }}
       productDescription={snapshot?.description ?? assessment.product?.name ?? null}
+      v5={v5}
     />
   );
 }

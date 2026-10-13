@@ -93,6 +93,7 @@ export interface ActiveReferenceRows<T> {
   version: string;
   rows_sha256: string;
   retrieved_at: Date;
+  evidence_origin: EvidenceOrigin;
   rows: T[];
 }
 
@@ -102,7 +103,7 @@ export async function activeReferenceRows<S extends z.ZodTypeAny>(datasetKey: st
   if (!release) return null;
   const rows = release.rows as unknown[];
   if (rowsSha256(rows) !== release.rows_sha256) throw new Error(`Reference dataset release ${release.id} rows no longer match their checksum.`);
-  return { release_id: release.id, version: release.version, rows_sha256: release.rows_sha256, retrieved_at: release.retrieved_at, rows: rows.map((row) => schema.parse(row)) };
+  return { release_id: release.id, version: release.version, rows_sha256: release.rows_sha256, retrieved_at: release.retrieved_at, evidence_origin: release.evidence_origin, rows: rows.map((row) => schema.parse(row)) };
 }
 
 /** A specific release's rows, for a run re-reading the release it froze. */
@@ -111,5 +112,5 @@ export async function referenceRowsByRelease<S extends z.ZodTypeAny>(releaseId: 
   if (!release) throw notFound('That reference dataset release does not exist.');
   const rows = release.rows as unknown[];
   if (rowsSha256(rows) !== release.rows_sha256) throw new Error(`Reference dataset release ${release.id} rows no longer match their checksum.`);
-  return { release_id: release.id, version: release.version, rows_sha256: release.rows_sha256, retrieved_at: release.retrieved_at, rows: rows.map((row) => schema.parse(row)) };
+  return { release_id: release.id, version: release.version, rows_sha256: release.rows_sha256, retrieved_at: release.retrieved_at, evidence_origin: release.evidence_origin, rows: rows.map((row) => schema.parse(row)) };
 }

@@ -75,7 +75,8 @@ describe('reference dataset releases', () => {
 
     const second = await importReferenceDataset(importArgs(wdiResponse('LP.LPI.OVRL.XQ', [{ iso3: 'IND', name: 'India', date: '2022', value: 3.4 }, { iso3: 'USA', name: 'United States', date: '2022', value: 3.8 }])));
     expect(second.change).toBe('NEW');
-    const releases = await prisma.referenceDatasetRelease.findMany({ where: { dataset_key: 'wdi:LP.LPI.OVRL.XQ' }, orderBy: { imported_at: 'asc' } });
+    // Only this suite's releases: other suites sharing the schema may have imported the same key.
+    const releases = await prisma.referenceDatasetRelease.findMany({ where: { dataset_key: 'wdi:LP.LPI.OVRL.XQ', imported_by_id: actor.id }, orderBy: { imported_at: 'asc' } });
     expect(releases.map((release) => release.status)).toEqual([ReferenceDatasetReleaseStatus.superseded, ReferenceDatasetReleaseStatus.active]);
 
     const active = await activeReferenceRows('wdi:LP.LPI.OVRL.XQ', wdiRowSchema);
@@ -84,7 +85,7 @@ describe('reference dataset releases', () => {
   });
 
   test('rows are immutable and releases are never deleted', async () => {
-    const release = await prisma.referenceDatasetRelease.findFirstOrThrow({ where: { dataset_key: 'wdi:LP.LPI.OVRL.XQ', status: ReferenceDatasetReleaseStatus.active } });
+    const release = await prisma.referenceDatasetRelease.findFirstOrThrow({ where: { dataset_key: 'wdi:LP.LPI.OVRL.XQ', status: ReferenceDatasetReleaseStatus.active, imported_by_id: actor.id } });
     await expect(prisma.referenceDatasetRelease.update({ where: { id: release.id }, data: { rows: [] , row_count: 0 } })).rejects.toThrow(/immutable/);
     await expect(prisma.referenceDatasetRelease.delete({ where: { id: release.id } })).rejects.toThrow(/never deleted/);
   });

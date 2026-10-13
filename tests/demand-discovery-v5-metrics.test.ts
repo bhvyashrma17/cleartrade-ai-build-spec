@@ -7,6 +7,7 @@ import {
   tukeyFilter, weightedMedian,
 } from '../src/lib/demand-discovery-v5/metrics';
 import { agreementInForce, dutyInputs, tariffSector, type IndiaTradeAgreement } from '../src/lib/demand-discovery-v5/duty-inputs';
+import { exporterUsdPerKg, exporterYearlyKg, kgPerUnit } from '../src/lib/demand-discovery-v5/exporter-inputs';
 
 const WINDOW = [2019, 2020, 2021, 2022, 2023, 2024];
 const flow = (year: number, exporter: string, importer: string, value_usd: number, quantity_kg: number | null = null): TradeFlowInput => ({ year, exporter, importer, value_usd, quantity_kg });
@@ -263,5 +264,31 @@ describe('v5 duty inputs', () => {
       BD: { kind: 'estimate', sector_average_percent: 12, agreement_scope: 'partial', agreement_name: 'Agreement B' },
       GB: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null },
     });
+  });
+});
+
+describe("v5 exporter figures", () => {
+  const price = { price_target_amount: 180, price_target_currency: 'INR', price_target_quantity_unit: 'kg', price_target_incoterm: 'FOB', unit_net_weight_value: null, unit_net_weight_unit: null };
+
+  test('mass units convert by their exact definitions', () => {
+    expect([kgPerUnit('g'), kgPerUnit('KG'), kgPerUnit('tonnes'), kgPerUnit('lb'), kgPerUnit('carton')]).toEqual([0.001, 1, 1000, 0.45359237, null]);
+  });
+
+  test('price per kg in USD from a mass price, or a piece price with its net weight, FOB or EXW only', () => {
+    expect(exporterUsdPerKg(price, 0.012)).toMatchObject({ value: 2.16, basis: { incoterm: 'FOB', currency: 'INR' } });
+    expect(exporterUsdPerKg({ ...price, price_target_currency: 'USD', price_target_amount: 1500, price_target_quantity_unit: 'tonne' }, 1).value).toBeCloseTo(1.5, 10);
+    expect(exporterUsdPerKg({ ...price, price_target_currency: 'USD', price_target_amount: 3, price_target_quantity_unit: 'piece', unit_net_weight_value: 500, unit_net_weight_unit: 'g' }, 1).value).toBeCloseTo(6, 10);
+    expect(exporterUsdPerKg({ ...price, price_target_incoterm: 'CIF' }, 0.012)).toMatchObject({ value: null, reason: expect.stringMatching(/quoted CIF/) });
+    expect(exporterUsdPerKg({ ...price, price_target_quantity_unit: 'carton' }, 0.012)).toMatchObject({ value: null, reason: expect.stringMatching(/per carton/) });
+    expect(exporterUsdPerKg(price, null)).toMatchObject({ value: null, reason: expect.stringMatching(/exchange rate for INR/) });
+    expect(exporterUsdPerKg({ ...price, price_target_amount: null }, 1).value).toBeNull();
+  });
+
+  test('yearly capacity in kg from a mass capacity and its period; monthly when none is given', () => {
+    expect(exporterYearlyKg({ capacity_value: 4, capacity_unit: 'tonne', capacity_period: 'month' }).value).toBe(48_000);
+    expect(exporterYearlyKg({ capacity_value: 500, capacity_unit: 'kg/week', capacity_period: null }).value).toBe(26_000);
+    expect(exporterYearlyKg({ capacity_value: 100, capacity_unit: 'kg', capacity_period: null }).value).toBe(1_200);
+    expect(exporterYearlyKg({ capacity_value: 100, capacity_unit: 'piece', capacity_period: 'month' })).toMatchObject({ value: null, reason: expect.stringMatching(/in piece/) });
+    expect(exporterYearlyKg({ capacity_value: 100, capacity_unit: 'kg', capacity_period: 'fortnight' })).toMatchObject({ value: null, reason: expect.stringMatching(/fortnight/) });
   });
 });

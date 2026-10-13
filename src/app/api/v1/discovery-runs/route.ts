@@ -37,6 +37,7 @@ import {
   resolveClientIp,
 } from '@/lib/guest';
 import { createDiscoveryRunSchema, zodFieldErrors } from '@/lib/validators';
+import { demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '@/lib/demand-discovery-v5/service';
 import type { Principal } from '@/types';
 
 /**
@@ -127,6 +128,15 @@ export async function POST(request: NextRequest) {
       if (!product) throw notFound('That product is not available.');
       if(product.hs_classification_status!=='confirmed'||!product.hs_code||!/^\d{6}$/.test(product.hs_code)||!product.hs_nomenclature||!product.hs_nomenclature_version)throw validationError([{field:'product_id',code:'classification_unconfirmed',message:'Confirm an exact HS6/ITC-HS classification before running Demand Discovery.'}]);
       const confirmedClassification=await prisma.productClassification.findFirst({where:{product_id:product.id,status:'confirmed'},orderBy:{confirmed_at:'desc'},select:{id:true,revision:true}});if(!confirmedClassification)throw validationError([{field:'product_id',code:'classification_history_missing',message:'The confirmed code has no classification history and must be reviewed again.'}]);
+      // New runs use v5 wherever its trade dataset is ready (docs/36); elsewhere the earlier
+      // engine still answers, so an environment without a BACI release keeps working.
+      if ((await demandDiscoveryV5Availability()).available) {
+        const started = await startDemandDiscoveryV5({ product_id: product.id, actor: principal, trigger: 'manual', correlation_id: correlationId, target_countries: input.target_countries });
+        return NextResponse.json(
+          { job_id: started.job_id, status: started.status, target: { type: 'discovery_run', id: started.run_id }, meta: { tier: principal.tier, guest_session_started: mintedGuest, model_version: 'market-opportunity-v5' } },
+          { status: 202, headers: { 'x-correlation-id': correlationId } },
+        );
+      }
       productId = product.id;
       inputSnapshot = {
         source: 'product',

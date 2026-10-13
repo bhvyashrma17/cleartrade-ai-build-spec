@@ -29,14 +29,15 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
 
     const run = await prisma.discoveryRun.findFirst({
       where: { id: runId, ...scope },
-      select: { id: true, status: true, input_snapshot: true, completed_at: true, job_id: true },
+      select: { id: true, status: true, input_snapshot: true, completed_at: true, job_id: true, model_version: true, summary: true },
     });
     // Out-of-tenant reads look identical to missing ones (docs/09 §4).
     if (!run) throw notFound('That search is not available.');
 
     const assessments = await prisma.marketAssessment.findMany({
       where: { run_id: runId,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
-      orderBy: { overall_score: 'desc' },
+      // v5 rows carry a rank; earlier rows order by score as before.
+      orderBy: [{ rank: { sort: 'asc', nulls: 'last' } }, { overall_score: { sort: 'desc', nulls: 'last' } }, { country_code: 'asc' }],
     });
 
     return NextResponse.json(
@@ -62,6 +63,18 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
               }
             : null,
           rationale: a.rationale,
+          model_version: a.model_version,
+          confidence_score: a.confidence_score,
+          // docs/36 v5 fields; null/empty on earlier runs.
+          market_status: a.market_status,
+          rank: a.rank,
+          live_points: a.live_points,
+          data_year: a.data_year,
+          parts: (a.score_breakdown as { parts?: unknown } | null)?.parts ?? null,
+          labels: a.labels,
+          reasons: a.reasons,
+          flag_reasons: a.flag_reasons,
+          handed_off: a.handed_off,
           is_selected: a.is_selected,
           generated_at: a.generated_at.toISOString(),
           ...(!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(a.evidence_origins).length?{evidence_warning:`Non-real evidence: ${unsafeEvidenceOrigins(a.evidence_origins).join(', ')}`}:{})
@@ -75,6 +88,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
           run_status: run.status,
           completed_at: run.completed_at?.toISOString() ?? null,
           job_id: run.job_id,
+          model_version: run.model_version,
+          summary: run.summary,
           evidence_environment:appEnvironment(),
         },
       ),

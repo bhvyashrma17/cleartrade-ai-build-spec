@@ -581,6 +581,9 @@ enum JobType {
   import_record_retention
   market_access_ingest
   notification_delivery
+  /// Demand Discovery v5 (docs/36): every screening market for one confirmed HS6, from the
+  /// retained BACI release, reference datasets and a batched Comtrade newest year.
+  demand_discovery_v5
 }
 
 enum NotificationChannel {
@@ -1132,6 +1135,7 @@ model ProductClassification {
   country_trade_metrics        CountryTradeMetrics[]
   country_truth_fact_snapshots CountryTruthFactSnapshot[]
   classification_refinements   ProductClassificationRefinement[]
+  discovery_runs               DiscoveryRun[]
 
   market_scan_requests   MarketScanRequest[]
 
@@ -1234,10 +1238,23 @@ model DiscoveryRun {
   completed_at DateTime?
   created_at   DateTime  @default(now())
 
-  exporter_org       ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  /// docs/36 §7. Null on runs before v5. `market-opportunity-v5` for a v5 run.
+  model_version     String?
+  /// classification_confirmed | manual | refresh — what started the run (D-018).
+  trigger           String?
+  /// The confirmed classification the run scored, frozen at enqueue.
+  classification_id String?
+  /// Every release, policy and provider read the run used, with checksums.
+  frozen_inputs     Json?
+  /// Counts by market status and the top markets handed on to regional discovery.
+  summary           Json?
+
+  exporter_org       ExporterOrg            @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  classification     ProductClassification? @relation(fields: [classification_id], references: [id], onDelete: SetNull)
   market_assessments MarketAssessment[]
 
   @@index([exporter_org_id, created_at])
+  @@index([product_id, model_version, created_at], map: "DiscoveryRun_product_model_idx")
 }
 
 model MarketAssessment {
@@ -1337,6 +1354,22 @@ model MarketAssessment {
   /// Phase 1H facts are immutable records separate from the scores derived from them.
   country_truth_fact_snapshot_id       String?
   country_truth_fact_snapshot_checksum String?
+
+  /// docs/36 (v5): ranked | not_enough_data | no_recorded_demand | excluded. Null before v5.
+  market_status   String?
+  /// 1 = best. Only ranked markets have one.
+  rank            Int?
+  /// Points (of 100) whose metrics had data; the score shares the missing points among them.
+  live_points     Int?
+  /// The newest year the market's demand figures come from.
+  data_year       Int?
+  /// The five parts and the twelve metrics, each with its score, quality and inputs.
+  score_breakdown Json?
+  labels          Json      @default("[]")
+  reasons         Json      @default("[]")
+  flag_reasons    Json      @default("[]")
+  /// Among the top markets passed on to regional and buyer discovery (D-019).
+  handed_off      Boolean   @default(false)
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
