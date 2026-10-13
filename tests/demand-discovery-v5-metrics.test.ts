@@ -6,6 +6,7 @@ import {
   scoreIndiaFoothold, scoreLogistics, scoreMarketSize, scoreOpenness, scorePriceFit, scorePriceHeadroom, scoreStability, scoreVolumeFit,
   tukeyFilter, weightedMedian,
 } from '../src/lib/demand-discovery-v5/metrics';
+import { agreementInForce, dutyInputs, tariffSector, type IndiaTradeAgreement } from '../src/lib/demand-discovery-v5/duty-inputs';
 
 const WINDOW = [2019, 2020, 2021, 2022, 2023, 2024];
 const flow = (year: number, exporter: string, importer: string, value_usd: number, quantity_kg: number | null = null): TradeFlowInput => ({ year, exporter, importer, value_usd, quantity_kg });
@@ -222,5 +223,45 @@ describe('v5 access, risk and exporter-fit metrics', () => {
     const partial = buildMarketSeries([flow(2024, 'CN', 'DE', 1000, 600_000), flow(2024, 'VN', 'DE', 1000, null)], ['DE']).get('DE')!;
     expect(scoreVolumeFit(partial, 2024, 20_000, 1, POLICY)).toMatchObject({ score: null, inputs: { quantity_coverage: 0.5 } });
     expect(scoreVolumeFit(series, 2024, null, 1, POLICY).reason).toMatch(/monthly capacity/);
+  });
+});
+
+describe('v5 duty inputs', () => {
+  /** Invented agreements for the test; the curated list cites each real one's source. */
+  const agreements: IndiaTradeAgreement[] = [
+    { name: 'Agreement A', partners: ['AE'], scope: 'comprehensive', in_force_from: '2022-05-01', in_force_until: null, source_url: 'https://example.test/a' },
+    { name: 'Agreement B', partners: ['AE', 'BD'], scope: 'partial', in_force_from: '2006-01-01', in_force_until: null, source_url: 'https://example.test/b' },
+    { name: 'Agreement C', partners: ['GB'], scope: 'comprehensive', in_force_from: '2027-01-01', in_force_until: null, source_url: 'https://example.test/c' },
+  ];
+
+  test('chapters 01–27 use the primary-products tariff, the rest the manufactured one', () => {
+    expect(tariffSector('100630', POLICY)).toBe('primary');
+    expect(tariffSector('270900', POLICY)).toBe('primary');
+    expect(tariffSector('741810', POLICY)).toBe('manufactured');
+    expect(() => tariffSector('7418', POLICY)).toThrow(/six-digit/);
+  });
+
+  test('the strongest agreement in force on the run date applies; one not yet in force does not', () => {
+    const asOf = new Date('2026-10-13T00:00:00Z');
+    expect(agreementInForce(agreements, 'AE', asOf)?.name).toBe('Agreement A');
+    expect(agreementInForce(agreements, 'BD', asOf)?.name).toBe('Agreement B');
+    expect(agreementInForce(agreements, 'GB', asOf)).toBeNull();
+    expect(agreementInForce(agreements, 'AE', new Date('2020-01-01T00:00:00Z'))?.name).toBe('Agreement B');
+  });
+
+  test('official evidence wins; otherwise a labelled estimate; with no sector average, nothing', () => {
+    const inputs = dutyInputs({
+      markets: ['US', 'AE', 'BD', 'GB', 'TV'], hs6: '741810', as_of: new Date('2026-10-13T00:00:00Z'),
+      official: new Map([['US', { kind: 'official' as const, duty_percent: 3, source: 'authority-release:us' }]]),
+      primary_tariffs: new Map([['AE', { value: 99, year: 2022 }]]),
+      manufactured_tariffs: new Map([['AE', { value: 5, year: 2022 }], ['BD', { value: 12, year: 2022 }], ['GB', { value: 4, year: 2022 }], ['US', { value: 2, year: 2022 }]]),
+      agreements, policy: POLICY,
+    });
+    expect(Object.fromEntries(inputs)).toEqual({
+      US: { kind: 'official', duty_percent: 3, source: 'authority-release:us' },
+      AE: { kind: 'estimate', sector_average_percent: 5, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
+      BD: { kind: 'estimate', sector_average_percent: 12, agreement_scope: 'partial', agreement_name: 'Agreement B' },
+      GB: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null },
+    });
   });
 });
