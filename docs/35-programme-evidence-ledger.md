@@ -387,6 +387,37 @@ chat (D-009 to D-011, D-017). Engineering spec: docs/36.
 **Decisions.** D-007 to D-019. Work branch `dd5/demand-discovery-v5`, stacked on
 `wp2/atlas-orchestration` while PR #1 is open.
 
+### E-011 · 2026-10-13 · Demand Discovery v5: data foundation and scoring engine (in review)
+
+**Built** on `dd5/demand-discovery-v5` (draft PR #2, base `wp2/atlas-orchestration`):
+- Data foundation (`15ee927`, `6342cd0`): `TradeDatasetRelease` / partitions / country map and
+  `ReferenceDatasetRelease`, with append-only triggers (migration `20261013100000`); a streaming,
+  ZIP64-aware BACI importer (`scripts/import-trade-dataset-release.ts`, `--expect-sha256`, run twice);
+  WDI and Comtrade-availability parsers (`scripts/import-reference-dataset.ts`).
+- Scoring engine (`src/lib/demand-discovery-v5/`): the 12 metrics, the score, ranking, confidence,
+  gates, labels, reasons, the newest-year chain-link, the HS-revision test, BACI unit and identity
+  conversion, and `assessMarkets` over every universe market. Pure functions; nothing reads a network.
+
+**Engineering choices inside approved decisions** (docs/36 updated; each reversible in code):
+- D-011 refinement: the newest year extends total imports and India's imports, so size, growth,
+  stability and India's foothold (45 of 100 points) use `L+1`. Supplier mix, unit values and
+  quantities stay on BACI's `L`: Comtrade's newest import values are CIF and its newest quantities
+  are often estimated, so per-supplier linking would add noise and Comtrade calls for little signal.
+  The alternative — per-supplier linking for every metric — is the original §5.3 wording.
+- A newest-year change beyond 10× either way is treated as a provisional-data error and not linked
+  (policy `chain_link.max_change_ratio`).
+- Growth: a zero at the end of the window scores momentum at −100% (v4's convention); CAGR stays
+  `not_calculable` on a zero endpoint, as in v4.
+
+**Checks run.** `tsc --noEmit` clean; ESLint `--max-warnings=0` clean on the new files; Vitest:
+51 new engine tests (metrics, score, chain-link, HS revision, BACI conversion, an eight-market
+synthetic world, and a 300-world property test that a dropped input leaves its metric unavailable
+and outside the overall, never zero) plus the 29 data-foundation tests, all passing.
+
+**Not yet:** ECGC, GeoDist and India-agreement parsers (waiting on the owner's
+`data/dd5-reference-snapshots` branch for the real file formats); the batched Comtrade client;
+the run job, auto-start and screens (task 18); a staging run on the three archetype products.
+
 ## Risk register
 
 | Id | Risk | Status | Next evidence |

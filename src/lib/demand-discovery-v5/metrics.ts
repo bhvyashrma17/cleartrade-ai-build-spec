@@ -1,0 +1,280 @@
+/**
+ * The twelve v5 metrics (docs/36 §4). Pure functions: each takes the figures it needs and returns a
+ * 0–100 score with the inputs behind it, or `score: null` with the reason. A metric without its
+ * inputs is unavailable — it is never scored as zero.
+ */
+import type { DemandDiscoveryV5Policy, MetricKey } from './policy';
+import { importsIn, type MarketSeries, type UnitValuePoint } from './series';
+
+export interface MetricResult {
+  key: MetricKey;
+  score: number | null;
+  /** Evidence quality of the inputs, 0–1 (docs/36 §5.2). Meaningful only when the score is live. */
+  quality: number;
+  reason: string | null;
+  inputs: Record<string, number | string | boolean | null>;
+  estimated?: boolean;
+}
+
+export const clamp = (value: number, low = 0, high = 100) => Math.min(high, Math.max(low, value));
+
+/** Maps `value` linearly from [floor, ceiling] onto [0, 100], clamped. */
+export const linearScore = (value: number, floor: number, ceiling: number) => clamp(((value - floor) / (ceiling - floor)) * 100);
+
+function unavailable(key: MetricKey, reason: string, inputs: MetricResult['inputs'] = {}): MetricResult {
+  return { key, score: null, quality: 0, reason, inputs };
+}
+
+function round(value: number, digits = 6) {
+  return Number(value.toFixed(digits));
+}
+
+// --- statistics -------------------------------------------------------------------------------
+
+/** Quantity-weighted median of unit values. */
+export function weightedMedian(points: readonly UnitValuePoint[]): number {
+  const sorted = [...points].sort((a, b) => a.unit_value - b.unit_value);
+  const total = sorted.reduce((sum, point) => sum + point.quantity_kg, 0);
+  let running = 0;
+  for (const point of sorted) {
+    running += point.quantity_kg;
+    if (running >= total / 2) return point.unit_value;
+  }
+  return sorted[sorted.length - 1].unit_value;
+}
+
+function percentile(sorted: readonly number[], p: number) {
+  const position = (sorted.length - 1) * p;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+/** Drops unit values outside Tukey's fences (Q1 − k·IQR, Q3 + k·IQR). */
+export function tukeyFilter(points: readonly UnitValuePoint[], k: number): UnitValuePoint[] {
+  if (points.length < 4) return [...points];
+  const sorted = points.map((point) => point.unit_value).sort((a, b) => a - b);
+  const q1 = percentile(sorted, 0.25);
+  const q3 = percentile(sorted, 0.75);
+  const spread = q3 - q1;
+  return points.filter((point) => point.unit_value >= q1 - k * spread && point.unit_value <= q3 + k * spread);
+}
+
+export function olsSlope(points: readonly { x: number; y: number }[]): number {
+  const n = points.length;
+  const meanX = points.reduce((sum, point) => sum + point.x, 0) / n;
+  const meanY = points.reduce((sum, point) => sum + point.y, 0) / n;
+  const numerator = points.reduce((sum, point) => sum + (point.x - meanX) * (point.y - meanY), 0);
+  const denominator = points.reduce((sum, point) => sum + (point.x - meanX) ** 2, 0);
+  return denominator === 0 ? 0 : numerator / denominator;
+}
+
+/** Great-circle distance in km between two points given in degrees. */
+export function greatCircleKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const radians = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = radians(b.lat - a.lat);
+  const dLon = radians(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a.lat)) * Math.cos(radians(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371.0088 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+// --- 1–3 demand -------------------------------------------------------------------------------
+
+/** The size input, S: mean yearly imports over the window's last years; null when all are zero. */
+export function averageImportsUsd(series: MarketSeries, window: readonly number[], policy: DemandDiscoveryV5Policy): number | null {
+  const years = window.slice(-policy.size.average_years);
+  const values = years.map((year) => importsIn(series, year));
+  if (!values.some((value) => value > 0)) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export function scoreMarketSize(average: number | null, largest: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (average == null || largest == null) return unavailable('market_size', 'No recorded imports in the last three years.');
+  const floor = Math.log10(policy.size.floor_usd);
+  const top = Math.log10(Math.max(largest, policy.size.floor_usd * 10));
+  const score = clamp(((Math.log10(Math.max(average, 1)) - floor) / (top - floor)) * 100);
+  return { key: 'market_size', score: round(score, 4), quality, reason: null, inputs: { average_imports_usd: round(average, 2), largest_market_usd: round(largest, 2) } };
+}
+
+/**
+ * Growth over the window. A zero at either end leaves CAGR without a geometric value
+ * (`not_calculable`, as in v4); momentum needs only a positive year before the last, so a market
+ * whose imports stopped scores a real −100%, not a missing value.
+ */
+export function scoreGrowth(series: MarketSeries, window: readonly number[], quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (window.length < 2) return unavailable('growth', 'Needs at least two years of data.', { cagr: null, momentum: null });
+  const first = window[0];
+  const last = window[window.length - 1];
+  const start = importsIn(series, first);
+  const end = importsIn(series, last);
+  const previous = importsIn(series, window[window.length - 2]);
+  const cagr = start > 0 && end > 0 ? (end / start) ** (1 / (window.length - 1)) - 1 : null;
+  const momentum = previous > 0 ? end / previous - 1 : null;
+  if (cagr == null && momentum == null) return unavailable('growth', 'Needs imports in the year before the last, or at both ends of the window.', { cagr: null, momentum: null });
+  const { floor_percent: floor, ceiling_percent: ceiling, cagr_weight: cagrWeight, momentum_weight: momentumWeight } = policy.growth;
+  const cagrScore = cagr == null ? null : linearScore(cagr * 100, floor, ceiling);
+  const momentumScore = momentum == null ? null : linearScore(momentum * 100, floor, ceiling);
+  const score = cagrScore != null && momentumScore != null
+    ? (cagrScore * cagrWeight + momentumScore * momentumWeight) / (cagrWeight + momentumWeight)
+    : (cagrScore ?? momentumScore)!;
+  return {
+    key: 'growth', score: round(score, 4), quality, reason: null,
+    inputs: { cagr_percent: cagr == null ? null : round(cagr * 100, 4), momentum_percent: momentum == null ? null : round(momentum * 100, 4), cagr_years: window.length - 1, cagr_status: cagr == null ? 'not_calculable' : 'complete' },
+  };
+}
+
+export function scoreStability(series: MarketSeries, window: readonly number[], quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  const rates: number[] = [];
+  for (let index = 1; index < window.length; index += 1) {
+    const before = importsIn(series, window[index - 1]);
+    const after = importsIn(series, window[index]);
+    if (before > 0 && after > 0) rates.push((after / before - 1) * 100);
+  }
+  if (rates.length < policy.stability.minimum_rates) return unavailable('stability', `Needs ${policy.stability.minimum_rates} yearly growth rates; ${rates.length} available.`, { rates: rates.length });
+  const mean = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+  const sd = Math.sqrt(rates.reduce((sum, rate) => sum + (rate - mean) ** 2, 0) / rates.length);
+  const score = 100 * (1 - Math.min(sd, policy.stability.ceiling_pp) / policy.stability.ceiling_pp);
+  return { key: 'stability', score: round(score, 4), quality, reason: null, inputs: { growth_sd_pp: round(sd, 4), rates: rates.length } };
+}
+
+// --- 4–6 India's opportunity ------------------------------------------------------------------
+
+export function scoreIndiaFoothold(series: MarketSeries, window: readonly number[], quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  const last = window[window.length - 1];
+  const latest = series.years.get(last);
+  if (!latest || latest.total_usd <= 0) return unavailable('india_foothold', `No recorded imports in ${last}.`);
+  const share = (latest.india_usd / latest.total_usd) * 100;
+  const { zero_share_score: zero, full_share_percent: full, share_weight: shareWeight, trend_weight: trendWeight } = policy.foothold;
+  const shareScore = zero + (100 - zero) * Math.min(1, Math.log10(1 + share) / Math.log10(1 + full));
+  const points = window
+    .map((year) => ({ year, data: series.years.get(year) }))
+    .filter((point) => point.data && point.data.total_usd > 0)
+    .map((point) => ({ x: point.year, y: (point.data!.india_usd / point.data!.total_usd) * 100 }));
+  const slope = points.length >= policy.foothold.minimum_trend_points ? olsSlope(points) : null;
+  const trendScore = slope == null ? null : linearScore(slope, policy.foothold.trend_floor_pp_per_year, policy.foothold.trend_ceiling_pp_per_year);
+  const score = trendScore == null ? shareScore : (shareScore * shareWeight + trendScore * trendWeight) / (shareWeight + trendWeight);
+  return {
+    key: 'india_foothold', score: round(score, 4), quality, reason: null,
+    inputs: { india_share_percent: round(share, 4), share_trend_pp_per_year: slope == null ? null : round(slope, 4), trend_points: points.length },
+  };
+}
+
+/** Maps a price ratio to 0–100: the neutral ratio scores 50, the full ratio 100, its inverse 0. */
+export function priceRatioScore(ratio: number, policy: DemandDiscoveryV5Policy): number {
+  return clamp(50 + 50 * (Math.log(ratio / policy.prices.neutral_ratio) / Math.log(policy.prices.full_ratio / policy.prices.neutral_ratio)));
+}
+
+/** The market's typical price per kg (USD), or null with too few suppliers that report quantities. */
+export function marketMedianUnitValue(points: readonly UnitValuePoint[], policy: DemandDiscoveryV5Policy): number | null {
+  const kept = tukeyFilter(points, policy.prices.outlier_iqr_multiple);
+  return kept.length >= policy.prices.minimum_suppliers_with_quantity ? weightedMedian(kept) : null;
+}
+
+export function scorePriceHeadroom(marketUv: number | null, indiaUv: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (marketUv == null) return unavailable('price_headroom', `Fewer than ${policy.prices.minimum_suppliers_with_quantity} suppliers report quantities.`);
+  if (indiaUv == null) return unavailable('price_headroom', "India's export price for this product cannot be measured.");
+  const ratio = marketUv / indiaUv;
+  return { key: 'price_headroom', score: round(priceRatioScore(ratio, policy), 4), quality, reason: null, inputs: { market_usd_per_kg: round(marketUv, 6), india_usd_per_kg: round(indiaUv, 6), ratio: round(ratio, 6) } };
+}
+
+export function scoreOpenness(series: MarketSeries, year: number, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  const latest = series.years.get(year);
+  if (!latest || latest.total_usd <= 0) return unavailable('openness', `No recorded imports in ${year}.`);
+  const supplierSum = [...latest.suppliers.values()].reduce((sum, supplier) => sum + supplier.value_usd, 0);
+  const coverage = supplierSum / latest.total_usd;
+  if (coverage < policy.openness.supplier_coverage_min || coverage > policy.openness.supplier_coverage_max) {
+    return unavailable('openness', `Supplier breakdown covers ${round(coverage * 100, 1)}% of imports.`, { coverage: round(coverage, 4) });
+  }
+  const hhi = [...latest.suppliers.values()].reduce((sum, supplier) => sum + (supplier.value_usd / supplierSum) ** 2, 0);
+  return { key: 'openness', score: round(100 * (1 - hhi), 4), quality, reason: null, inputs: { hhi: round(hhi, 6), suppliers: latest.suppliers.size } };
+}
+
+// --- 7–9 access -------------------------------------------------------------------------------
+
+export type DutyInput =
+  | { kind: 'official'; duty_percent: number; source: string }
+  | { kind: 'estimate'; sector_average_percent: number; agreement_scope: 'comprehensive' | 'partial' | 'none'; agreement_name: string | null }
+  | null;
+
+export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number }): MetricResult {
+  if (!input) return unavailable('duty', 'No official tariff source and no sector average to estimate from.');
+  const ceiling = policy.duty.ceiling_percent;
+  if (input.kind === 'official') {
+    return { key: 'duty', score: round(100 * (1 - Math.min(input.duty_percent, ceiling) / ceiling), 4), quality: quality.official, reason: null, inputs: { duty_percent: round(input.duty_percent, 4), basis: 'official', source: input.source } };
+  }
+  const factor = input.agreement_scope === 'comprehensive' ? policy.duty.comprehensive_agreement_factor : input.agreement_scope === 'partial' ? policy.duty.partial_agreement_factor : 1;
+  const estimate = input.sector_average_percent * factor;
+  return {
+    key: 'duty', score: round(100 * (1 - Math.min(estimate, ceiling) / ceiling), 4), quality: quality.estimate, reason: null, estimated: true,
+    inputs: { duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), agreement_scope: input.agreement_scope, agreement: input.agreement_name },
+  };
+}
+
+export function scoreDistanceFit(
+  series: MarketSeries, year: number, coordinates: ReadonlyMap<string, { lat: number; lon: number }>, quality: number, policy: DemandDiscoveryV5Policy,
+): MetricResult {
+  const latest = series.years.get(year);
+  const marketPoint = coordinates.get(series.market);
+  const indiaPoint = coordinates.get('IN');
+  if (!latest || latest.total_usd <= 0) return unavailable('distance_fit', `No recorded imports in ${year}.`);
+  if (!marketPoint || !indiaPoint) return unavailable('distance_fit', 'No coordinates for this market or for India.');
+  let covered = 0;
+  let weighted = 0;
+  for (const [supplier, data] of latest.suppliers) {
+    const point = coordinates.get(supplier);
+    if (!point) continue;
+    const km = Math.max(greatCircleKm(point, marketPoint), 1);
+    covered += data.value_usd;
+    weighted += data.value_usd * Math.log(km);
+  }
+  const coveredShare = covered / latest.total_usd;
+  if (coveredShare < policy.distance.minimum_weight_covered) return unavailable('distance_fit', `Only ${round(coveredShare * 100, 1)}% of supply has known coordinates.`, { covered_share: round(coveredShare, 4) });
+  const averageLog = weighted / covered;
+  const indiaKm = greatCircleKm(indiaPoint, marketPoint);
+  const delta = Math.log(Math.max(indiaKm, 1)) - averageLog;
+  const score = delta <= 0 ? 100 : 100 * Math.exp(-delta);
+  return { key: 'distance_fit', score: round(score, 4), quality, reason: null, inputs: { india_km: round(indiaKm, 1), usual_supplier_km: round(Math.exp(averageLog), 1), covered_share: round(coveredShare, 4) } };
+}
+
+export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (lpi == null) return unavailable('logistics', 'No logistics performance score for this market.');
+  return { key: 'logistics', score: round(linearScore(lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality, reason: null, inputs: { lpi } };
+}
+
+// --- 10 risk ----------------------------------------------------------------------------------
+
+export type EcgcCover = 'open' | 'restricted_group_i' | 'restricted_group_ii' | 'off_cover';
+export interface EcgcRating { grade: string; cover: EcgcCover }
+
+export function scoreCountryRisk(rating: EcgcRating | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (!rating) return unavailable('country_risk', 'Not on the ECGC country list.');
+  const base = policy.risk.grade_scores[rating.grade];
+  if (base == null) return unavailable('country_risk', `Unknown ECGC grade ${rating.grade}.`, { grade: rating.grade });
+  const score = rating.cover === 'off_cover' ? 0
+    : rating.cover === 'restricted_group_ii' ? Math.min(base, policy.risk.restricted_group_ii_cap)
+      : rating.cover === 'restricted_group_i' ? Math.min(base, policy.risk.restricted_group_i_cap)
+        : base;
+  return { key: 'country_risk', score, quality, reason: null, inputs: { grade: rating.grade, cover: rating.cover } };
+}
+
+// --- 11–12 exporter fit -----------------------------------------------------------------------
+
+export function scorePriceFit(marketUv: number | null, exporterUsdPerKg: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (exporterUsdPerKg == null) return unavailable('price_fit', 'Your FOB price per kg is not on the product form yet.');
+  if (marketUv == null) return unavailable('price_fit', `Fewer than ${policy.prices.minimum_suppliers_with_quantity} suppliers report quantities.`);
+  const ratio = marketUv / exporterUsdPerKg;
+  return { key: 'price_fit', score: round(priceRatioScore(ratio, policy), 4), quality, reason: null, inputs: { market_usd_per_kg: round(marketUv, 6), your_usd_per_kg: round(exporterUsdPerKg, 6), ratio: round(ratio, 6) } };
+}
+
+export function scoreVolumeFit(series: MarketSeries, year: number, exporterYearlyKg: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (exporterYearlyKg == null || !(exporterYearlyKg > 0)) return unavailable('volume_fit', 'Your monthly capacity in a weight unit is not on the product form yet.');
+  const latest = series.years.get(year);
+  if (!latest || latest.total_usd <= 0) return unavailable('volume_fit', `No recorded imports in ${year}.`);
+  const coverage = latest.value_with_quantity_usd / latest.total_usd;
+  if (coverage < policy.volume.minimum_quantity_coverage) return unavailable('volume_fit', `Quantities cover only ${round(coverage * 100, 1)}% of imports.`, { quantity_coverage: round(coverage, 4) });
+  const marketKg = latest.quantity_kg_reported / coverage;
+  const share = exporterYearlyKg / marketKg;
+  const { full_share: full, zero_share: zero } = policy.volume;
+  const score = share <= full ? 100 : share >= zero ? 0 : (100 * (Math.log(zero) - Math.log(share))) / (Math.log(zero) - Math.log(full));
+  return { key: 'volume_fit', score: round(score, 4), quality, reason: null, inputs: { your_share_of_market: round(share, 6), market_tonnes: round(marketKg / 1000, 3) } };
+}

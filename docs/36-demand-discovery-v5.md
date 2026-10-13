@@ -107,7 +107,7 @@ below live in `demand_discovery.v5` config and are frozen into the run.
 | # | Metric · points | Formula | Available when |
 |---|---|---|---|
 | 1 | Market size · 20 | `S = mean(M over the last 3 years)`; score = `100 × clamp((log10 S − log10 floor) / (log10 Smax − log10 floor))`, floor $100,000, `Smax` = the largest `S` among the 218 markets for this product | ≥ 1 of the 3 years observed |
-| 2 | Growth · 10 | 70% CAGR over the window, 30% last-year change; each maps −20% → 0 to +20% → 100, linear, clamped. A non-positive endpoint makes CAGR `not_calculable` and growth falls back to momentum | 2 consecutive positive years |
+| 2 | Growth · 10 | 70% CAGR over the window, 30% last-year change; each maps −20% → 0 to +20% → 100, linear, clamped. A zero at either end makes CAGR `not_calculable` (as in v4) and growth falls back to momentum; momentum needs only a positive year before the last, so imports that stop score a real −100%, not a missing value | imports in the year before the last, or at both ends of the window |
 | 3 | Stability · 5 | population SD of yearly growth rates, in percentage points; score = `100 × (1 − min(SD, 50) / 50)` | ≥ 4 growth rates |
 | 4 | India's foothold · 10 | share `s = X(IN→m) / M(m)` in %, latest year; share score = `40 + 60 × min(1, log10(1+s) / log10(11))`; trend = OLS slope of yearly shares, −5 → 0 to +5 pp/yr → 100; foothold = 70% share + 30% trend | latest year observed |
 | 5 | Price headroom · 10 | `r = UVm / UVin`: `UVm` = quantity-weighted median of the market's supplier unit values, `UVin` = quantity-weighted median of India's export unit values to all markets, both FOB, Tukey 1.5 IQR outliers removed; score = `clamp(50 + 50 × ln r / ln 1.5)` | ≥ 3 supplier flows with quantity, and India's `UVin` |
@@ -145,7 +145,9 @@ points are shared among the rest. A metric is never scored as zero for lack of d
 ### 5.2 Ranking and confidence
 
 - Ranked when live points ≥ `ranking.minimum_live_points` (60) and size and growth are both live.
-  Otherwise `not_enough_data`, shown with its partial score, never ranked.
+  Otherwise `not_enough_data`, shown with its partial score, never ranked. Ties on the exact
+  (unrounded) score go to the higher confidence, then to the ISO code, so the same inputs always give
+  the same order. A flagged market is ranked like any other; its flag is shown beside the rank.
 - Confidence = (live points / 100) × evidence quality × 0.8^lag. Evidence quality is the
   points-weighted mean of each live metric's quality: BACI where the market reported that year 1.0;
   BACI partner-only 0.85; Comtrade-reported fallback 0.9; chain-linked newest year 0.95; duty
@@ -155,12 +157,28 @@ points are shared among the rest. A metric is never scored as zero for lack of d
 
 ### 5.3 Newest year (D-011)
 
-When Comtrade holds a usable `L+1` for market `m` and also `L`, the series extends by
+When market `m` reported both `L` and `L+1` to Comtrade itself, its series extends by
 chain-linking, so BACI keeps the level and Comtrade supplies the change:
-`M(m,L+1) = M_BACI(m,L) × M_CT(m,L+1) / M_CT(m,L)`. Supplier values and quantities extend the same
-way, per supplier. Shares, HHI and unit values in `L+1` come from the extended values. The window
-becomes `y0+1 … L+1`. Every extended value records both sources. A market without a usable `L+1`
-keeps its BACI window, with lag 1.
+`M(m,L+1) = M_BACI(m,L) × M_CT(m,L+1) / M_CT(m,L)`. Comtrade import values are CIF and BACI's are
+FOB; the ratio cancels that margin, which a direct splice would not.
+
+What extends (engineering refinement of D-011, E-011):
+
+- **Total imports** — size, growth and stability use the window `y0+1 … L+1` (a short 2022–2024
+  history becomes 2022–2025: the window grows by one year and keeps at most `window_years`).
+- **Imports from India** — linked the same way, `X(IN→m,L+1) = X_BACI(IN→m,L) × X_CT(IN→m,L+1) /
+  X_CT(IN→m,L)`, so India's foothold uses `L+1` too. India links only when both sources agree its
+  flow exists in `L`; otherwise (India new in `L+1`, BACI's flow only from India's own export
+  declarations, or a linked share above 100%) the foothold stays on the BACI window.
+- **Not extended:** supplier mix, unit values and quantities. Openness, distance fit, price
+  headroom, price fit and volume fit use BACI's year `L` (the "structure year"): they move slowly,
+  BACI's are reconciled and FOB, and Comtrade's newest quantities are often estimated.
+
+A change beyond `chain_link.max_change_ratio` (default 10×) either way is treated as an error in
+provisional data and not linked. Every link records both sources and the ratio; every refusal is
+recorded with its reason (`not_reported`, `no_baci_base`, `no_comtrade_base`,
+`implausible_change`). A market without a usable `L+1` keeps its BACI window, with lag 1.
+Linked metrics carry evidence quality 0.95.
 
 ## 6. Labels and reasons
 
@@ -170,8 +188,18 @@ market's exports of the product ≥ 50% of its imports; information only); ECGC 
 Estimated from partners' figures (the market did not report its latest year); Newer data used
 (§5.3); Short history (§3.4).
 
-Reasons: three sentences per market from templates: the two metrics adding most points and the one
-costing most. The optional AI rationale (`RATIONALE_WRITER`) may rephrase; it never changes a number.
+Market-level fallback results carry "From the market's own customs reports".
+
+Reasons: three sentences per market from templates: the two metrics adding most points
+(`score × points`) and the one costing most (`(100 − score) × points`), each stating the observed
+value ("Imports averaged $32.0 million a year over the last three years"). A market that is not
+ranked leads with why; an excluded or no-demand market gets one status sentence. No sentence
+projects earnings. The optional AI rationale (`RATIONALE_WRITER`) may rephrase; it never changes a
+number.
+
+Code: `src/lib/demand-discovery-v5/` — `policy`, `series`, `metrics`, `chain-link`, `hs-revision`,
+`baci-flows`, `score`, `explain`, and `assess` (all 218 markets for one product, pure: the caller
+reads the frozen releases and passes their rows in).
 
 ## 7. Runs and permissions
 
