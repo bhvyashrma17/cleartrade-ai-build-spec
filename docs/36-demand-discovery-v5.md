@@ -262,7 +262,10 @@ reads the frozen releases and passes their rows in).
   Saint Barthélemy is not on the list. `cepii:geo_cepii` keeps one capital per country (225); four
   withdrawn 2011 codes map to the successor with the same capital (ZR→CD Kinshasa, AN→CW Willemstad,
   YU→RS Belgrade, TP→TL Dili), checked against the row's city. Six markets have no capital row
-  (BL, BQ, ME, SS, SX, VA) and their distance fit is unavailable. BACI's 490 ("Other Asia, nes") is
+  (BL, BQ, ME, SS, SX, VA); since 14 Oct their capitals come from `curated:capitals-supplement`
+  (`data/reference/capitals-supplement-v1.json`, a source per row: Natural Earth, public domain, for
+  ME, SS and VA; Wikipedia infobox coordinates for BL, BQ and SX), used only where GeoDist has no
+  row. BACI's 490 ("Other Asia, nes") is
   placed at Taipei only because CEPII documents it as Taiwan and GeoDist numbers Taiwan 490 too.
 - **BACI parser v2.** V202601's country file leaves Namibia's `country_iso2` empty ("NA" read as
   missing) with `country_iso3` NAM. v2 takes the alpha-2 from the file's own alpha-3 when the cell
@@ -314,6 +317,18 @@ reads the frozen releases and passes their rows in).
   whether runs can start here and why not, the switches and policy version, each dataset a run reads
   with its version and what its absence costs, last-7-day run counts by status, and the 20 latest
   runs with their ranked count, top markets and the notes on what each could not use.
+- **Rupees beside dollars (14 Oct 2026, D-023).** Every dollar amount in a market's reasons and
+  breakdown is followed by its rupee figure at the newest ECB rate (`src/lib/fx/display-rate.ts`,
+  `src/lib/money-format.ts`: lakh and crore), with the rate and its day named on the page. The figure
+  follows today's rate, so it changes from day to day (the owner's choice over the rate frozen with
+  the run); stored run values stay in US dollars. The newest stored day older than the newest
+  publishable ECB day triggers one fetch of the INR and USD series, at most once an hour per process.
+  Price sentences now state the per-kilogram prices behind the ratio ("They pay $2.10/kg; India
+  usually sells at $1.80/kg").
+- **Customs-union estimates (policy v4).** A market with no World Bank tariff average of its own
+  borrows its customs union's common external tariff for the estimate, labelled as such: LU, MQ and
+  SM from the EU (all chapters), AD from the EU for chapters 25–97 only. Each entry names its legal
+  basis in `customs_unions`.
 - **Owner decisions of 14 Oct 2026 (E-018).** Tariff look-up inside runs: built, behind a switch
   (D-020). World Bank age limit: 10 years (D-021). The release-level Comtrade fallback of §3.3: not
   built (D-022) — an environment with no BACI release keeps the earlier engine, and the BACI import
@@ -345,8 +360,10 @@ reads the frozen releases and passes their rows in).
 - Licence: R-14 (Comtrade, accepted by the owner), R-15 (BACI built on Comtrade data; legal check),
   ECGC and World Bank terms to confirm.
 - GeoDist dates from 2011: South Sudan, Montenegro, Bonaire, Sint Maarten, Saint Barthélemy and the
-  Holy See have no capital row, so their distance fit is unavailable. The ECGC list does not rate
-  Saint Barthélemy.
+  Holy See have no capital row there; their capitals come from the curated supplement. The ECGC list
+  does not rate Saint Barthélemy.
+- A duty estimate from a customs union (policy v4) uses the union's common external tariff as the
+  World Bank reports it for a member (Germany for the EU): it inherits that member's data year.
 - The ECGC parser reads one layout. A new circular that changes it fails the import with the line
   that broke; it is never half-read.
 
@@ -392,6 +409,10 @@ touches production.
      --file=data/reference/india-trade-agreements-v1.json --expect-sha256=0e2588c971dd25605033f74cfb62e94b2d4b17486560e54ad104919d678d8075 \
      --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/india-trade-agreements-v1.json \
      --retrieved-at=2026-10-13 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=curated:capitals-supplement \
+     --file=data/reference/capitals-supplement-v1.json --expect-sha256=b799dd988c6f0a63b6991b484775bb3d0207ed8b046a50d2c0a73796e40e0823 \
+     --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/capitals-supplement-v1.json \
+     --retrieved-at=2026-10-14 --actor-email=<operator>
    ```
 
    R-19, once: `pdftotext -layout <ECGC PDF> -` and a CSV export of `geo_cepii.dta` should reproduce

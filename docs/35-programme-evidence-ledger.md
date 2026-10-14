@@ -33,6 +33,9 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-020 | 2026-10-14 | v5 runs look up the product's official tariff in every market with a Customs Atlas source, behind a config switch (`demand_discovery.v5.tariff_acquisition`, on by default) (E-018, E-019). | Owner | Demand Discovery v5 |
 | D-021 | 2026-10-14 | A World Bank value more than 10 years old on the run's date counts as missing (R-20; policy v3). | Owner | Demand Discovery v5 |
 | D-022 | 2026-10-14 | No release-level Comtrade-only fallback: an environment without a BACI release keeps the earlier engine, and the BACI import is part of each environment's bootstrap. The owner's reply "yes" to the recommendation "no" was read as agreement; recorded as such pending correction. | Owner | Demand Discovery v5 |
+| D-023 | 2026-10-14 | Rupee figures beside dollar figures in the Demand Discovery views follow today's ECB rate (the owner chose this over the rate frozen with the run); stored run values stay in US dollars. | Owner | Demand Discovery v5 |
+| D-024 | 2026-10-14 | Official tariffs for every market from free sources, researched country by country, keeping agents' work to a minimum; in parallel the owner asks UNCTAD (TRAINS) and the WTO for permission to show their tariff data in the product. | Owner | Demand Discovery v5, Customs Atlas |
+| D-025 | 2026-10-14 | Fill four further data gaps: the six missing capitals and customs-union duty estimates; a second exchange-rate source (IMF) after a terms check; market-level sanctions programmes from the UN, US and EU lists; UNCTAD's shipping-connectivity index as a logistics fallback after a terms check. | Owner | Demand Discovery v5 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -738,6 +741,36 @@ the run replace the agreement estimate with the official 5%, reads the stored EU
 fetch, and drops a 2010 logistics score with its note. Full suite in one schema, CI's file order:
 138 files, 2,159 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006. CI on
 `21025dc` (run 38538913819): passed. PR #3 into `staging/railway`.
+
+### E-020 · 2026-10-14 · v5: rupees beside dollars, customs-union estimates, missing capitals; tariff programme baseline
+
+**Built** on `dd5/v5-coverage`, stacked on PR #3 (docs/36 §7.1, §9, §10):
+- Rupees (D-023): `src/lib/fx/display-rate.ts` reads the newest ECB INR and USD observations, fetches
+  both series when the newest stored day is older than the newest the ECB could have published (at
+  most once an hour per process) and crosses them on one day; `src/lib/money-format.ts` writes lakh
+  and crore and appends the rupee figure to every dollar amount; the exporter's market list, market
+  page and the agent control table show it with the rate and its day. Price sentences now give the
+  per-kilogram prices behind the ratio.
+- Policy v4 `customs_unions`: LU, MQ, SM (EU, all chapters) and AD (EU, chapters 25–97) borrow the EU's
+  common external tariff average for the estimate, labelled as such; each entry names its legal basis.
+- `curated:capitals-supplement` (`data/reference/capitals-supplement-v1.json`, sha256 `b799dd98…0823`):
+  BL, BQ, ME, SS, SX and VA, a source per row (Natural Earth v5.1.2, public domain, for ME, SS, VA;
+  Wikipedia infobox coordinates for BL, BQ, SX); used only where GeoDist has no row. Not yet imported on
+  staging (docs/36 §10 step 5).
+
+**Tariff programme baseline** (D-024), from the repository's own registries over the 218 markets:
+53 connected (`DESTINATION_ADAPTERS`), 62 researched and blocked with a recorded reason
+(`unconfigured-sources.ts`: licence pending, source insufficient, no machine interface, credentials,
+investigation required), 103 not yet researched. Two near-term routes found: Singapore's provider,
+bundle reader and parser are implemented and wait only for an acquisition inside SSO's permitted
+03:00–07:00 SGT window plus qualification; Hong Kong levies no customs tariff on imports (Customs and
+Excise Department, Cargo Clearance page; Basic Law Art. 114), only excise on four commodities. UNCTAD
+TRAINS (via WITS) is free to access but silent on commercial display; the WTO's terms permit
+non-commercial use only without the Secretariat's approval; ITC Market Access Map forbids commercial
+exploitation without ITC's written permission. Permission emails to UNCTAD and the WTO were drafted for
+the owner.
+
+**Checks run.** See the PR; recorded here once CI has run.
 
 ## Risk register
 

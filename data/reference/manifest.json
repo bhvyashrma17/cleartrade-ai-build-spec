@@ -36,6 +36,14 @@
       "bytes": 18223,
       "derived_from": null,
       "note": "Curated by ClearTrade; every row cites its own source (docs/36 §7.1)."
+    },
+    {
+      "file": "capitals-supplement-v1.json",
+      "dataset_key": "curated:capitals-supplement",
+      "sha256": "b799dd988c6f0a63b6991b484775bb3d0207ed8b046a50d2c0a73796e40e0823",
+      "bytes": 1629,
+      "derived_from": null,
+      "note": "Curated by ClearTrade: the six screening markets CEPII GeoDist (2011) does not list; every row cites where its coordinates were read (Natural Earth, public domain; Wikipedia infoboxes for facts)."
     }
   ]
 }

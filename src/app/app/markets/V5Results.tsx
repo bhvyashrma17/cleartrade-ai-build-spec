@@ -11,6 +11,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
 import { StatusChip } from '@/components/ui';
 import type { StatusIconName, StatusTone } from '@/types';
 
@@ -61,13 +62,14 @@ export function V5Labels({ labels }: { labels: V5Label[] }) {
 }
 
 export function V5Reasons({ reasons }: { reasons: V5Reason[] }) {
+  const rupees = useRupees();
   if (!reasons.length) return null;
   return (
     <ul className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
       {reasons.map((reason, index) => (
         <li key={`${reason.metric ?? 'status'}-${index}`}>
           {reason.effect === 'costs' ? <span className="font-medium text-primary">Holding it back: </span> : null}
-          {reason.text}
+          {rupees(reason.text)}
         </li>
       ))}
     </ul>
@@ -124,6 +126,7 @@ export function V5Results({ rows, notes, provenanceNote }: { rows: V5Row[]; note
         {ranked.length} of {rows.length} markets ranked.{' '}
         {handedOff.length ? `The top ${handedOff.length} go on to buyer search.` : null}
       </p>
+      <div className="mt-1"><RupeeRateNote /></div>
 
       {ranked.length ? (
         <ol className="mt-4 space-y-3">
