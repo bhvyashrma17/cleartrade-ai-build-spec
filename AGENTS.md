@@ -172,6 +172,8 @@ govern every PR.
 | `docs/31-global-country-screening.md` | Phase 1F Stage A: the derived country universe, Country Screening Policy v1, screening rank, quota planning and the handoff into the deep Country Truth pipeline |
 | `docs/33-railway-staging-amused-insight.md` | Railway staging as deployed: services, isolation from production, empty-database bootstrap, verification, open production hazards |
 | `docs/32-latest-usable-period.md` | Phase 1G: per-country latest-usable-period selection, the fallback walk and its four semantics, mixed-vintage ranking, per-reporter deep analysis windows, and freshness-weighted confidence |
+| `docs/34-phase-1-acceptance-gate.md` | The Phase 1 acceptance gate: proposed thresholds, qualifying-market and Atlas-tariff definitions, evidence matrix, report fields, and the staging runbook for `scripts/gate-phase-1.ts` |
+| `docs/35-programme-evidence-ledger.md` | **Read before starting any roadmap work package.** Append-only record of verified repository/CI/staging state, owner decisions, checks run and open risks |
 
 ## Build order (don't build portal-by-portal)
 

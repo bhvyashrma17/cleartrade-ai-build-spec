@@ -64,6 +64,16 @@ function calculationScope(facts: SelectedCountryTruthFacts): ExactFactScope {
 }
 
 /**
+ * The scope tariff facts were selected in, when the run admitted tariff evidence on its own clock
+ * (WP2, docs/35 D-004); otherwise undefined and tariffs share the calculation scope. Only the two
+ * pillars that select an applicable tariff receive it — every other fact stays on the trade clock.
+ */
+function tariffScope(facts: SelectedCountryTruthFacts): ExactFactScope | undefined {
+  const clock = facts.scope.tariff_as_of_date;
+  return clock ? { ...calculationScope(facts), as_of_date: clock } : undefined;
+}
+
+/**
  * A missing optional fact is represented as an explicit non-present fact rather than omitted,
  * so the calculation records *why* an input was absent instead of silently having fewer inputs.
  */
@@ -136,6 +146,7 @@ export function calculateCountryTruthPillars(
   policy: CountryTruthPhase1HPolicy,
 ): CountryTruthPillarOutput {
   const scope = calculationScope(facts);
+  const tariff = tariffScope(facts);
 
   const marketAccess = calculateMarketAccessV2(
     {
@@ -143,6 +154,7 @@ export function calculateCountryTruthPillars(
       tariffs: facts.market_access.tariffs,
       requirements: facts.market_access.requirements,
       regulatory_coverage: facts.market_access.regulatory_coverage ?? undefined,
+      ...(tariff ? { tariff_scope: tariff } : {}),
     },
     policy.market_access,
   );
@@ -160,6 +172,7 @@ export function calculateCountryTruthPillars(
       cost_components: facts.export_economics.cost_components,
       fx_rates: facts.fx_rates,
       customs_valuation_basis: facts.export_economics.customs_valuation_basis ?? undefined,
+      ...(tariff ? { tariff_scope: tariff } : {}),
     },
     policy.export_economics,
   );

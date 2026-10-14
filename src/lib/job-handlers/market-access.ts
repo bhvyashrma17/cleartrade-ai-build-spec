@@ -54,21 +54,32 @@ export interface MarketAccessAdapterRequest {
 /** What every Market Access source is wrapped to look like at the routing boundary. */
 export interface MarketAccessAdapter {
   readonly provider_key: string;
+  /**
+   * How the source dates its evidence, which decides what `now` may be passed:
+   * - `live_fetch` — an online API that stamps `retrieved_at` with `now` (UK, US). It must be
+   *   called at real time; passing an earlier clock would backdate the retrieval.
+   * - `retained_release` — resolves a retained authority release, uses `now` only as the date the
+   *   tariff is resolved at, and stamps the release's own retrieval time.
+   */
+  readonly retrieval: 'live_fetch' | 'retained_release';
   fetch(request: MarketAccessAdapterRequest): Promise<MarketAccessIngestResult>;
 }
 
 const UK_ADAPTER: MarketAccessAdapter = {
   provider_key: 'uk_tariff',
+  retrieval: 'live_fetch',
   fetch: (request) => fetchUkMarketAccess(request.hs6, { now: request.now, destination_country: request.destination_country }),
 };
 
 const US_ADAPTER: MarketAccessAdapter = {
   provider_key: 'us_hts',
+  retrieval: 'live_fetch',
   fetch: (request) => fetchUsMarketAccess(request.hs6, { now: request.now, destination_country: request.destination_country }),
 };
 
 const EU_TARIC_ADAPTER: MarketAccessAdapter = {
   provider_key: 'eu_taric',
+  retrieval: 'retained_release',
   fetch: (request) => fetchEuTaricMarketAccess(request.hs6, {
     now: request.now,
     destination_country: request.destination_country,
@@ -78,6 +89,7 @@ const EU_TARIC_ADAPTER: MarketAccessAdapter = {
 
 const CANADA_ADAPTER: MarketAccessAdapter = {
   provider_key: 'canada_cbsa_customs_tariff',
+  retrieval: 'retained_release',
   fetch: (request) => fetchCanadaMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -86,6 +98,7 @@ const CANADA_ADAPTER: MarketAccessAdapter = {
 
 const NZ_ADAPTER: MarketAccessAdapter = {
   provider_key: 'nz_customs_cusmod',
+  retrieval: 'retained_release',
   fetch: (request) => fetchNzMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -94,6 +107,7 @@ const NZ_ADAPTER: MarketAccessAdapter = {
 
 const AUSTRALIA_ADAPTER: MarketAccessAdapter = {
   provider_key: 'au_abf_working_tariff',
+  retrieval: 'retained_release',
   fetch: (request) => fetchAustraliaMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -102,6 +116,7 @@ const AUSTRALIA_ADAPTER: MarketAccessAdapter = {
 
 const NORWAY_ADAPTER: MarketAccessAdapter = {
   provider_key: 'no_tolletaten_customs_tariff',
+  retrieval: 'retained_release',
   fetch: (request) => fetchNorwayMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -110,6 +125,7 @@ const NORWAY_ADAPTER: MarketAccessAdapter = {
 
 const JAPAN_ADAPTER: MarketAccessAdapter = {
   provider_key: 'japan_customs_tariff_schedule',
+  retrieval: 'retained_release',
   fetch: (request) => fetchJapanMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -118,6 +134,7 @@ const JAPAN_ADAPTER: MarketAccessAdapter = {
 
 const TAIWAN_ADAPTER: MarketAccessAdapter = {
   provider_key: 'tw_customs_import_duty',
+  retrieval: 'retained_release',
   fetch: (request) => fetchTaiwanMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -126,6 +143,7 @@ const TAIWAN_ADAPTER: MarketAccessAdapter = {
 
 const GEORGIA_ADAPTER: MarketAccessAdapter = {
   provider_key: 'ge_matsne_tax_code_article_197',
+  retrieval: 'retained_release',
   fetch: (request) => fetchGeorgiaMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -134,6 +152,7 @@ const GEORGIA_ADAPTER: MarketAccessAdapter = {
 
 const KOREA_ADAPTER: MarketAccessAdapter = {
   provider_key: 'kr_kcs_customs_tariff',
+  retrieval: 'retained_release',
   fetch: (request) => fetchKoreaMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -142,6 +161,7 @@ const KOREA_ADAPTER: MarketAccessAdapter = {
 
 const ISRAEL_ADAPTER: MarketAccessAdapter = {
   provider_key: 'il_tax_authority_customs_book',
+  retrieval: 'retained_release',
   fetch: (request) => fetchIsraelMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -150,6 +170,7 @@ const ISRAEL_ADAPTER: MarketAccessAdapter = {
 
 const PERU_ADAPTER: MarketAccessAdapter = {
   provider_key: 'pe_sunat_customs_tariff',
+  retrieval: 'retained_release',
   fetch: (request) => fetchPeruMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -158,6 +179,7 @@ const PERU_ADAPTER: MarketAccessAdapter = {
 
 const ICELAND_ADAPTER: MarketAccessAdapter = {
   provider_key: 'is_skatturinn_tollskrarlyklar',
+  retrieval: 'retained_release',
   fetch: (request) => fetchIcelandMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
@@ -166,25 +188,26 @@ const ICELAND_ADAPTER: MarketAccessAdapter = {
 
 const OMAN_ADAPTER: MarketAccessAdapter = {
   provider_key: 'om_rop_customs_tariff',
+  retrieval: 'retained_release',
   fetch: (request) => fetchOmanMarketAccess(request.hs6, {
     now: request.now,
     origin_country: request.origin_country,
   }),
 };
 
-const NEPAL_ADAPTER: MarketAccessAdapter = { provider_key: 'np_customs_tariff_pdf', fetch: (request) => fetchNepalMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const BHUTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'bt_drc_tariff_pdf', fetch: (request) => fetchBhutanMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const ALBANIA_ADAPTER: MarketAccessAdapter = { provider_key: 'al_customs_nomenclature_archive', fetch: (request) => fetchAlbaniaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const MAURITIUS_ADAPTER: MarketAccessAdapter = { provider_key: 'mu_mra_integrated_tariff', fetch: (request) => fetchMauritiusMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const LK_ADAPTER: MarketAccessAdapter = { provider_key: 'lk_customs_tariff', fetch: (request) => fetchSriLankaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const INDONESIA_ADAPTER: MarketAccessAdapter = { provider_key: 'id_kemenkeu_btki', fetch: (request) => fetchIndonesiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country, producer_or_exporter: request.producer_or_exporter }) };
-const SAUDI_ADAPTER: MarketAccessAdapter = { provider_key: 'sa_zatca_integrated_tariff', fetch: (request) => fetchSaudiMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const QATAR_ADAPTER: MarketAccessAdapter = { provider_key: 'qa_customs_integrated_tariff', fetch: (request) => fetchQatarMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const KUWAIT_ADAPTER: MarketAccessAdapter = { provider_key: 'kw_customs_integrated_tariff', fetch: (request) => fetchKuwaitMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const UZBEKISTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'uz_lex_customs_tariff', fetch: (request) => fetchUzbekistanMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const VIETNAM_ADAPTER: MarketAccessAdapter = { provider_key: 'vn_congbao_tariff', fetch: (request) => fetchVietnamMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const MOROCCO_ADAPTER: MarketAccessAdapter = { provider_key: 'ma_adii_tariff', fetch: (request) => fetchMoroccoMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
-const TUNISIA_ADAPTER: MarketAccessAdapter = { provider_key: 'tn_douane_tarifweb', fetch: (request) => fetchTunisiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const NEPAL_ADAPTER: MarketAccessAdapter = { provider_key: 'np_customs_tariff_pdf', retrieval: 'retained_release', fetch: (request) => fetchNepalMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const BHUTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'bt_drc_tariff_pdf', retrieval: 'retained_release', fetch: (request) => fetchBhutanMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const ALBANIA_ADAPTER: MarketAccessAdapter = { provider_key: 'al_customs_nomenclature_archive', retrieval: 'retained_release', fetch: (request) => fetchAlbaniaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const MAURITIUS_ADAPTER: MarketAccessAdapter = { provider_key: 'mu_mra_integrated_tariff', retrieval: 'retained_release', fetch: (request) => fetchMauritiusMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const LK_ADAPTER: MarketAccessAdapter = { provider_key: 'lk_customs_tariff', retrieval: 'retained_release', fetch: (request) => fetchSriLankaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const INDONESIA_ADAPTER: MarketAccessAdapter = { provider_key: 'id_kemenkeu_btki', retrieval: 'retained_release', fetch: (request) => fetchIndonesiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country, producer_or_exporter: request.producer_or_exporter }) };
+const SAUDI_ADAPTER: MarketAccessAdapter = { provider_key: 'sa_zatca_integrated_tariff', retrieval: 'retained_release', fetch: (request) => fetchSaudiMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const QATAR_ADAPTER: MarketAccessAdapter = { provider_key: 'qa_customs_integrated_tariff', retrieval: 'retained_release', fetch: (request) => fetchQatarMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const KUWAIT_ADAPTER: MarketAccessAdapter = { provider_key: 'kw_customs_integrated_tariff', retrieval: 'retained_release', fetch: (request) => fetchKuwaitMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const UZBEKISTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'uz_lex_customs_tariff', retrieval: 'retained_release', fetch: (request) => fetchUzbekistanMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const VIETNAM_ADAPTER: MarketAccessAdapter = { provider_key: 'vn_congbao_tariff', retrieval: 'retained_release', fetch: (request) => fetchVietnamMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const MOROCCO_ADAPTER: MarketAccessAdapter = { provider_key: 'ma_adii_tariff', retrieval: 'retained_release', fetch: (request) => fetchMoroccoMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+const TUNISIA_ADAPTER: MarketAccessAdapter = { provider_key: 'tn_douane_tarifweb', retrieval: 'retained_release', fetch: (request) => fetchTunisiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once

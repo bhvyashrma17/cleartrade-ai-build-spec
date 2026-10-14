@@ -527,6 +527,10 @@ const CONFIG_KEYS = [
   'leads.outreach',
   'guest.policy',
   'jobs.policy',
+  // WP2 switch for Customs Atlas acquisition inside the deep Country Truth run. Writable through the
+  // audited, versioned API so enabling it on staging never needs a direct database write; it is not
+  // an Ops-console setting (OPS_TUNABLE_CONFIG_KEYS). The route validates its shape.
+  'country_truth.market_access_orchestration',
 ] as const;
 
 /** New config version. `value` is validated as parseable JSON by the route, not here — the shape differs per key. */

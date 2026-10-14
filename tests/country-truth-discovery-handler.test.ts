@@ -54,6 +54,10 @@ describe('country_truth_discovery orchestration handler',()=>{
   test('is registered and executes authenticated plan, manifest, metrics, dedicated run and v4 assessments',async()=>{
     registerAllJobHandlers();expect(getJobHandler(JobType.country_truth_discovery)).toBe(runCountryTruthDiscovery);
     const f=await fixture(),provider=authenticatedClient();setComtradeClient(provider.client);
+    // Vitest runs every file against one schema, and the request tests deliberately leave queued deep
+    // jobs behind. claimNextJob takes the oldest run_after first, so put THIS fixture's job at the front
+    // rather than assume an empty queue — which held only when this file happened to run first.
+    await prisma.job.update({where:{id:f.job.id},data:{run_after:new Date(0)}});
     const claimed=await claimNextJob([JobType.country_truth_discovery]);expect(claimed?.id).toBe(f.job.id);await runClaimedJob(claimed!);
     const completedJob=await prisma.job.findUniqueOrThrow({where:{id:f.job.id}}),result=completedJob.result as Record<string,unknown>;
     expect(completedJob.status).toBe('completed');expect(provider.calls).toHaveBeenCalledTimes(11);expect(result).toMatchObject({stage:'completed',physical_calls:11});

@@ -130,6 +130,7 @@ export interface ConfigShape {
   'country_trade_metrics.policy': CountryTradeMetricPolicy;
   'country_truth.scoring_v4': CountryTruthScoringV4Policy;
   'country_truth.phase_1h': CountryTruthPhase1HPolicy;
+  'country_truth.market_access_orchestration': CountryTruthMarketAccessOrchestrationPolicy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
   /**
@@ -425,6 +426,28 @@ export interface CountryTruthScoringV4Policy {
   export_economics:{existing_economics_weight:number;unit_value_weight:number;benchmark_ratio_ceiling:number};
   ranking:{minimum_available_base_weight:number;require_demand:boolean;require_growth_or_competition:boolean};
   confidence:{formula_version:string;/** Confidence decay per year the analysis window lags the preferred period. */recency_decay_per_year:number};
+}
+
+/**
+ * WP2: Customs Atlas acquisition inside the deep Country Truth run (docs/35 E-004).
+ *
+ * Off by default. When enabled at request time the policy is frozen into the job payload, the
+ * deep run acquires tariff evidence for its own shortlisted destinations, and tariff evidence is
+ * admitted up to the run's tariff clock rather than the screen's as-of date (owner decision D-004).
+ * With it off, payloads, fact manifests and assessments are byte-identical to the pre-WP2 path.
+ */
+export interface CountryTruthMarketAccessOrchestrationPolicy {
+  policy_version: string;
+  enabled: boolean;
+  /** Origin every acquisition is requested for; Country Truth assesses Indian exports only. */
+  origin_country: 'IN';
+  /** Destinations beyond this count are recorded as skipped, never silently dropped. */
+  max_destinations: number;
+  /**
+   * Ceiling for one LIVE fetch (UK, US). Release-backed sources read retained artifacts and are
+   * not raced: abandoning one mid-decode would leave it running in the background.
+   */
+  live_fetch_timeout_ms: number;
 }
 
 /**
@@ -916,6 +939,13 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     confidence:{formula_version:'weighted_component_evidence_coverage_and_recency_v5',recency_decay_per_year:0.8},
   },
   'country_truth.phase_1h': PHASE_1H_DEFAULT_POLICY,
+  'country_truth.market_access_orchestration': {
+    policy_version: 'market-access-orchestration-v1',
+    enabled: false,
+    origin_country: 'IN',
+    max_destinations: 30,
+    live_fetch_timeout_ms: 60_000,
+  },
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
     base_weights: { demand_strength: 25, growth_momentum: 10, competitive_opportunity: 10, market_access: 10, export_economics: 15, exporter_market_fit: 15, logistics_feasibility: 10, risk_resilience: 5 },
@@ -1004,6 +1034,9 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
       exporter_market_fit:{...defaults.exporter_market_fit,...(stored.exporter_market_fit??{})},
       logistics_feasibility:{...defaults.logistics_feasibility,...(stored.logistics_feasibility??{})},
     } as ConfigShape[K];
+  }
+  if (key === 'country_truth.market_access_orchestration') {
+    return { ...CONFIG_DEFAULTS['country_truth.market_access_orchestration'], ...(row.value as object) } as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];
@@ -1148,6 +1181,23 @@ export async function resolvePagination(params: {
   const requested = Number(params.per_page ?? policy.default_per_page) || policy.default_per_page;
   const per_page = Math.min(Math.max(1, requested), policy.max_per_page);
   return { page, per_page, skip: (page - 1) * per_page, take: per_page };
+}
+
+/**
+ * Problems with a stored `country_truth.market_access_orchestration` value, empty when valid.
+ * Used by the config API before a version is written and by the deep request before a policy is
+ * frozen into a job, so a malformed switch fails loudly instead of half-enabling acquisition.
+ */
+export function marketAccessOrchestrationPolicyProblems(value: unknown): string[] {
+  const policy = value as Partial<CountryTruthMarketAccessOrchestrationPolicy> | null;
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return ['The policy must be an object.'];
+  const problems: string[] = [];
+  if (typeof policy.policy_version !== 'string' || !policy.policy_version.trim()) problems.push('policy_version must be a non-empty string.');
+  if (typeof policy.enabled !== 'boolean') problems.push('enabled must be true or false.');
+  if (policy.origin_country !== 'IN') problems.push('origin_country must be IN.');
+  if (!Number.isInteger(policy.max_destinations) || policy.max_destinations! < 1 || policy.max_destinations! > 100) problems.push('max_destinations must be a whole number from 1 to 100.');
+  if (!Number.isInteger(policy.live_fetch_timeout_ms) || policy.live_fetch_timeout_ms! < 1_000 || policy.live_fetch_timeout_ms! > 300_000) problems.push('live_fetch_timeout_ms must be a whole number from 1000 to 300000.');
+  return problems;
 }
 
 /**

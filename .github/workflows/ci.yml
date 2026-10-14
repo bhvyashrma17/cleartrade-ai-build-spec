@@ -30,10 +30,17 @@ jobs:
     env:
       APP_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cleartrade_test
+      # prisma/schema.prisma declares `directUrl = env("DIRECT_DATABASE_URL")`, so `prisma validate`
+      # fails without it. Every CI run before this line failed at that step and never reached
+      # typecheck, lint, tests or build. Same throwaway CI database; the test harness re-points
+      # both URLs at its own disposable schema (tests/global-setup.ts).
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cleartrade_test
       AUTH_SECRET: ci-only-not-a-production-secret
       COMTRADE_CLIENT: mock
       DISCOVERY_ENGINE: warehouse
-      IMPORT_BUYER_REF_SECRET: ci-only-buyer-reference-secret
+      # src/lib/import-identity.ts refuses a buyer-reference secret under 32 characters. The previous
+      # 30-character value failed tests/buyer.test.ts on the first CI run that reached `npm test`.
+      IMPORT_BUYER_REF_SECRET: ci-only-buyer-reference-secret-not-a-real-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

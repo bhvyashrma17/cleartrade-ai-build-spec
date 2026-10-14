@@ -1,7 +1,7 @@
 import { JobStatus, JobType, ProductClassificationStatus, UserRole, type Prisma } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { canonicalHash } from '@/lib/country-evidence/planner';
-import { getConfigWithVersion, type CountryEvidencePolicy, type CountryTradeMetricPolicy, type CountryTruthPhase1HPolicy, type CountryTruthScoringV4Policy } from '@/lib/config';
+import { getConfigWithVersion, marketAccessOrchestrationPolicyProblems, type CountryEvidencePolicy, type CountryTradeMetricPolicy, type CountryTruthMarketAccessOrchestrationPolicy, type CountryTruthPhase1HPolicy, type CountryTruthScoringV4Policy } from '@/lib/config';
 import { buildCountryTruthExporterFactSnapshot, type CountryTruthExporterFactSnapshot } from '@/lib/country-truth/exporter-fact-snapshot';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { enqueueJob, findInFlightJob } from '@/lib/jobs';
@@ -70,6 +70,11 @@ export interface CountryTruthDiscoveryPayload {
     country_trade_metrics:{config_version:number;policy_version:string;calculation_version:string;policy_hash:string;snapshot:CountryTradeMetricPolicy};
     country_truth_scoring:{config_version:number;model_version:string;formula_version:string;policy_hash:string;snapshot:CountryTruthScoringV4Policy};
     country_truth_phase_1h:{config_version:number;policy_version:string;calculation_version:string;policy_hash:string;snapshot:CountryTruthPhase1HPolicy};
+    /**
+     * WP2 tariff acquisition (docs/35 E-004). Present ONLY when enabled at request time, so a payload
+     * built with the switch off — and its dedupe key — is byte-identical to the pre-WP2 payload.
+     */
+    market_access_orchestration?:{config_version:number;policy_version:string;policy_hash:string;snapshot:CountryTruthMarketAccessOrchestrationPolicy};
   };
 }
 
@@ -123,12 +128,19 @@ export async function buildCountryTruthDiscoveryPayload(args:{
   provenance?:CountryTruthDiscoveryProvenance;
 }):Promise<CountryTruthDiscoveryPayload>{
   const {product,classification,hs6}=args.context;
-  const [evidence,metrics,scoring,phase1h]=await Promise.all([
+  const [evidence,metrics,scoring,phase1h,orchestration]=await Promise.all([
     getConfigWithVersion('country_evidence.policy'),
     getConfigWithVersion('country_trade_metrics.policy'),
     getConfigWithVersion('country_truth.scoring_v4'),
     getConfigWithVersion('country_truth.phase_1h'),
+    getConfigWithVersion('country_truth.market_access_orchestration'),
   ]);
+  // An enabled switch with a malformed shape is an operations error: fail loudly rather than freeze
+  // a half-valid policy into a job. A disabled switch is never frozen at all.
+  if(orchestration.value.enabled){
+    const problems=marketAccessOrchestrationPolicyProblems(orchestration.value);
+    if(problems.length)throw new Error(`country_truth.market_access_orchestration is enabled but invalid: ${problems.join(' ')}`);
+  }
   const sourceReferences=Array.isArray(classification.source_references)?classification.source_references.filter((item):item is string=>typeof item==='string'):[];
   const exporterFacts=buildCountryTruthExporterFactSnapshot({
     exporter_org:{id:product.exporter_org.id,country:product.exporter_org.country,state:product.exporter_org.state,city:product.exporter_org.city,pickup_location_code:product.exporter_org.pickup_location_code,preferred_origin_gateway:product.exporter_org.preferred_origin_gateway,updated_at:product.exporter_org.updated_at},
@@ -155,6 +167,7 @@ export async function buildCountryTruthDiscoveryPayload(args:{
       country_trade_metrics:{...policyIdentity(metrics),policy_version:metrics.value.policy_version,calculation_version:metrics.value.calculation_version,snapshot:metrics.value},
       country_truth_scoring:{...policyIdentity(scoring),model_version:scoring.value.model_version,formula_version:scoring.value.formula_version,snapshot:scoring.value},
       country_truth_phase_1h:{...policyIdentity(phase1h),policy_version:phase1h.value.policy_version,calculation_version:phase1h.value.calculation_version,snapshot:phase1h.value},
+      ...(orchestration.value.enabled===true?{market_access_orchestration:{...policyIdentity(orchestration),policy_version:orchestration.value.policy_version,snapshot:orchestration.value}}:{}),
     },
   };
 }

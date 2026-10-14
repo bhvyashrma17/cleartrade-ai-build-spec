@@ -66,6 +66,13 @@ export interface CountryTruthSelectionScope extends ExactFactScope {
   /** Required here: every selection is performed for exactly one exporter tenant. */
   exporter_org_id: string;
   origin_country_code: string;
+  /**
+   * WP2 separate tariff clock (owner decision D-004, docs/35). When present, tariff evidence
+   * (`destination_tariff`, `preferential_tariff_india`) is admitted up to this instant and its facts
+   * are scoped to it; every other evidence class stays on `as_of_date`. Never earlier than
+   * `as_of_date`. Absent, selection is exactly the single-clock behaviour.
+   */
+  tariff_as_of_date?: string;
 }
 
 export interface MarketAccessSnapshotRow {
@@ -466,16 +473,28 @@ function selectTariffsAndRequirements(
   recorder: Recorder,
   /** Retrieval identity per snapshot. An evidence row inherits who supplied its snapshot. */
   sources: ReadonlyMap<string, MarketAccessSourceIdentity> = new Map(),
+  /**
+   * Where tariff rows are admitted and scoped. The default is the single assessment clock; under
+   * the WP2 separate tariff clock (D-004) it is the run's tariff clock. Requirement rows always use
+   * `scope` and `asOf`.
+   */
+  tariff: { scope: CountryTruthSelectionScope; asOf: number } = { scope, asOf },
 ) {
   const tariffs: ScopedFact<TariffFactValue>[] = [];
   const requirements: ScopedFact<MarketAccessRequirementValue>[] = [];
   const factScope = scopeFor(scope, false);
+  const tariffFactScope = scopeFor(tariff.scope, false);
   for (const row of [...rows].sort((left, right) => left.id.localeCompare(right.id))) {
     if (row.country_code.toUpperCase() !== scope.country_code) {
       recorder.reject('market_access_evidence', row.id, 'destination_country_mismatch');
       continue;
     }
-    if (!retrievedBefore(row.retrieved_at, asOf)) {
+    // A tariff assertion and a regulatory one are covered by different approvals, so the row's
+    // rule type decides which permission is required — and, under a separate tariff clock, which
+    // clock admits it.
+    const isTariffRule = row.rule_type === 'destination_tariff' || row.rule_type === 'preferential_tariff_india';
+    const clock = isTariffRule ? tariff.asOf : asOf;
+    if (!retrievedBefore(row.retrieved_at, clock)) {
       recorder.reject('market_access_evidence', row.id, 'retrieved_after_assessment_clock');
       continue;
     }
@@ -483,7 +502,7 @@ function selectTariffsAndRequirements(
       recorder.reject('market_access_evidence', row.id, `evidence_status_${row.status}`);
       continue;
     }
-    if (row.superseded_at != null && row.superseded_at.getTime() <= asOf) {
+    if (row.superseded_at != null && row.superseded_at.getTime() <= clock) {
       recorder.reject('market_access_evidence', row.id, 'superseded_before_assessment_clock');
       continue;
     }
@@ -492,14 +511,11 @@ function selectTariffsAndRequirements(
       recorder.reject('market_access_evidence', row.id, 'hs_scope_does_not_cover_product');
       continue;
     }
-    // A tariff assertion and a regulatory one are covered by different approvals, so the row's
-    // rule type decides which permission is required.
-    const isTariffRule = row.rule_type === 'destination_tariff' || row.rule_type === 'preferential_tariff_india';
     const assertion = marketAccessAssertion(
       sources.get(row.snapshot_id) ?? {},
       scope.country_code,
       isTariffRule ? 'tariff' : 'regulatory',
-      asOf,
+      clock,
     );
     if ('rejected' in assertion) {
       recorder.reject('market_access_evidence', row.id, assertion.rejected);
@@ -512,7 +528,7 @@ function selectTariffsAndRequirements(
       retrieved_at: iso(row.retrieved_at),
     };
     const base = {
-      scope: factScope,
+      scope: isTariffRule ? tariffFactScope : factScope,
       provenance,
       confidence: confidencePercent(row.confidence),
     };
@@ -1467,6 +1483,14 @@ export function selectCountryTruthFacts(args: {
   if (!scope.exporter_org_id.trim()) throw new Error('Fact selection requires an exporter tenant.');
   const asOf = Date.parse(scope.as_of_date);
   if (!Number.isFinite(asOf)) throw new Error('Fact selection requires a valid assessment clock.');
+  const tariffAsOf = scope.tariff_as_of_date == null ? asOf : Date.parse(scope.tariff_as_of_date);
+  if (!Number.isFinite(tariffAsOf) || tariffAsOf < asOf) {
+    throw new Error('A separate tariff clock must be a valid instant no earlier than the assessment clock.');
+  }
+  const tariffSelection = {
+    scope: scope.tariff_as_of_date == null ? scope : { ...scope, as_of_date: new Date(tariffAsOf).toISOString() },
+    asOf: tariffAsOf,
+  };
   if (args.exporter_snapshot.identity.exporter_org_id !== scope.exporter_org_id) {
     throw new Error('The frozen exporter snapshot belongs to a different exporter.');
   }
@@ -1492,6 +1516,7 @@ export function selectCountryTruthFacts(args: {
         { provider: snapshot.provider, source_dataset: snapshot.source_dataset },
       ]),
     ),
+    tariffSelection,
   );
   const regulatoryCoverage = selectRegulatoryCoverage(args.evidence.market_access_snapshots, scope, asOf, recorder);
   const classificationRefinement = selectClassificationRefinement(args.evidence.classification_refinements ?? [], scope, args.exporter_snapshot, asOf, recorder);
