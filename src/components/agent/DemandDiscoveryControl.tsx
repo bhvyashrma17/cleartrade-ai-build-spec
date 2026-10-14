@@ -18,19 +18,41 @@
 import type { MarketControlRow } from '@/lib/demand-control';
 import { StatusChip } from '@/components/ui';
 import { MarketDecisionControls } from '@/components/agent/MarketDecisionControls';
+import { V5Breakdown } from '@/app/app/markets/[marketAssessmentId]/V5Breakdown';
 
 const pct = (n: number | null) => (n === null ? '—' : `${(n * 100).toFixed(1)}%`);
 const num = (n: number | null) => (n === null ? '—' : String(n));
 const fmtDate = (d: Date | null) =>
   d ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(d) : '—';
 
-/** Terminal candidates show "—", never a manufactured position. */
+const V5_STATUS: Record<string, { label: string; tone: 'positive' | 'neutral' | 'critical' }> = {
+  ranked: { label: 'Ranked', tone: 'positive' },
+  not_enough_data: { label: 'Not ranked: not enough data', tone: 'neutral' },
+  no_recorded_demand: { label: 'No recorded imports', tone: 'neutral' },
+  excluded: { label: 'Excluded by policy', tone: 'critical' },
+};
+
+/** The model's score as stored. A v5 market that is not ranked shows its partial score as partial. */
+function AiScoreCell({ row }: { row: MarketControlRow }) {
+  if (row.v5 && row.v5.market_status !== 'ranked') {
+    if (row.v5.overall_score == null) return <span className="text-[var(--color-text-muted)]">—</span>;
+    return (
+      <div>
+        <span className="text-primary">{row.v5.overall_score}</span>
+        <div className="text-xs text-[var(--color-text-muted)]">partial · {row.v5.live_points ?? 0} of 100 points</div>
+      </div>
+    );
+  }
+  return <span className="text-primary">{num(row.assessment.overall_score)}</span>;
+}
+
+/** Terminal candidates show "—", never a manufactured position; so do markets the model did not rank. */
 function OperationalOrderCell({ row }: { row: MarketControlRow }) {
   if (row.operationalOrder === null) {
     return (
       <div>
         <span className="font-semibold text-[var(--color-text-muted)]">—</span>
-        <div className="text-xs text-[var(--color-text-muted)]">Excluded</div>
+        <div className="text-xs text-[var(--color-text-muted)]">{row.bucket === 'terminal' ? 'Excluded' : 'Not ranked'}</div>
       </div>
     );
   }
@@ -245,12 +267,20 @@ export function DemandDiscoveryControl({
               >
                 <td className="px-3 py-3">
                   <div className="font-medium text-primary">{row.assessment.country_code}</div>
-                  <div className="text-xs text-[var(--color-text-muted)]">
-                    {row.assessment.eligibility_status}
-                  </div>
+                  {row.v5 ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <StatusChip label={V5_STATUS[row.v5.market_status]?.label ?? row.v5.market_status} tone={V5_STATUS[row.v5.market_status]?.tone ?? 'neutral'} icon="dot" size="sm" />
+                      {row.v5.flag_reasons.length ? <StatusChip label="Flagged" tone="warning" icon="alert" size="sm" detail={row.v5.flag_reasons.join(' ')} /> : null}
+                      {row.v5.handed_off ? <StatusChip label="Top 10" tone="info" icon="check" size="sm" detail="Handed on to regional discovery." /> : null}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {row.assessment.eligibility_status}
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-3 text-right text-primary">{num(row.modelRank)}</td>
-                <td className="px-3 py-3 text-right text-primary">{num(row.assessment.overall_score)}</td>
+                <td className="px-3 py-3 text-right"><AiScoreCell row={row} /></td>
                 <td className="px-3 py-3 text-right text-[var(--color-text-secondary)]">
                   {num(row.assessment.confidence_score)}
                 </td>
@@ -272,7 +302,7 @@ export function DemandDiscoveryControl({
 
       <details className="rounded-lg border border-[var(--color-border)] bg-surface p-4 shadow-card">
         <summary className="cursor-pointer text-sm font-semibold text-primary">
-          Component scores, weights and provenance
+          {rows.some((row) => row.v5) ? 'Measures, points and provenance' : 'Component scores, weights and provenance'}
         </summary>
         <div className="mt-3 space-y-5">
           {rows.map((row) => (
@@ -283,7 +313,7 @@ export function DemandDiscoveryControl({
                   AI score {num(row.assessment.overall_score)} · AI rank {num(row.modelRank)}
                 </span>
               </h4>
-              <div className="mt-2"><ComponentBreakdown row={row} /></div>
+              <div className="mt-2">{row.v5 ? <V5Breakdown detail={row.v5} /> : <ComponentBreakdown row={row} />}</div>
               <div className="mt-2"><Provenance row={row} /></div>
               <div className="mt-3">
                 <h5 className="text-xs font-semibold text-primary">Decision history</h5>

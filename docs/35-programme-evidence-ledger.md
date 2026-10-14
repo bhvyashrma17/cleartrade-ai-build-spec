@@ -564,7 +564,59 @@ assessment` (11), `phase-1h-operational-pillars` (4), `licensed-tariff-evidence`
 `demand-discovery-ui` (22): all passing. The run suite now scores HS 100890, which no other suite
 uses, because market-access evidence is immutable and stays in the shared test schema.
 
+**CI defect found after push (`8f9b344`, run 38435824816; also `65c5f99`).** CI runs every suite
+against one database. The ECGC suite imported the real ECGC text and superseded it in its clean-up;
+the v5 run suite then imported the same bytes and was refused ("since superseded" — by design, an
+older source is never re-activated). Local runs had used a fresh schema per file and missed it.
+Fixed in `bde7c5c`: each suite appends a suffix the parsers ignore, so its bytes are its own.
+Reproduced first by running both suites in one schema, then verified by the full suite in one
+schema in CI's file order: 2,145 passed, 5 skipped, 3 failed — the same three local-harness-only
+failures as E-006. From here every push is preceded by that single-schema full run.
+
+### E-016 · 2026-10-13 · v5: agent and ops views, calibration script, environment runbook
+
+**Built** on `dd5/demand-discovery-v5` (docs/36 §7.1, §10):
+- `src/lib/demand-discovery-v5/detail.ts`: one builder for the v5 view of a stored assessment, used
+  by the exporter's market page (replacing its inline copy) and the agent control surface.
+- Agent control table: for a v5 run the model rank is the stored rank — only `ranked` markets have
+  one, so a partial score (a not-ranked market can score above ranked ones) is shown as partial and
+  never ranked; rows order by rank, then score with unscored markets last; the market cell shows the
+  v5 status, flags and top-10 hand-off; the details open the same five-part, twelve-measure
+  breakdown the exporter sees. An empty operational order now reads "Not ranked" unless an agent
+  excluded the market. `agent-decisions.ts` freezes the stored v5 rank on a decision instead of
+  counting higher scores, which would have frozen a rank v5 never gave.
+- `/ops/discovery`: a v5 panel (`src/lib/demand-discovery-v5/operations.ts`, Ops only): whether runs
+  can start and why not, switches and policy version, every dataset a run reads with version, import
+  date, origin and what its absence costs, last-7-day counts by status, and the 20 latest runs with
+  ranked count, top markets and each run's notes on what it could not use.
+- `scripts/dd5-compare-top10.ts` and `calibration.ts`: the docs/36 §8 check — a finished run's top 10
+  against India's ten largest destinations in the BACI release the run used, over the size metric's
+  years; `calibration_failure` when fewer than half appear, with what the run said about each miss.
+  Read-only.
+- docs/36 §10: the environment runbook (BACI, WDI, getDa, the repository's reference files, R-19
+  re-derivation, the ops check, the three archetype runs and the calibration check), with every
+  sha256.
+- `vitest.config.ts` compiles JSX with React's automatic runtime (as Next.js does) so a test can
+  render a component; no existing test rendered JSX.
+
+**Decisions left with the owner** (recommended defaults in docs/36 §7.1): tariff acquisition inside
+v5 runs (not built; official duty appears only where evidence was ingested); the release-level
+Comtrade fallback (not built; an environment without BACI keeps the earlier engine, and BACI becomes
+a bootstrap step).
+
+**Checks run.** `tsc --noEmit` clean; ESLint `--max-warnings=0` clean on every changed file. New
+tests: `demand-discovery-v5-operations` (2: Ops only; datasets with what their absence costs; a run's
+status, ranked count, top markets and notes; the panel rendered server-side),
+`demand-discovery-v5-calibration` (2: overlap, misses with the run's reasons, failure and
+no-exports verdicts), two v5 cases in `demand-control` (stored rank, a partial score above two
+ranked markets left unranked, the v5 breakdown, a promoted unranked market, the stored rank frozen
+on decisions); `agent-decisions` (41) unchanged and passing. Full suite in one schema, CI's file
+order: 136 files, 2,151 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006.
+CI on `bde7c5c` (run 38439833133): passed. `65c5f99` (run 38438664689) failed on the shared-bytes
+defect above, as `8f9b344` had.
+
 ## Risk register
+
 
 | Id | Risk | Status | Next evidence |
 |---|---|---|---|

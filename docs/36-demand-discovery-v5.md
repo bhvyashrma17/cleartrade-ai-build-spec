@@ -283,8 +283,20 @@ reads the frozen releases and passes their rows in).
   without an ECB rate fall back to the labelled estimate with the reason recorded. v5 does not
   acquire tariffs itself: a market has official duty only where evidence was ingested earlier
   (`ingest:market-access` or a deep run with the WP2 switch on); the run says when there is none.
-- **Not yet wired.** Tariff acquisition inside v5 runs, the release-level Comtrade fallback (a run
-  without BACI fails), and the agent and ops views of v5 fields.
+- **Agent and ops views (13 Oct 2026, E-016).** The agent's market control table
+  (`/agent/exporters/:org/products/:product/markets/manage`) reads a v5 run's stored rank — only
+  ranked markets have one, so a partial score is shown as partial and never ranked — orders by it,
+  shows each market's status, flags and top-10 hand-off, and opens the same five-part, twelve-measure
+  breakdown the exporter sees (`src/lib/demand-discovery-v5/detail.ts`, one builder for both). An
+  agent decision freezes the stored rank, not a count of scores. `/ops/discovery` gains a v5 panel:
+  whether runs can start here and why not, the switches and policy version, each dataset a run reads
+  with its version and what its absence costs, last-7-day run counts by status, and the 20 latest
+  runs with their ranked count, top markets and the notes on what each could not use.
+- **Not built, for the owner to decide.** Tariff acquisition inside v5 runs (E-015) and the
+  release-level Comtrade fallback of §3.3: with no BACI release an environment keeps the earlier
+  engine, as it does today; recommended default is to keep it that way and make the BACI import part
+  of each environment's bootstrap (§10), because a Comtrade-only run costs several of the 500 daily
+  calls per product and leans entirely on the R-14 licence.
 
 ## 8. Verification
 
@@ -314,3 +326,56 @@ reads the frozen releases and passes their rows in).
   Saint Barthélemy.
 - The ECGC parser reads one layout. A new circular that changes it fails the import with the line
   that broke; it is never half-read.
+
+## 10. Bringing an environment up (operator runbook)
+
+Run from the repository root on a machine that can reach the environment's database (TCP proxy) and
+bucket, with that environment's operator env file (for staging, the one kept in the gitignored
+`tmp/rw/`, docs/33 §3). Every import checks the database identity first, refuses a file whose sha256
+differs from the one stated, runs twice and requires the second run to be UNCHANGED. Nothing here
+touches production.
+
+1. **Code and schema.** The v5 branch is merged and deployed; the pre-deploy step applies migrations
+   `20261013100000`, `20261013180000` and `20261013181000`; `/api/health/ready` is `ready`. The
+   deploy restarts the worker, which must happen after a new `JobType` (AGENTS.md).
+2. **BACI** (about 1.1 GB; the import streams each archive into year/chapter partitions in the bucket):
+
+   ```
+   npx tsx --env-file=<env> scripts/import-trade-dataset-release.ts --file=<dir>/BACI_HS17_V202601.zip \
+     --expect-sha256=16aaa22d3b000cc87744c2c28ac97ce44394c3adf315ec259451d5bb4fcae609 --version=V202601 --hs-revision=HS17 \
+     --source-url=https://www.cepii.fr/DATA_DOWNLOAD/baci/data/BACI_HS17_V202601.zip --retrieved-at=2026-10-13 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-trade-dataset-release.ts --file=<dir>/BACI_HS22_V202601.zip \
+     --expect-sha256=376f9b4cda53710a580f347b9bae69c5fb16911d0ae19b50896c109bd5dfb1f7 --version=V202601 --hs-revision=HS22 \
+     --source-url=https://www.cepii.fr/DATA_DOWNLOAD/baci/data/BACI_HS22_V202601.zip --retrieved-at=2026-10-13 --actor-email=<operator>
+   ```
+
+   Each release's validation must list `iso2_from_iso3: [{ provider_code: "516", iso2_cell: "", iso3: "NAM", iso2: "NA" }]`.
+3. **World Bank indicators** (files from 13 Oct, sha256 in `data/dd5-snapshots/manifest.json`):
+   `--dataset=wdi:LP.LPI.OVRL.XQ` (`d44b7fd4…`), `wdi:TM.TAX.MANF.SM.AR.ZS` (`ed0c03e4…`) and
+   `wdi:TM.TAX.TCOM.SM.AR.ZS` (`e292f1e0…`) through `scripts/import-reference-dataset.ts`, each with
+   `--source-url` set to its API URL in that manifest and `--retrieved-at=2026-10-13`.
+4. **Comtrade reporting lists**: download `https://comtradeapi.un.org/public/v1/getDa/C/A/HS?period=2024`
+   and `…period=2025` (public, no key), then import each as `comtrade:availability:2024` /
+   `comtrade:availability:2025` with its own sha256 and the download date.
+5. **Files in the repository** (provenance comes from `data/reference/manifest.json`; the derived ones
+   need no `--source-url` or `--retrieved-at`):
+
+   ```
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=ecgc:country-risk:short-term \
+     --file=data/reference/ecgc-country-risk-st-2026-07-01.txt --expect-sha256=7985b79e392e2b2144aea565c5fbe5f867a03ecc2c55680b2da3ac3c77f40311 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=cepii:geo_cepii \
+     --file=data/reference/geo_cepii.csv --expect-sha256=cd6398aef5bdf655e09e646a7082d2c844f3d2fab47d37c6fd6922cfed4afe93 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=india:trade-agreements \
+     --file=data/reference/india-trade-agreements-v1.json --expect-sha256=0e2588c971dd25605033f74cfb62e94b2d4b17486560e54ad104919d678d8075 \
+     --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/india-trade-agreements-v1.json \
+     --retrieved-at=2026-10-13 --actor-email=<operator>
+   ```
+
+   R-19, once: `pdftotext -layout <ECGC PDF> -` and a CSV export of `geo_cepii.dta` should reproduce
+   the two derived files byte for byte; if not, diff before importing the re-derived file.
+6. **Check.** `/ops/discovery` shows "Runs can start" and no dataset "Not imported".
+7. **Archetype runs** (D-003): for a paid test tenant, create rice `100630`, brassware `741810` and
+   carpets `570110` and confirm each classification; v5 starts by itself. When each run finishes:
+   `npx tsx --env-file=<env> scripts/dd5-compare-top10.ts --run=<run id>`. `verdict: calibration_failure`
+   (the top 10 leaves out more than half of India's ten largest destinations) is a finding to
+   investigate through `missed`, not a pass.

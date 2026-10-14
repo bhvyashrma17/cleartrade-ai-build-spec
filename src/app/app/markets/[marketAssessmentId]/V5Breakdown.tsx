@@ -7,25 +7,12 @@
  */
 
 import { StatusChip } from '@/components/ui';
+import type { V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { metricSentence } from '@/lib/demand-discovery-v5/explain';
 import type { MetricResult } from '@/lib/demand-discovery-v5/metrics';
-import { V5Labels, V5Reasons, type V5Label, type V5Reason } from '../V5Results';
+import { V5Labels, V5Reasons } from '../V5Results';
 
-export interface V5Detail {
-  market_status: 'ranked' | 'not_enough_data' | 'no_recorded_demand' | 'excluded';
-  rank: number | null;
-  total_ranked: number;
-  overall_score: number | null;
-  confidence_score: number;
-  live_points: number | null;
-  data_year: number | null;
-  labels: V5Label[];
-  reasons: V5Reason[];
-  flag_reasons: string[];
-  handed_off: boolean;
-  parts: { part: string; points: number; live_points: number; score: number | null }[];
-  metrics: MetricResult[];
-}
+export type { V5Detail };
 
 const PART_NAMES: Record<string, string> = {
   demand: 'Demand', india_opportunity: "India's opportunity", access: 'Access', risk: 'Risk', exporter_fit: 'Fit with your business',

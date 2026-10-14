@@ -8,6 +8,8 @@
 import { redirect } from 'next/navigation';
 import { getPrincipal } from '@/lib/auth';
 import { demandDiscoveryOperations } from '@/lib/country-discovery/scan-requests';
+import { demandDiscoveryV5Operations } from '@/lib/demand-discovery-v5/operations';
+import { DemandDiscoveryV5Panel } from '@/components/ops/DemandDiscoveryV5Panel';
 import { isOps } from '@/lib/permissions';
 import { PageHeader } from '@/components/ui';
 import { SummaryHeader } from '@/components/discovery';
@@ -20,16 +22,17 @@ export default async function DemandDiscoveryOpsPage() {
   if (!principal) redirect('/login');
   // UI visibility is not authorization — the service re-checks the role too.
   if (!isOps(principal)) redirect('/app/overview');
-  const overview = await demandDiscoveryOperations(principal);
+  const [overview, v5] = await Promise.all([demandDiscoveryOperations(principal), demandDiscoveryV5Operations(principal)]);
 
   return (
     <>
       <PageHeader
         eyebrow="Operations"
         title="Demand Discovery"
-        description="Scan requests, running analyses and evidence awaiting review."
+        description="Demand Discovery v5 readiness and runs, scan requests, and evidence awaiting review."
       />
       <div className="space-y-6">
+        <DemandDiscoveryV5Panel overview={v5} />
         <SummaryHeader
           title="Right now"
           stats={[

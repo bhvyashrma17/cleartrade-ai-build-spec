@@ -23,6 +23,7 @@ import { AgentDecisionAction, AgentDecisionTarget, Prisma, type AgentDecision, t
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { forbidden, notFound, validationError } from '@/lib/errors';
 import { isAgent, isOps, assignedOrgIds } from '@/lib/permissions';
+import { isV5Assessment } from '@/lib/demand-discovery-v5/detail';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -308,21 +309,25 @@ async function marketSubject(db: Db, id: string): Promise<SubjectSnapshot> {
     where: { id },
     select: {
       id: true, run_id: true, overall_score: true, confidence_score: true,
-      model_version: true, scoring_policy_hash: true,
+      model_version: true, scoring_policy_hash: true, market_status: true, rank: true,
       run: { select: { exporter_org_id: true } },
     },
   });
   if (!assessment) throw notFound('Market assessment not found.');
 
-  // Rank is not stored — it is the model's ordering within the run, so it is computed the
-  // same way the UI orders (@@index([run_id, overall_score])) and then frozen onto the row.
+  // Demand Discovery v5 stores its rank, and only ranked markets have one: a market shown with a
+  // partial score is not ranked, so counting scores would freeze a rank the model never gave.
+  // Earlier engines store none — their rank is the model's ordering within the run, computed
+  // the same way the UI orders (@@index([run_id, overall_score])) and then frozen onto the row.
   // Counting strictly-greater scores makes ties share a rank rather than inventing an order
   // the model never expressed.
-  const rank = assessment.overall_score == null
-    ? null
-    : 1 + await db.marketAssessment.count({
-        where: { run_id: assessment.run_id, overall_score: { gt: assessment.overall_score } },
-      });
+  const rank = isV5Assessment(assessment)
+    ? assessment.rank
+    : assessment.overall_score == null
+      ? null
+      : 1 + await db.marketAssessment.count({
+          where: { run_id: assessment.run_id, overall_score: { gt: assessment.overall_score } },
+        });
 
   return {
     exporterOrgId: assessment.run.exporter_org_id,
