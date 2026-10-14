@@ -615,6 +615,29 @@ order: 136 files, 2,151 passed, 5 skipped, 3 failed — the three local-harness-
 CI on `bde7c5c` (run 38439833133): passed. `65c5f99` (run 38438664689) failed on the shared-bytes
 defect above, as `8f9b344` had.
 
+### E-017 · 2026-10-14 · Status report for the owner; tariff acquisition recommendation revised
+
+The owner asked what "complete" meant. Answer, recorded in the Claude Doc "Demand Discovery v5 —
+Workflow and Status" (https://claude.ai/code/artifact/f70f1f8f-756f-48c0-9161-89f8c9bf05b3): the code
+is written and tested (CI green on `9935f11`); nothing runs on staging or production; most duties
+would be estimates; accuracy is unproven until the three archetype runs.
+
+**Verified for the report.**
+- Customs Atlas destination adapters: 60 codes, 53 of them screening markets — 51 read retained
+  authority releases (27 EU members through TARIC, plus 24 national sources) and GB and US are live
+  look-ups (`DESTINATION_ADAPTERS`, listed at runtime). The 11 Oct staging acceptance
+  (`docs/customs-atlas/railway-staging-acceptance-2026-10-11.md`) loaded those releases; staging holds
+  market-access snapshots only for the pairs it checked (for HS 100630: ID, UZ, VN, and MC outside
+  the universe).
+- World Bank coverage of the 218 markets, from the 13 Oct files: tariff averages 187 (latest value
+  per country, years 2002 to 2022), logistics index 168 (2007 to 2022). 31 markets have no tariff
+  average; of those only LU has an Atlas source. India has an agreement in force with 32 markets.
+
+**Recommendation revised (owner decision pending).** Tariff acquisition inside v5 runs: E-015 said
+not to build it yet, on the cost of up to 53 adapter runs per product. With the releases already on
+staging, 51 of those runs read local releases and two are live calls, so the recommendation is now to
+build it behind a switch. New proposal: treat a World Bank value older than 10 years as missing (R-20).
+
 ## Risk register
 
 
@@ -639,3 +662,4 @@ defect above, as `8f9b344` had.
 | R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Open (E-010) | Imports run on the owner's machine or the Railway worker |
 | R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |
 | R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Open (E-014) — originals' sha256 recorded in `data/reference/manifest.json` | Owner re-derives both from the originals and compares sha256 (runbook); a mismatch is diffed before import |
+| R-20 | v5 uses each country's latest World Bank value however old: tariff averages as old as 2002 and logistics scores as old as 2007 feed the duty estimate and the logistics metric | Open (E-017) — proposal: values older than 10 years count as missing | Owner decision; then a policy field and a test |

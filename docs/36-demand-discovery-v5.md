@@ -292,11 +292,17 @@ reads the frozen releases and passes their rows in).
   whether runs can start here and why not, the switches and policy version, each dataset a run reads
   with its version and what its absence costs, last-7-day run counts by status, and the 20 latest
   runs with their ranked count, top markets and the notes on what each could not use.
-- **Not built, for the owner to decide.** Tariff acquisition inside v5 runs (E-015) and the
-  release-level Comtrade fallback of §3.3: with no BACI release an environment keeps the earlier
-  engine, as it does today; recommended default is to keep it that way and make the BACI import part
-  of each environment's bootstrap (§10), because a Comtrade-only run costs several of the 500 daily
-  calls per product and leans entirely on the R-14 licence.
+- **Not built, for the owner to decide.**
+  - *Tariff acquisition inside v5 runs.* Recommended: build it behind a switch (E-017). 51 of the 53
+    Customs Atlas markets read authority releases staging already holds; only GB and US are live
+    look-ups. Without it a market has an official duty only where that product's tariff was
+    ingested earlier.
+  - *The release-level Comtrade fallback of §3.3.* Recommended: do not build it. An environment with
+    no BACI release keeps the earlier engine, as it does today, and the BACI import becomes part of
+    each environment's bootstrap (§10). A Comtrade-only run costs several of the 500 daily calls per
+    product and leans entirely on the R-14 licence.
+  - *A maximum age for World Bank values.* Recommended: treat a value older than 10 years as
+    missing (R-20).
 
 ## 8. Verification
 
@@ -313,6 +319,8 @@ reads the frozen releases and passes their rows in).
 - BACI ends in 2024; the newest-year chain-link covers only markets Comtrade has for 2025.
 - Unit values at HS6 mix cheap and premium goods; price metrics carry 15 of 100 points for that reason.
 - Duty estimates (§4.7) can be wrong for a specific product; they are always labelled.
+- World Bank values are the latest a country has, however old: 187 of the 218 markets have a tariff
+  average (as old as 2002) and 168 a logistics score (as old as 2007). No age limit applies yet (R-20).
 - The official duty is the ordinary rate even where an Indian preference may apply, so it can
   overstate the duty an exporter who qualifies under rules of origin would pay; the preference is
   shown. The estimate path, by contrast, assumes an agreement in force is used (§4.7).
