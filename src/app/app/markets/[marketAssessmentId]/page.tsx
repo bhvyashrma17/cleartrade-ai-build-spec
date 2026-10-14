@@ -16,6 +16,7 @@ import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { tenantScopeVia } from '@/lib/permissions';
 import { MarketDetail } from './MarketDetail';
+import { isV5Assessment, v5Detail, type V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { allowedEvidenceOrigins, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
 export default async function MarketDetailPage({
@@ -51,6 +52,11 @@ export default async function MarketDetailPage({
   });
   const rank = siblings.findIndex((s) => s.id === assessment.id) + 1;
 
+  // Demand Discovery v5 rows carry their own rank, status and five-part breakdown (docs/36).
+  const v5: V5Detail | null = isV5Assessment(assessment)
+    ? v5Detail(assessment, await prisma.marketAssessment.count({ where: { run_id: assessment.run_id, market_status: 'ranked' } }))
+    : null;
+
   const snapshot = assessment.run.input_snapshot as { description?: string | null } | null;
 
   return (
@@ -79,8 +85,8 @@ export default async function MarketDetailPage({
         generated_at: assessment.generated_at.toISOString(),
         is_selected: assessment.is_selected,
         is_saved: assessment.saved_at !== null,
-        rank,
-        total_ranked: siblings.length,
+        rank: v5 ? v5.rank : rank,
+        total_ranked: v5 ? v5.total_ranked : siblings.length,
         evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
       }}
       buyerDiscoveryHref={{
@@ -88,6 +94,7 @@ export default async function MarketDetailPage({
         countryCode: assessment.country_code,
       }}
       productDescription={snapshot?.description ?? assessment.product?.name ?? null}
+      v5={v5}
     />
   );
 }

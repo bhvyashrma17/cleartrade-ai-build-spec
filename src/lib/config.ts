@@ -26,6 +26,7 @@ import type {
   MarketAccessV2Policy,
 } from '@/lib/country-truth/phase-1h-calculations';
 import type { Money } from '@/types';
+import { DEMAND_DISCOVERY_V5_DEFAULT_POLICY, type DemandDiscoveryV5Policy } from '@/lib/demand-discovery-v5/policy';
 
 // ---------------------------------------------------------------------------
 // Config keys and their value shapes
@@ -133,6 +134,7 @@ export interface ConfigShape {
   'country_truth.market_access_orchestration': CountryTruthMarketAccessOrchestrationPolicy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
+  'demand_discovery.v5': DemandDiscoveryV5Config;
   /**
    * Membership prices. Here — not in `src/lib/billing/plans.ts` — because money is never a
    * literal in application code (docs/01 §2), and because Ops must be able to reprice
@@ -149,6 +151,26 @@ export interface ConfigShape {
  * anything, so there are no weights here — only how much to show and how to bucket the
  * cache key.
  */
+/**
+ * Demand Discovery v5 (docs/36). The scoring policy is frozen into every run with its hash; the
+ * switches decide when v5 runs and which providers it may call. `enabled: false` returns new runs
+ * to the earlier engine without a deploy.
+ */
+export interface DemandDiscoveryV5Config {
+  enabled: boolean;
+  /** D-018: confirming a product's classification starts a run (paid tier only). */
+  auto_start_on_classification: boolean;
+  /** D-010/R-14: use Comtrade for the newest year (§5.3). */
+  comtrade_newest_year: boolean;
+  /** D-010/R-14: use a market's own Comtrade series where BACI lacks it (§3.3). */
+  comtrade_market_fallback: boolean;
+  /** maxRecords for one batched Comtrade call (the free key allows 100,000). */
+  comtrade_max_records: number;
+  /** How far back an FX observation may be walked for the exporter's price (days). */
+  fx_max_lookback_days: number;
+  policy: DemandDiscoveryV5Policy;
+}
+
 export interface MarketEstimatePolicy {
   /** How many top-importing markets the estimate names. */
   top_n_markets: number;
@@ -980,6 +1002,15 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     quantity_band_breakpoints: [100, 1_000, 10_000],
   },
   'billing.plans': DEFAULT_PLAN_PRICING,
+  'demand_discovery.v5': {
+    enabled: true,
+    auto_start_on_classification: true,
+    comtrade_newest_year: true,
+    comtrade_market_fallback: true,
+    comtrade_max_records: 100_000,
+    fx_max_lookback_days: 7,
+    policy: DEMAND_DISCOVERY_V5_DEFAULT_POLICY,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1034,6 +1065,12 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
       exporter_market_fit:{...defaults.exporter_market_fit,...(stored.exporter_market_fit??{})},
       logistics_feasibility:{...defaults.logistics_feasibility,...(stored.logistics_feasibility??{})},
     } as ConfigShape[K];
+  }
+  if (key === 'demand_discovery.v5') {
+    // A stored row replaces the policy whole when it carries one: a partial policy would hash as
+    // a version nobody wrote. Switches merge over defaults so an older row stays complete.
+    const defaults = CONFIG_DEFAULTS['demand_discovery.v5'], stored = row.value as Partial<DemandDiscoveryV5Config>;
+    return { ...defaults, ...stored, policy: stored.policy ?? defaults.policy } as ConfigShape[K];
   }
   if (key === 'country_truth.market_access_orchestration') {
     return { ...CONFIG_DEFAULTS['country_truth.market_access_orchestration'], ...(row.value as object) } as ConfigShape[K];

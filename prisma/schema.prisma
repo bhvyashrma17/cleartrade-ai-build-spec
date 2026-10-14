@@ -581,6 +581,9 @@ enum JobType {
   import_record_retention
   market_access_ingest
   notification_delivery
+  /// Demand Discovery v5 (docs/36): every screening market for one confirmed HS6, from the
+  /// retained BACI release, reference datasets and a batched Comtrade newest year.
+  demand_discovery_v5
 }
 
 enum NotificationChannel {
@@ -877,6 +880,8 @@ model User {
   market_scan_requests_decided   MarketScanRequest[]               @relation("MarketScanDecider")
 
   authority_releases_imported    AuthorityRelease[]                @relation("AuthorityReleaseImporter")
+  trade_dataset_releases_imported TradeDatasetRelease[]            @relation("TradeDatasetImporter")
+  reference_dataset_releases_imported ReferenceDatasetRelease[]    @relation("ReferenceDatasetImporter")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -1130,6 +1135,7 @@ model ProductClassification {
   country_trade_metrics        CountryTradeMetrics[]
   country_truth_fact_snapshots CountryTruthFactSnapshot[]
   classification_refinements   ProductClassificationRefinement[]
+  discovery_runs               DiscoveryRun[]
 
   market_scan_requests   MarketScanRequest[]
 
@@ -1232,10 +1238,23 @@ model DiscoveryRun {
   completed_at DateTime?
   created_at   DateTime  @default(now())
 
-  exporter_org       ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  /// docs/36 §7. Null on runs before v5. `market-opportunity-v5` for a v5 run.
+  model_version     String?
+  /// classification_confirmed | manual | refresh — what started the run (D-018).
+  trigger           String?
+  /// The confirmed classification the run scored, frozen at enqueue.
+  classification_id String?
+  /// Every release, policy and provider read the run used, with checksums.
+  frozen_inputs     Json?
+  /// Counts by market status and the top markets handed on to regional discovery.
+  summary           Json?
+
+  exporter_org       ExporterOrg            @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  classification     ProductClassification? @relation(fields: [classification_id], references: [id], onDelete: SetNull)
   market_assessments MarketAssessment[]
 
   @@index([exporter_org_id, created_at])
+  @@index([product_id, model_version, created_at], map: "DiscoveryRun_product_model_idx")
 }
 
 model MarketAssessment {
@@ -1335,6 +1354,22 @@ model MarketAssessment {
   /// Phase 1H facts are immutable records separate from the scores derived from them.
   country_truth_fact_snapshot_id       String?
   country_truth_fact_snapshot_checksum String?
+
+  /// docs/36 (v5): ranked | not_enough_data | no_recorded_demand | excluded. Null before v5.
+  market_status   String?
+  /// 1 = best. Only ranked markets have one.
+  rank            Int?
+  /// Points (of 100) whose metrics had data; the score shares the missing points among them.
+  live_points     Int?
+  /// The newest year the market's demand figures come from.
+  data_year       Int?
+  /// The five parts and the twelve metrics, each with its score, quality and inputs.
+  score_breakdown Json?
+  labels          Json      @default("[]")
+  reasons         Json      @default("[]")
+  flag_reasons    Json      @default("[]")
+  /// Among the top markets passed on to regional and buyer discovery (D-019).
+  handed_off      Boolean   @default(false)
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
@@ -5336,4 +5371,129 @@ model AuthorityRelease {
   @@index([source_family, authority, status, reference_date], map: "AuthorityRelease_source_status_reference_idx")
   @@index([previous_release_id], map: "AuthorityRelease_previous_release_id_idx")
   @@map("TaricRelease")
+}
+
+/// docs/36 §3.1. A retained bulk trade dataset release, e.g. CEPII BACI HS17 V202601. Rows are
+/// never stored in the database: the archive is partitioned by year and HS2 chapter into gzip CSV
+/// objects in storage, each with its own checksum, and a run reads only the partitions it needs.
+/// Identity fields are immutable by trigger; only the import's own progress fields move, and only
+/// while `status` is `importing`.
+model TradeDatasetRelease {
+  id              String                    @id @default(cuid())
+  /// Provider key, e.g. `cepii_baci`.
+  provider        String
+  /// The publisher's version label, e.g. `V202601`.
+  dataset_version String
+  /// The HS nomenclature the publisher used for this file, e.g. `HS17`.
+  hs_revision     String
+  first_year      Int
+  last_year       Int
+  source_url      String
+  /// Licence identifier, e.g. `etalab-2.0`. Attribution obligations travel with it.
+  licence         String
+  archive_sha256  String
+  archive_bytes   BigInt
+  retrieved_at    DateTime
+  reader_version  String
+  parser_version  String
+  status          TradeDatasetReleaseStatus @default(importing)
+  row_count       BigInt                    @default(0)
+  partition_count Int                       @default(0)
+  /// SHA-256 over the sorted partition manifest, so the whole release has one identity.
+  manifest_sha256 String?
+  /// Member listing, header checks and, on failure, the reason.
+  validation      Json                      @default("{}")
+  environment     String
+  evidence_origin EvidenceOrigin
+  imported_by_id  String
+  imported_at     DateTime                  @default(now())
+  completed_at    DateTime?
+  superseded_at   DateTime?
+  correlation_id  String?
+
+  imported_by User                    @relation("TradeDatasetImporter", fields: [imported_by_id], references: [id])
+  partitions  TradeDatasetPartition[]
+  countries   TradeDatasetCountry[]
+
+  @@index([provider, hs_revision, status, last_year], map: "TradeDatasetRelease_provider_status_idx")
+}
+
+enum TradeDatasetReleaseStatus {
+  importing
+  ready
+  failed
+  superseded
+}
+
+/// One year × HS2 chapter slice of a trade dataset release, retained as a gzip CSV object.
+/// Append-only.
+model TradeDatasetPartition {
+  id         String  @id @default(cuid())
+  release_id String
+  year       Int
+  hs_chapter String  @db.VarChar(2)
+  object_key String
+  sha256     String
+  bytes      Int
+  row_count  Int
+  /// Sum of the partition's trade values, in the publisher's unit (BACI: thousand current USD).
+  value_sum  Decimal @db.Decimal(24, 3)
+
+  release TradeDatasetRelease @relation(fields: [release_id], references: [id], onDelete: Restrict)
+
+  @@unique([release_id, year, hs_chapter], map: "TradeDatasetPartition_release_year_chapter_key")
+}
+
+/// The release's own country reference: the publisher's numeric code to ISO identity. Provider
+/// identity comes from the provider's reference, never from an alias map (AGENTS.md).
+/// Append-only.
+model TradeDatasetCountry {
+  id            String  @id @default(cuid())
+  release_id    String
+  provider_code String
+  iso2          String? @db.VarChar(2)
+  iso3          String? @db.VarChar(3)
+  name          String
+
+  release TradeDatasetRelease @relation(fields: [release_id], references: [id], onDelete: Restrict)
+
+  @@unique([release_id, provider_code], map: "TradeDatasetCountry_release_code_key")
+  @@index([release_id, iso2], map: "TradeDatasetCountry_release_iso2_idx")
+}
+
+/// docs/36 §3.2. A small reference dataset (ECGC ratings, WDI indicators, capital coordinates,
+/// India's trade agreements, Comtrade data availability) held as validated, immutable rows. A run
+/// freezes the release ids it read. Only `status` and `superseded_at` may change, once.
+model ReferenceDatasetRelease {
+  id              String                        @id @default(cuid())
+  dataset_key     String
+  /// The publisher's own version or "as of" label, e.g. `ST w.e.f. 01.07.2026`.
+  version         String
+  source_url      String
+  source_sha256   String
+  source_bytes    Int
+  licence         String
+  retrieved_at    DateTime
+  parser_version  String
+  row_count       Int
+  rows            Json
+  rows_sha256     String
+  validation      Json                          @default("{}")
+  status          ReferenceDatasetReleaseStatus @default(active)
+  environment     String
+  evidence_origin EvidenceOrigin
+  imported_by_id  String
+  imported_at     DateTime                      @default(now())
+  superseded_at   DateTime?
+  correlation_id  String?
+
+  imported_by User @relation("ReferenceDatasetImporter", fields: [imported_by_id], references: [id])
+
+  @@unique([dataset_key, source_sha256, parser_version, environment], map: "ReferenceDatasetRelease_identity_key")
+  @@index([dataset_key, environment, status, imported_at], map: "ReferenceDatasetRelease_key_status_idx")
+}
+
+enum ReferenceDatasetReleaseStatus {
+  active
+  superseded
 }

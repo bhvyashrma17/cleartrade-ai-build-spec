@@ -406,6 +406,60 @@ describe('marketControlRows against real data', () => {
   });
 });
 
+describe('marketControlRows on a Demand Discovery v5 run', () => {
+  async function v5Fixture() {
+    const s = randomUUID().slice(0, 8);
+    const org = await prisma.exporterOrg.create({ data: { display_name: `V5 Control ${s}`, tier: OrgTier.paid }, select: { id: true } });
+    const agentUser = await prisma.user.create({ data: { email: `v5ctl-${s}@t.test`, name: 'Agent', role: UserRole.agent }, select: { id: true } });
+    await prisma.agentAssignment.create({ data: { exporter_org_id: org.id, agent_user_id: agentUser.id, status: 'active' } });
+    const run = await prisma.discoveryRun.create({ data: { exporter_org_id: org.id, model_version: 'market-opportunity-v5' }, select: { id: true } });
+    const metric = { key: 'market_size', score: 80, quality: 1, reason: null, inputs: { average_imports_usd: 1_000_000 } };
+    const mk = (country: string, data: { overall_score: number | null; market_status: string; rank: number | null; live_points: number | null; handed_off?: boolean; flag_reasons?: string[] }) => prisma.marketAssessment.create({
+      data: {
+        run_id: run.id, country_code: country, confidence_score: 70, model_version: 'market-opportunity-v5', weight_profile_key: 'demand-discovery-v5-policy-v2',
+        weight_profile_version: 1, scoring_policy_hash: 'hash-v5', reproducibility_status: 'reproducible', data_year: 2024,
+        score_breakdown: { parts: [{ part: 'demand', points: 35, live_points: 35, score: 80 }], metrics: [metric] },
+        labels: [{ key: 'big_and_growing', text: 'Big and growing', tone: 'positive' }], reasons: [{ metric: 'market_size', effect: 'adds', text: 'Imports average $1.0 million a year.' }],
+        ...data, flag_reasons: data.flag_reasons ?? [],
+      },
+      select: { id: true },
+    });
+    const us = await mk('US', { overall_score: 80, market_status: 'ranked', rank: 1, live_points: 90, handed_off: true });
+    const de = await mk('DE', { overall_score: 70, market_status: 'ranked', rank: 2, live_points: 85, handed_off: true, flag_reasons: ['ECGC cover is restricted (Group II)'] });
+    // A partial score above both ranked ones: shown, never ranked.
+    const tv = await mk('TV', { overall_score: 85, market_status: 'not_enough_data', rank: null, live_points: 30 });
+    const kp = await mk('KP', { overall_score: null, market_status: 'excluded', rank: null, live_points: null });
+    const agent: Principal = { id: agentUser.id, email: 'a@t.test', name: 'Agent', role: UserRole.agent, exporter_org_id: null, tier: OrgTier.paid };
+    return { runId: run.id, us: us.id, de: de.id, tv: tv.id, kp: kp.id, agent };
+  }
+
+  test('the stored rank is the model rank; a partial score is never ranked; the v5 measures replace the eight components', async () => {
+    const f = await v5Fixture();
+    const rows = await marketControlRows(f.runId);
+    expect(rows.map((r) => [r.assessment.country_code, r.modelRank])).toEqual([['US', 1], ['DE', 2], ['TV', null], ['KP', null]]);
+    const tv = rows.find((r) => r.assessment.id === f.tv)!;
+    expect(tv.operationalOrder).toBeNull();
+    expect(tv.components).toEqual([]);
+    expect(tv.v5).toMatchObject({ market_status: 'not_enough_data', overall_score: 85, live_points: 30, total_ranked: 2, rank: null });
+    expect(rows.find((r) => r.assessment.id === f.de)!.v5).toMatchObject({ rank: 2, handed_off: true, flag_reasons: ['ECGC cover is restricted (Group II)'], metrics: [{ key: 'market_size', score: 80 }] });
+    const ordered = sortByOperationalOrder(rows).map((r) => r.assessment.country_code);
+    expect(ordered.slice(0, 2)).toEqual(['US', 'DE']);
+    expect(ordered.slice(2).sort()).toEqual(['KP', 'TV']);
+  });
+
+  test('an agent may still promote an unranked market; the decision freezes the stored rank, not a count of scores', async () => {
+    const f = await v5Fixture();
+    await promoteMarket({ actor: f.agent, subjectId: f.tv, agentPriority: 1, reason: 'Agent judgement recorded during review.', correlationId: randomUUID() });
+    await promoteMarket({ actor: f.agent, subjectId: f.de, agentPriority: 2, reason: 'Agent judgement recorded during review.', correlationId: randomUUID() });
+    const rows = await marketControlRows(f.runId);
+    const tv = rows.find((r) => r.assessment.id === f.tv)!;
+    expect(tv.operationalOrder).toBe(1);
+    expect(tv.modelRank).toBeNull();
+    expect(tv.current).toMatchObject({ original_rank: null, original_score: 85, original_model_version: 'market-opportunity-v5' });
+    expect(rows.find((r) => r.assessment.id === f.de)!.current).toMatchObject({ original_rank: 2, original_score: 70 });
+  });
+});
+
 describe('Phase 2b: the full write path, assessment -> decision -> audit -> refreshed order', () => {
   async function scenario() {
     const s = randomUUID().slice(0, 8);

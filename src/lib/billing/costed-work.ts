@@ -40,9 +40,12 @@ import { JobType, OrgTier } from '@prisma/client';
  * - `document_generation` — the render pipeline, including malware scanning and object
  *   storage writes per artifact.
  * - `report_export` — bulk render and storage.
+ * - `demand_discovery_v5` — batched Comtrade calls for the newest year and any market-level
+ *   fallback (docs/36 §3.3), against the shared free-key quota.
  */
 export const COSTED_JOB_TYPES: readonly JobType[] = [
   JobType.demand_discovery,
+  JobType.demand_discovery_v5,
   JobType.country_truth_discovery,
   JobType.country_screening,
   JobType.buyer_discovery,

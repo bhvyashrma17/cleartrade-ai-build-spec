@@ -126,6 +126,12 @@ govern every PR.
   `files/v1/app/reference/Reporters.json`), and ISO/M49 stays the geographic identity. When you
   need a provider's internal id, fetch its reference table — never derive one from a mapping built
   for the opposite direction.
+- **A `BEFORE DELETE` trigger must `RETURN OLD`.** `NEW` is NULL in a delete trigger, and a BEFORE
+  trigger that returns NULL cancels the row silently — no error, `DELETE 0`, and an `ON DELETE
+  CASCADE` parent delete leaves the child orphaned. The `MarketAssessment` lineage guard did exactly
+  this for a month (fixed in `20261013181000`, ledger E-012): retries appended duplicate result sets
+  and deleted runs left their assessments behind. When a guard covers `UPDATE OR DELETE`, branch on
+  `TG_OP`, and test that a permitted delete actually removes the row.
 - **Restart the WORKER after adding a `JobType`, or it strands jobs in `processing` forever.**
   A long-running `npm run worker` holds a Prisma client generated before the new enum value
   existed. It still claims the new job (the candidate query selects only `id`, so nothing
@@ -174,6 +180,7 @@ govern every PR.
 | `docs/32-latest-usable-period.md` | Phase 1G: per-country latest-usable-period selection, the fallback walk and its four semantics, mixed-vintage ranking, per-reporter deep analysis windows, and freshness-weighted confidence |
 | `docs/34-phase-1-acceptance-gate.md` | The Phase 1 acceptance gate: proposed thresholds, qualifying-market and Atlas-tariff definitions, evidence matrix, report fields, and the staging runbook for `scripts/gate-phase-1.ts` |
 | `docs/35-programme-evidence-ledger.md` | **Read before starting any roadmap work package.** Append-only record of verified repository/CI/staging state, owner decisions, checks run and open risks |
+| `docs/36-demand-discovery-v5.md` | Demand Discovery v5 (owner-approved 13 Oct 2026): all 218 markets per product from CEPII BACI with Comtrade fallback and newest-year chain-link, the 12 metrics, the five-part score, labels, gates, auto-start on HS confirmation |
 
 ## Build order (don't build portal-by-portal)
 

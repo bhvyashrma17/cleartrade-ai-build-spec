@@ -1471,6 +1471,38 @@ function selectExporterFacts(
   };
 }
 
+/**
+ * Tariff facts alone, for one destination and HS6, under exactly the admission rules
+ * `selectCountryTruthFacts` applies to market-access evidence: the clock, status, supersession,
+ * the exact HS6 line and licensed-content approval. For Demand Discovery v5 (docs/36 §4 metric 7),
+ * which needs the duty on Indian goods but holds no exporter fact snapshot. Rows that are not
+ * tariff rows are ignored rather than rejected.
+ */
+export function selectTariffFactsOnly(args: {
+  scope: CountryTruthSelectionScope;
+  snapshots: readonly Pick<MarketAccessSnapshotRow, 'id' | 'provider' | 'source_dataset'>[];
+  evidence: readonly MarketAccessEvidenceRow[];
+}): { tariffs: ScopedFact<TariffFactValue>[]; rejected: { row_id: string; reason: string }[] } {
+  const { scope } = args;
+  if (!/^[A-Z]{2}$/.test(scope.country_code)) throw new Error('Fact selection requires an ISO alpha-2 destination.');
+  if (!/^[A-Z]{2}$/.test(scope.origin_country_code)) throw new Error('Fact selection requires an ISO alpha-2 origin.');
+  if (!/^\d{6}$/.test(scope.hs6)) throw new Error('Fact selection requires an exact HS6 identity.');
+  if (!scope.exporter_org_id.trim()) throw new Error('Fact selection requires an exporter tenant.');
+  const asOf = Date.parse(scope.as_of_date);
+  if (!Number.isFinite(asOf)) throw new Error('Fact selection requires a valid assessment clock.');
+  const rejected: { row_id: string; reason: string }[] = [];
+  const recorder: Recorder = { reject(_source, rowId, reason) { rejected.push({ row_id: rowId, reason }); } };
+  const rows = args.evidence.filter((row) => row.rule_type === 'destination_tariff' || row.rule_type === 'preferential_tariff_india');
+  const { tariffs } = selectTariffsAndRequirements(
+    rows,
+    scope,
+    asOf,
+    recorder,
+    new Map(args.snapshots.map((snapshot) => [snapshot.id, { provider: snapshot.provider, source_dataset: snapshot.source_dataset }])),
+  );
+  return { tariffs, rejected: rejected.sort((left, right) => left.row_id.localeCompare(right.row_id) || left.reason.localeCompare(right.reason)) };
+}
+
 export function selectCountryTruthFacts(args: {
   scope: CountryTruthSelectionScope;
   exporter_snapshot: CountryTruthExporterFactSnapshot;

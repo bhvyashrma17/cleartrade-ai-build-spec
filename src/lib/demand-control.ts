@@ -22,6 +22,7 @@
 
 import { AgentDecisionAction, type AgentDecision, type MarketAssessment, type Prisma } from '@prisma/client';
 import { effectiveState as decisionState, type AgentDecisionState } from '@/lib/agent-decisions';
+import { isV5Assessment, v5Detail } from '@/lib/demand-discovery-v5/detail';
 import { prisma as prismaDefault } from '@/lib/prisma';
 
 type PrismaLike = Prisma.TransactionClient | typeof prismaDefault;
@@ -329,15 +330,18 @@ export const DEFAULT_DIRECTION: Record<SortKey, 'asc' | 'desc'> = {
 /**
  * Load every market in a run with its model rank and its current agent decision.
  *
- * Rank is computed the way the engine orders (`@@index([run_id, overall_score])`) and by
- * counting strictly-greater scores, so ties share a rank rather than inventing an order the
- * model never expressed — the same rule `agent-decisions.ts` freezes onto a decision.
+ * Demand Discovery v5 stores its own rank (docs/36 §5.2): only `ranked` markets have one, and a
+ * market shown with a partial score is not ranked however high that score is. For earlier engines
+ * rank is computed the way the engine orders (`@@index([run_id, overall_score])`) and by counting
+ * strictly-greater scores, so ties share a rank rather than inventing an order the model never
+ * expressed — the same rule `agent-decisions.ts` freezes onto a decision.
  */
 export async function marketControlRows(runId: string, db: PrismaLike = prismaDefault) {
   const assessments = await db.marketAssessment.findMany({
     where: { run_id: runId },
-    orderBy: [{ overall_score: 'desc' }, { country_code: 'asc' }],
+    orderBy: [{ rank: { sort: 'asc', nulls: 'last' } }, { overall_score: { sort: 'desc', nulls: 'last' } }, { country_code: 'asc' }],
   });
+  const totalRanked = assessments.filter((assessment) => assessment.market_status === 'ranked').length;
 
   const decisions = await db.agentDecision.findMany({
     where: { market_assessment_id: { in: assessments.map((a) => a.id) } },
@@ -366,7 +370,8 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
     // means no current decision — it must not fall through to an older row, which would
     // resurrect an instruction the agent already replaced (see agent-decisions.ts).
     const current = latest && latest.state === 'active' ? latest : null;
-    const modelRank = rankOf(assessment, assessments);
+    const v5 = v5Detail(assessment, totalRanked);
+    const modelRank = v5 ? assessment.rank : rankOf(assessment, assessments);
     return {
       assessment,
       modelRank,
@@ -376,7 +381,9 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
       bucket: bucketFor(current),
       subjectId: assessment.id,
       operationalOrder: operationalOrder({ modelRank, current }),
-      components: componentViews(assessment),
+      // v5 has five parts and twelve measures, not the eight earlier components: `v5` carries them.
+      components: v5 ? [] : componentViews(assessment),
+      v5,
       provenance: modelProvenance(assessment),
     };
   });
@@ -386,5 +393,5 @@ export type MarketControlRow = Awaited<ReturnType<typeof marketControlRows>>[num
 
 function rankOf(assessment: MarketAssessment, all: MarketAssessment[]): number | null {
   if (assessment.overall_score == null) return null;
-  return 1 + all.filter((a) => a.overall_score != null && a.overall_score > assessment.overall_score!).length;
+  return 1 + all.filter((a) => !isV5Assessment(a) && a.overall_score != null && a.overall_score > assessment.overall_score!).length;
 }

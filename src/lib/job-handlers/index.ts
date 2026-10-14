@@ -20,6 +20,7 @@ import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { runCbpManifestIngest } from '@/lib/job-handlers/cbp-manifest';
 import { runBuyerIntelligenceJob } from '@/lib/job-handlers/buyer-intelligence';
 import { runDemandDiscovery } from '@/lib/job-handlers/discovery';
+import { runDemandDiscoveryV5 } from '@/lib/job-handlers/demand-discovery-v5';
 import { runCountryTruthDiscovery } from '@/lib/job-handlers/country-truth-discovery';
 import { runGlobalCountryScreening } from '@/lib/job-handlers/country-screening';
 import { runDocumentGeneration } from '@/lib/job-handlers/documents';
@@ -35,6 +36,7 @@ let registered = false;
 export function registerAllJobHandlers() {
   if (registered) return;
   registerJobHandler(JobType.demand_discovery, runDemandDiscovery);
+  registerJobHandler(JobType.demand_discovery_v5, runDemandDiscoveryV5);
   registerJobHandler(JobType.country_truth_discovery, runCountryTruthDiscovery);
   registerJobHandler(JobType.country_screening, runGlobalCountryScreening);
   registerJobHandler(JobType.readiness_assessment, runReadinessAssessment);
