@@ -27,7 +27,9 @@ export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscovery
       {overview.unavailable_reason ? <p className="text-sm text-[var(--color-text-secondary)]">{overview.unavailable_reason} Product classifications keep using the earlier engine until this is fixed.</p> : null}
       <p className="text-xs text-[var(--color-text-muted)]">
         {overview.environment} · policy {overview.switches.policy_version} · auto-start {overview.switches.auto_start_on_classification ? 'on' : 'off'} ·
-        Comtrade newest year {overview.switches.comtrade_newest_year ? 'on' : 'off'} · Comtrade market fallback {overview.switches.comtrade_market_fallback ? 'on' : 'off'}
+        official tariff look-up {overview.switches.tariff_acquisition ? 'on' : 'off'} ·
+        Comtrade newest year {overview.switches.comtrade_newest_year ? 'on' : 'off'} · Comtrade market fallback {overview.switches.comtrade_market_fallback ? 'on' : 'off'} ·
+        ECB rates {overview.switches.fx_fetch_missing ? 'fetched by runs when missing' : 'not fetched'} (newest stored EUR/USD: {day(overview.fx.latest_usd_observation)})
       </p>
 
       <div>

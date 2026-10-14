@@ -52,6 +52,8 @@ export interface AssessMarketsInput {
   /** Capital coordinates by identity (ISO alpha-2, or a provider identity such as `cepii_baci:490`). */
   coordinates: ReadonlyMap<string, { lat: number; lon: number }>;
   lpi: ReadonlyMap<string, number>;
+  /** Markets whose latest logistics score is older than the policy's World Bank age limit, with its year. */
+  lpi_too_old?: ReadonlyMap<string, number>;
   ecgc: ReadonlyMap<string, EcgcRating>;
   duty: ReadonlyMap<string, Exclude<DutyInput, null>>;
   /** The exporter's own figures; a missing one may carry the specific reason it is missing. */
@@ -222,7 +224,7 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
       }
       metrics.push(
         scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate }, marketUv),
-        scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy),
+        scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy, input.lpi_too_old?.get(context.market) ?? null),
         scoreCountryRisk(rating ?? null, quality.official, policy),
       );
     }

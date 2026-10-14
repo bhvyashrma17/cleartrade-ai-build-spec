@@ -39,6 +39,7 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
     const loaded = await loadRunInputs({
       hs6: snapshot.hs_code, as_of: asOf, product: snapshot.v5_product_facts, config, storage: storageOverride ?? undefined,
       exporter_org_id: run.exporter_org_id, hs_revision: (snapshot.classification_version ?? 'unknown').trim().toUpperCase() || 'UNKNOWN',
+      job_id: ctx.job_id, correlation_id: ctx.correlation_id,
     });
     await ctx.reportProgress(70);
     const result = assessMarkets(loaded.input);

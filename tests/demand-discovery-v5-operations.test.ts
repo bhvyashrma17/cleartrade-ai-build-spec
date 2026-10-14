@@ -67,5 +67,9 @@ describe('Demand Discovery v5 operations view', () => {
     expect(html).toContain(`${MARKER} product`);
     expect(html).toContain('What this run could not use (1)');
     expect(html).toContain('Distance is not scored.');
+    expect(view.switches.fx_fetch_missing).toBe(true);
+    expect(html).toContain('ECB rates fetched by runs when missing');
+    expect(view.switches.tariff_acquisition).toBe(true);
+    expect(html).toContain('official tariff look-up on');
   });
 });

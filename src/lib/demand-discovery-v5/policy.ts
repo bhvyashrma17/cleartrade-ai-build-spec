@@ -36,6 +36,11 @@ export interface DemandDiscoveryV5Policy {
   duty: { ceiling_percent: number; comprehensive_agreement_factor: number; partial_agreement_factor: number; primary_hs_chapters_through: number; official_minimum_confidence: number };
   distance: { minimum_weight_covered: number };
   logistics: { lpi_min: number; lpi_max: number };
+  /**
+   * D-021 (R-20): a World Bank value older than `max_age_years` on the run's date counts as missing.
+   * Applies to the logistics index and both tariff averages, which countries report irregularly.
+   */
+  world_bank: { max_age_years: number };
   risk: { grade_scores: Record<string, number>; restricted_group_i_cap: number; restricted_group_ii_cap: number };
   volume: { full_share: number; zero_share: number; minimum_quantity_coverage: number };
   ranking: { minimum_live_points: number; required_metrics: MetricKey[]; handoff_count: number };
@@ -51,7 +56,8 @@ export interface DemandDiscoveryV5Policy {
 
 export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   // v2 (13 Oct 2026): adds duty.official_minimum_confidence for Customs Atlas duty. No run used v1.
-  policy_version: 'demand-discovery-v5-policy-v2',
+  // v3 (14 Oct 2026): adds world_bank.max_age_years = 10 (D-021, R-20).
+  policy_version: 'demand-discovery-v5-policy-v3',
   model_version: DEMAND_DISCOVERY_V5_MODEL,
   points: {
     market_size: 20, growth: 10, stability: 5,
@@ -77,6 +83,7 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   duty: { ceiling_percent: 25, comprehensive_agreement_factor: 0.5, partial_agreement_factor: 0.8, primary_hs_chapters_through: 27, official_minimum_confidence: 50 },
   distance: { minimum_weight_covered: 0.8 },
   logistics: { lpi_min: 1, lpi_max: 5 },
+  world_bank: { max_age_years: 10 },
   risk: { grade_scores: { A1: 100, A2: 85, B1: 70, B2: 55, C1: 40, C2: 20, D: 0 }, restricted_group_i_cap: 40, restricted_group_ii_cap: 20 },
   volume: { full_share: 0.02, zero_share: 0.25, minimum_quantity_coverage: 0.8 },
   ranking: { minimum_live_points: 60, required_metrics: ['market_size', 'growth'], handoff_count: 10 },
@@ -114,4 +121,5 @@ export function assertPolicy(policy: DemandDiscoveryV5Policy) {
   if (policy.ranking.required_metrics.some((key) => !(key in policy.points))) throw new Error('Required metrics must be policy metrics.');
   if (!(policy.window_years >= 2)) throw new Error('The window needs at least two years.');
   if (!(policy.duty.official_minimum_confidence >= 0 && policy.duty.official_minimum_confidence <= 100)) throw new Error('The official duty confidence minimum must be a percentage.');
+  if (!(Number.isInteger(policy.world_bank.max_age_years) && policy.world_bank.max_age_years >= 0)) throw new Error('The World Bank age limit must be a whole number of years.');
 }
