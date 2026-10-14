@@ -4,6 +4,7 @@
  * inputs is unavailable — it is never scored as zero.
  */
 import type { DemandDiscoveryV5Policy, MetricKey } from './policy';
+import { tooOldReason } from './world-bank';
 import { importsIn, type MarketSeries, type UnitValuePoint } from './series';
 
 export interface MetricResult {
@@ -278,8 +279,8 @@ export function scoreDistanceFit(
   return { key: 'distance_fit', score: round(score, 4), quality, reason: null, inputs: { india_km: round(indiaKm, 1), usual_supplier_km: round(Math.exp(averageLog), 1), covered_share: round(coveredShare, 4) } };
 }
 
-export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
-  if (lpi == null) return unavailable('logistics', 'No logistics performance score for this market.');
+export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy, tooOldYear: number | null = null): MetricResult {
+  if (lpi == null) return unavailable('logistics', tooOldYear != null ? tooOldReason('logistics score', tooOldYear, policy) : 'No logistics performance score for this market.');
   return { key: 'logistics', score: round(linearScore(lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality, reason: null, inputs: { lpi } };
 }
 

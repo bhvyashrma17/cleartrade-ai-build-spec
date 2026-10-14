@@ -66,6 +66,13 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
   });
   const byKey = new Map(active.map((release) => [release.dataset_key, release]));
 
+  // ECB rates are fetched by runs when missing (fx.ts); the newest stored EUR/USD day shows whether any are here yet.
+  const latestUsd = await prisma.authoritativeFxObservation.findFirst({
+    where: { environment, base_currency: 'EUR', quote_currency: 'USD' },
+    orderBy: { observation_date: 'desc' },
+    select: { observation_date: true },
+  });
+
   const since = new Date(Date.now() - 7 * 86_400_000);
   const [recent, counts] = await Promise.all([
     prisma.discoveryRun.findMany({
@@ -101,8 +108,11 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
       auto_start_on_classification: config.auto_start_on_classification,
       comtrade_newest_year: config.comtrade_newest_year,
       comtrade_market_fallback: config.comtrade_market_fallback,
+      fx_fetch_missing: config.fx_fetch_missing,
+      tariff_acquisition: config.tariff_acquisition,
       policy_version: config.policy.policy_version,
     },
+    fx: { latest_usd_observation: latestUsd?.observation_date ?? null },
     baci: baci.map((release) => ({ hs_revision: release.hs_revision, dataset_version: release.dataset_version, first_year: release.first_year, last_year: release.last_year, completed_at: release.completed_at, evidence_origin: release.evidence_origin })),
     reference: expected.map((item): V5DatasetStatus => {
       const release = byKey.get(item.key);

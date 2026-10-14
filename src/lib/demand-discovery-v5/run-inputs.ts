@@ -3,8 +3,9 @@
  *
  * The scoring engine (`assess.ts`) is pure; this module is where the database, object storage and
  * Comtrade meet it. It reads the newest ready BACI releases, runs the HS-revision test, reads the
- * active reference datasets, makes the batched Comtrade calls the config allows, derives the
- * exporter's figures, and records every identity it read — release ids, checksums, evidence ids —
+ * active reference datasets, looks up official tariffs and fetches missing ECB rates when the config
+ * allows, makes the batched Comtrade calls the config allows, derives the exporter's figures, and
+ * records every identity it read — release ids, checksums, evidence ids —
  * so a finished run can say exactly what it was computed from.
  *
  * Missing reference data never fails a run: its metric is unavailable and the run says so.
@@ -17,8 +18,7 @@ import { getConfig, type DemandDiscoveryV5Config } from '@/lib/config';
 import { buildCountryScreeningUniverse } from '@/lib/country-screening/universe';
 import type { DocumentStorage } from '@/lib/document-storage';
 import { prerequisitesNotMet } from '@/lib/errors';
-import { allowedEvidenceOrigins, appEnvironment } from '@/lib/evidence-environment';
-import { deriveFxRate } from '@/lib/fx/ecb';
+import { allowedEvidenceOrigins } from '@/lib/evidence-environment';
 import { parseDutyExpression } from '@/lib/market-access/tariff-semantics';
 import { prisma } from '@/lib/prisma';
 import { ecgcRatingRowSchema } from '@/lib/reference-datasets/ecgc';
@@ -32,15 +32,18 @@ import type { AssessMarketsInput } from './assess';
 import { baciFlowsToTradeFlows } from './baci-flows';
 import { runBatchedComtradeQuery, v5ComtradeAccess, type ComtradeStepResult } from './comtrade-step';
 import { comtradePartnerIdentity, fallbackMarketSeries, newestYearInputs, type ReportedYears } from './comtrade-inputs';
-import { dutyInputs, type SectorTariff } from './duty-inputs';
+import { dutyInputs, tariffSector, type SectorTariff } from './duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg } from './exporter-inputs';
+import { createUsdRateResolver, type UsdRate } from './fx';
 import { resolveOfficialDuty, type OfficialDutyResolution } from './official-duty';
 import { policyHash } from './policy';
+import { acquireV5Tariffs } from './tariff-step';
 import { coordinateInputs, ecgcInputs } from './reference-inputs';
 import { testHsRevision, worldTotals, type HsRevisionTest } from './hs-revision';
+import { splitByAge } from './world-bank';
 import type { TradeFlowInput } from './series';
 
-export const V5_INPUTS_SCHEMA_VERSION = 'demand-discovery-v5-inputs-v1';
+export const V5_INPUTS_SCHEMA_VERSION = 'demand-discovery-v5-inputs-v2';
 
 /** The product facts a run needs, frozen into the run's snapshot at enqueue. */
 export interface V5ProductFacts {
@@ -105,27 +108,13 @@ async function availability(year: number) {
   return { active, codes: new Set((active?.rows ?? []).map((row) => row.reporter_code)) };
 }
 
-/** USD per one unit of `currency` on the run date, from published ECB observations, or null. */
-async function usdRate(currency: string | null, asOf: Date, lookbackDays: number) {
-  if (!currency) return { rate: null, frozen: null };
-  const code = currency.trim().toUpperCase();
-  if (code === 'USD') return { rate: 1, frozen: { currency: 'USD', rate: 1, derivation: 'identity' } };
-  const earliest = new Date(asOf.getTime() - lookbackDays * 86_400_000);
-  const observations = await prisma.authoritativeFxObservation.findMany({
-    where: { environment: appEnvironment(), base_currency: 'EUR', quote_currency: { in: [code, 'USD'] }, observation_date: { gte: earliest, lte: asOf } },
-    select: { id: true, provider: true, series_key: true, base_currency: true, quote_currency: true, rate: true, observation_date: true, retrieved_at: true },
-  });
-  const derived = deriveFxRate({ base_currency: code, quote_currency: 'USD', as_of_date: asOf.toISOString().slice(0, 10), max_lookback_days: lookbackDays, observations });
-  if (derived.status === 'unavailable') return { rate: null, frozen: { currency: code, status: 'unavailable', reason: derived.reason } };
-  return { rate: derived.rate.rate, frozen: { currency: code, ...derived.rate } };
-}
-
 /**
  * Customs Atlas evidence for the product's exact HS6 in every market that has any, resolved to the
  * official duty on Indian goods (`official-duty.ts`) under the deep assessment's admission rules.
- * Reads stored evidence only: v5 does not acquire tariffs itself.
+ * Reads stored evidence; with `tariff_acquisition` on, the run has just looked the product up in every
+ * market with a Customs Atlas source (`tariff-step.ts`), and `as_of` is the tariff clock.
  */
-async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; fx_lookback_days: number }) {
+async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate> }) {
   const origins = allowedEvidenceOrigins();
   const snapshots = await prisma.marketAccessEvidenceSnapshot.findMany({
     where: { country_code: { in: [...args.markets] }, OR: [{ hs_code_scope: args.hs6 }, { hs6_code: args.hs6 }], retrieved_at: { lte: args.as_of }, evidence_origin: { in: origins } },
@@ -148,8 +137,8 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     const parsed = parseDutyExpression(row.duty_expression);
     if (parsed.kind === 'specific' && parsed.specific_currency) currencies.add(parsed.specific_currency);
   }
-  const fx = new Map<string, Awaited<ReturnType<typeof usdRate>>>();
-  for (const currency of [...currencies].sort()) fx.set(currency, await usdRate(currency, args.as_of, args.fx_lookback_days));
+  const fx = new Map<string, UsdRate>();
+  for (const currency of [...currencies].sort()) fx.set(currency, await args.usd(currency));
 
   const resolutions = new Map<string, OfficialDutyResolution>();
   const used = new Set<EvidenceOrigin>();
@@ -192,6 +181,9 @@ export async function loadRunInputs(args: {
   exporter_org_id: string;
   hs_revision: string;
   storage?: DocumentStorage;
+  /** The job doing the run: acquired tariff snapshots name it as their source run. */
+  job_id?: string;
+  correlation_id?: string;
 }): Promise<LoadedRunInputs> {
   const { config } = args;
   const policy = config.policy;
@@ -251,9 +243,38 @@ export async function loadRunInputs(args: {
   if (!ecgc) notes.push('Country risk is not scored: the ECGC country risk list is not imported.');
   if (!capitals) notes.push('Distance fit is not scored: capital coordinates (CEPII GeoDist) are not imported.');
   const coordinates = coordinateInputs({ capitals: capitals?.rows ?? [], provider_codes_without_iso: chosen.provider_codes_without_iso });
-  const official = await officialDuties({ markets, hs6: args.hs6, as_of: args.as_of, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, fx_lookback_days: config.fx_max_lookback_days });
+  // D-021: World Bank values older than the policy's limit count as missing, and the market says so.
+  const [lpiAge, primaryAge, manufacturedAge] = [lpi, primary, manufactured].map((reference) => splitByAge(reference.map, args.as_of, policy));
+  const tooOldIn = (ages: Map<string, number>) => markets.filter((market) => ages.has(market)).length;
+  const staleTariffs = tooOldIn((tariffSector(args.hs6, policy) === 'primary' ? primaryAge : manufacturedAge).too_old);
+  const staleLogistics = tooOldIn(lpiAge.too_old);
+  if (staleLogistics || staleTariffs) {
+    const parts = [staleLogistics ? `the logistics score for ${staleLogistics} market${staleLogistics === 1 ? '' : 's'}` : null, staleTariffs ? `the tariff average for ${staleTariffs} market${staleTariffs === 1 ? '' : 's'}` : null].filter(Boolean);
+    notes.push(`World Bank figures more than ${policy.world_bank.max_age_years} years old are not used: ${parts.join(' and ')}.`);
+  }
+  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing });
+
+  // D-020: ask every market with a Customs Atlas source for this product's tariff before reading
+  // tariff evidence. What is acquired is admitted at the tariff clock (no earlier than any retrieval).
+  let tariffAsOf = args.as_of;
+  let tariffStep: Record<string, unknown> = { status: 'disabled', reason: 'Switched off in demand_discovery.v5 config.' };
+  if (config.tariff_acquisition) {
+    const step = await acquireV5Tariffs({ job_id: args.job_id ?? `demand_discovery_v5:${args.hs6}`, hs6: args.hs6, markets, resolution_clock: args.as_of, live_fetch_timeout_ms: config.tariff_live_fetch_timeout_ms, correlation_id: args.correlation_id });
+    tariffAsOf = step.tariff_clock;
+    tariffStep = { status: 'used', resolution_clock: args.as_of.toISOString(), tariff_clock: step.tariff_clock.toISOString(), outcomes: step.outcomes };
+    const failed = step.outcomes.filter((item) => item.outcome === 'failed' || item.outcome === 'timed_out');
+    if (failed.length) {
+      degraded = true;
+      notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${failed.length === 1 ? 'that market uses' : 'those markets use'} the estimate.`);
+    }
+  }
+  const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd });
   for (const origin of official.origins) origins.add(origin);
-  if (!official.official_count) notes.push('No official tariff for this product is stored for any market yet, so every duty is estimated from tariff averages and trade agreements.');
+  if (!official.official_count) {
+    notes.push(config.tariff_acquisition
+      ? 'No market with an official tariff source returned a usable duty for this product, so every duty is estimated from tariff averages and trade agreements.'
+      : 'No official tariff for this product is stored for any market yet, so every duty is estimated from tariff averages and trade agreements.');
+  }
 
   const reported: ReportedYears = new Map([[latest, availabilityLatest.codes], [latest + 1, availabilityNewest.codes]]);
 
@@ -299,9 +320,15 @@ export async function loadRunInputs(args: {
   }
 
   // --- the exporter's own figures --------------------------------------------------------------
-  const fx = await usdRate(args.product.price_target_currency, args.as_of, config.fx_max_lookback_days);
+  const fx = await rates.usd(args.product.price_target_currency);
   const price = exporterUsdPerKg(args.product, fx.rate);
   const volume = exporterYearlyKg(args.product);
+  const fxFetches = await rates.fetches();
+  const failedFx = fxFetches.filter((item) => item.status === 'failed');
+  if (failedFx.length) {
+    degraded = true;
+    notes.push(`ECB exchange rates for ${failedFx.map((item) => item.currency).join(', ')} could not be fetched (${failedFx[0]!.reason}); anything priced in them is not compared.`);
+  }
 
   const input: AssessMarketsInput = {
     policy,
@@ -311,9 +338,10 @@ export async function loadRunInputs(args: {
     reported_latest_year: availabilityLatest.codes.size ? new Set(marketReporters.filter((entry) => availabilityLatest.codes.has(entry.reporter_code)).map((entry) => entry.iso2)) : new Set(),
     newest_year: newestYear,
     coordinates: coordinates.map,
-    lpi: new Map([...lpi.map].map(([iso2, row]) => [iso2, row.value])),
+    lpi: new Map([...lpiAge.fresh].map(([iso2, row]) => [iso2, row.value])),
+    lpi_too_old: lpiAge.too_old,
     ecgc: ecgcInputs(ecgc?.rows ?? []),
-    duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: official.resolutions, primary_tariffs: primary.map, manufactured_tariffs: manufactured.map, agreements: agreements?.rows ?? [], policy }),
+    duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: official.resolutions, primary_tariffs: primaryAge.fresh, manufactured_tariffs: manufacturedAge.fresh, primary_too_old: primaryAge.too_old, manufactured_too_old: manufacturedAge.too_old, agreements: agreements?.rows ?? [], policy }),
     exporter: {
       usd_per_kg: price.value, yearly_kg: volume.value,
       price_reason: price.value == null ? price.reason : null, volume_reason: volume.value == null ? volume.reason : null,
@@ -339,8 +367,14 @@ export async function loadRunInputs(args: {
     provider_coordinates: capitals ? { placed: coordinates.provider_links, unplaced: coordinates.unplaced_provider_codes } : null,
     comtrade: frozenComtrade,
     fallback_markets: [...fallback.keys()],
+    tariff_acquisition: tariffStep,
     official_duty: official.frozen,
     exporter: { fx: fx.frozen, usd_per_kg: price, yearly_kg: volume },
+    fx_fetches: fxFetches,
+    world_bank_too_old: {
+      max_age_years: policy.world_bank.max_age_years,
+      'wdi:LP.LPI.OVRL.XQ': Object.fromEntries(lpiAge.too_old), 'wdi:TM.TAX.TCOM.SM.AR.ZS': Object.fromEntries(primaryAge.too_old), 'wdi:TM.TAX.MANF.SM.AR.ZS': Object.fromEntries(manufacturedAge.too_old),
+    },
   };
 
   return { input, frozen, evidence_origins: [...origins].sort(), notes, degraded };

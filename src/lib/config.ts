@@ -168,6 +168,20 @@ export interface DemandDiscoveryV5Config {
   comtrade_max_records: number;
   /** How far back an FX observation may be walked for the exporter's price (days). */
   fx_max_lookback_days: number;
+  /**
+   * Fetch the ECB reference rates a run needs when the environment holds none for its date
+   * (`demand-discovery-v5/fx.ts`). The ECB API is public and keyless, and its terms allow reuse
+   * with attribution. Off: a price outside US dollars stays uncompared until rates are stored.
+   */
+  fx_fetch_missing: boolean;
+  /**
+   * D-020: look up the product's official tariff in every market with a Customs Atlas source inside
+   * each run (`demand-discovery-v5/tariff-step.ts`). Off: a run reads only tariff evidence ingested
+   * earlier, and every other market's duty is the labelled estimate.
+   */
+  tariff_acquisition: boolean;
+  /** Ceiling for one live tariff fetch (UK, US) inside a run, in milliseconds. */
+  tariff_live_fetch_timeout_ms: number;
   policy: DemandDiscoveryV5Policy;
 }
 
@@ -1009,6 +1023,9 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     comtrade_market_fallback: true,
     comtrade_max_records: 100_000,
     fx_max_lookback_days: 7,
+    fx_fetch_missing: true,
+    tariff_acquisition: true,
+    tariff_live_fetch_timeout_ms: 60_000,
     policy: DEMAND_DISCOVERY_V5_DEFAULT_POLICY,
   },
 };

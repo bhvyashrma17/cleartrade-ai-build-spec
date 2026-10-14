@@ -30,6 +30,9 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-017 | 2026-10-13 | Duty from official Customs Atlas sources where configured; elsewhere a labelled estimate built on India's trade agreements (R-16). | Owner | Demand Discovery v5 |
 | D-018 | 2026-10-13 | Discovery starts automatically when the HS code is confirmed; agents review and flag, never approve a run. | Owner | Demand Discovery v5 |
 | D-019 | 2026-10-13 | A market is ranked at ≥ 60 live points including size and growth; the top 10 go on to regional and buyer discovery. | Owner | Demand Discovery v5 |
+| D-020 | 2026-10-14 | v5 runs look up the product's official tariff in every market with a Customs Atlas source, behind a config switch (`demand_discovery.v5.tariff_acquisition`, on by default) (E-018, E-019). | Owner | Demand Discovery v5 |
+| D-021 | 2026-10-14 | A World Bank value more than 10 years old on the run's date counts as missing (R-20; policy v3). | Owner | Demand Discovery v5 |
+| D-022 | 2026-10-14 | No release-level Comtrade-only fallback: an environment without a BACI release keeps the earlier engine, and the BACI import is part of each environment's bootstrap. The owner's reply "yes" to the recommendation "no" was read as agreement; recorded as such pending correction. | Owner | Demand Discovery v5 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -638,6 +641,96 @@ not to build it yet, on the cost of up to 53 adapter runs per product. With the 
 staging, 51 of those runs read local releases and two are live calls, so the recommendation is now to
 build it behind a switch. New proposal: treat a World Bank value older than 10 years as missing (R-20).
 
+### E-018 · 2026-10-14 · v5 on staging: merges, deploy and data load; owner decisions
+
+**Merges** (owner-authorised in this conversation; done from the agent session through the GitHub
+REST API). PR #1 merged as `a6ce402` (merge commit; parents `f29fcf5`, `75788e5`) at 06:58Z. PR #2
+retargeted to `staging/railway`, marked ready, renamed "Demand Discovery v5" and merged as `76fb4a7`
+(parents `a6ce402`, `8c9f6c4`) at 07:00:23Z. CI on `8c9f6c4` (run 38522158682) passed, and the trees
+merged are the trees CI tested: `a6ce402^{tree}` = `75788e5^{tree}` = `f8b8dfed…`, `76fb4a7^{tree}` =
+`8c9f6c4^{tree}`. Branches kept; `master` untouched at `6d4733c`. Repository settings found: merge
+commits allowed, `delete_branch_on_merge` false, no branch protection or rulesets on
+`staging/railway`; CI runs on pull requests and on pushes to `main`/`master` only.
+
+**Deploy.** Railway deployed both merges by itself (GitHub deployments by `railway-app[bot]`,
+environment `amused-insight / staging`), which settles E-009's open point: staging auto-deploys from
+`staging/railway`. `76fb4a7` went live on the scanner at 07:03:42Z, web 07:05:31Z and worker
+07:06:44Z (commit statuses), after `a6ce402`'s web and scanner and before its worker finished. The
+owner's local Claude Code confirmed web deployment `88c917a9…` and worker `853eecc9…` successful;
+`prisma migrate status` up to date at 83 migrations, with `20261013100000`, `20261013180000` and
+`20261013181000` finished at 07:04:51Z and none rolled back; `/api/health/ready` 200 with database,
+storage and worker ready.
+
+**Data load** (owner's machine, `tmp/rw/operator.env` — the only file with `APP_ENV` and
+`DATABASE_ENVIRONMENT` both `staging`; staging database fingerprint `62587019d354`). The first attempt
+stopped before any write: the owner's email has no staging account. One read-only query found one
+`ops_supervisor`/`admin` account, `atlas-ops@staging-atlas.invalid` (admin, created 11 Oct), which the
+owner approved as the actor. Every import was NEW, then UNCHANGED on its built-in second run:
+
+| Dataset | Release id | Rows |
+|---|---|---|
+| BACI HS17 V202601, 2017–2024 (768 partitions) | `cmv7s0itq0001uesdw7rxwb8t` | 89,207,221 |
+| BACI HS22 V202601, 2022–2024 (288 partitions) | `cmv7sij5m0001uemd5n498sob` | 33,900,195 |
+| `wdi:LP.LPI.OVRL.XQ` | `cmv7sn4iv0001ue5vn2vfhi84` | 169 |
+| `wdi:TM.TAX.MANF.SM.AR.ZS` | `cmv7sn6300001ue6do782n8nz` | 188 |
+| `wdi:TM.TAX.TCOM.SM.AR.ZS` | `cmv7sn7k70001ue6u99x5p8me` | 188 |
+| `comtrade:availability:2024` | `cmv7snfoh0001ue7ze3tmpk09` | 148 |
+| `comtrade:availability:2025` | `cmv7snhd10001ue8hikt0gmy3` | 122 |
+| `ecgc:country-risk:short-term` | `cmv7sny7d0001ue9x7ro4ufv5` | 239 |
+| `cepii:geo_cepii` | `cmv7snzu20001ueae4uvef7wu` | 225 |
+| `india:trade-agreements` | `cmv7so1p80001ueav6bikoxpq` | 43 |
+
+- Both BACI releases `ready`; each validation lists exactly
+  `iso2_from_iso3: [{ provider_code: "516", iso2_cell: "", iso3: "NAM", iso2: "NA" }]`.
+- Every downloaded file matched the snapshot manifest's sha256 and size. The Comtrade reporting lists
+  were downloaded on 14 Oct (sha256 `de88860b…f729ab` for 2024, `1bef69a8…98a3` for 2025).
+- World Bank rows against file rows, checked in the agent session by running the importer's parser
+  on the snapshot files: the LPI file's 217 entries are 169 countries and 48 aggregates; each tariff
+  file's 189 are 188 countries and "European Union", whose members carry their own rows. No country
+  was dropped.
+- `india:trade-agreements` cites the full merge-commit hash as its source URL. Import logs are in
+  `.artifacts/dd5/logs/` on the owner's machine (gitignored).
+
+**R-19 closed.** `pdftotext -layout` (Poppler 26.09.0) on the ECGC PDF, and pandas 2.3.3
+`read_stata` then `to_csv(index=False)` on `geo_cepii.dta`, reproduce `7985b79e…0311` and
+`cd6398ae…fe93` byte for byte. Nothing re-derived was imported.
+
+**Found while checking.** A v5 run converts the exporter's price and specific duties with ECB
+observations stored in the environment, and nothing in the codebase stores them
+(`ingestEcbSeries` has no caller): on staging every price outside US dollars and every specific duty
+would be unconverted, and `/ops/discovery` would not show it. Fixed in E-019.
+
+**Owner decisions.** D-020, D-021, D-022. The owner reports the UN Comtrade permission request sent
+(R-14).
+
+**Not yet verified.** `/ops/discovery` showing "Runs can start" (asked of the owner). No v5 run has
+run on staging.
+
+### E-019 · 2026-10-14 · v5: ECB rates fetched by runs, World Bank age limit, tariff look-up in runs
+
+**Built** on `dd5/v5-fixes`, branched from `staging/railway` at `76fb4a7` (docs/36 §7.1, §9, §10):
+- `src/lib/demand-discovery-v5/fx.ts`: a run's rates come from stored ECB observations first; when
+  none cover the run's date within `fx_max_lookback_days`, and `fx_fetch_missing` (new, on) allows,
+  the run fetches the missing series over that window through `ingestEcbSeries` (immutable, raw
+  response kept) and derives again. One fetch per series per run, frozen in `fx_fetches`. A failed
+  fetch leaves the rate unavailable and makes the run `partial`; an ECB 404 is recorded, not a
+  failure; a malformed currency code is never fetched.
+- Policy v3: `world_bank.max_age_years` 10 (D-021). Logistics and the duty estimate say when a value
+  is too old; the run notes how many markets lost one; the dropped values are frozen in
+  `world_bank_too_old`. Against the 14 Oct files this drops logistics for AZ (2014) and TL (2007) and
+  tariff averages for DJ (2014), ER (2006) and TM (2002).
+- `src/lib/demand-discovery-v5/tariff-step.ts` (D-020): with `tariff_acquisition` (new, on), a run
+  asks every market with a Customs Atlas source for the product's HS6 before reading tariff
+  evidence, through the deep run's `acquireTariffEvidence`, one source at a time so EU TARIC is
+  decoded once for its 27 members; acquired evidence is admitted at the tariff clock; every outcome
+  is frozen in `tariff_acquisition`; a failed or timed-out look-up makes the run `partial`.
+  `tariffAdapterFor` added to `tariff-acquisition.ts`. Run duration with 53 look-ups on staging is
+  not yet measured.
+- `/ops/discovery` shows the tariff look-up switch, the ECB fetch switch and the newest stored
+  EUR/USD day. Frozen inputs schema `demand-discovery-v5-inputs-v2`.
+
+**Checks run.** See the PR; recorded here once CI has run.
+
 ## Risk register
 
 
@@ -653,13 +746,13 @@ build it behind a switch. New proposal: treat a World Bank value older than 10 y
 | R-08 | Gate thresholds unapproved | Open | Owner approval PR |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
-| R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs) | Keep one worker until staleness is heartbeat-based (WP5) |
+| R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
 | R-12 | The owner's local clone holds unpushed work; `wip/switzerland-tares` touches `market-access.ts`, where WP2 adds a required `retrieval` field | Open (E-009) | Owner rebases after WP2 lands; the typecheck names a missing field |
 | R-13 | Production web's `STORAGE_BUCKET` names the bucket `cleartrade-staging`; if it resolves to staging's bucket, production files land in staging storage (or the reverse) | Open — unverified (E-009) | Owner dashboard check; WP5 read-only inventory |
-| R-14 | UN Comtrade's licence prohibits commercial use without the UN's written permission; D-010 shows Comtrade-derived figures to customers before permission | Open — accepted by the owner (D-010); permission request drafted for the owner to send | UNSD's reply; Comtrade display stays switchable in config |
+| R-14 | UN Comtrade's licence prohibits commercial use without the UN's written permission; D-010 shows Comtrade-derived figures to customers before permission | Open — accepted by the owner (D-010); permission request sent by the owner on 14 Oct (E-018) | UNSD's reply; Comtrade display stays switchable in config |
 | R-15 | BACI is built from Comtrade data; Etalab 2.0 is CEPII's licence, and the position of the underlying UN data is unverified | Open (E-010) | Legal check before the production launch |
 | R-16 | Agreement-based duty estimates can be wrong for a specific product | Accepted (D-017); always labelled, evidence quality 0.5 | Calibration on the three archetype products |
 | R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Open (E-010) | Imports run on the owner's machine or the Railway worker |
 | R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |
-| R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Open (E-014) — originals' sha256 recorded in `data/reference/manifest.json` | Owner re-derives both from the originals and compares sha256 (runbook); a mismatch is diffed before import |
-| R-20 | v5 uses each country's latest World Bank value however old: tariff averages as old as 2002 and logistics scores as old as 2007 feed the duty estimate and the logistics metric | Open (E-017) — proposal: values older than 10 years count as missing | Owner decision; then a policy field and a test |
+| R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Closed (E-018) — the owner re-derived both from the originals; byte-identical | — |
+| R-20 | v5 uses each country's latest World Bank value however old: tariff averages as old as 2002 and logistics scores as old as 2007 feed the duty estimate and the logistics metric | Decided (D-021): values more than 10 years old count as missing — built in E-019, pending merge | v5 runs on staging after E-019 deploys |

@@ -9,6 +9,7 @@ import {
 import { agreementInForce, dutyInputs, tariffSector, type IndiaTradeAgreement } from '../src/lib/demand-discovery-v5/duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg, kgPerUnit } from '../src/lib/demand-discovery-v5/exporter-inputs';
 import type { OfficialDutyResolution } from '../src/lib/demand-discovery-v5/official-duty';
+import { splitByAge } from '../src/lib/demand-discovery-v5/world-bank';
 
 const WINDOW = [2019, 2020, 2021, 2022, 2023, 2024];
 const flow = (year: number, exporter: string, importer: string, value_usd: number, quantity_kg: number | null = null): TradeFlowInput => ({ year, exporter, importer, value_usd, quantity_kg });
@@ -211,6 +212,15 @@ describe('v5 access, risk and exporter-fit metrics', () => {
     expect(scoreLogistics(null, 0.9, POLICY).score).toBeNull();
   });
 
+  test('World Bank values more than 10 years old on the run date count as missing, and say so (D-021)', () => {
+    expect(POLICY.world_bank.max_age_years).toBe(10);
+    const split = splitByAge(new Map([['DE', { value: 4.1, year: 2016 }], ['BI', { value: 2.1, year: 2015 }], ['IN', { value: 3.4, year: 2023 }]]), new Date('2026-10-14T00:00:00Z'), POLICY);
+    expect([...split.fresh.keys()].sort()).toEqual(['DE', 'IN']);
+    expect(Object.fromEntries(split.too_old)).toEqual({ BI: 2015 });
+    expect(scoreLogistics(null, 0.9, POLICY, 2015)).toMatchObject({ score: null, reason: 'The World Bank logistics score for this market is from 2015, more than 10 years old, so it is not used.' });
+    expect(() => assertPolicy({ ...POLICY, world_bank: { max_age_years: 2.5 } })).toThrow(/whole number/);
+  });
+
   test('country risk follows the ECGC grade, capped by restricted cover; off cover is 0', () => {
     expect(scoreCountryRisk({ grade: 'A1', cover: 'open' }, 1, POLICY).score).toBe(100);
     expect(scoreCountryRisk({ grade: 'A1', cover: 'restricted_group_i' }, 1, POLICY).score).toBe(40);
@@ -284,6 +294,21 @@ describe('v5 duty inputs', () => {
       BD: { kind: 'estimate', sector_average_percent: 12, agreement_scope: 'partial', agreement_name: 'Agreement B', official_note: 'Compound duty.' },
       GB: { kind: 'official_specific', usd_per_kg: 0.16, expression: '121.00 GBP / 1000 kg', source: 'UK Trade Tariff', preference: null, estimate: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null } },
       TV: { kind: 'unusable', reason: 'Per litre.' },
+    });
+  });
+
+  test('a sector average past the age limit gives no estimate, and the market says why', () => {
+    const inputs = dutyInputs({
+      markets: ['AE', 'BI', 'TV'], hs6: '741810', as_of: new Date('2026-10-14T00:00:00Z'),
+      official: new Map<string, OfficialDutyResolution>([['TV', { status: 'unusable', reason: 'Per litre.', expression: '2 AUD / l', source: 'x', national_line: null, preference: null, fact_ids: [], snapshot_ids: [] }]]),
+      primary_tariffs: new Map(), manufactured_tariffs: new Map([['AE', { value: 5, year: 2022 }]]),
+      manufactured_too_old: new Map([['BI', 2009], ['TV', 2004]]),
+      agreements, policy: POLICY,
+    });
+    expect(Object.fromEntries(inputs)).toEqual({
+      AE: { kind: 'estimate', sector_average_percent: 5, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
+      BI: { kind: 'unusable', reason: 'The World Bank tariff average for this market is from 2009, more than 10 years old, so it is not used.' },
+      TV: { kind: 'unusable', reason: 'Per litre. The World Bank tariff average for this market is from 2004, more than 10 years old, so it is not used.' },
     });
   });
 });

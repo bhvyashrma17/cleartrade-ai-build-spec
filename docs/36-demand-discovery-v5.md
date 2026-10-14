@@ -227,7 +227,8 @@ reads the frozen releases and passes their rows in).
 
 - **When v5 runs.** `demand_discovery.v5` config: `enabled`, `auto_start_on_classification`,
   `comtrade_newest_year`, `comtrade_market_fallback` (the R-14 switches), `comtrade_max_records`,
-  `fx_max_lookback_days` and the scoring `policy`. v5 is *available* when it is enabled and a ready
+  `fx_max_lookback_days`, `fx_fetch_missing`, `tariff_acquisition`, `tariff_live_fetch_timeout_ms`
+  and the scoring `policy`. v5 is *available* when it is enabled and a ready
   BACI release exists in the environment; otherwise `POST /api/v1/discovery-runs` keeps using the
   earlier engine, so an environment without BACI keeps working.
 - **Auto-start.** `confirmClassification` calls `autoStartDemandDiscoveryV5` after its transaction
@@ -280,9 +281,30 @@ reads the frozen releases and passes their rows in).
   ad-valorem duty is used as published; a specific duty per kg or tonne is converted with the ECB
   rate frozen on the run and, in the score, the market's median supplier unit value (the reason
   shows the published expression); compound, mixed, per-litre or per-item duties and currencies
-  without an ECB rate fall back to the labelled estimate with the reason recorded. v5 does not
-  acquire tariffs itself: a market has official duty only where evidence was ingested earlier
-  (`ingest:market-access` or a deep run with the WP2 switch on); the run says when there is none.
+  without an ECB rate fall back to the labelled estimate with the reason recorded.
+- **Tariff look-up inside each run (14 Oct 2026, D-020).** With `tariff_acquisition` on (the
+  default), a run asks every market that has a Customs Atlas source for the product's HS6 before it
+  reads tariff evidence (`tariff-step.ts`), through the deep run's own acquisition
+  (`country-truth/tariff-acquisition.ts`): inline, retained releases resolved at the run's clock,
+  live sources (UK, US) at real time within `tariff_live_fetch_timeout_ms`. Markets are taken one
+  source at a time, so EU TARIC is decoded once for its 27 members instead of being evicted from the
+  160 MB shared bundle cache between two of them. What a run acquires is admitted at its tariff
+  clock (no earlier than the run's clock or any retrieval, as in the deep run); an identical release
+  ingest is reused, not duplicated. Every market's outcome is frozen in `tariff_acquisition`; a failed
+  or timed-out look-up makes the run `partial` and that market uses the estimate. With the switch off
+  a run reads only evidence ingested earlier, as before.
+- **Exchange rates (14 Oct 2026, E-018).** Nothing loaded ECB rates into an environment, so a price
+  outside US dollars and every specific duty went unconverted. A run now reads stored ECB
+  observations first; when no single published day within `fx_max_lookback_days` carries every leg,
+  and `fx_fetch_missing` allows it, it fetches the missing series over exactly that window, stores
+  them (`ingestEcbSeries`: immutable, raw response kept) and derives again (`fx.ts`). One fetch per
+  series per run; every fetch is frozen in `fx_fetches`. A failed fetch leaves the rate unavailable
+  with its reason and makes the run `partial`; an ECB 404 (no such series) is recorded, not a failure.
+- **World Bank age limit (policy v3, D-021).** A logistics score or tariff average more than
+  `world_bank.max_age_years` (10) old on the run's date counts as missing, and the market's metric
+  says so. Against the files imported on 14 Oct this drops logistics for AZ (2014) and TL (2007) and
+  the tariff averages for DJ (2014), ER (2006) and TM (2002). The dropped values are frozen in
+  `world_bank_too_old`.
 - **Agent and ops views (13 Oct 2026, E-016).** The agent's market control table
   (`/agent/exporters/:org/products/:product/markets/manage`) reads a v5 run's stored rank — only
   ranked markets have one, so a partial score is shown as partial and never ranked — orders by it,
@@ -292,17 +314,10 @@ reads the frozen releases and passes their rows in).
   whether runs can start here and why not, the switches and policy version, each dataset a run reads
   with its version and what its absence costs, last-7-day run counts by status, and the 20 latest
   runs with their ranked count, top markets and the notes on what each could not use.
-- **Not built, for the owner to decide.**
-  - *Tariff acquisition inside v5 runs.* Recommended: build it behind a switch (E-017). 51 of the 53
-    Customs Atlas markets read authority releases staging already holds; only GB and US are live
-    look-ups. Without it a market has an official duty only where that product's tariff was
-    ingested earlier.
-  - *The release-level Comtrade fallback of §3.3.* Recommended: do not build it. An environment with
-    no BACI release keeps the earlier engine, as it does today, and the BACI import becomes part of
-    each environment's bootstrap (§10). A Comtrade-only run costs several of the 500 daily calls per
-    product and leans entirely on the R-14 licence.
-  - *A maximum age for World Bank values.* Recommended: treat a value older than 10 years as
-    missing (R-20).
+- **Owner decisions of 14 Oct 2026 (E-018).** Tariff look-up inside runs: built, behind a switch
+  (D-020). World Bank age limit: 10 years (D-021). The release-level Comtrade fallback of §3.3: not
+  built (D-022) — an environment with no BACI release keeps the earlier engine, and the BACI import
+  is part of each environment's bootstrap (§10).
 
 ## 8. Verification
 
@@ -319,8 +334,8 @@ reads the frozen releases and passes their rows in).
 - BACI ends in 2024; the newest-year chain-link covers only markets Comtrade has for 2025.
 - Unit values at HS6 mix cheap and premium goods; price metrics carry 15 of 100 points for that reason.
 - Duty estimates (§4.7) can be wrong for a specific product; they are always labelled.
-- World Bank values are the latest a country has, however old: 187 of the 218 markets have a tariff
-  average (as old as 2002) and 168 a logistics score (as old as 2007). No age limit applies yet (R-20).
+- World Bank values more than 10 years old count as missing (D-021). With that limit 184 of the 218
+  markets have a tariff average and 166 a logistics score; values up to 10 years old are still used.
 - The official duty is the ordinary rate even where an Indian preference may apply, so it can
   overstate the duty an exporter who qualifies under rules of origin would pay; the preference is
   shown. The estimate path, by contrast, assumes an agreement in force is used (§4.7).
@@ -381,7 +396,9 @@ touches production.
 
    R-19, once: `pdftotext -layout <ECGC PDF> -` and a CSV export of `geo_cepii.dta` should reproduce
    the two derived files byte for byte; if not, diff before importing the re-derived file.
-6. **Check.** `/ops/discovery` shows "Runs can start" and no dataset "Not imported".
+6. **Check.** `/ops/discovery` shows "Runs can start", no dataset "Not imported", official tariff
+   look-up on and ECB rates fetched by runs when missing. Customs Atlas releases must be active in the
+   environment (docs/33 §3 step 4) for the look-up to find release-backed tariffs.
 7. **Archetype runs** (D-003): for a paid test tenant, create rice `100630`, brassware `741810` and
    carpets `570110` and confirm each classification; v5 starts by itself. When each run finishes:
    `npx tsx --env-file=<env> scripts/dd5-compare-top10.ts --run=<run id>`. `verdict: calibration_failure`

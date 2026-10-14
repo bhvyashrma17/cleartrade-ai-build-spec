@@ -14,6 +14,7 @@ import type { IndiaTradeAgreementRow } from '@/lib/reference-datasets/parsers';
 import type { DemandDiscoveryV5Policy } from './policy';
 import type { DutyInput, EstimatedDuty } from './metrics';
 import type { OfficialDutyResolution } from './official-duty';
+import { tooOldReason } from './world-bank';
 
 /**
  * One agreement for one partner (`data/reference/india-trade-agreements-v1.json`). `comprehensive`:
@@ -48,11 +49,15 @@ export function dutyInputs(args: {
   official: ReadonlyMap<string, OfficialDutyResolution>;
   primary_tariffs: ReadonlyMap<string, SectorTariff>;
   manufactured_tariffs: ReadonlyMap<string, SectorTariff>;
+  /** Markets whose latest sector average is older than the World Bank age limit (D-021), with its year. */
+  primary_too_old?: ReadonlyMap<string, number>;
+  manufactured_too_old?: ReadonlyMap<string, number>;
   agreements: readonly IndiaTradeAgreement[];
   policy: DemandDiscoveryV5Policy;
 }): Map<string, Exclude<DutyInput, null>> {
   const sector = tariffSector(args.hs6, args.policy);
   const averages = sector === 'primary' ? args.primary_tariffs : args.manufactured_tariffs;
+  const tooOld = (sector === 'primary' ? args.primary_too_old : args.manufactured_too_old) ?? new Map<string, number>();
   const result = new Map<string, Exclude<DutyInput, null>>();
   const estimateFor = (market: string, officialNote: string | null): EstimatedDuty | null => {
     const average = averages.get(market);
@@ -72,8 +77,10 @@ export function dutyInputs(args: {
     }
     const note = official?.status === 'unusable' ? official.reason : null;
     const estimate = estimateFor(market, note);
+    const staleYear = tooOld.get(market);
+    const stale = staleYear != null ? tooOldReason('tariff average', staleYear, args.policy) : null;
     if (estimate) result.set(market, estimate);
-    else if (note) result.set(market, { kind: 'unusable', reason: note });
+    else if (note || stale) result.set(market, { kind: 'unusable', reason: [note, stale].filter(Boolean).join(' ') });
   }
   return result;
 }
