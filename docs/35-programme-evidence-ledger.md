@@ -729,7 +729,15 @@ run on staging.
 - `/ops/discovery` shows the tariff look-up switch, the ECB fetch switch and the newest stored
   EUR/USD day. Frozen inputs schema `demand-discovery-v5-inputs-v2`.
 
-**Checks run.** See the PR; recorded here once CI has run.
+**Checks run.** `tsc --noEmit` and ESLint `--max-warnings=0` clean on every changed file. New tests:
+`demand-discovery-v5-fx` (4: fetch, store and derive; stored rates read first; EUR, USD and malformed
+codes; a failed fetch against an ECB 404; fetching off), `demand-discovery-v5-tariff-step` (2: only
+markets with a source are asked, one source at a time; outcomes; the tariff clock), two age-limit
+cases in `demand-discovery-v5-metrics`; `demand-discovery-v5-run` now has a live UAE look-up during
+the run replace the agreement estimate with the official 5%, reads the stored EUR rate without a
+fetch, and drops a 2010 logistics score with its note. Full suite in one schema, CI's file order:
+138 files, 2,159 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006. CI on
+`21025dc` (run 38538913819): passed. PR #3 into `staging/railway`.
 
 ## Risk register
 
