@@ -12,6 +12,7 @@
  *     base window's last year, the "structure year".
  */
 import { assertPolicy, DEMAND_DISCOVERY_V5_MODEL, policyHash, type DemandDiscoveryV5Policy } from './policy';
+import type { LogisticsEstimate } from './logistics-fallback';
 import { buildMarketSeries, importsIn, indiaExportUnitValues, marketUnitValues, type MarketSeries, type TradeFlowInput } from './series';
 import {
   averageImportsUsd, marketMedianUnitValue, scoreCountryRisk, scoreDistanceFit, scoreDuty, scoreGrowth, scoreIndiaFoothold, scoreLogistics,
@@ -54,6 +55,10 @@ export interface AssessMarketsInput {
   lpi: ReadonlyMap<string, number>;
   /** Markets whose latest logistics score is older than the policy's World Bank age limit, with its year. */
   lpi_too_old?: ReadonlyMap<string, number>;
+  /** v5: the LPI shipping connectivity predicts, for markets without one (`logistics-fallback.ts`). */
+  logistics_estimates?: ReadonlyMap<string, LogisticsEstimate>;
+  /** D-025: country-level sanctions programmes, as flags per market (they never change a score). */
+  sanctions?: ReadonlyMap<string, readonly string[]>;
   ecgc: ReadonlyMap<string, EcgcRating>;
   duty: ReadonlyMap<string, Exclude<DutyInput, null>>;
   /** The exporter's own figures; a missing one may carry the specific reason it is missing. */
@@ -125,6 +130,10 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
   const { policy } = input;
   assertPolicy(policy);
   const quality = policy.quality;
+  const logisticsEstimate = (market: string) => {
+    const estimate = input.logistics_estimates?.get(market);
+    return estimate ? { ...estimate, quality: quality.logistics_lsci_estimate } : null;
+  };
   const base = input.base;
   const baseWindow = base ? [...base.years].slice(-policy.window_years) : [];
   for (let index = 1; index < baseWindow.length; index += 1) {
@@ -194,7 +203,7 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
     const structureYear = context.window.length ? context.window[context.window.length - 1] : null;
     const rating = input.ecgc.get(context.market);
     const flag = ecgcFlag(rating);
-    const gate: MarketGate = { excluded_reason: context.excluded_reason, no_recorded_demand: context.no_recorded_demand, flag_reasons: flag ? [flag] : [] };
+    const gate: MarketGate = { excluded_reason: context.excluded_reason, no_recorded_demand: context.no_recorded_demand, flag_reasons: [...(flag ? [flag] : []), ...(input.sanctions?.get(context.market) ?? [])] };
     const metrics: MetricResult[] = [];
     let marketUv: number | null = null;
     if (!context.excluded_reason && !context.no_recorded_demand) {
@@ -223,8 +232,8 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
         for (const key of ['market_size', 'growth', 'stability', 'india_foothold', 'price_headroom', 'openness', 'distance_fit', 'price_fit', 'volume_fit'] as const) metrics.push(unavailableTrade(key, reason));
       }
       metrics.push(
-        scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate }, marketUv),
-        scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy, input.lpi_too_old?.get(context.market) ?? null),
+        scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate, agent_recorded: quality.official_agent_recorded }, marketUv),
+        scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy, input.lpi_too_old?.get(context.market) ?? null, logisticsEstimate(context.market)),
         scoreCountryRisk(rating ?? null, quality.official, policy),
       );
     }

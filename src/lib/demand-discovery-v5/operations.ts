@@ -11,6 +11,8 @@ import { isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
 import { CAPITALS_SUPPLEMENT_KEY } from '@/lib/reference-datasets/capitals-supplement';
+import { CURRENCY_PEGS_KEY } from '@/lib/reference-datasets/currency-pegs';
+import { SANCTIONS_PROGRAMMES_KEY } from '@/lib/reference-datasets/sanctions-programmes';
 import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import type { Principal } from '@/types';
@@ -40,6 +42,7 @@ export interface V5RunRow {
 function referenceDatasets(latestYear: number | null): Omit<V5DatasetStatus, 'active'>[] {
   return [
     { key: 'wdi:LP.LPI.OVRL.XQ', label: 'World Bank logistics index', when_missing: 'Logistics is not scored.' },
+    { key: 'wdi:IS.SHP.GCNW.XQ', label: 'UNCTAD shipping connectivity (World Bank)', when_missing: 'Markets without a logistics score get no logistics estimate.' },
     { key: 'wdi:TM.TAX.TCOM.SM.AR.ZS', label: 'World Bank tariff average, primary products', when_missing: 'No duty estimate for HS chapters 01–27.' },
     { key: 'wdi:TM.TAX.MANF.SM.AR.ZS', label: 'World Bank tariff average, manufactured products', when_missing: 'No duty estimate for manufactured goods.' },
     ...(latestYear == null ? [] : [
@@ -50,6 +53,8 @@ function referenceDatasets(latestYear: number | null): Omit<V5DatasetStatus, 'ac
     { key: ECGC_COUNTRY_RISK_KEY, label: 'ECGC country risk list (short term)', when_missing: 'Country risk is not scored.' },
     { key: GEO_CEPII_KEY, label: 'CEPII GeoDist capitals', when_missing: 'Distance is not scored.' },
     { key: CAPITALS_SUPPLEMENT_KEY, label: 'Capitals GeoDist lacks (curated)', when_missing: 'Six markets (BL, BQ, ME, SS, SX, VA) have no distance score.' },
+    { key: SANCTIONS_PROGRAMMES_KEY, label: 'Sanctions programmes (curated)', when_missing: 'Markets carry no UN, US or EU sanctions flag.' },
+    { key: CURRENCY_PEGS_KEY, label: 'Currency pegs (curated)', when_missing: 'Prices and specific duties in pegged currencies the ECB does not publish (SAR, QAR, OMR, NPR, the CFA francs and others) cannot be converted.' },
   ];
 }
 

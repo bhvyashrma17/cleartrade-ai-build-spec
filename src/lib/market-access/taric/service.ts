@@ -43,13 +43,31 @@ export const EU_TARIC_MEMBER_DESTINATIONS: readonly string[] = [
 
 /**
  * Separate ISO destinations that legally apply the same tariff authority: Åland is inside the EU
- * customs territory, and Monaco is treated as France for customs. Their fiscal/regulatory layers
+ * customs territory, and Monaco is treated as France for customs. Martinique is an outermost
+ * region inside the Union customs territory (Regulation (EU) No 952/2013, Art. 4). San Marino
+ * applies the Community customs tariff to third countries under its customs union with the EU
+ * (Agreement of 16 December 1991, Arts 1 and 6(1); in force 1 April 2002). Their fiscal and
+ * regulatory layers — Åland's tax border, Martinique's octroi de mer, San Marino's import tax —
  * remain distinct and are deliberately not claimed by TARIC.
  */
-export const EU_TARIC_ASSOCIATED_DESTINATIONS: readonly string[] = ['AX', 'MC'];
+export const EU_TARIC_ASSOCIATED_DESTINATIONS: readonly string[] = ['AX', 'MC', 'MQ', 'SM'];
+
+/**
+ * Destinations in a customs union with the EU for part of the tariff only. TARIC serves them for
+ * those HS chapters and refuses the rest, where their own national tariff applies.
+ */
+export const EU_TARIC_PARTIAL_DESTINATIONS: Readonly<Record<string, { from_chapter: number; to_chapter: number; basis: string }>> = Object.freeze({
+  AD: {
+    from_chapter: 25,
+    to_chapter: 97,
+    basis: 'EEC–Andorra customs union for HS chapters 25–97 (Council Decision of 26 November 1990, OJ L 374, 31.12.1990)',
+  },
+});
+
 export const EU_TARIC_DESTINATIONS: readonly string[] = [
   ...EU_TARIC_MEMBER_DESTINATIONS,
   ...EU_TARIC_ASSOCIATED_DESTINATIONS,
+  ...Object.keys(EU_TARIC_PARTIAL_DESTINATIONS),
 ];
 
 export const TARIC_RELEASE_SOURCE: AuthorityReleaseSource = Object.freeze({
@@ -189,6 +207,15 @@ export async function fetchEuTaricMarketAccess(
   const destination = options.destination_country.trim().toUpperCase();
   if (!isEuTaricDestination(destination)) {
     throw validationError([{ field: 'destination_country', code: 'not_eu', message: `${destination} does not apply the EU common customs tariff; TARIC evidence must not be used for it.` }]);
+  }
+  const partial = EU_TARIC_PARTIAL_DESTINATIONS[destination];
+  const chapter = Number(hs6.slice(0, 2));
+  if (partial && !(chapter >= partial.from_chapter && chapter <= partial.to_chapter)) {
+    throw validationError([{
+      field: 'hs6',
+      code: 'outside_customs_union',
+      message: `${destination} applies the EU common customs tariff only to HS chapters ${partial.from_chapter}–${partial.to_chapter} (${partial.basis}); its own tariff applies to chapter ${hs6.slice(0, 2)}, so TARIC evidence must not be used for it.`,
+    }]);
   }
   const loaded = await loadTaricBundle(options.release_id);
   if (!loaded) throw notFound('No official TARIC release has been imported yet.');
