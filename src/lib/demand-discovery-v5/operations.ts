@@ -10,6 +10,7 @@ import { appEnvironment } from '@/lib/evidence-environment';
 import { isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
+import { CAPITALS_SUPPLEMENT_KEY } from '@/lib/reference-datasets/capitals-supplement';
 import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import type { Principal } from '@/types';
@@ -48,6 +49,7 @@ function referenceDatasets(latestYear: number | null): Omit<V5DatasetStatus, 'ac
     { key: 'india:trade-agreements', label: "India's trade agreements", when_missing: 'Duty estimates assume no trade agreement.' },
     { key: ECGC_COUNTRY_RISK_KEY, label: 'ECGC country risk list (short term)', when_missing: 'Country risk is not scored.' },
     { key: GEO_CEPII_KEY, label: 'CEPII GeoDist capitals', when_missing: 'Distance is not scored.' },
+    { key: CAPITALS_SUPPLEMENT_KEY, label: 'Capitals GeoDist lacks (curated)', when_missing: 'Six markets (BL, BQ, ME, SS, SX, VA) have no distance score.' },
   ];
 }
 

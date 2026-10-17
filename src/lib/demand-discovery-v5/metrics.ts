@@ -202,6 +202,8 @@ export interface EstimatedDuty {
   agreement_scope: 'comprehensive' | 'partial' | 'none';
   agreement_name: string | null;
   official_note?: string | null;
+  /** The customs union whose common external tariff stood in for the market's own average. */
+  customs_union?: string | null;
 }
 
 export type DutyInput =
@@ -221,6 +223,7 @@ function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Polic
     key: 'duty', score: round(100 * (1 - Math.min(estimate, ceiling) / ceiling), 4), quality, reason: null, estimated: true,
     inputs: {
       duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), agreement_scope: input.agreement_scope, agreement: input.agreement_name,
+      ...(input.customs_union ? { customs_union: input.customs_union } : {}),
       ...(officialNote ? { official_note: officialNote } : {}),
     },
   };

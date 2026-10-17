@@ -18,6 +18,8 @@ import { OrgTier } from '@prisma/client';
 import { getPrincipal } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
+import { todayInrPerUsd } from '@/lib/fx/display-rate';
+import { RupeeRateProvider } from '@/components/fx/RupeeRate';
 import { DemandDiscovery } from './DemandDiscovery';
 import { MarketEstimate } from './MarketEstimate';
 import { RankedMarketsSample } from './RankedMarketsSample';
@@ -79,19 +81,24 @@ export default async function MarketsPage() {
       })
     : null;
 
+  // D-023: rupee figures beside dollars follow today's ECB rate; a missing rate shows dollars alone.
+  const rupeeRate = await todayInrPerUsd();
+
   return (
-    <DemandDiscovery
-      tier={tier}
-      products={products}
-      recentRuns={recentRuns.map((r) => ({
-        id: r.id,
-        status: r.status,
-        created_at: r.created_at.toISOString(),
-        label: describeRun(r.input_snapshot),
-      }))}
-      guestRunLimit={policy.discovery_runs_per_ip}
-      latestRun={latestRun && latestRun.job_id ? { runId: latestRun.id, jobId: latestRun.job_id } : null}
-    />
+    <RupeeRateProvider rate={rupeeRate}>
+      <DemandDiscovery
+        tier={tier}
+        products={products}
+        recentRuns={recentRuns.map((r) => ({
+          id: r.id,
+          status: r.status,
+          created_at: r.created_at.toISOString(),
+          label: describeRun(r.input_snapshot),
+        }))}
+        guestRunLimit={policy.discovery_runs_per_ip}
+        latestRun={latestRun && latestRun.job_id ? { runId: latestRun.id, jobId: latestRun.job_id } : null}
+      />
+    </RupeeRateProvider>
   );
 }
 

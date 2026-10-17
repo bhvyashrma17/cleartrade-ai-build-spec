@@ -29,8 +29,10 @@ export interface CoordinateInputs {
   unplaced_provider_codes: string[];
 }
 
-export function coordinateInputs(args: { capitals: readonly CapitalRow[]; provider_codes_without_iso: readonly string[] }): CoordinateInputs {
+export function coordinateInputs(args: { capitals: readonly CapitalRow[]; provider_codes_without_iso: readonly string[]; supplement?: readonly { iso2: string; lat: number; lon: number }[] }): CoordinateInputs {
   const map = new Map<string, { lat: number; lon: number }>(args.capitals.map((row) => [row.iso2, { lat: row.lat, lon: row.lon }]));
+  // Curated capitals fill only markets GeoDist has no row for; GeoDist's own row always wins.
+  for (const row of args.supplement ?? []) if (!map.has(row.iso2)) map.set(row.iso2, { lat: row.lat, lon: row.lon });
   const byIso2 = new Map(args.capitals.map((row) => [row.iso2, row]));
   const links: CoordinateInputs['provider_links'] = [];
   const unplaced: string[] = [];

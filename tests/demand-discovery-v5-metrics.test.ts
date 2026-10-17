@@ -7,6 +7,7 @@ import {
   tukeyFilter, weightedMedian,
 } from '../src/lib/demand-discovery-v5/metrics';
 import { agreementInForce, dutyInputs, tariffSector, type IndiaTradeAgreement } from '../src/lib/demand-discovery-v5/duty-inputs';
+import { metricSentence } from '../src/lib/demand-discovery-v5/explain';
 import { exporterUsdPerKg, exporterYearlyKg, kgPerUnit } from '../src/lib/demand-discovery-v5/exporter-inputs';
 import type { OfficialDutyResolution } from '../src/lib/demand-discovery-v5/official-duty';
 import { splitByAge } from '../src/lib/demand-discovery-v5/world-bank';
@@ -295,6 +296,24 @@ describe('v5 duty inputs', () => {
       GB: { kind: 'official_specific', usd_per_kg: 0.16, expression: '121.00 GBP / 1000 kg', source: 'UK Trade Tariff', preference: null, estimate: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null } },
       TV: { kind: 'unusable', reason: 'Per litre.' },
     });
+  });
+
+  test("a market without its own average borrows its customs union's common external tariff, within the union's chapters (v4)", () => {
+    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v4');
+    const run = (hs6: string) => Object.fromEntries(dutyInputs({
+      markets: ['LU', 'AD', 'SM', 'GI'], hs6, as_of: new Date('2026-10-14T00:00:00Z'), official: new Map(),
+      primary_tariffs: new Map([['DE', { value: 4.06, year: 2022 }]]), manufactured_tariffs: new Map([['DE', { value: 1.44, year: 2022 }]]),
+      agreements, policy: POLICY,
+    }));
+    expect(run('741810')).toEqual({
+      LU: { kind: 'estimate', sector_average_percent: 1.44, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
+      AD: { kind: 'estimate', sector_average_percent: 1.44, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
+      SM: { kind: 'estimate', sector_average_percent: 1.44, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
+    });
+    // Rice is chapter 10: outside Andorra's union with the EU (chapters 25–97), so no estimate there.
+    expect(Object.keys(run('100630')).sort()).toEqual(['LU', 'SM']);
+    const sentence = metricSentence(scoreDuty(run('741810').LU!, POLICY, { official: 1, estimate: 0.5 }));
+    expect(sentence).toBe("Duty on Indian goods is 1.4% (estimated from the EU's common external tariff).");
   });
 
   test('a sector average past the age limit gives no estimate, and the market says why', () => {
