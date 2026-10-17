@@ -836,7 +836,9 @@ two peg cases in `demand-discovery-v5-fx`, rule-rate and logistics-estimate case
 case in `customs-territory-aliases`, and the agent hand-check line in `demand-control`. Full suite in one
 schema: 145 files, 2,189 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006.
 `tsc --noEmit` and ESLint clean on every changed file. CI on `8e07d05` (run 39024922864): passed. PR #5,
-stacked on PR #4.
+stacked on PR #4. On the docs-only `4714db8` (run 39025584959) the first attempt failed in
+`country-truth-phase-1h-assessment` ("computed under a different payload"), a test outside this change
+that passes in isolation (3 of 3 locally); the second attempt passed (R-25).
 
 ## Risk register
 
@@ -867,3 +869,4 @@ stacked on PR #4.
 | R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
 | R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
 | R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Open (E-021) — owner decision pending with PR #5 | Allowed as built (one cited rate per line); or hide the form for those sources until each licence is settled |
+| R-25 | `loadManifestInputs` (`src/lib/country-trade-metrics/service.ts`) reads manifest references and observations in no stated order, and the supplier HHI's evidence and supplier list follow input order, so recomputing a stored CountryTradeMetrics row can fail its checksum ("computed under a different payload") when the database returns rows in another order — in CI, and in a resumed Phase 1G run | Open (pre-existing; seen once in CI, run 39025584959 attempt 1, on a docs-only commit) | Order the facts deterministically in their own change, keeping stored rows' checksums valid |
