@@ -770,7 +770,10 @@ non-commercial use only without the Secretariat's approval; ITC Market Access Ma
 exploitation without ITC's written permission. Permission emails to UNCTAD and the WTO were drafted for
 the owner.
 
-**Checks run.** See the PR; recorded here once CI has run.
+**Checks run.** New tests: `money-format` (3), `fx-display-rate` (3), `capitals-supplement` (3), one
+customs-union case in `demand-discovery-v5-metrics`. Full suite in one schema: 141 files, 2,169 passed,
+5 skipped, 3 failed — the three local-harness-only failures of E-006. ESLint and `tsc --noEmit` clean on
+every changed file. CI on `3cb7656` (run 38548231223): passed. PR #4, stacked on PR #3.
 
 ## Risk register
 
