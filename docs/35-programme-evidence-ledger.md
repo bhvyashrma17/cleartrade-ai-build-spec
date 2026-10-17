@@ -836,9 +836,11 @@ two peg cases in `demand-discovery-v5-fx`, rule-rate and logistics-estimate case
 case in `customs-territory-aliases`, and the agent hand-check line in `demand-control`. Full suite in one
 schema: 145 files, 2,189 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006.
 `tsc --noEmit` and ESLint clean on every changed file. CI on `8e07d05` (run 39024922864): passed. PR #5,
-stacked on PR #4. On the docs-only `4714db8` (run 39025584959) the first attempt failed in
-`country-truth-phase-1h-assessment` ("computed under a different payload"), a test outside this change
-that passes in isolation (3 of 3 locally); the second attempt passed (R-25).
+stacked on PR #4. CI's first attempt then failed on both docs-only ledger commits, `4714db8` (run
+39025584959, passed on re-run) and `154d582` (run 39026589659), in `country-truth-phase-1h-assessment`
+("computed under a different payload"), whose code and test this change does not touch. That file
+passes locally in isolation (4 of 4) and in the full suite; CI's logs cannot be read from the agent
+session (R-25). Later attempts are on the PR's checks.
 
 ## Risk register
 
@@ -869,4 +871,4 @@ that passes in isolation (3 of 3 locally); the second attempt passed (R-25).
 | R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
 | R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
 | R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Open (E-021) — owner decision pending with PR #5 | Allowed as built (one cited rate per line); or hide the form for those sources until each licence is settled |
-| R-25 | `loadManifestInputs` (`src/lib/country-trade-metrics/service.ts`) reads manifest references and observations in no stated order, and the supplier HHI's evidence and supplier list follow input order, so recomputing a stored CountryTradeMetrics row can fail its checksum ("computed under a different payload") when the database returns rows in another order — in CI, and in a resumed Phase 1G run | Open (pre-existing; seen once in CI, run 39025584959 attempt 1, on a docs-only commit) | Order the facts deterministically in their own change, keeping stored rows' checksums valid |
+| R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |
