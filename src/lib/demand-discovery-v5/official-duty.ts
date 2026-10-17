@@ -38,6 +38,8 @@ export interface OfficialPreferenceNote {
 
 interface Resolved {
   source: string;
+  /** D-024: the line was read from the official tariff by a ClearTrade agent (authoritative-manual evidence). */
+  recorded_by_agent?: boolean;
   national_line: string | null;
   preference: OfficialPreferenceNote | null;
   fact_ids: string[];

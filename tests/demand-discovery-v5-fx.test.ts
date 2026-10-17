@@ -82,6 +82,42 @@ describe('v5 exchange rates', () => {
     ]);
   });
 
+  test('a pegged currency the ECB does not publish converts through its anchor, with no request for its own series (D-025)', async () => {
+    const calls = ecb({
+      USD: csv('USD', [['2035-04-10', '1.10']]),
+      INR: csv('INR', [['2035-04-10', '99']]),
+    });
+    const peg = (currency: string, anchor: string, rates: { units_per_anchor?: string; anchor_per_unit?: string }) => ({
+      currency, anchor, units_per_anchor: rates.units_per_anchor ?? null, anchor_per_unit: rates.anchor_per_unit ?? null,
+      authority: 'Fixture authority', basis: 'Fixture parity for the test.', source_url: 'https://example.test/peg', source_kind: 'official' as const,
+    });
+    const pegs = [peg('SAR', 'USD', { units_per_anchor: '3.75' }), peg('OMR', 'USD', { anchor_per_unit: '2.6008' }), peg('XOF', 'EUR', { units_per_anchor: '655.957' }), peg('NPR', 'INR', { units_per_anchor: '1.6' }), peg('ZZZ', 'GBP', { units_per_anchor: '2' })];
+    const resolver = createUsdRateResolver({ as_of: new Date('2035-04-11T09:00:00Z'), lookback_days: 7, fetch_missing: true, pegs });
+
+    expect(await resolver.usd('SAR')).toMatchObject({ rate: expect.closeTo(1 / 3.75, 12), frozen: { currency: 'SAR', derivation: 'peg', peg: { anchor: 'USD', units_per_anchor: '3.75', source_kind: 'official' }, anchor_rate: { derivation: 'identity' } } });
+    expect((await resolver.usd('OMR')).rate).toBeCloseTo(2.6008, 12);
+    // The CFA franc: USD per euro from the ECB, times euros per franc.
+    expect((await resolver.usd('XOF')).rate).toBeCloseTo(1.10 / 655.957, 12);
+    // The Nepalese rupee: USD per Indian rupee (an ECB cross rate), divided by 1.6.
+    expect(await resolver.usd('NPR')).toMatchObject({ rate: expect.closeTo(1.10 / 99 / 1.6, 12), frozen: { anchor_rate: { currency: 'INR', derivation: 'cross_via_eur', observation_date: '2035-04-10' } } });
+    // Only the anchors were asked for; no request ever named a pegged currency.
+    expect(calls.map((url) => url.pathname.split('/').pop()).sort()).toEqual([ecbSeriesKey('INR'), ecbSeriesKey('USD')]);
+
+    // An anchor without a rate leaves the pegged currency unavailable, saying why.
+    vi.restoreAllMocks();
+    ecb({ GBP: 503 });
+    expect(await resolver.usd('ZZZ')).toMatchObject({ rate: null, frozen: { status: 'unavailable', reason: expect.stringContaining('ZZZ is fixed to GBP, and the GBP rate is unavailable') } });
+  });
+
+  test('a stored ECB rate comes before a peg for the same currency', async () => {
+    ecb({ USD: csv('USD', [['2036-09-01', '1.2']]), GBP: csv('GBP', [['2036-09-01', '0.8']]) });
+    const pegs = [{ currency: 'GBP', anchor: 'USD', units_per_anchor: '5', anchor_per_unit: null, authority: 'Fixture', basis: 'A peg that must lose to the ECB.', source_url: 'https://example.test/peg', source_kind: 'reference' as const }];
+    const warm = createUsdRateResolver({ as_of: new Date('2036-09-02T09:00:00Z'), lookback_days: 7, fetch_missing: true });
+    await warm.usd('GBP');
+    const resolver = createUsdRateResolver({ as_of: new Date('2036-09-02T09:00:00Z'), lookback_days: 7, fetch_missing: true, pegs });
+    expect(await resolver.usd('GBP')).toMatchObject({ rate: expect.closeTo(1.2 / 0.8, 12), frozen: { derivation: 'cross_via_eur' } });
+  });
+
   test('with fetching switched off, a missing rate stays missing and nothing is requested', async () => {
     const calls = ecb({});
     const resolver = createUsdRateResolver({ as_of: new Date('2034-07-01T09:00:00Z'), lookback_days: 7, fetch_missing: false });

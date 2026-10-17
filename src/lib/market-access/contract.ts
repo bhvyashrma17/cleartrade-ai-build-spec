@@ -45,7 +45,9 @@ export type NationalCodeSystem =
   | 'UZ_TN_VED'
   | 'VN_AHTN_2022'
   | 'MA_TDI_2022'
-  | 'TN_NDP_2022';
+  | 'TN_NDP_2022'
+  /** A declarable line an agent read from a market's own official tariff (`manual-capture-service.ts`). */
+  | 'NATIONAL_TARIFF_LINE';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.

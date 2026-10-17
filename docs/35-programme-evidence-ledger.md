@@ -39,7 +39,13 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
-roadmap §26.
+roadmap §26. Pending with PR #5 (E-021), confirmed by merging it or changed before: Hong Kong's zero
+duty read from C&ED's published statement rather than its licence-pending duty-rate content; the seven
+other published rules; agent-read official lines scored at quality 0.9; the logistics estimate from
+shipping connectivity at quality 0.5; sanctions programmes as flags that never change a score; agents
+recording a line from the eight sources whose reuse is licence-pending (HK beyond its rule, MY, CL, ZA,
+UY, BD, PK, JM) — allowed as built, one cited rate per line (docs/37 §6), or hidden there until each
+licence is settled (R-24).
 
 ## Entries
 
@@ -775,6 +781,67 @@ customs-union case in `demand-discovery-v5-metrics`. Full suite in one schema: 1
 5 skipped, 3 failed — the three local-harness-only failures of E-006. ESLint and `tsc --noEmit` clean on
 every changed file. CI on `3cb7656` (run 38548231223): passed. PR #4, stacked on PR #3.
 
+### E-021 · 2026-10-17 · Tariffs for every market, pegged currencies, logistics estimate, sanctions flags
+
+**Built** on `dd5/tariff-coverage`, stacked on PR #4 (docs/36 §2, §4, §7.1, §9, §10; docs/37):
+- Customs Atlas: Martinique and San Marino join Åland and Monaco on the EU tariff, Andorra for HS
+  chapters 25–97 only (refused before any release is read otherwise); `src/lib/market-access/taric/service.ts`.
+  Releases imported before this record the narrower destination scope; the legal basis is in code.
+- Policy v5 (`demand-discovery-v5-policy-v5`; no run used v4): `rule_rates` for HK, MO, SG, SX, BQ, VA
+  (0%) and TL, BL (5%), each with source, excepted goods and review date; quality
+  `official_agent_recorded` 0.9; `logistics.lsci_fallback_minimum_pairs` 30 and quality
+  `logistics_lsci_estimate` 0.5.
+- `src/lib/market-access/tariff-source-directory.ts`: all 218 screened markets resolve to a connected
+  adapter (56), a researched determination (62) or a directory entry (100: 54 with an official page,
+  schedule or law, 46 with none online); customs-union sources for ECOWAS/UEMOA, EAC, EAEU, CEMAC,
+  SACU, GCC, CARICOM, SICA, MERCOSUR. The agent's market table shows where to read the tariff and
+  records the declarable line (`src/components/agent/RecordOfficialDuty.tsx`,
+  `POST /api/v1/market-access/manual-captures`, `src/lib/market-access/manual-capture-service.ts`):
+  market and HS6 from the stored assessment, assigned agent or Ops only, authoritative-manual
+  evidence, audit event `market_access_manual_capture`. v5 labels such a line "read from the official
+  tariff by a ClearTrade agent".
+- `curated:currency-pegs` (`data/reference/currency-pegs-v1.json`, sha256 `64ddb6d2…0825`): 14
+  currencies, 9 read on the authority's own page, 4 from the authority's statement as reported, 1 from
+  a reference work; the v5 resolver converts through the anchor's ECB rate without requesting a series
+  the ECB does not publish.
+- `wdi:IS.SHP.GCNW.XQ` registered; `src/lib/demand-discovery-v5/logistics-fallback.ts` fits LPI on
+  ln(LSCI) per run; frozen inputs v3 carry `logistics_estimate`.
+- `curated:sanctions-programmes` (`data/reference/sanctions-programmes-v1.json`, sha256 `bf2660fa…6c50`):
+  24 programmes checked 17 Oct 2026 (UN regimes for 14 markets; US CU, IR, KP comprehensive and RU, BY,
+  VE sectoral; EU RU, BY, IR, KP), shown as v5 flags.
+
+**Duty coverage** (policy v5 against the 13 Oct World Bank files, over the 217 markets v5 ranks): official
+without an agent in 64 (56 connected, 8 by rule), estimated in 128, neither in 25. Of the 153 an agent can
+make official, 60 have a researched source and 48 a directory page, schedule or law; in 45 nothing is
+online and the agent asks the authority.
+
+**Research** (docs/37 §7 lists every market): country by country for the 103 markets without a recorded
+source, from the authorities' own sites and official legal publications. IMF exchange rates need the
+IMF's permission for commercial reuse, so pegs were curated instead; US Treasury reporting rates
+(public domain, quarterly, about 170 currencies) are the free route for floating currencies but their
+live format could not be checked from the agent session (R-17). Iran's UN sanctions were re-imposed on
+27 Sep 2025 and remain contested (CRS IF11583, July 2026); the UN arms embargo on South Sudan was
+renewed in May 2026; OFAC lists no Syria programme (Syrian Sanctions Regulations removed in 2025).
+
+**Not done:** floating currencies (Treasury source); common-tariff parsers (docs/37 §5); Singapore's
+window acquisition job; replies from UNCTAD and the WTO.
+
+**Staging after merge:** import `curated:currency-pegs`, `curated:sanctions-programmes` and
+`wdi:IS.SHP.GCNW.XQ` (docs/36 §10 step 5), after PR #4's capitals supplement.
+
+**Checks run.** New tests: `tariff-source-directory` (6), `currency-pegs` (3), `sanctions-programmes` (3),
+`manual-tariff-capture` (3, including the next run reading the recorded line as official and labelled),
+two peg cases in `demand-discovery-v5-fx`, rule-rate and logistics-estimate cases in
+`demand-discovery-v5-metrics`, a sanctions-flag case in `demand-discovery-v5-assess`, the Andorra scope
+case in `customs-territory-aliases`, and the agent hand-check line in `demand-control`. Full suite in one
+schema: 145 files, 2,189 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006.
+`tsc --noEmit` and ESLint clean on every changed file. CI on `8e07d05` (run 39024922864): passed. PR #5,
+stacked on PR #4. CI's first attempt then failed on both docs-only ledger commits, `4714db8` (run
+39025584959, passed on re-run) and `154d582` (run 39026589659), in `country-truth-phase-1h-assessment`
+("computed under a different payload"), whose code and test this change does not touch. That file
+passes locally in isolation (4 of 4) and in the full suite; CI's logs cannot be read from the agent
+session (R-25). Later attempts are on the PR's checks.
+
 ## Risk register
 
 
@@ -800,3 +867,8 @@ every changed file. CI on `3cb7656` (run 38548231223): passed. PR #4, stacked on
 | R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |
 | R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Closed (E-018) — the owner re-derived both from the originals; byte-identical | — |
 | R-20 | v5 uses each country's latest World Bank value however old: tariff averages as old as 2002 and logistics scores as old as 2007 feed the duty estimate and the logistics metric | Decided (D-021): values more than 10 years old count as missing — built in E-019, pending merge | v5 runs on staging after E-019 deploys |
+| R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Open (E-021) — the list carries its check date | Monthly re-check; a new edition of `curated:sanctions-programmes` |
+| R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
+| R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
+| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Open (E-021) — owner decision pending with PR #5 | Allowed as built (one cited rate per line); or hide the form for those sources until each licence is settled |
+| R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |

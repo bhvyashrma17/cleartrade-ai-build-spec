@@ -11,6 +11,7 @@ import { metricSentence } from '../src/lib/demand-discovery-v5/explain';
 import { exporterUsdPerKg, exporterYearlyKg, kgPerUnit } from '../src/lib/demand-discovery-v5/exporter-inputs';
 import type { OfficialDutyResolution } from '../src/lib/demand-discovery-v5/official-duty';
 import { splitByAge } from '../src/lib/demand-discovery-v5/world-bank';
+import { fitLpiOnLsci, logisticsEstimates } from '../src/lib/demand-discovery-v5/logistics-fallback';
 
 const WINDOW = [2019, 2020, 2021, 2022, 2023, 2024];
 const flow = (year: number, exporter: string, importer: string, value_usd: number, quantity_kg: number | null = null): TradeFlowInput => ({ year, exporter, importer, value_usd, quantity_kg });
@@ -213,6 +214,32 @@ describe('v5 access, risk and exporter-fit metrics', () => {
     expect(scoreLogistics(null, 0.9, POLICY).score).toBeNull();
   });
 
+  test('without an LPI, logistics is the LPI shipping connectivity predicts, labelled as an estimate (v5, D-025)', () => {
+    // Thirty invented markets lying exactly on LPI = 1.5 + 0.5 ln(LSCI).
+    const codes = Array.from({ length: 30 }, (_, index) => `M${String.fromCharCode(65 + Math.floor(index / 26))}${String.fromCharCode(65 + (index % 26))}`);
+    const lsci = new Map(codes.map((code, index) => [code, { value: 2 + index * 4, year: 2020 }]));
+    const lpi = new Map(codes.map((code, index) => [code, 1.5 + 0.5 * Math.log(2 + index * 4)]));
+    const fit = fitLpiOnLsci(lpi, lsci, POLICY.logistics.lsci_fallback_minimum_pairs)!;
+    expect(fit).toMatchObject({ pairs: 30, slope: expect.closeTo(0.5, 9), intercept: expect.closeTo(1.5, 9), r2: expect.closeTo(1, 9) });
+    expect(fitLpiOnLsci(new Map([...lpi].slice(0, 29)), lsci, POLICY.logistics.lsci_fallback_minimum_pairs)).toBeNull();
+
+    // FJ has connectivity but no LPI; PY has neither; TV's and ZZ's predictions fall outside 1–5, so they are clamped.
+    lsci.set('FJ', { value: 9.26, year: 2020 }).set('TV', { value: 0.1, year: 2020 }).set('ZZ', { value: 1e9, year: 2020 });
+    const { estimates } = logisticsEstimates({ markets: ['FJ', 'TV', 'PY', 'ZZ', codes[0]!], lpi, lsci, policy: POLICY });
+    expect([...estimates.keys()].sort()).toEqual(['FJ', 'TV', 'ZZ']);
+    expect(estimates.get('FJ')!.predicted_lpi).toBeCloseTo(1.5 + 0.5 * Math.log(9.26), 9);
+    expect(estimates.get('TV')!.predicted_lpi).toBe(1);
+    expect(estimates.get('ZZ')!.predicted_lpi).toBe(5);
+
+    const scored = scoreLogistics(null, 0.9, POLICY, null, { ...estimates.get('FJ')!, quality: POLICY.quality.logistics_lsci_estimate });
+    expect(scored).toMatchObject({ estimated: true, quality: 0.5, inputs: { basis: 'lsci_estimate', lsci: 9.26, lsci_year: 2020, fit_pairs: 30 } });
+    expect(scored.score).toBeCloseTo(((1.5 + 0.5 * Math.log(9.26)) - 1) / 4 * 100, 2);
+    expect(metricSentence(scored)).toBe("No World Bank logistics score exists; from its shipping connections (UNCTAD index 9.3, 2020) it would rate about 2.6 out of 5.");
+    // A usable LPI always wins over the estimate.
+    expect(scoreLogistics(3, 0.9, POLICY, null, { ...estimates.get('FJ')!, quality: 0.5 })).toMatchObject({ score: 50, quality: 0.9, inputs: { lpi: 3 } });
+    expect(() => assertPolicy({ ...POLICY, logistics: { ...POLICY.logistics, lsci_fallback_minimum_pairs: 5 } })).toThrow(/at least ten markets/);
+  });
+
   test('World Bank values more than 10 years old on the run date count as missing, and say so (D-021)', () => {
     expect(POLICY.world_bank.max_age_years).toBe(10);
     const split = splitByAge(new Map([['DE', { value: 4.1, year: 2016 }], ['BI', { value: 2.1, year: 2015 }], ['IN', { value: 3.4, year: 2023 }]]), new Date('2026-10-14T00:00:00Z'), POLICY);
@@ -299,7 +326,6 @@ describe('v5 duty inputs', () => {
   });
 
   test("a market without its own average borrows its customs union's common external tariff, within the union's chapters (v4)", () => {
-    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v4');
     const run = (hs6: string) => Object.fromEntries(dutyInputs({
       markets: ['LU', 'AD', 'SM', 'GI'], hs6, as_of: new Date('2026-10-14T00:00:00Z'), official: new Map(),
       primary_tariffs: new Map([['DE', { value: 4.06, year: 2022 }]]), manufactured_tariffs: new Map([['DE', { value: 1.44, year: 2022 }]]),
@@ -314,6 +340,38 @@ describe('v5 duty inputs', () => {
     expect(Object.keys(run('100630')).sort()).toEqual(['LU', 'SM']);
     const sentence = metricSentence(scoreDuty(run('741810').LU!, POLICY, { official: 1, estimate: 0.5 }));
     expect(sentence).toBe("Duty on Indian goods is 1.4% (estimated from the EU's common external tariff).");
+  });
+
+  test('a published rule gives the duty where no tariff line does: free ports, one-rate markets, excepted goods (v5)', () => {
+    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v5');
+    const resolved = { source: 'x', national_line: null, preference: null, fact_ids: [], snapshot_ids: [] };
+    const run = (hs6: string, asOf = '2026-10-14', official = new Map<string, OfficialDutyResolution>()) => Object.fromEntries(dutyInputs({
+      markets: ['HK', 'TL', 'SG', 'BL'], hs6, as_of: new Date(`${asOf}T00:00:00Z`), official,
+      primary_tariffs: new Map([['HK', { value: 0, year: 2024 }], ['SG', { value: 0.2, year: 2024 }]]),
+      manufactured_tariffs: new Map([['HK', { value: 0, year: 2024 }], ['SG', { value: 0, year: 2024 }]]), agreements, policy: POLICY,
+    }));
+    const brass = run('741810');
+    expect(brass.HK).toMatchObject({ kind: 'rule', duty_percent: 0, source_url: expect.stringMatching(/^https:\/\/www\.customs\.gov\.hk\//) });
+    expect(brass.TL).toMatchObject({ kind: 'rule', duty_percent: 5 });
+    expect(brass.BL).toMatchObject({ kind: 'rule', duty_percent: 5 });
+    // Whisky is one of Hong Kong's and Singapore's dutiable goods: the rule leaves it out, so the estimate applies.
+    expect(run('220830')).toMatchObject({ HK: { kind: 'estimate' }, SG: { kind: 'estimate' }, TL: { kind: 'rule' } });
+    // Usable official evidence comes first; official evidence that yields no rate is never overruled by a rule.
+    const official = new Map<string, OfficialDutyResolution>([['SG', { status: 'percent', duty_percent: 0, ...resolved }], ['HK', { status: 'unusable', reason: 'Per litre.', expression: '1 HKD / l', ...resolved }]]);
+    expect(run('741810', '2026-10-14', official)).toMatchObject({ SG: { kind: 'official' }, HK: { kind: 'estimate', official_note: 'Per litre.' } });
+    // Past its review date a rule is not applied until it is checked again.
+    expect(run('741810', '2027-02-01').TL).toBeUndefined();
+
+    const scored = scoreDuty(brass.HK!, POLICY, { official: 1, estimate: 0.5 });
+    expect(scored).toMatchObject({ score: 100, quality: 1, inputs: { basis: 'rule', duty_percent: 0 } });
+    expect(scored.estimated).toBeUndefined();
+    expect(metricSentence(scored)).toBe('Indian goods enter duty-free. Hong Kong is a free port: only liquor, tobacco, hydrocarbon oil, methyl alcohol and motor vehicles are taxed on import.');
+    expect(metricSentence(scoreDuty(brass.TL!, POLICY, { official: 1, estimate: 0.5 }))).toBe('Duty on Indian goods is 5%. Timor-Leste charges one customs duty rate on the value of all imports.');
+
+    const broken = (entry: Partial<DemandDiscoveryV5Policy['rule_rates'][string]>) => () => assertPolicy({ ...POLICY, rule_rates: { HK: { ...POLICY.rule_rates.HK!, ...entry } } });
+    expect(broken({ except_hs: ['221'] })).toThrow(/chapters, headings or subheadings/);
+    expect(broken({ source_url: 'http://example.test' })).toThrow(/https source/);
+    expect(broken({ review_by: '2026-10-14' })).toThrow(/later review date/);
   });
 
   test('a sector average past the age limit gives no estimate, and the market says why', () => {

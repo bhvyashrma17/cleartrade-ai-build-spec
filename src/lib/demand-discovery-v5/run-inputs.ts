@@ -26,6 +26,8 @@ import { capitalRowSchema } from '@/lib/reference-datasets/geodist';
 import { comtradeAvailabilityRowSchema, indiaTradeAgreementRowSchema, wdiRowSchema } from '@/lib/reference-datasets/parsers';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
 import { CAPITALS_SUPPLEMENT_KEY, capitalSupplementRowSchema } from '@/lib/reference-datasets/capitals-supplement';
+import { CURRENCY_PEGS_KEY, currencyPegRowSchema } from '@/lib/reference-datasets/currency-pegs';
+import { SANCTIONS_PROGRAMMES_KEY, sanctionsFlagsByMarket, sanctionsProgrammeRowSchema } from '@/lib/reference-datasets/sanctions-programmes';
 import { activeReferenceRows } from '@/lib/reference-datasets/service';
 import { BACI_PROVIDER, type BaciHsRevision } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease, readProductFlows } from '@/lib/trade-datasets/service';
@@ -36,6 +38,7 @@ import { comtradePartnerIdentity, fallbackMarketSeries, newestYearInputs, type R
 import { dutyInputs, tariffSector, type SectorTariff } from './duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg } from './exporter-inputs';
 import { createUsdRateResolver, type UsdRate } from './fx';
+import { logisticsEstimates } from './logistics-fallback';
 import { resolveOfficialDuty, type OfficialDutyResolution } from './official-duty';
 import { policyHash } from './policy';
 import { acquireV5Tariffs } from './tariff-step';
@@ -44,7 +47,8 @@ import { testHsRevision, worldTotals, type HsRevisionTest } from './hs-revision'
 import { splitByAge } from './world-bank';
 import type { TradeFlowInput } from './series';
 
-export const V5_INPUTS_SCHEMA_VERSION = 'demand-discovery-v5-inputs-v2';
+// v3 (17 Oct 2026): adds `logistics_estimate` and the LSCI reference (D-025).
+export const V5_INPUTS_SCHEMA_VERSION = 'demand-discovery-v5-inputs-v3';
 
 /** The product facts a run needs, frozen into the run's snapshot at enqueue. */
 export interface V5ProductFacts {
@@ -156,13 +160,19 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     if (resolution.status === 'none' && marketSnapshots.some((snapshot) => snapshot.classification_resolution === 'classification_refinement_required')) {
       resolution = { status: 'none', reason: "This HS6 splits into national lines with different duties in this market; the official duty needs the product's declarable line." };
     }
-    if (resolution.status !== 'none') for (const snapshot of marketSnapshots) if (resolution.snapshot_ids.includes(snapshot.id)) used.add(snapshot.evidence_origin);
+    if (resolution.status !== 'none') {
+      for (const snapshot of marketSnapshots) if (resolution.snapshot_ids.includes(snapshot.id)) used.add(snapshot.evidence_origin);
+      // D-024: a line an agent read from the official tariff says so wherever it is shown.
+      const snapshotIds = resolution.snapshot_ids;
+      if (marketSnapshots.some((snapshot) => snapshotIds.includes(snapshot.id) && snapshot.provider === 'authoritative_manual')) resolution = { ...resolution, recorded_by_agent: true };
+    }
     resolutions.set(market, resolution);
   }
   const frozenMarkets = Object.fromEntries([...resolutions].map(([market, resolution]) => [market, resolution.status === 'none'
     ? resolution
     : {
         status: resolution.status, source: resolution.source, national_line: resolution.national_line, fact_ids: resolution.fact_ids, snapshot_ids: resolution.snapshot_ids, preference: resolution.preference,
+        ...(resolution.recorded_by_agent ? { recorded_by_agent: true } : {}),
         ...(resolution.status === 'percent' ? { duty_percent: resolution.duty_percent } : resolution.status === 'specific' ? { usd_per_kg: resolution.usd_per_kg, expression: resolution.expression, fx: resolution.fx } : { reason: resolution.reason, expression: resolution.expression }),
       }]));
   return {
@@ -231,22 +241,25 @@ export async function loadRunInputs(args: {
   const latest = chosen.release.last_year;
 
   // --- reference datasets ---------------------------------------------------------------------
-  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest, agreements, ecgc, capitals, capitalsSupplement] = await Promise.all([
-    referenceMap('wdi:LP.LPI.OVRL.XQ'), referenceMap('wdi:TM.TAX.TCOM.SM.AR.ZS'), referenceMap('wdi:TM.TAX.MANF.SM.AR.ZS'),
+  const [lpi, primary, manufactured, lsci, availabilityLatest, availabilityNewest, agreements, ecgc, capitals, capitalsSupplement, currencyPegs, sanctions] = await Promise.all([
+    referenceMap('wdi:LP.LPI.OVRL.XQ'), referenceMap('wdi:TM.TAX.TCOM.SM.AR.ZS'), referenceMap('wdi:TM.TAX.MANF.SM.AR.ZS'), referenceMap('wdi:IS.SHP.GCNW.XQ'),
     availability(latest), availability(latest + 1), activeReferenceRows('india:trade-agreements', indiaTradeAgreementRowSchema),
     activeReferenceRows(ECGC_COUNTRY_RISK_KEY, ecgcRatingRowSchema), activeReferenceRows(GEO_CEPII_KEY, capitalRowSchema),
     activeReferenceRows(CAPITALS_SUPPLEMENT_KEY, capitalSupplementRowSchema),
+    activeReferenceRows(CURRENCY_PEGS_KEY, currencyPegRowSchema),
+    activeReferenceRows(SANCTIONS_PROGRAMMES_KEY, sanctionsProgrammeRowSchema),
   ]);
-  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active, agreements, ecgc, capitals, capitalsSupplement]) if (reference) origins.add(reference.evidence_origin);
+  for (const reference of [lpi.active, primary.active, manufactured.active, lsci.active, availabilityLatest.active, availabilityNewest.active, agreements, ecgc, capitals, capitalsSupplement, currencyPegs, sanctions]) if (reference) origins.add(reference.evidence_origin);
   if (!agreements) notes.push("India's trade agreements are not imported, so duty estimates assume no agreement.");
   if (!lpi.active) notes.push('Logistics scores are missing: the World Bank logistics index is not imported.');
   if (!primary.active && !manufactured.active) notes.push('Duty estimates are missing: the World Bank tariff averages are not imported.');
   if (!availabilityLatest.active) notes.push(`Comtrade's ${latest} reporting list is not imported, so every market is treated as estimated from partners' figures.`);
   if (!ecgc) notes.push('Country risk is not scored: the ECGC country risk list is not imported.');
   if (!capitals) notes.push('Distance fit is not scored: capital coordinates (CEPII GeoDist) are not imported.');
+  if (!sanctions) notes.push('Sanctions programmes are not shown on markets: the curated list is not imported.');
   const coordinates = coordinateInputs({ capitals: capitals?.rows ?? [], provider_codes_without_iso: chosen.provider_codes_without_iso, supplement: capitals ? capitalsSupplement?.rows ?? [] : [] });
   // D-021: World Bank values older than the policy's limit count as missing, and the market says so.
-  const [lpiAge, primaryAge, manufacturedAge] = [lpi, primary, manufactured].map((reference) => splitByAge(reference.map, args.as_of, policy));
+  const [lpiAge, primaryAge, manufacturedAge, lsciAge] = [lpi, primary, manufactured, lsci].map((reference) => splitByAge(reference.map, args.as_of, policy));
   const tooOldIn = (ages: Map<string, number>) => markets.filter((market) => ages.has(market)).length;
   const staleTariffs = tooOldIn((tariffSector(args.hs6, policy) === 'primary' ? primaryAge : manufacturedAge).too_old);
   const staleLogistics = tooOldIn(lpiAge.too_old);
@@ -254,7 +267,16 @@ export async function loadRunInputs(args: {
     const parts = [staleLogistics ? `the logistics score for ${staleLogistics} market${staleLogistics === 1 ? '' : 's'}` : null, staleTariffs ? `the tariff average for ${staleTariffs} market${staleTariffs === 1 ? '' : 's'}` : null].filter(Boolean);
     notes.push(`World Bank figures more than ${policy.world_bank.max_age_years} years old are not used: ${parts.join(' and ')}.`);
   }
-  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing });
+  // D-025: where no logistics score is usable, the one shipping connectivity predicts (an estimate).
+  const lpiValues = new Map([...lpiAge.fresh].map(([iso2, row]) => [iso2, row.value]));
+  const logistics = logisticsEstimates({ markets, lpi: lpiValues, lsci: lsciAge.fresh, policy });
+  if (logistics.estimates.size) {
+    notes.push(`Logistics for ${logistics.estimates.size} market${logistics.estimates.size === 1 ? '' : 's'} without a World Bank logistics score is estimated from UNCTAD's shipping connectivity index (fitted on ${logistics.fit!.pairs} markets with both).`);
+  } else if (lpi.active && !lsci.active) {
+    notes.push('Markets without a World Bank logistics score have no logistics estimate: the shipping connectivity index is not imported.');
+  }
+  // D-025: currencies fixed against one the ECB publishes are converted through their peg.
+  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing, pegs: currencyPegs?.rows ?? [] });
 
   // D-020: ask every market with a Customs Atlas source for this product's tariff before reading
   // tariff evidence. What is acquired is admitted at the tariff clock (no earlier than any retrieval).
@@ -340,8 +362,10 @@ export async function loadRunInputs(args: {
     reported_latest_year: availabilityLatest.codes.size ? new Set(marketReporters.filter((entry) => availabilityLatest.codes.has(entry.reporter_code)).map((entry) => entry.iso2)) : new Set(),
     newest_year: newestYear,
     coordinates: coordinates.map,
-    lpi: new Map([...lpiAge.fresh].map(([iso2, row]) => [iso2, row.value])),
+    lpi: lpiValues,
     lpi_too_old: lpiAge.too_old,
+    logistics_estimates: logistics.estimates,
+    sanctions: sanctionsFlagsByMarket(sanctions?.rows ?? []),
     ecgc: ecgcInputs(ecgc?.rows ?? []),
     duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: official.resolutions, primary_tariffs: primaryAge.fresh, manufactured_tariffs: manufacturedAge.fresh, primary_too_old: primaryAge.too_old, manufactured_too_old: manufacturedAge.too_old, agreements: agreements?.rows ?? [], policy }),
     exporter: {
@@ -359,13 +383,15 @@ export async function loadRunInputs(args: {
     universe: { version: universe.version, checksum: universe.checksum, size: universe.size },
     baci: { hs17: hs17?.frozen ?? null, hs22: hs22?.frozen ?? null, chosen_release_id: chosen.release.id, revision_test: revision, base_years: baseYears, short_history: shortHistory },
     reference: {
-      'wdi:LP.LPI.OVRL.XQ': lpi.frozen, 'wdi:TM.TAX.TCOM.SM.AR.ZS': primary.frozen, 'wdi:TM.TAX.MANF.SM.AR.ZS': manufactured.frozen,
+      'wdi:LP.LPI.OVRL.XQ': lpi.frozen, 'wdi:TM.TAX.TCOM.SM.AR.ZS': primary.frozen, 'wdi:TM.TAX.MANF.SM.AR.ZS': manufactured.frozen, 'wdi:IS.SHP.GCNW.XQ': lsci.frozen,
       [`comtrade:availability:${latest}`]: availabilityLatest.active ? { release_id: availabilityLatest.active.release_id, rows_sha256: availabilityLatest.active.rows_sha256 } : null,
       [`comtrade:availability:${latest + 1}`]: availabilityNewest.active ? { release_id: availabilityNewest.active.release_id, rows_sha256: availabilityNewest.active.rows_sha256 } : null,
       'india:trade-agreements': agreements ? { release_id: agreements.release_id, version: agreements.version, rows_sha256: agreements.rows_sha256 } : null,
       [ECGC_COUNTRY_RISK_KEY]: ecgc ? { release_id: ecgc.release_id, version: ecgc.version, rows_sha256: ecgc.rows_sha256 } : null,
       [GEO_CEPII_KEY]: capitals ? { release_id: capitals.release_id, version: capitals.version, rows_sha256: capitals.rows_sha256 } : null,
       [CAPITALS_SUPPLEMENT_KEY]: capitalsSupplement ? { release_id: capitalsSupplement.release_id, version: capitalsSupplement.version, rows_sha256: capitalsSupplement.rows_sha256 } : null,
+      [CURRENCY_PEGS_KEY]: currencyPegs ? { release_id: currencyPegs.release_id, version: currencyPegs.version, rows_sha256: currencyPegs.rows_sha256 } : null,
+      [SANCTIONS_PROGRAMMES_KEY]: sanctions ? { release_id: sanctions.release_id, version: sanctions.version, rows_sha256: sanctions.rows_sha256 } : null,
     },
     provider_coordinates: capitals ? { placed: coordinates.provider_links, unplaced: coordinates.unplaced_provider_codes } : null,
     comtrade: frozenComtrade,
@@ -374,11 +400,16 @@ export async function loadRunInputs(args: {
     official_duty: official.frozen,
     exporter: { fx: fx.frozen, usd_per_kg: price, yearly_kg: volume },
     fx_fetches: fxFetches,
+    logistics_estimate: { fit: logistics.fit, markets: Object.fromEntries([...logistics.estimates].map(([market, estimate]) => [market, { lsci: estimate.lsci, lsci_year: estimate.lsci_year, predicted_lpi: estimate.predicted_lpi }])) },
     world_bank_too_old: {
       max_age_years: policy.world_bank.max_age_years,
       'wdi:LP.LPI.OVRL.XQ': Object.fromEntries(lpiAge.too_old), 'wdi:TM.TAX.TCOM.SM.AR.ZS': Object.fromEntries(primaryAge.too_old), 'wdi:TM.TAX.MANF.SM.AR.ZS': Object.fromEntries(manufacturedAge.too_old),
+      'wdi:IS.SHP.GCNW.XQ': Object.fromEntries(lsciAge.too_old),
     },
   };
 
   return { input, frozen, evidence_origins: [...origins].sort(), notes, degraded };
 }
+
+/** Exposed for tests that read official duties from stored evidence without a whole run. */
+export const __test__ = { officialDuties };
