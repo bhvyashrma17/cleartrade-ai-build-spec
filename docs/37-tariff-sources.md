@@ -105,7 +105,9 @@ as the official rate where national exceptions are not yet modelled.
 - National tariffs are legal instruments; many copyright laws exclude official texts, but each
   automated source still gets its own rights check (as the existing packs record). An agent reading
   one published rate from an official page and citing it is the authoritative-manual path the Customs
-  Atlas already defines.
+  Atlas already defines. Whether that extends to the eight sources whose reuse is licence-pending (HK
+  beyond its rule, MY, CL, ZA, UY, BD, PK, JM) is an owner decision pending with PR #5 (ledger R-24);
+  the form allows it as built.
 
 ## 7. Every market (generated 17 Oct 2026)
 

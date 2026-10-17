@@ -42,7 +42,10 @@ Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); t
 roadmap §26. Pending with PR #5 (E-021), confirmed by merging it or changed before: Hong Kong's zero
 duty read from C&ED's published statement rather than its licence-pending duty-rate content; the seven
 other published rules; agent-read official lines scored at quality 0.9; the logistics estimate from
-shipping connectivity at quality 0.5; sanctions programmes as flags that never change a score.
+shipping connectivity at quality 0.5; sanctions programmes as flags that never change a score; agents
+recording a line from the eight sources whose reuse is licence-pending (HK beyond its rule, MY, CL, ZA,
+UY, BD, PK, JM) — allowed as built, one cited rate per line (docs/37 §6), or hidden there until each
+licence is settled (R-24).
 
 ## Entries
 
@@ -807,6 +810,11 @@ every changed file. CI on `3cb7656` (run 38548231223): passed. PR #4, stacked on
   24 programmes checked 17 Oct 2026 (UN regimes for 14 markets; US CU, IR, KP comprehensive and RU, BY,
   VE sectoral; EU RU, BY, IR, KP), shown as v5 flags.
 
+**Duty coverage** (policy v5 against the 13 Oct World Bank files, over the 217 markets v5 ranks): official
+without an agent in 64 (56 connected, 8 by rule), estimated in 128, neither in 25. Of the 153 an agent can
+make official, 60 have a researched source and 48 a directory page, schedule or law; in 45 nothing is
+online and the agent asks the authority.
+
 **Research** (docs/37 §7 lists every market): country by country for the 103 markets without a recorded
 source, from the authorities' own sites and official legal publications. IMF exchange rates need the
 IMF's permission for commercial reuse, so pegs were curated instead; US Treasury reporting rates
@@ -827,7 +835,8 @@ two peg cases in `demand-discovery-v5-fx`, rule-rate and logistics-estimate case
 `demand-discovery-v5-metrics`, a sanctions-flag case in `demand-discovery-v5-assess`, the Andorra scope
 case in `customs-territory-aliases`, and the agent hand-check line in `demand-control`. Full suite in one
 schema: 145 files, 2,189 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006.
-`tsc --noEmit` and ESLint clean on every changed file. CI: recorded when it has run.
+`tsc --noEmit` and ESLint clean on every changed file. CI on `8e07d05` (run 39024922864): passed. PR #5,
+stacked on PR #4.
 
 ## Risk register
 
@@ -857,3 +866,4 @@ schema: 145 files, 2,189 passed, 5 skipped, 3 failed — the three local-harness
 | R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Open (E-021) — the list carries its check date | Monthly re-check; a new edition of `curated:sanctions-programmes` |
 | R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
 | R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
+| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Open (E-021) — owner decision pending with PR #5 | Allowed as built (one cited rate per line); or hide the form for those sources until each licence is settled |
