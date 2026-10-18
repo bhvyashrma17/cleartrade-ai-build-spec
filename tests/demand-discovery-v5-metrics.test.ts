@@ -198,6 +198,22 @@ describe('v5 access, risk and exporter-fit metrics', () => {
       .toMatchObject({ duty_percent: 5, basis: 'official', preference_percent: 0, preference_applicability: 'potentially_applicable_requires_origin_proof' });
   });
 
+  // D-026 (policy v6): India's published preference scored instead of the standard rate.
+  test('duty: a scored preference says so, keeps the standard rate beside it, and a quota preference is only shown', () => {
+    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v6');
+    expect(POLICY.duty.score_india_preference).toBe(true);
+    const preference = { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: '2.5%', percent: 2.5 };
+    const scored = scoreDuty({ kind: 'official', duty_percent: 2.5, source: 'USITC HTS 1006304010', preference, rate_basis: 'india_preference', standard: { duty_percent: 11.2, expression: '11.2%' } }, POLICY, duty);
+    expect(scored).toMatchObject({ score: 90, quality: 1, inputs: { duty_percent: 2.5, basis: 'official', rate: 'india_preference', standard_percent: 11.2, standard_duty: '11.2%' } });
+    expect(metricSentence(scored)).toBe("Duty on Indian goods is 2.5% at India's preferential rate (standard rate 11.2%); claiming it needs proof of Indian origin.");
+    const free = scoreDuty({ kind: 'official', duty_percent: 0, source: 'Japan Customs', preference: { ...preference, duty_expression: 'Free', percent: 0 }, rate_basis: 'india_preference', standard: { duty_percent: null, expression: '10 yen/kg' } }, POLICY, duty);
+    expect(metricSentence(free)).toBe("Indian goods enter duty-free at India's preferential rate (standard rate 10 yen/kg); claiming it needs proof of Indian origin.");
+    const quota = scoreDuty({ kind: 'official', duty_percent: 10, source: 'Japan Customs', preference: { ...preference, duty_expression: '0%', percent: 0, quota: true } }, POLICY, duty);
+    expect(quota.inputs).toMatchObject({ duty_percent: 10, preference_quota: 'yes' });
+    expect(quota.inputs.rate).toBeUndefined();
+    expect(metricSentence(quota)).toBe('Duty on Indian goods is 10%; duty-free entry applies only within a tariff quota.');
+  });
+
   test('distance fit is 100 when India is no farther than the usual supplier, else e^−Δ in log distance', () => {
     const coordinates = new Map([['DE', { lat: 0, lon: 0 }], ['IN', { lat: 0, lon: 10 }], ['CN', { lat: 0, lon: 20 }], ['VN', { lat: 0, lon: 5 }]]);
     const far = buildMarketSeries([flow(2024, 'CN', 'DE', 100)], ['DE']).get('DE')!;
@@ -343,7 +359,7 @@ describe('v5 duty inputs', () => {
   });
 
   test('a published rule gives the duty where no tariff line does: free ports, one-rate markets, excepted goods (v5)', () => {
-    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v5');
+    expect(Object.keys(POLICY.rule_rates).sort()).toEqual(['BL', 'BQ', 'HK', 'MO', 'SG', 'SX', 'TL', 'VA']);
     const resolved = { source: 'x', national_line: null, preference: null, fact_ids: [], snapshot_ids: [] };
     const run = (hs6: string, asOf = '2026-10-14', official = new Map<string, OfficialDutyResolution>()) => Object.fromEntries(dutyInputs({
       markets: ['HK', 'TL', 'SG', 'BL'], hs6, as_of: new Date(`${asOf}T00:00:00Z`), official,

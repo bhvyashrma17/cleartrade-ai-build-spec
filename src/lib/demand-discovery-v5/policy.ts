@@ -32,8 +32,10 @@ export interface DemandDiscoveryV5Policy {
   /**
    * `official_minimum_confidence`: the evidence confidence (percent) an official tariff row needs,
    * the deep assessment's own minimum (`country_truth.phase_1h` tariff policy).
+   * `score_india_preference` (v6, D-026): score India's published preference, when it is not a
+   * tariff quota, instead of the ordinary rate (`official-duty.ts`).
    */
-  duty: { ceiling_percent: number; comprehensive_agreement_factor: number; partial_agreement_factor: number; primary_hs_chapters_through: number; official_minimum_confidence: number };
+  duty: { ceiling_percent: number; comprehensive_agreement_factor: number; partial_agreement_factor: number; primary_hs_chapters_through: number; official_minimum_confidence: number; score_india_preference: boolean };
   distance: { minimum_weight_covered: number };
   /** `lsci_fallback_minimum_pairs` (v5): markets with both LPI and LSCI needed before the LSCI estimate is used (`logistics-fallback.ts`). */
   logistics: { lpi_min: number; lpi_max: number; lsci_fallback_minimum_pairs: number };
@@ -77,7 +79,9 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   // v5 (17 Oct 2026): adds rule_rates — free ports and one-rate markets (D-024) — the quality of an
   // official line an agent read (D-024) and the logistics estimate from shipping connectivity where
   // no LPI exists (D-025). No run used v4.
-  policy_version: 'demand-discovery-v5-policy-v5',
+  // v6 (18 Oct 2026): duty.score_india_preference — India's published preference, when it is not a
+  // tariff quota, is scored instead of the ordinary rate (D-026).
+  policy_version: 'demand-discovery-v5-policy-v6',
   model_version: DEMAND_DISCOVERY_V5_MODEL,
   points: {
     market_size: 20, growth: 10, stability: 5,
@@ -100,7 +104,7 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   foothold: { share_weight: 70, trend_weight: 30, zero_share_score: 40, full_share_percent: 10, trend_floor_pp_per_year: -5, trend_ceiling_pp_per_year: 5, minimum_trend_points: 3 },
   prices: { neutral_ratio: 1, full_ratio: 1.5, minimum_suppliers_with_quantity: 3, outlier_iqr_multiple: 1.5 },
   openness: { supplier_coverage_min: 0.95, supplier_coverage_max: 1.05 },
-  duty: { ceiling_percent: 25, comprehensive_agreement_factor: 0.5, partial_agreement_factor: 0.8, primary_hs_chapters_through: 27, official_minimum_confidence: 50 },
+  duty: { ceiling_percent: 25, comprehensive_agreement_factor: 0.5, partial_agreement_factor: 0.8, primary_hs_chapters_through: 27, official_minimum_confidence: 50, score_india_preference: true },
   distance: { minimum_weight_covered: 0.8 },
   logistics: { lpi_min: 1, lpi_max: 5, lsci_fallback_minimum_pairs: 30 },
   world_bank: { max_age_years: 10 },
@@ -199,6 +203,7 @@ export function assertPolicy(policy: DemandDiscoveryV5Policy) {
   if (policy.ranking.required_metrics.some((key) => !(key in policy.points))) throw new Error('Required metrics must be policy metrics.');
   if (!(policy.window_years >= 2)) throw new Error('The window needs at least two years.');
   if (!(policy.duty.official_minimum_confidence >= 0 && policy.duty.official_minimum_confidence <= 100)) throw new Error('The official duty confidence minimum must be a percentage.');
+  if (typeof policy.duty.score_india_preference !== 'boolean') throw new Error('duty.score_india_preference must be true or false.');
   if (!(Number.isInteger(policy.world_bank.max_age_years) && policy.world_bank.max_age_years >= 0)) throw new Error('The World Bank age limit must be a whole number of years.');
   if (!(Number.isInteger(policy.logistics.lsci_fallback_minimum_pairs) && policy.logistics.lsci_fallback_minimum_pairs >= 10)) throw new Error('The logistics estimate needs at least ten markets to fit on.');
   for (const [market, entry] of Object.entries(policy.customs_unions)) {

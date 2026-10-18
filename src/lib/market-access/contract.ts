@@ -210,6 +210,10 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
       geographic_area_id: preference.geographic_area_id,
       applicability: preference.applicability,
       basis: preference.basis,
+      // D-026: v5 scores a published India preference unless it is a tariff quota, from the pack's
+      // own reading of the preferential duty (the shared expression parser does not read "Free").
+      ...(preference.is_quota != null ? { is_quota: preference.is_quota } : {}),
+      ...(preference.duty ? { duty: preference.duty as unknown } : {}),
       ...(preference.raw_evidence ?? {}),
     } as Prisma.InputJsonValue,
   });

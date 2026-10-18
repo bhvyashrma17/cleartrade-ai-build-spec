@@ -12,6 +12,9 @@
  *
  * Policy v5: where a market has no tariff line for the product, a published rule (`rule_rates`) —
  * a free port's zero, or one rate for all goods — gives the duty before any estimate does.
+ *
+ * Policy v6 (D-026): an official duty may be India's published preference rather than the ordinary
+ * rate (`official-duty.ts`); the input says which, and keeps the ordinary rate beside it.
  */
 import type { IndiaTradeAgreementRow } from '@/lib/reference-datasets/parsers';
 import type { DemandDiscoveryV5Policy } from './policy';
@@ -90,12 +93,16 @@ export function dutyInputs(args: {
   };
   for (const market of args.markets) {
     const official = args.official.get(market);
+    // D-026: which rate the official duty carries, and the ordinary rate a scored preference replaced.
+    const rate = official && official.status !== 'none' && official.basis === 'india_preference'
+      ? { rate_basis: 'india_preference' as const, standard: official.standard ?? null }
+      : {};
     if (official?.status === 'percent') {
-      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     if (official?.status === 'specific') {
-      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     // A rule (v5) stands in for a missing tariff line, never for official evidence that exists but yields no rate.

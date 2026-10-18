@@ -193,8 +193,14 @@ export function scoreOpenness(series: MarketSeries, year: number, quality: numbe
 
 // --- 7–9 access -------------------------------------------------------------------------------
 
-/** A preference published for Indian goods: shown beside the official duty, never scored. */
-export interface DutyPreferenceNote { applicability: string; duty_expression: string | null; percent: number | null }
+/** A preference published for Indian goods. D-026 (policy v6): scored when it is not a tariff quota; a quota is only shown. */
+export interface DutyPreferenceNote { applicability: string; duty_expression: string | null; percent: number | null; quota?: boolean }
+
+/** D-026: the ordinary (MFN) rate that a scored preference stands in for, as published. */
+export interface StandardDutyNote { duty_percent: number | null; expression: string | null }
+
+/** Which rate an official duty carries: India's published preference, or the ordinary rate. */
+type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null };
 
 /** §4.7: the sector average times the agreement factor. `official_note` says why an official duty was not usable. */
 export interface EstimatedDuty {
@@ -208,9 +214,9 @@ export interface EstimatedDuty {
 }
 
 export type DutyInput =
-  | { kind: 'official'; duty_percent: number; source: string; preference?: DutyPreferenceNote | null; recorded_by_agent?: boolean }
+  | ({ kind: 'official'; duty_percent: number; source: string; preference?: DutyPreferenceNote | null; recorded_by_agent?: boolean } & OfficialRate)
   /** A specific duty per kilogram, in USD; the score divides it by the market's unit value. */
-  | { kind: 'official_specific'; usd_per_kg: number; expression: string; source: string; preference?: DutyPreferenceNote | null; estimate: EstimatedDuty | null; recorded_by_agent?: boolean }
+  | ({ kind: 'official_specific'; usd_per_kg: number; expression: string; source: string; preference?: DutyPreferenceNote | null; estimate: EstimatedDuty | null; recorded_by_agent?: boolean } & OfficialRate)
   | EstimatedDuty
   /** A published rule fixes the duty for every good it covers (policy `rule_rates`): a free port's zero, or one rate for all goods. */
   | { kind: 'rule'; duty_percent: number; rule: string; basis: string; source_url: string }
@@ -243,11 +249,15 @@ export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, qua
   const ceiling = policy.duty.ceiling_percent;
   // D-024: a line an agent read from the official tariff keeps its own (policy) quality and says so.
   const byAgent = (input.kind === 'official' || input.kind === 'official_specific') && input.recorded_by_agent === true;
+  // D-026: a scored preference says so and keeps the ordinary rate it stands in for.
+  const preferred = (input.kind === 'official' || input.kind === 'official_specific') && input.rate_basis === 'india_preference';
+  const standardNote = preferred && input.standard ? input.standard : null;
   const official = (percent: number, extra: Record<string, string | number>, preference: DutyPreferenceNote | null | undefined): MetricResult => ({
     key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: byAgent ? quality.agent_recorded ?? quality.official : quality.official, reason: null,
     inputs: {
       duty_percent: round(percent, 4), basis: 'official', ...extra, ...(byAgent ? { recorded_by_agent: 'yes' } : {}),
-      ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4) } : {}),
+      ...(preferred ? { rate: 'india_preference', standard_percent: standardNote?.duty_percent == null ? null : round(standardNote.duty_percent, 4), standard_duty: standardNote?.expression ?? null } : {}),
+      ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4), ...(preference.quota ? { preference_quota: 'yes' } : {}) } : {}),
     },
   });
   if (input.kind === 'official') return official(input.duty_percent, { source: input.source }, input.preference);

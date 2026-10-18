@@ -36,16 +36,16 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-023 | 2026-10-14 | Rupee figures beside dollar figures in the Demand Discovery views follow today's ECB rate (the owner chose this over the rate frozen with the run); stored run values stay in US dollars. | Owner | Demand Discovery v5 |
 | D-024 | 2026-10-14 | Official tariffs for every market from free sources, researched country by country, keeping agents' work to a minimum; in parallel the owner asks UNCTAD (TRAINS) and the WTO for permission to show their tariff data in the product. | Owner | Demand Discovery v5, Customs Atlas |
 | D-025 | 2026-10-14 | Fill four further data gaps: the six missing capitals and customs-union duty estimates; a second exchange-rate source (IMF) after a terms check; market-level sanctions programmes from the UN, US and EU lists; UNCTAD's shipping-connectivity index as a logistics fallback after a terms check. | Owner | Demand Discovery v5 |
+| D-026 | 2026-10-18 | v5 scores India's preferential rate where the official tariff publishes one for India and it is not a tariff quota, instead of the ordinary rate; the ordinary rate stays beside it (policy v6, E-022). | Owner | Demand Discovery v5 |
+| D-027 | 2026-10-18 | The agent's 10% is a tenth of ClearTrade's 1% success fee. Owner's words: "yes, but charged as additional agent fee later" — read as a separate agent fee charged to the exporter on top of the 1%, at a later stage. Recorded, not built: `payouts.ts` still pays the agent share out of the success fee. | Owner | Fees, payouts |
+| D-028 | 2026-10-18 | Approved as built in PR #5: Hong Kong's zero duty from C&ED's published statement; the seven other published rules; agent-read official lines at quality 0.9; agents may record lines from the eight licence-pending sources, one cited rate per line (R-24); the logistics estimate from shipping connectivity at quality 0.5; sanctions as flags only. Also approved: a customs union's common tariff counts as its members' official duty before national exceptions are modelled, labelled and below full quality; currencies the ECB does not publish use US Treasury reporting rates. | Owner | Demand Discovery v5, Customs Atlas |
+| D-029 | 2026-10-18 | Singapore's tariff is acquired automatically inside SSO's permitted window (03:00–07:00 SGT) every day and saved; runs read the saved copy at any time. Saved copies refreshed on a schedule are acceptable for other markets where that is the only way. | Owner | Customs Atlas |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
-roadmap §26. Pending with PR #5 (E-021), confirmed by merging it or changed before: Hong Kong's zero
-duty read from C&ED's published statement rather than its licence-pending duty-rate content; the seven
-other published rules; agent-read official lines scored at quality 0.9; the logistics estimate from
-shipping connectivity at quality 0.5; sanctions programmes as flags that never change a score; agents
-recording a line from the eight sources whose reuse is licence-pending (HK beyond its rule, MY, CL, ZA,
-UY, BD, PK, JM) — allowed as built, one cited rate per line (docs/37 §6), or hidden there until each
-licence is settled (R-24).
+roadmap §26; the next automation wave after the customs unions (proposed in E-022: the 40 researched
+markets without a readable source, as saved copies, largest Indian export markets first; the seven
+licence-pending sources stay with agents until a licence is settled).
 
 ## Entries
 
@@ -870,5 +870,5 @@ session (R-25). Later attempts are on the PR's checks.
 | R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Open (E-021) — the list carries its check date | Monthly re-check; a new edition of `curated:sanctions-programmes` |
 | R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
 | R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
-| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Open (E-021) — owner decision pending with PR #5 | Allowed as built (one cited rate per line); or hide the form for those sources until each licence is settled |
+| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Accepted (D-028): allowed as built, one cited rate per line | Automated reading of these sources still waits for each licence |
 | R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |

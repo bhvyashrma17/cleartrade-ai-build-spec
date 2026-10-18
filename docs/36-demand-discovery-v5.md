@@ -123,7 +123,7 @@ below live in `demand_discovery.v5` config and are frozen into the run.
 | 4 | India's foothold · 10 | share `s = X(IN→m) / M(m)` in %, latest year; share score = `40 + 60 × min(1, log10(1+s) / log10(11))`; trend = OLS slope of yearly shares, −5 → 0 to +5 pp/yr → 100; foothold = 70% share + 30% trend | latest year observed |
 | 5 | Price headroom · 10 | `r = UVm / UVin`: `UVm` = quantity-weighted median of the market's supplier unit values, `UVin` = quantity-weighted median of India's export unit values to all markets, both FOB, Tukey 1.5 IQR outliers removed; score = `clamp(50 + 50 × ln r / ln 1.5)` | ≥ 3 supplier flows with quantity, and India's `UVin` |
 | 6 | Openness · 5 | `HHI = Σ share_s²`; score = `100 × (1 − HHI)` | latest year, supplier sum within 95–105% of `M` |
-| 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin, specific duties converted with `UVm` (read automatically, or by an agent — quality 0.9, labelled); else a published rule (policy v5 `rule_rates`); else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, a rule, or an estimate input |
+| 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin — India's published preference when it is not a quota (policy v6), else the ordinary rate — specific duties converted with `UVm` (read automatically, or by an agent — quality 0.9, labelled); else a published rule (policy v5 `rule_rates`); else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, a rule, or an estimate input |
 | 8 | Distance fit · 5 | `D̄ = Σ wₛ ln dist(s,m)` (wₛ = supplier value share); `Δ = ln dist(IN,m) − D̄`; score = 100 if `Δ ≤ 0`, else `100 × e^(−Δ)` | supplier mix and coordinates |
 | 9 | Logistics · 5 | `(LPI − 1) / 4 × 100`; without an LPI (policy v5), the LPI predicted from shipping connectivity: OLS of LPI on `ln(LSCI)` over the run's markets with both (≥ 30), clamped to 1–5, quality 0.5, labelled | an LPI value, or an LSCI value and the fit |
 | 10 | Country risk · 10 | ECGC grade: A1 100, A2 85, B1 70, B2 55, C1 40, C2 20, D 0; Restricted Cover Group I caps at 40, Group II caps at 20; off cover = 0 | the market is on the list |
@@ -281,10 +281,12 @@ reads the frozen releases and passes their rows in).
   assessment's own rules (`selectTariffFactsOnly`: clock, status, supersession, exact HS6 line,
   licensed-content approval; authoritative public assertions only; confidence ≥
   `duty.official_minimum_confidence`, policy v2). The scored rate is the market's ordinary
-  (third-country) duty — what Indian goods pay without claiming a preference. A preference
-  published for India is shown beside it ("0% may apply with proof of Indian origin") and not
-  scored, because a published preferential line is not applicability (`tariff-semantics.ts`). An
-  ad-valorem duty is used as published; a specific duty per kg or tonne is converted with the ECB
+  (third-country) duty — what Indian goods pay without claiming a preference. Policy v6 (D-026,
+  18 Oct 2026): where the tariff publishes a preference for India that is not a tariff quota, that
+  preferential rate is scored instead ("Duty on Indian goods is 2.5% at India's preferential rate
+  (standard rate 11.2%); claiming it needs proof of Indian origin."), read from the pack's own
+  parsed duty where the evidence row keeps it; a quota preference, one above the standard rate or
+  one that is not a single rate is shown and not scored. An ad-valorem duty is used as published; a specific duty per kg or tonne is converted with the ECB
   rate frozen on the run and, in the score, the market's median supplier unit value (the reason
   shows the published expression); compound, mixed, per-litre or per-item duties and currencies
   without an ECB rate fall back to the labelled estimate with the reason recorded.
@@ -375,9 +377,11 @@ reads the frozen releases and passes their rows in).
 - Duty estimates (§4.7) can be wrong for a specific product; they are always labelled.
 - World Bank values more than 10 years old count as missing (D-021). With that limit 184 of the 218
   markets have a tariff average and 166 a logistics score; values up to 10 years old are still used.
-- The official duty is the ordinary rate even where an Indian preference may apply, so it can
-  overstate the duty an exporter who qualifies under rules of origin would pay; the preference is
-  shown. The estimate path, by contrast, assumes an agreement in force is used (§4.7).
+- Where the tariff publishes a preference for India (policy v6), the score assumes the exporter
+  can prove Indian origin; one who cannot pays the standard rate shown beside it. Evidence stored
+  before 18 Oct 2026 lacks the pack's parsed preferential duty, so a preference written only as
+  "Free" there is shown, not scored, until the product is looked up again. The estimate path
+  likewise assumes an agreement in force is used (§4.7).
 - A specific duty's percentage uses the FOB unit value of the market's suppliers; customs value is
   usually CIF, so the derived percentage reads slightly high.
 - The weights are judgment until deal outcomes exist; refit them then.

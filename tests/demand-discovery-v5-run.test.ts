@@ -306,13 +306,14 @@ describe('Demand Discovery v5 runs', () => {
     expect(frozen.reference['cepii:geo_cepii']).toMatchObject({ release_id: expect.any(String) });
     expect(frozen.provider_coordinates).toEqual({ placed: [{ identity: 'cepii_baci:490', iso2: 'TW', city: 'Taipei' }], unplaced: [] });
     // Official duty: Germany's EUR 175 per tonne at EUR/USD 1.1 over Germany's median supplier unit
-    // value of USD 2.50/kg is 7.7%; Nepal's 10% is scored, the 0% preference only noted.
+    // value of USD 2.50/kg is 7.7%. Nepal publishes 0% for India beside its 10%: policy v6 (D-026)
+    // scores the preference and keeps the standard rate beside it.
     const deDuty = metric('DE', 'duty')!;
     expect(deDuty).toMatchObject({ inputs: { basis: 'official', source: 'EU TARIC 1008909000', duty_expression: '175.00 EUR / 1000 kg', market_usd_per_kg: 2.5 } });
     expect(deDuty.inputs.duty_percent).toBeCloseTo(7.7, 4);
-    expect(metric('NP', 'duty')).toMatchObject({ score: 60, inputs: { basis: 'official', duty_percent: 10, preference_percent: 0, preference_applicability: 'potentially_applicable_requires_origin_proof' } });
+    expect(metric('NP', 'duty')).toMatchObject({ score: 100, inputs: { basis: 'official', duty_percent: 0, rate: 'india_preference', standard_percent: 10, preference_percent: 0, preference_applicability: 'potentially_applicable_requires_origin_proof' } });
     expect((by.get('NP')!.reasons as { text: string }[]).map((reason) => reason.text).join(' ')).not.toMatch(/estimated\)/);
-    expect(frozen.official_duty.markets).toMatchObject({ DE: { status: 'specific' }, NP: { status: 'percent' } });
+    expect(frozen.official_duty.markets).toMatchObject({ DE: { status: 'specific', basis: 'standard' }, NP: { status: 'percent', basis: 'india_preference', standard: { duty_percent: 10 } } });
     // The EUR rate for DE's specific duty was already stored, so the run read it and fetched nothing.
     expect(frozen.fx_fetches).toEqual([]);
     expect(frozen.world_bank_too_old).toMatchObject({ max_age_years: 10, 'wdi:LP.LPI.OVRL.XQ': { BI: 2010 } });
