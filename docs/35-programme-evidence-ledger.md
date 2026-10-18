@@ -893,15 +893,18 @@ changed and held then activated, failures capped and spaced); preference cases i
 `demand-discovery-v5-tariff-step`; routing, directory and ops-view updates. The affected files (12)
 pass together locally. Full suite in one schema, run on this branch with E-023's changes on top: 149
 files, 2,215 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006. `tsc --noEmit`
-and ESLint clean on every changed file. CI runs each pull request on its own.
+and ESLint clean on every changed file. CI on PR #6's head `aae6baf` (run 39125655678): passed. The
+staging commands below were run as written, apart from the env file, against a throwaway local test
+database: `--status`, `--enable` (config version 1, through the audited path), `--run-now` outside the
+window (`not_due`, nothing fetched) and `--disable`.
 
 **Next automation wave (open owner decision, proposed here).** Of the 153 markets that needed an agent
 for an official duty (E-021), 24 are read automatically after E-023, leaving 129: 40 with a researched
 national source that cannot be read in place but could be saved and refreshed on a schedule as D-029
 allows (China, the UAE, Türkiye, Mexico, Thailand, Brazil, Egypt, Switzerland and the Philippines among
-them), one reader each, largest Indian export markets first; 39 small markets (Cabo Verde and South
-Sudan among them); 7 licence-pending sources, which stay with agents until a licence is settled; and 43
-with nothing online.
+them), one reader each, largest Indian export markets first; 37 small markets whose official page,
+schedule or law an agent can read; 7 licence-pending sources, which stay with agents until a licence is
+settled; and 45 with nothing online (Cabo Verde and South Sudan among them).
 
 **Not verified.** Whether the Railway worker can reach `sso.agc.gov.sg`, and the live SSO page against
 the reader: the first window run on staging is the live qualification (R-26). A staging run with a
@@ -909,7 +912,7 @@ Treasury-converted price.
 
 **Staging after merge** (owner's Claude Code; nothing fetches from SSO until switched on):
 1. Deploy; policy v6 and Treasury rates apply to new runs.
-2. `npx tsx --env-file=tmp/rw/.env.staging scripts/authority-refresh.ts --enable
+2. `npx tsx --env-file=tmp/rw/operator.env scripts/authority-refresh.ts --enable
    --actor-email=<ops supervisor> --changed-by=<admin> --reason="Save Singapore's tariff nightly on
    staging (D-029)"`; after the next window (00:30–04:30 IST) `--status` shows the attempt. If SSO
    refuses the worker, run `--acquire-only --out=<file>` inside the window on a machine that can reach
