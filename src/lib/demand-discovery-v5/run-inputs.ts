@@ -279,7 +279,7 @@ export async function loadRunInputs(args: {
     notes.push('Markets without a World Bank logistics score have no logistics estimate: the shipping connectivity index is not imported.');
   }
   // D-025: currencies fixed against one the ECB publishes are converted through their peg.
-  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing, pegs: currencyPegs?.rows ?? [] });
+  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing, pegs: currencyPegs?.rows ?? [], treasury: { enabled: config.fx_treasury_fallback, lookback_days: config.fx_treasury_max_lookback_days } });
 
   // D-020: ask every market with a Customs Atlas source for this product's tariff before reading
   // tariff evidence. What is acquired is admitted at the tariff clock (no earlier than any retrieval).

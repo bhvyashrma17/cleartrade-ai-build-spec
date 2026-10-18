@@ -7,6 +7,7 @@ import { JobStatus } from '@prisma/client';
 import { getConfig } from '@/lib/config';
 import { forbidden } from '@/lib/errors';
 import { appEnvironment } from '@/lib/evidence-environment';
+import { TREASURY_PROVIDER } from '@/lib/fx/treasury';
 import { isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
@@ -79,6 +80,12 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
     orderBy: { observation_date: 'desc' },
     select: { observation_date: true },
   });
+  // D-028: the newest stored US Treasury reporting rate, used for floating currencies the ECB lacks.
+  const latestTreasury = await prisma.authoritativeFxObservation.findFirst({
+    where: { environment, provider: TREASURY_PROVIDER },
+    orderBy: { observation_date: 'desc' },
+    select: { observation_date: true },
+  });
 
   const since = new Date(Date.now() - 7 * 86_400_000);
   const [recent, counts] = await Promise.all([
@@ -116,10 +123,11 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
       comtrade_newest_year: config.comtrade_newest_year,
       comtrade_market_fallback: config.comtrade_market_fallback,
       fx_fetch_missing: config.fx_fetch_missing,
+      fx_treasury_fallback: config.fx_treasury_fallback,
       tariff_acquisition: config.tariff_acquisition,
       policy_version: config.policy.policy_version,
     },
-    fx: { latest_usd_observation: latestUsd?.observation_date ?? null },
+    fx: { latest_usd_observation: latestUsd?.observation_date ?? null, latest_treasury_observation: latestTreasury?.observation_date ?? null },
     baci: baci.map((release) => ({ hs_revision: release.hs_revision, dataset_version: release.dataset_version, first_year: release.first_year, last_year: release.last_year, completed_at: release.completed_at, evidence_origin: release.evidence_origin })),
     reference: expected.map((item): V5DatasetStatus => {
       const release = byKey.get(item.key);

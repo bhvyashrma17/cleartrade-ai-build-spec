@@ -42,6 +42,7 @@ evidence; policies are frozen per run; a market's latest usable year is chosen p
 | World Bank WDI `TM.TAX.MANF.SM.AR.ZS`, `TM.TAX.TCOM.SM.AR.ZS` | Sector average applied tariff for the duty estimate | CC BY 4.0; latest 2022 | Yearly check |
 | India's trade agreements (curated) | Duty estimate factor and the "trade agreement" note | Department of Commerce agreement pages; each entry cites its source and in-force date | On each new agreement |
 | Currency pegs (curated, `curated:currency-pegs`) | Converting the 14 pegged currencies the ECB does not publish (D-025) | Central bank pages or the authority's statement as reported; one source per row | On a change of parity |
+| US Treasury Reporting Rates of Exchange (Fiscal Data API) | Converting floating currencies the ECB does not publish (D-028) | Public domain (US Government work) | Quarterly, with amendments; fetched by runs when none is stored |
 | Sanctions programmes (curated, `curated:sanctions-programmes`) | Market flags: UN Security Council regimes, US and EU programmes (D-025) | Legal basis and source per row; checked 17 Oct 2026 | Monthly check |
 | Customs Atlas (docs/33-global-tariff-source-contract, WP2) | Official duty for Indian origin, 56 of the 218 markets (docs/37) | Per authority release | Per release |
 
@@ -346,7 +347,15 @@ reads the frozen releases and passes their rows in).
 - **Pegged currencies (D-025).** `curated:currency-pegs`: 14 currencies the ECB does not publish (AED,
   BAM, BHD, BND, BTN, KMF, NPR, OMR, QAR, SAR, XAF, XCD, XOF, XPF) convert through their anchor's ECB
   rate on the run date; the frozen rate names the parity and its source. A stored ECB rate always
-  comes first. Floating currencies the ECB lacks (LKR, TWD, VND and others) stay unconverted.
+  comes first.
+- **Floating currencies (D-028, 18 Oct 2026).** A currency the ECB does not publish and no peg covers
+  (LKR, TWD, VND, PEN, GEL, ALL, MUR, KWD, UZS, MAD, TND and about 120 more) converts at the newest
+  US Treasury reporting rate in force on the run date within `fx_treasury_max_lookback_days` (120):
+  `src/lib/fx/treasury.ts` maps the Fiscal Data descriptions to ISO codes (US-dollar economies, the
+  euro, Cuba's convertible peso and the redenominated Syrian pound are left out) and keeps the raw
+  response as an `AuthoritativeFxSnapshot`. With `fx_fetch_missing` on, a run that finds none stored
+  fetches the list once; `fx_treasury_fallback` switches the fallback off. It never stands in for a
+  currency the ECB quotes, and `/ops/discovery` shows the newest stored Treasury day.
 - **Logistics estimate (policy v5, D-025).** Where no World Bank LPI is usable, logistics uses the LPI
   that UNCTAD's liner shipping connectivity index predicts (`wdi:IS.SHP.GCNW.XQ`), fitted on the run's
   markets with both; labelled as an estimate, quality 0.5, the fit frozen in `logistics_estimate`.
@@ -401,6 +410,8 @@ reads the frozen releases and passes their rows in).
   the date, and v5 gives it quality 0.9, not 1.
 - The logistics estimate assumes that LPI and shipping connectivity move together; the fit's r² is
   recorded with every estimate. WDI's copy of the index ends in 2020 for most markets.
+- A Treasury reporting rate is quarterly (amended only after a 10% move), so a duty in such a currency
+  converts at a rate up to a quarter old; the frozen rate names its date.
 - Sanctions programmes change often; the curated list carries the day it was checked and must be
   re-checked monthly. It holds country programmes only — named people and firms are screened per buyer.
 
@@ -468,7 +479,7 @@ touches production.
    R-19, once: `pdftotext -layout <ECGC PDF> -` and a CSV export of `geo_cepii.dta` should reproduce
    the two derived files byte for byte; if not, diff before importing the re-derived file.
 6. **Check.** `/ops/discovery` shows "Runs can start", no dataset "Not imported", official tariff
-   look-up on and ECB rates fetched by runs when missing. Customs Atlas releases must be active in the
+   look-up on, ECB rates fetched by runs when missing and US Treasury rates on for other currencies. Customs Atlas releases must be active in the
    environment (docs/33 §3 step 4) for the look-up to find release-backed tariffs.
 7. **Archetype runs** (D-003): for a paid test tenant, create rice `100630`, brassware `741810` and
    carpets `570110` and confirm each classification; v5 starts by itself. When each run finishes:

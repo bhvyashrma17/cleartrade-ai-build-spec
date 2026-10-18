@@ -175,6 +175,14 @@ export interface DemandDiscoveryV5Config {
    */
   fx_fetch_missing: boolean;
   /**
+   * D-028: convert a floating currency the ECB does not publish (and no peg covers) with the US
+   * Treasury reporting rate (`src/lib/fx/treasury.ts`; public domain, quarterly). With
+   * `fx_fetch_missing` on, a run that finds none stored fetches the Treasury list once.
+   */
+  fx_treasury_fallback: boolean;
+  /** How far back a Treasury rate may be (days): a quarter plus the weeks before the next one is published. */
+  fx_treasury_max_lookback_days: number;
+  /**
    * D-020: look up the product's official tariff in every market with a Customs Atlas source inside
    * each run (`demand-discovery-v5/tariff-step.ts`). Off: a run reads only tariff evidence ingested
    * earlier, and every other market's duty is the labelled estimate.
@@ -1024,6 +1032,8 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     comtrade_max_records: 100_000,
     fx_max_lookback_days: 7,
     fx_fetch_missing: true,
+    fx_treasury_fallback: true,
+    fx_treasury_max_lookback_days: 120,
     tariff_acquisition: true,
     tariff_live_fetch_timeout_ms: 60_000,
     policy: DEMAND_DISCOVERY_V5_DEFAULT_POLICY,
