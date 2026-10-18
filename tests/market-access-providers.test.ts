@@ -428,7 +428,8 @@ describe('unconfigured authoritative sources', () => {
 
   test('Mega-Wave D source gate retains precise fail-closed reasons for destinations not activated later', () => {
     const expectedReasons = {
-      CN: 'individual_investigation_required', SG: 'source_insufficient',
+      // SG left this list with D-029: it is read from the copy saved nightly in the SSO window.
+      CN: 'individual_investigation_required',
 TH: 'individual_investigation_required', BN: 'individual_investigation_required',
       KH: 'source_insufficient', LA: 'no_documented_machine_interface', MN: 'no_documented_machine_interface',
       AE: 'individual_investigation_required',
@@ -440,7 +441,7 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       ZM: 'individual_investigation_required', BW: 'individual_investigation_required', NA: 'individual_investigation_required',
     } as const;
 
-    expect(Object.keys(expectedReasons)).toHaveLength(26);
+    expect(Object.keys(expectedReasons)).toHaveLength(25);
     for (const [country, reason] of Object.entries(expectedReasons)) {
       const source = unconfiguredSourceForCountry(country);
       expect(source, country).not.toBeNull();
@@ -456,13 +457,13 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
   });
 
   test('Mega-Wave D blockers complete independently without tariff evidence or invented zeroes', async () => {
-    const countries = ['CN', 'SG', 'TH', 'BN', 'KH', 'LA', 'MN', 'AE', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
+    const countries = ['CN', 'TH', 'BN', 'KH', 'LA', 'MN', 'AE', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-d-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(26);
+    expect(outcomes).toHaveLength(25);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');

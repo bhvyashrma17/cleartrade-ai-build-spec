@@ -11,12 +11,12 @@ The authoritative per-market data lives in code, where a test holds it complete:
 `src/lib/market-access/unconfigured-sources.ts` (researched sources that cannot be read automatically)
 and `src/lib/demand-discovery-v5/policy.ts` (`rule_rates`). The table in §7 is generated from them.
 
-## 1. Where every market stands (17 Oct 2026)
+## 1. Where every market stands (18 Oct 2026)
 
 | Status | Markets | Meaning |
 |---|---|---|
-| Connected | 56 | The official tariff is read automatically (Customs Atlas). 53 before this work, plus Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff. |
-| Researched, not automatable | 62 | The official source is known and recorded with the reason it cannot be read automatically (licence pending, source incomplete, no machine interface, credentials, investigation required). |
+| Connected | 57 | The official tariff is read automatically (Customs Atlas). 53 before this work, plus Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff, and Singapore, read from the copy saved each night in its permitted window (D-029, §5a). |
+| Researched, not automatable | 61 | The official source is known and recorded with the reason it cannot be read automatically (licence pending, source incomplete, no machine interface, credentials, investigation required). |
 | Directory | 100 | The publishing authority and where its tariff can be read, for an agent; 6 of these are scored by a published rule. |
 
 `tests/tariff-source-directory.test.ts` fails if any screened market has none of the three. Of the
@@ -37,7 +37,7 @@ then).
    |---|---|---|---|
    | Hong Kong | 0%: free port | HS 22, 24, 27, 290511, 87 | Customs and Excise Department FAQ |
    | Macao | 0%: free port | HS 22, 24, 87 | Macao Trade and Investment Promotion Institute |
-   | Singapore | 0% except dutiable goods | HS 22, 24, 27, 3826, 87 | Singapore Customs |
+   | Singapore | 0% except dutiable goods (only until its first nightly copy is saved, §5a) | HS 22, 24, 27, 3826, 87 | Singapore Customs |
    | Sint Maarten | 0%: no import duty | HS 27 | Government of Sint Maarten, Customs |
    | Bonaire, Sint Eustatius and Saba | 0% import tax on all goods | HS 22, 24, 27 | Belastingdienst Caribisch Nederland |
    | Holy See | 0%: goods cross Italy duty-free | — | Lateran Treaty, Art. 20 |
@@ -93,7 +93,41 @@ as the official rate where national exceptions are not yet modelled.
 | 4 | BR | Camex TEC with national exceptions (official spreadsheet) | Owner decision to replace the Siscomex route recorded for BR. |
 | 5 | NC | Open data (data.gouv.nc, Licence Ouverte 2.0, updated daily) | Live API check from a machine that can reach it. |
 | 6 | AE | Dubai Customs open data | Terms of the dataset and GCC exceptions. |
-| 7 | SG | Implemented provider; acquisition only inside 03:00–07:00 SGT | A scheduled acquisition job, then qualification. |
+| 7 | SG | Implemented provider; acquisition only inside 03:00–07:00 SGT | Done (D-029): saved nightly by the worker, §5a. |
+
+## 5a. Singapore: saved in its window every night (D-029)
+
+Singapore Statutes Online allows automated extraction only from 03:00 to 07:00 Singapore Time, so a run
+cannot fetch Singapore's tariff when it needs it. The worker does it inside the window instead
+(`src/lib/market-access/providers/singapore-refresh.ts`, swept from `scripts/worker.ts` every ten
+minutes; outside the window the sweep reads nothing):
+
+- Once per Singapore day, starting between 03:00 and 06:00, it acquires the consolidated First
+  Schedule with its provenance pages (six requests), reads it with the strict bundle reader (layout,
+  at least 8,000 lines, deterministic replay, retained terms and amendment provenance) and compares its
+  canonical tariff with the copy already saved.
+- **Same tariff:** nothing is imported; the check is recorded. **No copy yet:** it is saved and becomes
+  the release runs read once it passes qualification — the reader plus checks a real Singapore
+  schedule always passes (rice not dutiable; liquor, tobacco, motor cars and petrol dutiable; at least
+  90% of lines duty-free; line count within 10% of the release in use). **Changed tariff:** it is
+  saved and held for review, because a saved release records the amendment chain reviewed in code (to
+  S 67/2026); the release in use stays active. An operator activates a held release with
+  `scripts/activate-authority-release.ts`, or turns on `activate_changed_tariff` and the next night
+  activates it.
+- A failed attempt is retried at most three times a night, 30 minutes apart; the release in use is
+  never touched by a failure. Each attempt is an audit event (`authority_refresh` /
+  `SG_SSO_CUSTOMS_DUTIES`) with the reason, the qualification checks and, for a change, the lines that
+  moved.
+- Switch: `market_access.authority_refresh` (off by default; written through the audited config API
+  or `scripts/authority-refresh.ts --enable --actor-email=<ops supervisor> --changed-by=<admin>`). The
+  state shows on Ops → Demand Discovery v5 and with `scripts/authority-refresh.ts --status`.
+- Until the first copy is saved, a run records Singapore's look-up as `no_release` (not a failure, so
+  the run is not partial) and the duty comes from the published rule (§2.3); the agent's pointer is
+  the SSO First Schedule.
+- If the worker's host cannot reach SSO, the same acquisition can run on any machine in the window
+  (`scripts/authority-refresh.ts --acquire-only --out=<file>`), and the file is imported with
+  `scripts/import-retained-authority-release.ts --family=SG` — the "saved copy" route the owner allowed
+  for other markets too (D-029).
 
 ## 6. Licences and permissions
 
@@ -285,7 +319,7 @@ as the official rate where national exceptions are not yet modelled.
 | Serbia (RS) | Researched, not automatable (individual investigation required) |  | [Customs Administration of Serbia — 2026 Customs Tariff regulation](https://www.carina.rs/privreda/tarifski-poslovi/carinska-tarifa/privreda_carinska_tarifa_opste.html) |
 | Seychelles (SC) | Agent reads it |  | [Seychelles Revenue Commission](https://src.gov.sc/faq/) — Imports pay trades tax on listed goods (Trades Tax Regulations). |
 | Sierra Leone (SL) | Agent reads it | ECOWAS | [National Revenue Authority of Sierra Leone](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; national measures in the annual Finance Act. |
-| Singapore (SG) | Researched, not automatable (source insufficient); v5 rule 0% |  | [Attorney-General’s Chambers of Singapore — Singapore Statutes Online, Customs (Duties) Order (O 4)](https://sso.agc.gov.sg/SL/CA1960-OR4?ProvIds=Sc4-XX-Sc4-) |
+| Singapore (SG) | Connected (`sg_sso_customs_duties_order`), saved nightly in the SSO window; v5 rule 0% until the first copy |  | Read automatically; before the first copy, [Singapore Statutes Online — Customs (Duties) Order, First Schedule](https://sso.agc.gov.sg/SL/CA1960-OR4?ProvIds=Sc4-XX-Sc4-) |
 | Sint Maarten (Dutch part) (SX) | Rule; v5 rule 0% |  | [Government of Sint Maarten, Customs](https://www.sintmaartengov.org/Ministries/Departments/Pages/Customs.aspx) — No import duty; customs taxes only petrol. |
 | Slovakia (SK) | Connected (`eu_taric`) | EU | Read automatically |
 | Slovenia (SI) | Connected (`eu_taric`) | EU | Read automatically |
@@ -338,4 +372,5 @@ as the official rate where national exceptions are not yet modelled.
   14 Oct 2027). After it, the rule is skipped and the duty falls back to the estimate.
 - Directory: re-check the links yearly; a changed source is a code change with the test.
 - A market that becomes connected leaves the directory (the test refuses an entry that shadows an
-  adapter, except Andorra's chapters 1–24).
+  adapter, except where the automatic read can leave a duty open: Andorra's chapters 1–24, and
+  Singapore before its first nightly copy).

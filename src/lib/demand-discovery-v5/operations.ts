@@ -8,6 +8,7 @@ import { getConfig } from '@/lib/config';
 import { forbidden } from '@/lib/errors';
 import { appEnvironment } from '@/lib/evidence-environment';
 import { TREASURY_PROVIDER } from '@/lib/fx/treasury';
+import { singaporeRefreshStatus } from '@/lib/market-access/providers/singapore-refresh';
 import { isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
@@ -87,6 +88,9 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
     select: { observation_date: true },
   });
 
+  // D-029: Singapore's tariff is read from the copy the worker saves in its nightly window.
+  const singaporeTariff = await singaporeRefreshStatus();
+
   const since = new Date(Date.now() - 7 * 86_400_000);
   const [recent, counts] = await Promise.all([
     prisma.discoveryRun.findMany({
@@ -128,6 +132,7 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
       policy_version: config.policy.policy_version,
     },
     fx: { latest_usd_observation: latestUsd?.observation_date ?? null, latest_treasury_observation: latestTreasury?.observation_date ?? null },
+    singapore_tariff: singaporeTariff,
     baci: baci.map((release) => ({ hs_revision: release.hs_revision, dataset_version: release.dataset_version, first_year: release.first_year, last_year: release.last_year, completed_at: release.completed_at, evidence_origin: release.evidence_origin })),
     reference: expected.map((item): V5DatasetStatus => {
       const release = byKey.get(item.key);

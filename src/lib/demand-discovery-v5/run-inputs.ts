@@ -292,7 +292,14 @@ export async function loadRunInputs(args: {
     const failed = step.outcomes.filter((item) => item.outcome === 'failed' || item.outcome === 'timed_out');
     if (failed.length) {
       degraded = true;
-      notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${failed.length === 1 ? 'that market uses' : 'those markets use'} the estimate.`);
+      notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${failed.length === 1 ? "that market's duty is" : "those markets' duties are"} not the official rate this run.`);
+    }
+    // D-029: a connected source with no release saved yet (Singapore before its first nightly copy)
+    // is not a failure of this run. The duty falls back as for any market without an official rate:
+    // the published rule where one covers the product (Singapore has one), otherwise the estimate.
+    const unsaved = step.outcomes.filter((item) => item.outcome === 'no_release');
+    if (unsaved.length) {
+      notes.push(`No official tariff release is saved yet for ${unsaved.map((item) => item.country_code).join(', ')}, so ${unsaved.length === 1 ? "that market's duty is" : "those markets' duties are"} not the official rate this run.`);
     }
   }
   const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd, score_india_preference: policy.duty.score_india_preference });

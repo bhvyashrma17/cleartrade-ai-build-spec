@@ -531,6 +531,9 @@ const CONFIG_KEYS = [
   // audited, versioned API so enabling it on staging never needs a direct database write; it is not
   // an Ops-console setting (OPS_TUNABLE_CONFIG_KEYS). The route validates its shape.
   'country_truth.market_access_orchestration',
+  // D-029: the nightly window refresh of window-only official tariffs (Singapore). Same discipline:
+  // versioned and audited here, shape-validated by the route, not an Ops-console setting.
+  'market_access.authority_refresh',
 ] as const;
 
 /** New config version. `value` is validated as parseable JSON by the route, not here — the shape differs per key. */

@@ -71,5 +71,8 @@ describe('Demand Discovery v5 operations view', () => {
     expect(html).toContain('ECB rates fetched by runs when missing');
     expect(view.switches.tariff_acquisition).toBe(true);
     expect(html).toContain('official tariff look-up on');
+    // D-029: the Singapore copy runs read, saved by the worker in SSO's nightly window.
+    expect(view.singapore_tariff).toMatchObject({ enabled: false, next_window_at: expect.any(Date) });
+    expect(html).toContain('Singapore tariff, saved nightly 03:00–07:00 Singapore Time: refresh off');
   });
 });

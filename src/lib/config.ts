@@ -135,6 +135,7 @@ export interface ConfigShape {
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
   'demand_discovery.v5': DemandDiscoveryV5Config;
+  'market_access.authority_refresh': AuthorityRefreshConfig;
   /**
    * Membership prices. Here — not in `src/lib/billing/plans.ts` — because money is never a
    * literal in application code (docs/01 §2), and because Ops must be able to reprice
@@ -191,6 +192,32 @@ export interface DemandDiscoveryV5Config {
   /** Ceiling for one live tariff fetch (UK, US) inside a run, in milliseconds. */
   tariff_live_fetch_timeout_ms: number;
   policy: DemandDiscoveryV5Policy;
+}
+
+/**
+ * D-029: official tariffs whose authority allows automated fetching only inside a window. The worker
+ * fetches them there and saves them as authority releases, so a run at any hour reads the saved copy
+ * (`market-access/providers/singapore-refresh.ts`). Written through the audited config API or
+ * `scripts/authority-refresh.ts`; not an Ops-console setting.
+ */
+export interface AuthorityRefreshConfig {
+  singapore: {
+    /** Off by default: nothing is fetched from Singapore Statutes Online until this is switched on. */
+    enabled: boolean;
+    /** The active ops supervisor or admin account saved releases are imported as. */
+    actor_email: string | null;
+    /** The first saved copy becomes the one runs read once it passes qualification. */
+    activate_first_release: boolean;
+    /**
+     * A changed tariff becomes the one runs read automatically. Off: it is saved and held for
+     * review, because a saved release records only the amendments reviewed in code (to S 67/2026).
+     */
+    activate_changed_tariff: boolean;
+    /** Failed attempts allowed in one night's window. */
+    max_attempts_per_window: number;
+    /** Wait between a failed attempt and the next. */
+    minutes_between_attempts: number;
+  };
 }
 
 export interface MarketEstimatePolicy {
@@ -1038,6 +1065,9 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     tariff_live_fetch_timeout_ms: 60_000,
     policy: DEMAND_DISCOVERY_V5_DEFAULT_POLICY,
   },
+  'market_access.authority_refresh': {
+    singapore: { enabled: false, actor_email: null, activate_first_release: true, activate_changed_tariff: false, max_attempts_per_window: 3, minutes_between_attempts: 30 },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1101,6 +1131,10 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   }
   if (key === 'country_truth.market_access_orchestration') {
     return { ...CONFIG_DEFAULTS['country_truth.market_access_orchestration'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'market_access.authority_refresh') {
+    const defaults = CONFIG_DEFAULTS['market_access.authority_refresh'], stored = row.value as Partial<AuthorityRefreshConfig>;
+    return { ...defaults, ...stored, singapore: { ...defaults.singapore, ...(stored.singapore ?? {}) } } as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];
@@ -1245,6 +1279,23 @@ export async function resolvePagination(params: {
   const requested = Number(params.per_page ?? policy.default_per_page) || policy.default_per_page;
   const per_page = Math.min(Math.max(1, requested), policy.max_per_page);
   return { page, per_page, skip: (page - 1) * per_page, take: per_page };
+}
+
+/** Problems with a `market_access.authority_refresh` value, empty when valid (config API and script). */
+export function authorityRefreshConfigProblems(value: unknown): string[] {
+  const config = value as Partial<AuthorityRefreshConfig> | null;
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return ['The value must be an object.'];
+  const sg = config.singapore as Partial<AuthorityRefreshConfig['singapore']> | undefined;
+  if (!sg || typeof sg !== 'object' || Array.isArray(sg)) return ['singapore must be an object.'];
+  const problems: string[] = [];
+  for (const field of ['enabled', 'activate_first_release', 'activate_changed_tariff'] as const) {
+    if (sg[field] !== undefined && typeof sg[field] !== 'boolean') problems.push(`singapore.${field} must be true or false.`);
+  }
+  if (sg.actor_email !== undefined && sg.actor_email !== null && (typeof sg.actor_email !== 'string' || !/^[^@\s]+@[^@\s]+$/.test(sg.actor_email))) problems.push('singapore.actor_email must be an email address or null.');
+  if (sg.enabled === true && !sg.actor_email) problems.push('singapore.actor_email is required when the refresh is enabled.');
+  if (sg.max_attempts_per_window !== undefined && (!Number.isInteger(sg.max_attempts_per_window) || sg.max_attempts_per_window < 1 || sg.max_attempts_per_window > 6)) problems.push('singapore.max_attempts_per_window must be a whole number from 1 to 6.');
+  if (sg.minutes_between_attempts !== undefined && (!Number.isInteger(sg.minutes_between_attempts) || sg.minutes_between_attempts < 10 || sg.minutes_between_attempts > 120)) problems.push('singapore.minutes_between_attempts must be a whole number from 10 to 120.');
+  return problems;
 }
 
 /**

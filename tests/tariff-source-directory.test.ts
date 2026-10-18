@@ -32,13 +32,14 @@ describe('tariff source directory', () => {
       if (source.kind === 'none') missing.push(code);
     }
     expect(missing).toEqual([]);
-    expect(Object.fromEntries(kinds)).toEqual({ connected: 56, documented: 62, directory: 100 });
+    expect(Object.fromEntries(kinds)).toEqual({ connected: 57, documented: 61, directory: 100 });
   });
 
-  test('a directory entry never shadows a connected adapter or a researched determination, except Andorra outside its customs union', () => {
+  test('a directory entry never shadows a researched determination, nor a connected adapter except where its read can leave a duty open', () => {
     for (const code of Object.keys(TARIFF_SOURCE_DIRECTORY)) {
       expect(unconfiguredSourceForCountry(code), code).toBeNull();
-      if (code !== 'AD') expect(DESTINATION_ADAPTERS[code], code).toBeUndefined();
+      // Andorra outside its customs union; Singapore before its first nightly copy (D-029).
+      if (!['AD', 'SG'].includes(code)) expect(DESTINATION_ADAPTERS[code], code).toBeUndefined();
     }
   });
 
@@ -52,12 +53,15 @@ describe('tariff source directory', () => {
     for (const union of Object.values(CUSTOMS_UNION_TARIFFS)) if (union.source_url) expect(union.source_url).toMatch(/^https:\/\//);
   });
 
-  test("every market v5 scores by rule has the rule's own source here or a researched determination", () => {
+  test("every market v5 scores by rule has the rule's own source here, a researched determination, or a connected tariff that comes first", () => {
     for (const [market, rule] of Object.entries(POLICY.rule_rates)) {
       const source = officialTariffSourceFor(market);
       if (source.kind === 'directory') {
         expect(source.form, market).toBe('rule');
         expect(source.source_url, market).toBe(rule.source_url);
+      } else if (source.kind === 'connected') {
+        // D-029: Singapore's saved official tariff is scored before its rule, which covers the nights before the first copy.
+        expect(market).toBe('SG');
       } else {
         expect(source.kind, market).toBe('documented');
       }
@@ -80,5 +84,8 @@ describe('tariff source directory', () => {
     // Andorra: the EU tariff covers brassware (chapter 74), not rice (chapter 10).
     expect(manualTariffCheckFor('AD', '741810')).toBeNull();
     expect(manualTariffCheckFor('AD', '100630')).toMatchObject({ authority: expect.stringContaining('Andorra') });
+    // Singapore is connected, but its duty stays estimated until the first nightly copy is saved.
+    expect(officialTariffSourceFor('SG')).toMatchObject({ kind: 'connected', provider_key: 'sg_sso_customs_duties_order' });
+    expect(manualTariffCheckFor('SG', '100630')).toMatchObject({ authority: expect.stringContaining('Singapore Statutes Online'), source_url: expect.stringMatching(/^https:\/\/sso\.agc\.gov\.sg\//) });
   });
 });

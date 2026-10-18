@@ -300,8 +300,11 @@ reads the frozen releases and passes their rows in).
   160 MB shared bundle cache between two of them. What a run acquires is admitted at its tariff
   clock (no earlier than the run's clock or any retrieval, as in the deep run); an identical release
   ingest is reused, not duplicated. Every market's outcome is frozen in `tariff_acquisition`; a failed
-  or timed-out look-up makes the run `partial` and that market uses the estimate. With the switch off
-  a run reads only evidence ingested earlier, as before.
+  or timed-out look-up makes the run `partial` and that market's duty is not the official rate (the
+  published rule where one covers the product, otherwise the estimate). A retained-release source with
+  nothing imported yet is `no_release` (D-029): said in the run's notes, not a failure, so the run is
+  not `partial` — Singapore before the worker has saved its first nightly copy (docs/37 §5a). With the
+  switch off a run reads only evidence ingested earlier, as before.
 - **Exchange rates (14 Oct 2026, E-018).** Nothing loaded ECB rates into an environment, so a price
   outside US dollars and every specific duty went unconverted. A run now reads stored ECB
   observations first; when no single published day within `fx_max_lookback_days` carries every leg,

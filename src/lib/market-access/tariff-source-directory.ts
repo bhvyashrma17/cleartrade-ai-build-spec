@@ -6,7 +6,9 @@
  * source was researched and found not automatable carry that determination in
  * `unconfigured-sources.ts`. This directory covers every other market: the publishing authority,
  * the official page, schedule or law where the current rates can be read, and the customs union
- * whose common external tariff the market applies.
+ * whose common external tariff the market applies. A connected market appears here only where its
+ * automatic read can leave a duty estimated for a reason an agent can check by hand: Andorra's
+ * chapters 1–24, and Singapore while no nightly copy is saved (D-029).
  *
  * It is guidance for a ClearTrade agent checking a duty by hand. Nothing here is tariff evidence and
  * nothing here is scored: an agent who reads a rate from one of these sources records it through the
@@ -132,7 +134,7 @@ export interface TariffSourceDirectoryEntry {
 const UEMOA_TEC = CUSTOMS_UNION_TARIFFS.UEMOA!.source_url;
 const ECOWAS_CET = CUSTOMS_UNION_TARIFFS.ECOWAS!.source_url;
 
-/** Every market without a connected adapter or a recorded determination, plus Andorra's chapters 1–24. */
+/** Every market without a connected adapter or a recorded determination, plus Andorra's chapters 1–24 and Singapore before its first saved copy. */
 const ENTRIES: readonly TariffSourceDirectoryEntry[] = [
   // --- Free ports and one-rate markets: v5 scores the published rule (policy rule_rates). ---
   { country_code: 'MO', authority: 'Macao Trade and Investment Promotion Institute', source_url: 'https://investhere.ipim.gov.mo/en/macau/investmentinformation/foreigntrade', form: 'rule', note: 'Free port: no duty on imports; consumption tax on tobacco and strong alcohol.' },
@@ -144,6 +146,9 @@ const ENTRIES: readonly TariffSourceDirectoryEntry[] = [
 
   // --- EU tariff partners: chapters outside the customs union. ---
   { country_code: 'AD', authority: "Govern d'Andorra, Departament de Duana", source_url: null, form: 'not_found', note: 'Chapters 25–97 are connected through the EU tariff; for chapters 1–24 Andorra applies its own tariff, not found online.' },
+
+  // --- Connected from a copy saved in the authority's own window (D-029): checked by hand only while none is saved. ---
+  { country_code: 'SG', authority: 'Attorney-General’s Chambers of Singapore — Singapore Statutes Online, Customs (Duties) Order, First Schedule', source_url: 'https://sso.agc.gov.sg/SL/CA1960-OR4?ProvIds=Sc4-XX-Sc4-', form: 'law', note: 'Read automatically from the copy saved each night between 03:00 and 07:00 Singapore Time; check here only while none is saved. Only liquor, tobacco, motor vehicles and petroleum products are dutiable.' },
 
   // --- ECOWAS members (UEMOA schedule for the eight UEMOA members). ---
   { country_code: 'BJ', authority: 'Direction Générale des Douanes du Bénin', source_url: UEMOA_TEC, form: 'schedule', note: 'Applies the UEMOA edition of the ECOWAS CET.' },
@@ -297,18 +302,21 @@ export function officialTariffSourceFor(countryCode: string): OfficialTariffSour
 }
 
 /**
- * Where an agent checks this market's tariff by hand: the directory entry, the researched source,
- * or, for a connected market, nothing (its tariff is read automatically). Andorra's chapters 1–24
- * fall outside its EU customs union, so a chapter tells this which applies.
+ * Where an agent checks this market's tariff by hand when its duty is estimated or missing: the
+ * directory entry, the researched source, or, for a connected market, nothing (its tariff is read
+ * automatically) unless the directory names a source for the case the automatic read leaves open.
+ * Andorra's chapters 1–24 fall outside its EU customs union, so a chapter tells this which applies;
+ * Singapore's entry covers the time before its first nightly copy is saved.
  */
 export function manualTariffCheckFor(countryCode: string, hs6?: string): { authority: string; source_url: string | null; note: string } | null {
   const code = countryCode.trim().toUpperCase();
   const source = officialTariffSourceFor(code);
   if (source.kind === 'connected') {
     const entry = TARIFF_SOURCE_DIRECTORY[code];
+    if (!entry) return null;
     const chapter = hs6 ? Number(hs6.slice(0, 2)) : null;
-    if (entry && code === 'AD' && chapter != null && chapter < 25) return { authority: entry.authority, source_url: entry.source_url, note: entry.note };
-    return null;
+    if (code === 'AD' && !(chapter != null && chapter < 25)) return null;
+    return { authority: entry.authority, source_url: entry.source_url, note: entry.note };
   }
   if (source.kind === 'documented') return { authority: source.authority, source_url: source.source_url, note: 'Researched: the official source is recorded but cannot be read automatically.' };
   if (source.kind === 'directory') return { authority: source.authority, source_url: source.source_url, note: source.note };

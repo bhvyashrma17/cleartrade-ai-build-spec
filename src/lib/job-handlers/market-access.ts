@@ -41,6 +41,7 @@ import { fetchUzbekistanMarketAccess } from '@/lib/market-access/providers/uzbek
 import { fetchVietnamMarketAccess } from '@/lib/market-access/providers/vietnam-service';
 import { fetchMoroccoMarketAccess } from '@/lib/market-access/providers/morocco-service';
 import { fetchTunisiaMarketAccess } from '@/lib/market-access/providers/tunisia-service';
+import { fetchSingaporeMarketAccess } from '@/lib/market-access/providers/singapore-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -208,6 +209,12 @@ const UZBEKISTAN_ADAPTER: MarketAccessAdapter = { provider_key: 'uz_lex_customs_
 const VIETNAM_ADAPTER: MarketAccessAdapter = { provider_key: 'vn_congbao_tariff', retrieval: 'retained_release', fetch: (request) => fetchVietnamMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const MOROCCO_ADAPTER: MarketAccessAdapter = { provider_key: 'ma_adii_tariff', retrieval: 'retained_release', fetch: (request) => fetchMoroccoMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 const TUNISIA_ADAPTER: MarketAccessAdapter = { provider_key: 'tn_douane_tarifweb', retrieval: 'retained_release', fetch: (request) => fetchTunisiaMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
+/**
+ * D-029: Singapore Statutes Online may be fetched automatically only from 03:00 to 07:00 Singapore
+ * Time, so runs read the release the worker saves in that window (`singapore-refresh.ts`). Until the
+ * first one passes qualification there is none, and the run records `no_release`, never a zero.
+ */
+const SINGAPORE_ADAPTER: MarketAccessAdapter = { provider_key: 'sg_sso_customs_duties_order', retrieval: 'retained_release', fetch: (request) => fetchSingaporeMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 
 /**
  * Every destination with an official, documented, machine-readable tariff interface, built once
@@ -241,6 +248,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   VN: VIETNAM_ADAPTER,
   MA: MOROCCO_ADAPTER,
   TN: TUNISIA_ADAPTER,
+  SG: SINGAPORE_ADAPTER,
   ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
   ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),

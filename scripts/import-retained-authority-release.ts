@@ -43,6 +43,7 @@ import { importUzbekistanRelease } from '@/lib/market-access/providers/uzbekista
 import { importVietnamRelease } from '@/lib/market-access/providers/vietnam-service';
 import { importMoroccoRelease } from '@/lib/market-access/providers/morocco-service';
 import { importTunisiaRelease } from '@/lib/market-access/providers/tunisia-service';
+import { importSingaporeRelease } from '@/lib/market-access/providers/singapore-service';
 import { prisma } from '@/lib/prisma';
 import { validateDatabaseEnvironment } from '@/lib/runtime-config';
 import type { Principal } from '@/types';
@@ -86,6 +87,9 @@ const DATED_FAMILIES: Record<string, { source_family: string; run: (args: DatedI
   VN: { source_family: 'VN_CONGBAO_CUSTOMS_TARIFF', run: importVietnamRelease },
   MA: { source_family: 'MA_ADII_CUSTOMS_TARIFF', run: importMoroccoRelease },
   TN: { source_family: 'TN_DOUANE_TARIFWEB', run: importTunisiaRelease },
+  // D-029: a Singapore bundle acquired in the SSO window on another machine (scripts/authority-refresh.ts
+  // --acquire-only), for when the worker cannot reach Singapore Statutes Online itself.
+  SG: { source_family: 'SG_SSO_CUSTOMS_DUTIES', run: importSingaporeRelease },
 };
 
 async function main() {
