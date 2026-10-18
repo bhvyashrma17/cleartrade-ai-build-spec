@@ -982,16 +982,20 @@ it did not yet carry.
 `market-access-providers`, `market-access-job-routing`, `tariff-source-directory`,
 `green-wave-authority-pack`. Full suite in one schema: 149 files, 2,215 passed, 5 skipped, 3 failed — the
 three local-harness-only failures of E-006. `tsc --noEmit` (scripts included) and ESLint clean on every
-changed file.
+changed file. CI on PR #7's head `b19c33e` (run 39125800182): passed. The three import commands below
+were run as written, apart from the env file, against a throwaway local test database with the
+delivered bundles: each NEW_RELEASE then UNCHANGED, and active. Read back from those releases at 18 Oct
+2026: Senegal rice 10%, Nigeria cotton shirts 20%, Kenya black tea 35%, Tanzania rice not scored (stay),
+Russia black tea 0%, Kazakhstan cotton yarn 5%, Russia medicines not scored (tariff notes).
 
 **Staging after merge** (owner's Claude Code, after PR #6's steps). The three bundles are in
 `~/Downloads/cleartrade-union-bundles/` on the owner's Mac (delivered 18 Oct; SHA-256 checked there); a
 rebuild from the official files in `~/Downloads` with `scripts/build-customs-union-bundle.ts` gives the
 same bytes. For each union, with `D=~/Downloads/cleartrade-union-bundles`:
 ```
-npx tsx --env-file=tmp/rw/.env.staging scripts/import-retained-authority-release.ts --family=ECOWAS --file=$D/cleartrade-union-ECOWAS-uemoa-tec-2022-v4.zip --expect-sha256=ce0cc831b182562414776d930f3f06892f782db23bc5afe8a1a48ff8ced38454 --release=uemoa-tec-2022-v4 --reference-date=2024-09-01 --retrieved-at=2026-10-18 --source-url=https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf --actor-email=<ops supervisor> --activate
-npx tsx --env-file=tmp/rw/.env.staging scripts/import-retained-authority-release.ts --family=EAC --file=$D/cleartrade-union-EAC-cet-2022-ln160-2026.zip --expect-sha256=ae02dfdf82348b279940163f1cd02fa1db44119a7e2ebbe539e8a0c4f16f02d3 --release=eac-cet-2022-jun2025-ln160-2026 --reference-date=2026-06-30 --retrieved-at=2026-10-18 --source-url="https://eabc-online.com/download/eac-common-external-tariff-version-2022-as-updated-june-2025/?wpdmdl=11694" --actor-email=<ops supervisor> --activate
-npx tsx --env-file=tmp/rw/.env.staging scripts/import-retained-authority-release.ts --family=EAEU --file=$D/cleartrade-union-EAEU-adilet-2026-09-15.zip --expect-sha256=16d9ceb360f67f0b10ce597f7ecb84f319077b1b44ce44e931ef4e9861d338a1 --release=adilet-H21EV000080-2026-09-15 --reference-date=2026-09-15 --retrieved-at=2026-10-18 --source-url=https://adilet.zan.kz/rus/docs/H21EV000080 --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=ECOWAS --file=$D/cleartrade-union-ECOWAS-uemoa-tec-2022-v4.zip --expect-sha256=ce0cc831b182562414776d930f3f06892f782db23bc5afe8a1a48ff8ced38454 --release=uemoa-tec-2022-v4 --reference-date=2024-09-01 --retrieved-at=2026-10-18 --source-url=https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=EAC --file=$D/cleartrade-union-EAC-cet-2022-ln160-2026.zip --expect-sha256=ae02dfdf82348b279940163f1cd02fa1db44119a7e2ebbe539e8a0c4f16f02d3 --release=eac-cet-2022-jun2025-ln160-2026 --reference-date=2026-06-30 --retrieved-at=2026-10-18 --source-url="https://eabc-online.com/download/eac-common-external-tariff-version-2022-as-updated-june-2025/?wpdmdl=11694" --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=EAEU --file=$D/cleartrade-union-EAEU-adilet-2026-09-15.zip --expect-sha256=16d9ceb360f67f0b10ce597f7ecb84f319077b1b44ce44e931ef4e9861d338a1 --release=adilet-H21EV000080-2026-09-15 --reference-date=2026-09-15 --retrieved-at=2026-10-18 --source-url=https://adilet.zan.kz/rus/docs/H21EV000080 --actor-email=<ops supervisor> --activate
 ```
 Each import runs twice and must report the second as UNCHANGED. Then run a product with a member market
 (Senegal or Kenya): its duty reads "under the … common external tariff".
