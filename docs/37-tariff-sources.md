@@ -15,14 +15,16 @@ and `src/lib/demand-discovery-v5/policy.ts` (`rule_rates`). The table in §7 is 
 
 | Status | Markets | Meaning |
 |---|---|---|
-| Connected | 57 | The official tariff is read automatically (Customs Atlas). 53 before this work, plus Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff, and Singapore, read from the copy saved each night in its permitted window (D-029, §5a). |
-| Researched, not automatable | 61 | The official source is known and recorded with the reason it cannot be read automatically (licence pending, source incomplete, no machine interface, credentials, investigation required). |
-| Directory | 100 | The publishing authority and where its tariff can be read, for an agent; 6 of these are scored by a published rule. |
+| Connected | 81 | The official tariff is read automatically (Customs Atlas). 53 before this work, plus Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff, Singapore, read from the copy saved each night in its permitted window (D-029, §5a), and 24 members of three customs unions read from their union's common external tariff (D-028, §4a). |
+| Researched, not automatable | 48 | The official source is known and recorded with the reason it cannot be read automatically (licence pending, source incomplete, no machine interface, credentials, investigation required). |
+| Directory | 89 | The publishing authority and where its tariff can be read, for an agent; 6 of these are scored by a published rule. |
 
 `tests/tariff-source-directory.test.ts` fails if any screened market has none of the three. Of the
-directory's 100, 54 name an official page, schedule or law to read (6 of them the source of a published
+directory's 89, 43 name an official page, schedule or law to read (6 of them the source of a published
 rule) and 46 have no official copy online (the agent asks the authority; the duty stays estimated until
-then).
+then). A connected market keeps its directory entry or researched source as the agent's pointer where
+the automatic read can leave its duty open: Andorra's chapters 1–24, Singapore before its first saved
+copy, and a customs-union member's own exceptions.
 
 ## 2. How v5 finds a market's duty, in order
 
@@ -70,14 +72,50 @@ One union source can serve many markets, with national exceptions that must be c
 
 | Union | Members not connected | Common tariff source found | Note |
 |---|---|---|---|
-| ECOWAS (UEMOA edition) | BJ, BF, CI, GW, ML, NE, SN, TG | UEMOA TEC 2022 v4 (PDF, UEMOA Commission) | One schedule for eight markets, with the regional levies. |
-| ECOWAS | CV, GM, GH, GN, LR, NG, SL | ECOWAS Trade Information System page | Ghana, Nigeria and Senegal publish national executions (researched, E-021 table). |
-| EAC | KE, UG, TZ, RW, BI, SS, CD, SO | EAC CET 2022 (EAC repository); Burundi's French edition to April 2024 | Changed each July by the EAC Gazette with per-country stays; DR Congo and Somalia do not yet apply it. |
-| EAEU | RU, BY, KZ, KG, AM | EEC Council Decision No. 80 (14 Sep 2021) on Kazakhstan's official legal portal | Kazakhstan, Kyrgyzstan and Armenia apply lower WTO-commitment rates on listed lines. |
+| ECOWAS (UEMOA edition) | — | UEMOA TEC 2022 v4 (PDF, UEMOA Commission) | Connected (§4a) for the eight UEMOA members; the regional levies are charged on top. |
+| ECOWAS | CV | ECOWAS Trade Information System page | Connected (§4a) for GM, GH, GN, LR, NG, SL from the UEMOA edition's DD column; Cabo Verde keeps its own Pauta Aduaneira. |
+| EAC | SS, CD, SO | EAC CET 2022 updated June 2025, EAC Gazette of 30 June 2026 (both from the East African Business Council library) | Connected (§4a) for KE, UG, TZ, RW, BI; South Sudan applies the CET only in part; DR Congo and Somalia do not yet apply it. |
+| EAEU | — | EEC Council Decision No. 80 (14 Sep 2021) on Kazakhstan's official legal portal | Connected (§4a); Kazakhstan, Kyrgyzstan and Armenia apply lower WTO-commitment rates on listed lines, not modelled. |
 | CEMAC | CM, CF, TD, CG, GQ, GA | Not found online | New CEEAC–CEMAC tariff in force in Cameroon from 1 Jan 2026. |
 | SACU | ZA, BW, NA, LS, SZ | SARS Schedule 1 | SARS terms require written consent for automated acquisition. |
 | GCC | AE, BH | — | Saudi Arabia, Kuwait, Qatar and Oman are connected; national exceptions differ. |
 | CARICOM, SICA, MERCOSUR | national | — | National exception lists; read the national tariff. |
+
+## 4a. Common external tariffs read for members (D-028)
+
+The owner decided (18 Oct 2026) that a customs union's common tariff counts as official for its members
+before national exceptions are modelled, labelled and below full quality. Three unions are read, each
+from one retained release pinned to the official files read on 18 Oct 2026
+(`src/lib/market-access/providers/customs-union-*.ts`):
+
+| Union | Members | Release | Lines | Not scored automatically |
+|---|---|---|---|---|
+| ECOWAS (UEMOA TEC 2022 v4, DD column) | BF, BJ, CI, GH, GM, GN, GW, LR, ML, NE, NG, SL, SN, TG | `uemoa-tec-2022-v4` | 6,380 ten-digit lines (0/5/10/20/35%) | — (levies RS 1%, PCS 0.8%, PC 0.5% are charged on top and are not in the duty) |
+| EAC (CET 2022 updated June 2025 + Legal Notice EAC/160/2026) | BI, KE, RW, TZ, UG | `eac-cet-2022-jun2025-ln160-2026`, valid 1 Jul 2026 – 30 Jun 2027 | 5,961 lines; sensitive items at their Schedule 2 rate; the ten lines of the Gazette's amendment table at their new rate | 1,055 lines named in the Gazette's stays of application: for the partner state its table names (Kenya: table III; Uganda: II, IV–VII), for every member where a table names states row by row (I, VIII, IX) |
+| EAEU (Council Decision No. 80, consolidated on Adilet, updated 15 Sep 2026) | AM, BY, KG, KZ, RU | `adilet-H21EV000080-2026-09-15` | 13,007 lines (ad valorem, euro per unit, the higher of both, or both added) | 1,212 lines whose rate carries a note of the tariff (a temporary or conditional rate) |
+
+- A duty read this way is official evidence labelled *common tariff*: v5 scores it at quality 0.8
+  (`quality.official_common_tariff`, below a national tariff's 1 and an agent-read line's 0.9) and the
+  market's reason says "under the <union> common external tariff; this market's own exceptions are not
+  checked". Where a line is not scored automatically for a member, its duty falls back as for any market
+  without an official rate and the agent's pointer is the member's national source.
+- Mixed duties ("the higher of 25% or US$ 200/MT", EAEU "10%, but not less than €0.03/kg") are official
+  but not reduced to one rate, so they fall back to the estimate with the reason; an EAEU duty in euro per
+  kilogram is converted at the ECB rate.
+- Not modelled, and said with every duty: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates;
+  Ghana's and Nigeria's import adjustment measures; Sierra Leone's Finance Act measures; EAC duty
+  remission for registered manufacturers; EAEU preferences for developing countries. The EAEU text's
+  editor's note announces nomenclature amendments (Board Decision No. 43 of 7 Apr 2026, in force no
+  earlier than 1 Jul 2026) that it did not yet carry.
+- The EAC release states nothing after 30 June 2027: the July 2027 Gazette must be read first.
+- Provenance: the EAC files came from the East African Business Council's library because the EAC
+  Secretariat's repository did not answer; both are official EAC publications, and their checksums are
+  pinned.
+- Building and importing: `npx tsx scripts/build-customs-union-bundle.ts --union=<EAEU|ECOWAS|EAC>
+  --file=<official file> … --out=<zip>` recognises the files by checksum, reads them and writes a
+  deterministic bundle (the same files give the same bytes); `scripts/import-retained-authority-release.ts
+  --family=<union>` imports it. Until a union's release is active, a run records its members as
+  `no_release`.
 
 ## 5. Proposed automation order
 
@@ -87,9 +125,9 @@ as the official rate where national exceptions are not yet modelled.
 
 | Order | Markets | Source | What it needs |
 |---|---|---|---|
-| 1 | RU, BY, KZ, KG, AM | EAEU common customs tariff (Decision No. 80 and amendments) | Parser for the official text; the KZ/KG/AM exception lists. |
-| 2 | BJ, BF, CI, GW, ML, NE, SN, TG | UEMOA TEC 2022 v4 | PDF table parser; national supplementary measures. |
-| 3 | KE, UG, TZ, RW, BI | EAC CET 2022 + annual Gazette | PDF parser; per-country stays of application. |
+| 1 | RU, BY, KZ, KG, AM | EAEU common customs tariff (Decision No. 80 and amendments) | Done (D-028, §4a); the KZ/KG/AM exception lists remain. |
+| 2 | BJ, BF, CI, GW, ML, NE, SN, TG (+ GM, GH, GN, LR, NG, SL) | UEMOA TEC 2022 v4 | Done (D-028, §4a); national supplementary measures remain. |
+| 3 | KE, UG, TZ, RW, BI | EAC CET 2022 + annual Gazette | Done (D-028, §4a) to 30 June 2027; per-row attribution of table I stays remains. |
 | 4 | BR | Camex TEC with national exceptions (official spreadsheet) | Owner decision to replace the Siscomex route recorded for BR. |
 | 5 | NC | Open data (data.gouv.nc, Licence Ouverte 2.0, updated daily) | Live API check from a machine that can reach it. |
 | 6 | AE | Dubai Customs open data | Terms of the dataset and GCC exceptions. |
@@ -143,7 +181,7 @@ minutes; outside the window the sweep reads nothing):
   beyond its rule, MY, CL, ZA, UY, BD, PK, JM) is an owner decision pending with PR #5 (ledger R-24);
   the form allows it as built.
 
-## 7. Every market (generated 17 Oct 2026)
+## 7. Every market (generated 17 Oct 2026; Singapore and the customs-union members updated 18 Oct 2026)
 
 | Market | Official tariff now | Union | Where to read it |
 |---|---|---|---|
@@ -155,7 +193,7 @@ minutes; outside the window the sweep reads nothing):
 | Anguilla (AI) | No official copy found online |  | Anguilla Customs Department — No current schedule found online. |
 | Antigua and Barbuda (AG) | No official copy found online | CARICOM | Customs and Excise Division, Antigua and Barbuda — CET with national exceptions under the Customs Duties Act; no schedule found online. |
 | Argentina (AR) | Researched, not automatable (source insufficient) | MERCOSUR | [Argentina ARCA / Secretariat of Commerce — SIM national tariff execution](https://www.argentina.gob.ar/produccion/comercio-exterior) |
-| Armenia (AM) | Researched, not automatable (source insufficient) | EAEU | [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
+| Armenia (AM) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
 | Aruba (AW) | Agent reads it |  | [Departamento di Aduana Aruba](https://www.gobierno.aw/en/import-duties) — Government page on import duties. |
 | Australia (AU) | Connected (`au_abf_working_tariff`) |  | Read automatically |
 | Austria (AT) | Connected (`eu_taric`) | EU | Read automatically |
@@ -164,10 +202,10 @@ minutes; outside the window the sweep reads nothing):
 | Bahrain (BH) | Researched, not automatable (bulk distribution only) | GCC | [Bahrain Ministry of Interior, Customs Affairs — Unified Customs Tariff](https://www.bahrain.bh/wps/portal/en/BNP/ServicesCatalogue/GSX-UI-PServiceDetails?psID=1322) |
 | Bangladesh (BD) | Researched, not automatable (license pending) |  | [Bangladesh National Board of Revenue / Customs — National Tariff](https://customs.gov.bd/files/Tariff-2025-2026%2829-07-2025%29.pdf) |
 | Barbados (BB) | No official copy found online | CARICOM | Barbados Revenue Authority, Customs and Excise Department — CET with national exceptions; no schedule found online. |
-| Belarus (BY) | Researched, not automatable (source insufficient) | EAEU | [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
+| Belarus (BY) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
 | Belgium (BE) | Connected (`eu_taric`) | EU | Read automatically |
 | Belize (BZ) | Researched, not automatable (source insufficient) | CARICOM | [Belize Customs and Excise — Tariff and Trade Classification](https://customs.gov.bz/ttpg.html) |
-| Benin (BJ) | Agent reads it | UEMOA | [Direction Générale des Douanes du Bénin](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
+| Benin (BJ) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Direction Générale des Douanes du Bénin](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
 | Bermuda (BM) | Agent reads it |  | [Government of Bermuda, Customs Department](https://www.gov.bm/schedules-customs-tariff-act-1970) — Schedules to the Customs Tariff Act 1970. |
 | Bhutan (BT) | Connected (`bt_drc_tariff_pdf`) |  | Read automatically |
 | Bolivia (BO) | Researched, not automatable (individual investigation required) |  | [Bolivia Aduana Nacional — Arancel Aduanero de Importaciones 2026](https://portal.aduana.gob.bo/aduana7/content/arancel-aduanero-de-importaciones) |
@@ -177,8 +215,8 @@ minutes; outside the window the sweep reads nothing):
 | Brazil (BR) | Researched, not automatable (credential not provisioned) | MERCOSUR | [Receita Federal / Portal Único de Comércio Exterior (Siscomex)](https://www.gov.br/mdic/pt-br/assuntos/camex/se-camex/strat/tarifas/vigentes) |
 | Brunei Darussalam (BN) | Researched, not automatable (individual investigation required) |  | [Brunei Royal Customs and Excise Department — Brunei Darussalam Tariff and Trade Classification](https://www.customs.gov.bn/ref-rced/) |
 | Bulgaria (BG) | Connected (`eu_taric`) | EU | Read automatically |
-| Burkina Faso (BF) | Agent reads it | UEMOA | [Direction Générale des Douanes du Burkina Faso](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
-| Burundi (BI) | Agent reads it | EAC | [Office Burundais des Recettes](https://obr.bi/images/pdf/TEC-2022--Version-Word-amend--30-Avril-2024-CORRIGE.pdf) — EAC CET 2022 as amended to 30 April 2024 (French). |
+| Burkina Faso (BF) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Direction Générale des Douanes du Burkina Faso](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
+| Burundi (BI) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Office Burundais des Recettes](https://obr.bi/images/pdf/TEC-2022--Version-Word-amend--30-Avril-2024-CORRIGE.pdf) — EAC CET 2022 as amended to 30 April 2024 (French). |
 | Cambodia (KH) | Researched, not automatable (source insufficient) |  | [Cambodia General Department of Customs and Excise — Customs Tariff 2022 and amending instruments](https://tools.customs.gov.kh/documents/reader/17709/17373560374410226/Manual%20on%20Customs%20Procedures%20in%20Cambodia%20%28English%29) |
 | Cameroon (CM) | No official copy found online | CEMAC | Direction Générale des Douanes du Cameroun — Applies the CEEAC–CEMAC CET from 1 January 2026; no official copy found online. |
 | Canada (CA) | Connected (`canada_cbsa_customs_tariff`) |  | Read automatically |
@@ -191,7 +229,7 @@ minutes; outside the window the sweep reads nothing):
 | Comoros (KM) | No official copy found online |  | Administration Générale des Douanes et Droits Indirects, Comores — Customs code published on the customs site; tariff schedule not found online. |
 | Cook Islands (CK) | Agent reads it |  | [Cook Islands Ministry of Finance and Economic Management, Revenue Management](https://paclii.org/ck/legis/num_act/cta1980178) — Customs Tariff Act 1980 and orders. |
 | Costa Rica (CR) | Researched, not automatable (source insufficient) | SICA | [Costa Rica Ministry of Foreign Trade — National Customs Tariff](https://serviciosnet.hacienda.go.cr/arancelnet/) |
-| Cote d'Ivoire (CI) | Researched, not automatable (source insufficient) | UEMOA | [Côte d’Ivoire Directorate General of Customs — ECOWAS CET enriched with national duties and taxes](https://apps.douanes.ci/info/tec) |
+| Cote d'Ivoire (CI) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Côte d’Ivoire Directorate General of Customs — ECOWAS CET enriched with national duties and taxes](https://apps.douanes.ci/info/tec) |
 | Croatia (HR) | Connected (`eu_taric`) | EU | Read automatically |
 | Cuba (CU) | No official copy found online |  | Aduana General de la República de Cuba — The Arancel de Aduanas is published in the Gaceta Oficial; no consolidated official copy found. |
 | Curaçao (CW) | Agent reads it |  | [Douane Curaçao](https://gobiernu.cw/wp-content/uploads/2026/04/70-GT.-Lvo.-tarief-van-invoerrechten.pdf) — Landsverordening tarief van invoerrechten (consolidated, April 2026). |
@@ -218,14 +256,14 @@ minutes; outside the window the sweep reads nothing):
 | Gabon (GA) | No official copy found online | CEMAC | Direction Générale des Douanes et Droits Indirects du Gabon — CEMAC member; national application of the 2026 CET not confirmed. |
 | Georgia (GE) | Connected (`ge_matsne_tax_code_article_197`) |  | Read automatically |
 | Germany (DE) | Connected (`eu_taric`) | EU | Read automatically |
-| Ghana (GH) | Researched, not automatable (no documented machine interface) | ECOWAS | [Ghana Revenue Authority Customs Division — ICUMS / ECOWAS CET national tariff](https://gra.gov.gh/customs/customs-tariffs-and-levies/) |
+| Ghana (GH) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | ECOWAS | Read automatically; its own exceptions: [Ghana Revenue Authority Customs Division — ICUMS / ECOWAS CET national tariff](https://gra.gov.gh/customs/customs-tariffs-and-levies/) |
 | Gibraltar (GI) | Agent reads it |  | [HM Customs Gibraltar](https://www.gibraltarlaws.gov.gi/legislations/integrated-tariff-regulations-2017-2817/download) — Integrated Tariff Regulations 2017. |
 | Greece (GR) | Connected (`eu_taric`) | EU | Read automatically |
 | Greenland (GL) | Agent reads it |  | [Greenland Tax Agency](https://aka.gl/-/media/aka/til-sitecore/niels-olav/import-custom-duties-2025/greenlandic-import-duties-january-2025.pdf) — Import duties on listed goods only (alcohol, sugar products, tobacco, vehicles and a few others). |
 | Grenada (GD) | Agent reads it | CARICOM | [Customs and Excise Division, Grenada](https://grenadaparliament.gd/wp-content/uploads/2021/08/Cap75C-CUSTOMS-DUTIES-ACT.pdf) — Customs Duties Act (Cap. 75C) with the CET schedule. |
 | Guatemala (GT) | Researched, not automatable (no documented machine interface) | SICA | [Guatemala Superintendence of Tax Administration — Integrated Permit/Tariff Catalog](https://www.sieca.int/producto/arancel-centroamericano-de-importacion/) |
-| Guinea (GN) | Agent reads it | ECOWAS | [Direction Générale des Douanes de Guinée](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; no national schedule found online. |
-| Guinea-Bissau (GW) | Agent reads it | UEMOA | [Direção-Geral das Alfândegas da Guiné-Bissau](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
+| Guinea (GN) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | ECOWAS | Read automatically; its own exceptions: [Direction Générale des Douanes de Guinée](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; no national schedule found online. |
+| Guinea-Bissau (GW) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Direção-Geral das Alfândegas da Guiné-Bissau](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
 | Guyana (GY) | Agent reads it | CARICOM | [Guyana Revenue Authority](https://www.gra.gov.gy/) — CET with national exceptions; GRA publishes rate changes as notices. |
 | Haiti (HT) | No official copy found online |  | Administration Générale des Douanes, Haïti — CARICOM member not applying the CET; rates set by the annual finance law. |
 | Holy See (Vatican City State) (VA) | Rule; v5 rule 0% |  | [Holy See / Italy (Lateran Treaty)](https://spcp.prf.cuni.cz/dokument/lateran.htm) — Goods for the Vatican City cross Italy free of customs duties (Art. 20). |
@@ -242,16 +280,16 @@ minutes; outside the window the sweep reads nothing):
 | Jamaica (JM) | Researched, not automatable (license pending) | CARICOM | [Jamaica Customs Agency — Integrated Tariff](https://laws.moj.gov.jm/legislation/statutes/C/The%20Copyright%20Act.pdf) |
 | Japan (JP) | Connected (`japan_customs_tariff_schedule`) |  | Read automatically |
 | Jordan (JO) | Researched, not automatable (no documented machine interface) |  | [Jordan Customs — Integrated Customs Tariff](https://customs.gov.jo/EN/List/Integrated_customs_tariff) |
-| Kazakhstan (KZ) | Researched, not automatable (source insufficient) | EAEU | [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
-| Kenya (KE) | Researched, not automatable (source insufficient) | EAC | [Kenya Revenue Authority (KRA) — EAC Common External Tariff and Kenya implementing measures](https://ikesra.kra.go.ke/items/538c6b1f-8c90-42da-ae0e-f20ea1d1fa6a) |
+| Kazakhstan (KZ) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
+| Kenya (KE) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Kenya Revenue Authority (KRA) — EAC Common External Tariff and Kenya implementing measures](https://ikesra.kra.go.ke/items/538c6b1f-8c90-42da-ae0e-f20ea1d1fa6a) |
 | Kiribati (KI) | Agent reads it |  | [Kiribati Customs Service](https://paclii.org/ki/legis/sub_leg/ca1993cto1998336) — Customs Tariff Order under the Customs Act; check later orders. |
 | Kuwait (KW) | Connected (`kw_customs_integrated_tariff`) | GCC | Read automatically |
-| Kyrgyzstan (KG) | Researched, not automatable (source insufficient) | EAEU | [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
+| Kyrgyzstan (KG) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
 | Lao People's Democratic Republic (LA) | Researched, not automatable (no documented machine interface) |  | [Lao PDR Ministry of Industry and Commerce — Lao Trade Portal commodity and tariff search](https://www.laotradeportal.gov.la/en-gb/site/listcommodity) |
 | Latvia (LV) | Connected (`eu_taric`) | EU | Read automatically |
 | Lebanon (LB) | Researched, not automatable (no documented machine interface) |  | [Lebanese Customs — Integrated Customs Tariff](https://www.customs.gov.lb/tariff/tariff.aspx) |
 | Lesotho (LS) | No official copy found online | SACU | Revenue Services Lesotho — Applies the SACU tariff (SARS Schedule 1). |
-| Liberia (LR) | Agent reads it | ECOWAS | [Liberia Revenue Authority](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; no national schedule found online. |
+| Liberia (LR) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | ECOWAS | Read automatically; its own exceptions: [Liberia Revenue Authority](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; no national schedule found online. |
 | Libya (LY) | No official copy found online |  | Libyan Customs Authority — No official schedule found online. |
 | Lithuania (LT) | Connected (`eu_taric`) | EU | Read automatically |
 | Luxembourg (LU) | Connected (`eu_taric`) | EU | Read automatically |
@@ -260,7 +298,7 @@ minutes; outside the window the sweep reads nothing):
 | Malawi (MW) | No official copy found online |  | Malawi Revenue Authority — Customs and Excise (Tariff) orders in the Government Gazette; no consolidated copy found. |
 | Malaysia (MY) | Researched, not automatable (license pending) |  | [Royal Malaysian Customs Department (JKDM/RMCD) — Customs Duties Order 2025](https://www.customs.gov.my/images/06-prosedur/perintah-kastam/perintah/PUA_384.pdf) |
 | Maldives (MV) | Researched, not automatable (no documented machine interface) |  | [Maldives Customs Service — National Tariff Schedule](https://www.customs.gov.mv/eServices/Tariff) |
-| Mali (ML) | Agent reads it | UEMOA | [Direction Générale des Douanes du Mali](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
+| Mali (ML) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Direction Générale des Douanes du Mali](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
 | Malta (MT) | Connected (`eu_taric`) | EU | Read automatically |
 | Marshall Islands (MH) | Agent reads it |  | [Division of Customs, Marshall Islands](https://paclii.org/mh/legis/consol_act/ida1989178) — Import Duties Act 1989 and amendments. |
 | Martinique (MQ) | Connected (`eu_taric`) | EU | Read automatically |
@@ -282,8 +320,8 @@ minutes; outside the window the sweep reads nothing):
 | New Caledonia (NC) | Agent reads it |  | [Direction régionale des douanes de Nouvelle-Calédonie](https://douane.gouv.nc/sites/default/files/atoms/files/tarif_des_douanes_mj01012023.pdf) — Tarif des douanes; also published daily as open data on data.gouv.nc (a candidate for automation). |
 | New Zealand (NZ) | Connected (`nz_customs_cusmod`) |  | Read automatically |
 | Nicaragua (NI) | Researched, not automatable (no documented machine interface) | SICA | [Nicaragua Directorate General of Customs — national Sistema Arancelario Centroamericano execution](https://www.dga.gob.ni/) |
-| Niger (NE) | Agent reads it | UEMOA | [Direction Générale des Douanes du Niger](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
-| Nigeria (NG) | Researched, not automatable (source insufficient) | ECOWAS | [Nigeria Customs Service — Nigeria Customs Tariff / ECOWAS CET](https://customs.gov.ng/cet-tariff) |
+| Niger (NE) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Direction Générale des Douanes du Niger](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
+| Nigeria (NG) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | ECOWAS | Read automatically; its own exceptions: [Nigeria Customs Service — Nigeria Customs Tariff / ECOWAS CET](https://customs.gov.ng/cet-tariff) |
 | Niue (NU) | Agent reads it |  | [Niue Customs](https://paclii.org/nu/legis/consol_act/cta1982178) — Customs Tariff Act 1982. |
 | North Korea (KP) | No official copy found online |  | None (comprehensive UN sanctions) — Excluded from Demand Discovery: comprehensive UN Security Council sanctions. |
 | Northern Mariana Islands (MP) | Agent reads it |  | [CNMI Department of Finance, Division of Customs](https://www.finance.gov.mp/cus-import-requirements.php) — Outside the US customs territory; excise tax on imports under 4 CMC. |
@@ -301,10 +339,10 @@ minutes; outside the window the sweep reads nothing):
 | Portugal (PT) | Connected (`eu_taric`) | EU | Read automatically |
 | Qatar (QA) | Connected (`qa_customs_integrated_tariff`) | GCC | Read automatically |
 | Republic of the Congo (CG) | No official copy found online | CEMAC | Direction Générale des Douanes et Droits Indirects du Congo — CEMAC member; regional instruments are republished by the Secrétariat Général du Gouvernement (sgg.cg). |
-| Republic of The Gambia (GM) | Agent reads it | ECOWAS | [Gambia Revenue Authority](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; no national schedule found online. |
+| Republic of The Gambia (GM) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | ECOWAS | Read automatically; its own exceptions: [Gambia Revenue Authority](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; no national schedule found online. |
 | Romania (RO) | Connected (`eu_taric`) | EU | Read automatically |
-| Russian Federation (RU) | Researched, not automatable (source insufficient) | EAEU | [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
-| Rwanda (RW) | Researched, not automatable (individual investigation required) | EAC | [Rwanda Revenue Authority / East African Community — CET national execution](https://www.rra.gov.rw/fileadmin/user_upload/COMMON_EXTERNAL_TARIFF__Updated_June_2025.pdf) |
+| Russian Federation (RU) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
+| Rwanda (RW) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Rwanda Revenue Authority / East African Community — CET national execution](https://www.rra.gov.rw/fileadmin/user_upload/COMMON_EXTERNAL_TARIFF__Updated_June_2025.pdf) |
 | Saint Barthélemy (BL) | Rule; v5 rule 5% |  | [French customs (DGDDI) for the Collectivité de Saint-Barthélemy](https://www.douane.gouv.fr/fiche/cas-particuliers-de-lile-de-saint-martin-et-de-lile-de-saint-barthelemy) — Outside the EU customs territory; 5% droit de quai on all goods brought onto the island. |
 | Saint Helena (SH) | Agent reads it |  | [St Helena Government, Customs](https://www.sainthelena.gov.sh/wp-content/uploads/2023/04/LN-4-Customs-and-Excise-Tariffs-and-ExemptionsAmendment-Regulations-2023-002.pdf) — Customs and Excise Tariffs regulations, amended each year. |
 | Saint Kitts and Nevis (KN) | No official copy found online | CARICOM | Customs and Excise Department, Saint Kitts and Nevis — CET with national exceptions; no schedule found online. |
@@ -315,10 +353,10 @@ minutes; outside the window the sweep reads nothing):
 | San Marino (SM) | Connected (`eu_taric`) | EU | Read automatically |
 | Sao Tome and Principe (ST) | No official copy found online |  | Direção das Alfândegas de São Tomé e Príncipe — No official schedule found online. |
 | Saudi Arabia (SA) | Connected (`sa_zatca_integrated_tariff`) | GCC | Read automatically |
-| Senegal (SN) | Researched, not automatable (source insufficient) | UEMOA | [Senegal Directorate General of Customs — ECOWAS CET and national duties and taxes](https://www.douanes.sn/ndn71/) |
+| Senegal (SN) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Senegal Directorate General of Customs — ECOWAS CET and national duties and taxes](https://www.douanes.sn/ndn71/) |
 | Serbia (RS) | Researched, not automatable (individual investigation required) |  | [Customs Administration of Serbia — 2026 Customs Tariff regulation](https://www.carina.rs/privreda/tarifski-poslovi/carinska-tarifa/privreda_carinska_tarifa_opste.html) |
 | Seychelles (SC) | Agent reads it |  | [Seychelles Revenue Commission](https://src.gov.sc/faq/) — Imports pay trades tax on listed goods (Trades Tax Regulations). |
-| Sierra Leone (SL) | Agent reads it | ECOWAS | [National Revenue Authority of Sierra Leone](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; national measures in the annual Finance Act. |
+| Sierra Leone (SL) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | ECOWAS | Read automatically; its own exceptions: [National Revenue Authority of Sierra Leone](https://ecotis.ecowas.int/?p=24111) — Applies the ECOWAS CET; national measures in the annual Finance Act. |
 | Singapore (SG) | Connected (`sg_sso_customs_duties_order`), saved nightly in the SSO window; v5 rule 0% until the first copy |  | Read automatically; before the first copy, [Singapore Statutes Online — Customs (Duties) Order, First Schedule](https://sso.agc.gov.sg/SL/CA1960-OR4?ProvIds=Sc4-XX-Sc4-) |
 | Sint Maarten (Dutch part) (SX) | Rule; v5 rule 0% |  | [Government of Sint Maarten, Customs](https://www.sintmaartengov.org/Ministries/Departments/Pages/Customs.aspx) — No import duty; customs taxes only petrol. |
 | Slovakia (SK) | Connected (`eu_taric`) | EU | Read automatically |
@@ -340,7 +378,7 @@ minutes; outside the window the sweep reads nothing):
 | Thailand (TH) | Researched, not automatable (individual investigation required) |  | [Thai Customs Department — integrated tariff / ASEAN Harmonised Tariff Nomenclature schedules](https://www.customs.go.th/list_strc_download_with_document.php?ini_content=reference_files&lang=en&left_menu=nmenu_esevice_006&order_by=co_last_update_datetime&show_search=1&sort_type=0) |
 | The Republic of North Macedonia (MK) | Researched, not automatable (individual investigation required) |  | [North Macedonia Customs Administration — Customs Tariff 2026](https://customs.gov.mk/zakon-za-carinska-tarifa.nspx) |
 | Timor-Leste (TL) | Rule; v5 rule 5% |  | [Customs Authority of Timor-Leste](https://customs.gov.tl/doing-business/duties-taxes/) — One customs duty rate (5%) on the value of all imports, set in the annual State Budget. |
-| Togo (TG) | Agent reads it | UEMOA | [Office Togolais des Recettes](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
+| Togo (TG) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Office Togolais des Recettes](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
 | Tokelau (TK) | Agent reads it |  | [Government of Tokelau](https://paclii.org/tk/legis/num_act/cr1991233) — Customs Regulations 1991. |
 | Tonga (TO) | Agent reads it |  | [Ministry of Revenue and Customs, Tonga](https://paclii.org/to/legis/consol_act/caeas286) — Customs and Excise Act; duty orders on PacLII. |
 | Trinidad and Tobago (TT) | Researched, not automatable (source insufficient) | CARICOM | [Trinidad and Tobago Customs and Excise Division / Ministry of Finance — CET](https://tradeind.gov.tt/wp-content/uploads/2025/04/Legal-Notice-No.-218-Customs-Common-External-Tariff-Order-2024.pdf) |
@@ -349,11 +387,11 @@ minutes; outside the window the sweep reads nothing):
 | Turkmenistan (TM) | Agent reads it |  | [State Customs Service of Turkmenistan](https://customs.gov.tm/en/customs-info/customs-fees/excices) — Customs fees and excise pages; import duty schedule not found. |
 | Turks and Caicos Islands (TC) | Agent reads it |  | [Turks and Caicos Islands Customs Department](https://customs.gov.tc/webuploads/currdoc/Frequently%20Asked%20Questions.pdf) — Customs FAQ with the general rates. |
 | Tuvalu (TV) | No official copy found online |  | Tuvalu Customs — No official schedule found online. |
-| Uganda (UG) | Researched, not automatable (individual investigation required) | EAC | [Uganda Revenue Authority / East African Community — CET national execution](https://ura.go.ug/en/download/common-external-tariff-2022-version/0/) |
+| Uganda (UG) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Uganda Revenue Authority / East African Community — CET national execution](https://ura.go.ug/en/download/common-external-tariff-2022-version/0/) |
 | Ukraine (UA) | Researched, not automatable (source insufficient) |  | [State Customs Service of Ukraine — Rates of import and export duties](https://data.gov.ua/dataset/duty-rates) |
 | United Arab Emirates (AE) | Researched, not automatable (individual investigation required) | GCC | [Dubai Customs / Dubai Pulse — Customs Agreements, Commodity and Tariff](https://www.dubaicustoms.gov.ae/en/PoliciesAndNotices/Documents/IntegratedCustomsTariffv4.pdf) |
 | United Kingdom (GB) | Connected (`uk_tariff`) |  | Read automatically |
-| United Republic of Tanzania (TZ) | Researched, not automatable (individual investigation required) | EAC | [Tanzania Revenue Authority / East African Community — CET national execution](https://www.eac.int/press-releases/142-customs/3544-eac-ministers-adopt-measures-to-strengthen-regional-trade-and-industrialization) |
+| United Republic of Tanzania (TZ) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Tanzania Revenue Authority / East African Community — CET national execution](https://www.eac.int/press-releases/142-customs/3544-eac-ministers-adopt-measures-to-strengthen-regional-trade-and-industrialization) |
 | United States of America (US) | Connected (`us_hts`) |  | Read automatically |
 | Uruguay (UY) | Researched, not automatable (license pending) | MERCOSUR | [Uruguay Ministry of Economy and Finance — National Tariff](https://www.gub.uy/ministerio-economia-finanzas/politicas-y-gestion/nomenclatura-aranceles-uruguay) |
 | Uzbekistan (UZ) | Connected (`uz_lex_customs_tariff`) |  | Read automatically |
@@ -372,5 +410,7 @@ minutes; outside the window the sweep reads nothing):
   14 Oct 2027). After it, the rule is skipped and the duty falls back to the estimate.
 - Directory: re-check the links yearly; a changed source is a code change with the test.
 - A market that becomes connected leaves the directory (the test refuses an entry that shadows an
-  adapter, except where the automatic read can leave a duty open: Andorra's chapters 1–24, and
-  Singapore before its first nightly copy).
+  adapter, except where the automatic read can leave a duty open: Andorra's chapters 1–24, Singapore
+  before its first nightly copy, and a customs-union member's own exceptions).
+- Customs unions: the EAC release must be renewed with each July Gazette (it states nothing after
+  30 June 2027); a new UEMOA or EAEU edition is a new release with its own pins (§4a).

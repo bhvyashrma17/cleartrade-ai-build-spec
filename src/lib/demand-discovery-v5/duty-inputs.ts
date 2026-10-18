@@ -97,12 +97,14 @@ export function dutyInputs(args: {
     const rate = official && official.status !== 'none' && official.basis === 'india_preference'
       ? { rate_basis: 'india_preference' as const, standard: official.standard ?? null }
       : {};
+    // D-028: a customs union's common external tariff keeps its label.
+    const union = official && official.status !== 'none' && official.common_tariff ? { common_tariff: official.common_tariff } : {};
     if (official?.status === 'percent') {
-      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...union, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     if (official?.status === 'specific') {
-      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...union, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     // A rule (v5) stands in for a missing tariff line, never for official evidence that exists but yields no rate.

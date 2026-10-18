@@ -51,6 +51,8 @@ interface Resolved {
   source: string;
   /** D-024: the line was read from the official tariff by a ClearTrade agent (authoritative-manual evidence). */
   recorded_by_agent?: boolean;
+  /** D-028: the line is a customs union's common external tariff, read for a member; national exceptions are not modelled. */
+  common_tariff?: { union: string; label: string };
   national_line: string | null;
   preference: OfficialPreferenceNote | null;
   /** Absent on resolutions made before D-026: the ordinary rate. */

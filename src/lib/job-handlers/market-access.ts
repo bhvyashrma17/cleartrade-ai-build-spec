@@ -42,6 +42,8 @@ import { fetchVietnamMarketAccess } from '@/lib/market-access/providers/vietnam-
 import { fetchMoroccoMarketAccess } from '@/lib/market-access/providers/morocco-service';
 import { fetchTunisiaMarketAccess } from '@/lib/market-access/providers/tunisia-service';
 import { fetchSingaporeMarketAccess } from '@/lib/market-access/providers/singapore-service';
+import { CUSTOMS_UNION_SOURCES, type CustomsUnionKey } from '@/lib/market-access/providers/customs-union-sources';
+import { fetchCustomsUnionMarketAccess } from '@/lib/market-access/providers/customs-union-service';
 
 export interface MarketAccessAdapterRequest {
   hs6: string;
@@ -214,6 +216,19 @@ const TUNISIA_ADAPTER: MarketAccessAdapter = { provider_key: 'tn_douane_tarifweb
  * Time, so runs read the release the worker saves in that window (`singapore-refresh.ts`). Until the
  * first one passes qualification there is none, and the run records `no_release`, never a zero.
  */
+/**
+ * D-028: a customs union's common external tariff serves every member that applies it as its own,
+ * from one retained release per union (`customs-union-service.ts`), labelled as a common tariff.
+ */
+const customsUnionAdapter = (union: CustomsUnionKey): MarketAccessAdapter => ({
+  provider_key: CUSTOMS_UNION_SOURCES[union].provider, retrieval: 'retained_release',
+  fetch: (request) => fetchCustomsUnionMarketAccess(union, request.destination_country, request.hs6, { now: request.now, origin_country: request.origin_country }),
+});
+const CUSTOMS_UNION_ADAPTERS = Object.fromEntries(Object.values(CUSTOMS_UNION_SOURCES).flatMap((source) => {
+  const adapter = customsUnionAdapter(source.key);
+  return source.members.map((code) => [code, adapter] as const);
+}));
+
 const SINGAPORE_ADAPTER: MarketAccessAdapter = { provider_key: 'sg_sso_customs_duties_order', retrieval: 'retained_release', fetch: (request) => fetchSingaporeMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 
 /**
@@ -249,6 +264,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   MA: MOROCCO_ADAPTER,
   TN: TUNISIA_ADAPTER,
   SG: SINGAPORE_ADAPTER,
+  ...CUSTOMS_UNION_ADAPTERS,
   ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
   ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),
