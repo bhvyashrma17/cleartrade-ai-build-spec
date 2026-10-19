@@ -4,6 +4,7 @@
  * what form its bytes take.
  */
 import { z } from 'zod';
+import { CAPITALS_SUPPLEMENT_KEY, CAPITALS_SUPPLEMENT_PARSER_VERSION, capitalSupplementRowSchema, parseCapitalsSupplement } from './capitals-supplement';
 import { ECGC_PARSER_VERSION, ecgcRatingRowSchema, parseEcgcCountryRiskText } from './ecgc';
 import { GEO_CEPII_PARSER_VERSION, capitalRowSchema, parseGeoCepiiCsv } from './geodist';
 import {
@@ -150,7 +151,21 @@ const GEO_CEPII: ReferenceDatasetDefinition = {
   },
 };
 
-const FIXED: readonly ReferenceDatasetDefinition[] = [INDIA_TRADE_AGREEMENTS, ECGC_COUNTRY_RISK, GEO_CEPII];
+/** Capitals GeoDist does not list, curated with a source per row (docs/36 §9). */
+const CAPITALS_SUPPLEMENT: ReferenceDatasetDefinition = {
+  key: CAPITALS_SUPPLEMENT_KEY,
+  description: 'Capital coordinates for screening markets CEPII GeoDist (2011) does not list',
+  licence: 'curated-from-public-sources',
+  parser_version: CAPITALS_SUPPLEMENT_PARSER_VERSION,
+  source_form: 'curated',
+  row_schema: capitalSupplementRowSchema,
+  parse(bytes) {
+    const parsed = parseCapitalsSupplement(bytes);
+    return { version: `capitals-supplement-v1 compiled ${parsed.compiled_on}`, rows: parsed.rows, validation: { markets: parsed.rows.map((row) => row.iso2) } };
+  },
+};
+
+const FIXED: readonly ReferenceDatasetDefinition[] = [INDIA_TRADE_AGREEMENTS, ECGC_COUNTRY_RISK, GEO_CEPII, CAPITALS_SUPPLEMENT];
 
 export function referenceDatasetDefinition(key: string): ReferenceDatasetDefinition {
   const fixed = FIXED.find((definition) => definition.key === key);

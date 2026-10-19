@@ -25,6 +25,7 @@ import { ecgcRatingRowSchema } from '@/lib/reference-datasets/ecgc';
 import { capitalRowSchema } from '@/lib/reference-datasets/geodist';
 import { comtradeAvailabilityRowSchema, indiaTradeAgreementRowSchema, wdiRowSchema } from '@/lib/reference-datasets/parsers';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
+import { CAPITALS_SUPPLEMENT_KEY, capitalSupplementRowSchema } from '@/lib/reference-datasets/capitals-supplement';
 import { activeReferenceRows } from '@/lib/reference-datasets/service';
 import { BACI_PROVIDER, type BaciHsRevision } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease, readProductFlows } from '@/lib/trade-datasets/service';
@@ -230,19 +231,20 @@ export async function loadRunInputs(args: {
   const latest = chosen.release.last_year;
 
   // --- reference datasets ---------------------------------------------------------------------
-  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest, agreements, ecgc, capitals] = await Promise.all([
+  const [lpi, primary, manufactured, availabilityLatest, availabilityNewest, agreements, ecgc, capitals, capitalsSupplement] = await Promise.all([
     referenceMap('wdi:LP.LPI.OVRL.XQ'), referenceMap('wdi:TM.TAX.TCOM.SM.AR.ZS'), referenceMap('wdi:TM.TAX.MANF.SM.AR.ZS'),
     availability(latest), availability(latest + 1), activeReferenceRows('india:trade-agreements', indiaTradeAgreementRowSchema),
     activeReferenceRows(ECGC_COUNTRY_RISK_KEY, ecgcRatingRowSchema), activeReferenceRows(GEO_CEPII_KEY, capitalRowSchema),
+    activeReferenceRows(CAPITALS_SUPPLEMENT_KEY, capitalSupplementRowSchema),
   ]);
-  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active, agreements, ecgc, capitals]) if (reference) origins.add(reference.evidence_origin);
+  for (const reference of [lpi.active, primary.active, manufactured.active, availabilityLatest.active, availabilityNewest.active, agreements, ecgc, capitals, capitalsSupplement]) if (reference) origins.add(reference.evidence_origin);
   if (!agreements) notes.push("India's trade agreements are not imported, so duty estimates assume no agreement.");
   if (!lpi.active) notes.push('Logistics scores are missing: the World Bank logistics index is not imported.');
   if (!primary.active && !manufactured.active) notes.push('Duty estimates are missing: the World Bank tariff averages are not imported.');
   if (!availabilityLatest.active) notes.push(`Comtrade's ${latest} reporting list is not imported, so every market is treated as estimated from partners' figures.`);
   if (!ecgc) notes.push('Country risk is not scored: the ECGC country risk list is not imported.');
   if (!capitals) notes.push('Distance fit is not scored: capital coordinates (CEPII GeoDist) are not imported.');
-  const coordinates = coordinateInputs({ capitals: capitals?.rows ?? [], provider_codes_without_iso: chosen.provider_codes_without_iso });
+  const coordinates = coordinateInputs({ capitals: capitals?.rows ?? [], provider_codes_without_iso: chosen.provider_codes_without_iso, supplement: capitals ? capitalsSupplement?.rows ?? [] : [] });
   // D-021: World Bank values older than the policy's limit count as missing, and the market says so.
   const [lpiAge, primaryAge, manufacturedAge] = [lpi, primary, manufactured].map((reference) => splitByAge(reference.map, args.as_of, policy));
   const tooOldIn = (ages: Map<string, number>) => markets.filter((market) => ages.has(market)).length;
@@ -363,6 +365,7 @@ export async function loadRunInputs(args: {
       'india:trade-agreements': agreements ? { release_id: agreements.release_id, version: agreements.version, rows_sha256: agreements.rows_sha256 } : null,
       [ECGC_COUNTRY_RISK_KEY]: ecgc ? { release_id: ecgc.release_id, version: ecgc.version, rows_sha256: ecgc.rows_sha256 } : null,
       [GEO_CEPII_KEY]: capitals ? { release_id: capitals.release_id, version: capitals.version, rows_sha256: capitals.rows_sha256 } : null,
+      [CAPITALS_SUPPLEMENT_KEY]: capitalsSupplement ? { release_id: capitalsSupplement.release_id, version: capitalsSupplement.version, rows_sha256: capitalsSupplement.rows_sha256 } : null,
     },
     provider_coordinates: capitals ? { placed: coordinates.provider_links, unplaced: coordinates.unplaced_provider_codes } : null,
     comtrade: frozenComtrade,

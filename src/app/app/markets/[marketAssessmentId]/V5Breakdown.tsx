@@ -6,6 +6,7 @@
  * never shown as a zero. Each live measure states the observed figure in plain words.
  */
 
+import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
 import { StatusChip } from '@/components/ui';
 import type { V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { metricSentence } from '@/lib/demand-discovery-v5/explain';
@@ -48,10 +49,12 @@ function StatusLine({ detail }: { detail: V5Detail }) {
 }
 
 export function V5Breakdown({ detail }: { detail: V5Detail }) {
+  const rupees = useRupees();
   const metrics = new Map(detail.metrics.map((metric) => [metric.key, metric]));
   return (
     <section className="mt-6">
       <StatusLine detail={detail} />
+      <div className="mt-1"><RupeeRateNote /></div>
       {detail.flag_reasons.length ? (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {detail.flag_reasons.map((reason) => <StatusChip key={reason} label={reason} tone="warning" icon="alert" size="sm" />)}
@@ -85,7 +88,7 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
                         </span>
                         <span className="shrink-0 text-xs text-[var(--color-text-secondary)]">{metric.score == null ? 'No data' : `${Math.round(metric.score)}/100`}</span>
                       </div>
-                      <p className="mt-0.5 text-[var(--color-text-secondary)]">{metric.score == null ? metric.reason : metricSentence(metric)}</p>
+                      <p className="mt-0.5 text-[var(--color-text-secondary)]">{metric.score == null ? metric.reason : rupees(metricSentence(metric))}</p>
                     </li>
                   );
                 })}

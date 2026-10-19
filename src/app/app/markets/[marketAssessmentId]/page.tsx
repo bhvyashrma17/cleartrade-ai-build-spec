@@ -16,6 +16,8 @@ import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { tenantScopeVia } from '@/lib/permissions';
 import { MarketDetail } from './MarketDetail';
+import { todayInrPerUsd } from '@/lib/fx/display-rate';
+import { RupeeRateProvider } from '@/components/fx/RupeeRate';
 import { isV5Assessment, v5Detail, type V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { allowedEvidenceOrigins, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
@@ -59,42 +61,46 @@ export default async function MarketDetailPage({
 
   const snapshot = assessment.run.input_snapshot as { description?: string | null } | null;
 
+  // D-023: rupee figures beside dollars follow today's ECB rate.
+  const rupeeRate = await todayInrPerUsd();
   return (
-    <MarketDetail
-      tier={tier}
-      assessment={{
-        id: assessment.id,
-        country_code: assessment.country_code,
-        overall_score: assessment.overall_score,
-        demand_score: assessment.demand_score,
-        growth_score: assessment.growth_score,
-        competition_score: assessment.competition_score,
-        india_share: assessment.india_share?.toString() ?? null,
-        tariff_summary: assessment.tariff_summary as Record<string, unknown> | null,
-        certification_requirements: assessment.certification_requirements as unknown[],
-        logistics_summary: assessment.logistics_summary as Record<string, unknown> | null,
-        price_band: assessment.price_band_min
-          ? {
-              min: assessment.price_band_min.toString(),
-              max: assessment.price_band_max?.toString() ?? null,
-              currency: assessment.price_band_currency,
-            }
-          : null,
-        rationale: assessment.rationale,
-        agent_note: assessment.agent_note,
-        generated_at: assessment.generated_at.toISOString(),
-        is_selected: assessment.is_selected,
-        is_saved: assessment.saved_at !== null,
-        rank: v5 ? v5.rank : rank,
-        total_ranked: v5 ? v5.total_ranked : siblings.length,
-        evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
-      }}
-      buyerDiscoveryHref={{
-        productId: assessment.product?.id ?? null,
-        countryCode: assessment.country_code,
-      }}
-      productDescription={snapshot?.description ?? assessment.product?.name ?? null}
-      v5={v5}
-    />
+    <RupeeRateProvider rate={rupeeRate}>
+      <MarketDetail
+        tier={tier}
+        assessment={{
+          id: assessment.id,
+          country_code: assessment.country_code,
+          overall_score: assessment.overall_score,
+          demand_score: assessment.demand_score,
+          growth_score: assessment.growth_score,
+          competition_score: assessment.competition_score,
+          india_share: assessment.india_share?.toString() ?? null,
+          tariff_summary: assessment.tariff_summary as Record<string, unknown> | null,
+          certification_requirements: assessment.certification_requirements as unknown[],
+          logistics_summary: assessment.logistics_summary as Record<string, unknown> | null,
+          price_band: assessment.price_band_min
+            ? {
+                min: assessment.price_band_min.toString(),
+                max: assessment.price_band_max?.toString() ?? null,
+                currency: assessment.price_band_currency,
+              }
+            : null,
+          rationale: assessment.rationale,
+          agent_note: assessment.agent_note,
+          generated_at: assessment.generated_at.toISOString(),
+          is_selected: assessment.is_selected,
+          is_saved: assessment.saved_at !== null,
+          rank: v5 ? v5.rank : rank,
+          total_ranked: v5 ? v5.total_ranked : siblings.length,
+          evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
+        }}
+        buyerDiscoveryHref={{
+          productId: assessment.product?.id ?? null,
+          countryCode: assessment.country_code,
+        }}
+        productDescription={snapshot?.description ?? assessment.product?.name ?? null}
+        v5={v5}
+      />
+    </RupeeRateProvider>
   );
 }

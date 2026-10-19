@@ -19,6 +19,8 @@ import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/dem
 import { prisma } from '@/lib/prisma';
 import { PageHeader } from '@/components/ui';
 import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
+import { RupeeRateProvider } from '@/components/fx/RupeeRate';
+import { todayInrPerUsd } from '@/lib/fx/display-rate';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,7 +61,9 @@ export default async function ManageMarketDecisionsPage({
         description="The model's recommendation and your decision, shown separately. Agent decisions never change the AI score."
       />
       {run ? (
-        <DemandDiscoveryControl rows={visibleRows} showAll={showAll} runId={run.id} />
+        <RupeeRateProvider rate={await todayInrPerUsd()}>
+          <DemandDiscoveryControl rows={visibleRows} showAll={showAll} runId={run.id} />
+        </RupeeRateProvider>
       ) : (
         <p className="text-sm text-slate">No market analysis has run for this product yet.</p>
       )}
