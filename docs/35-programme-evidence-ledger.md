@@ -37,15 +37,15 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-024 | 2026-10-14 | Official tariffs for every market from free sources, researched country by country, keeping agents' work to a minimum; in parallel the owner asks UNCTAD (TRAINS) and the WTO for permission to show their tariff data in the product. | Owner | Demand Discovery v5, Customs Atlas |
 | D-025 | 2026-10-14 | Fill four further data gaps: the six missing capitals and customs-union duty estimates; a second exchange-rate source (IMF) after a terms check; market-level sanctions programmes from the UN, US and EU lists; UNCTAD's shipping-connectivity index as a logistics fallback after a terms check. | Owner | Demand Discovery v5 |
 | D-026 | 2026-10-18 | v5 scores India's preferential rate where the official tariff publishes one for India and it is not a tariff quota, instead of the ordinary rate; the ordinary rate stays beside it (policy v6, E-022). | Owner | Demand Discovery v5 |
-| D-027 | 2026-10-18 | The agent's 10% is a tenth of ClearTrade's 1% success fee. Owner's words: "yes, but charged as additional agent fee later" — read as a separate agent fee charged to the exporter on top of the 1%, at a later stage. Recorded, not built: `payouts.ts` still pays the agent share out of the success fee. | Owner | Fees, payouts |
+| D-027 | 2026-10-18 | The agent's 10% is a tenth of ClearTrade's 1% success fee. Owner's words: "yes, but charged as additional agent fee later" — read as a separate agent fee charged to the exporter on top of the 1%, at a later stage. The owner confirmed this reading on 19 Oct 2026 ("you're right"). Recorded, not built: `payouts.ts` still pays the agent share out of the success fee. | Owner | Fees, payouts |
 | D-028 | 2026-10-18 | Approved as built in PR #5: Hong Kong's zero duty from C&ED's published statement; the seven other published rules; agent-read official lines at quality 0.9; agents may record lines from the eight licence-pending sources, one cited rate per line (R-24); the logistics estimate from shipping connectivity at quality 0.5; sanctions as flags only. Also approved: a customs union's common tariff counts as its members' official duty before national exceptions are modelled, labelled and below full quality; currencies the ECB does not publish use US Treasury reporting rates. | Owner | Demand Discovery v5, Customs Atlas |
 | D-029 | 2026-10-18 | Singapore's tariff is acquired automatically inside SSO's permitted window (03:00–07:00 SGT) every day and saved; runs read the saved copy at any time. Saved copies refreshed on a schedule are acceptable for other markets where that is the only way. | Owner | Customs Atlas |
+| D-030 | 2026-10-19 | Every remaining market's tariff is to be read by the system so agents no longer check it, built in small clusters completed one at a time, until all the markets v5 screens are covered. Owner's words: "integrate them in our system in order that agent doesn't has to check, break in small clusters and complete chunk to chunk. in the end i want all 200+ markets incorporated." Order: the recommendation in E-022, which the owner accepted ("your recommendation"): the 40 researched national sources first, as saved copies where that is the only way (D-029), largest Indian export markets first; the seven licence-pending sources stay with agents until a licence is settled. Each cluster still gets its own source and rights check (docs/37 §6). | Owner | Customs Atlas, Demand Discovery v5 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
-roadmap §26; the next automation wave after the customs unions (proposed in E-022: the 40 researched
-markets without a readable source, as saved copies, largest Indian export markets first; the seven
-licence-pending sources stay with agents until a licence is settled).
+roadmap §26; how the seven licence-pending sources and the 45 markets with no tariff online are covered
+once the researched sources are done (D-030; the replies from UNCTAD and the WTO bear on both).
 
 ## Entries
 
@@ -999,6 +999,51 @@ npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release
 ```
 Each import runs twice and must report the second as UNCHANGED. Then run a product with a member market
 (Senegal or Kenya): its duty reads "under the … common external tariff".
+
+### E-024 · 2026-10-19 · Archetype runs scripted; #4–#7 landed on staging by PR #8 (in review)
+
+**Staging state.** On 18 Oct the owner's local Claude Code stopped at step 1 of the status-page prompt:
+`gh` is not installed on the owner's Mac, and nothing was merged or run. Read from GitHub on 19 Oct:
+`staging/railway` still at `76fb4a7`; PRs #3–#7 open and mergeable, CI passed on each head, and each
+head contains the one before it (`compare` behind 0), so each merge lands exactly the code CI tested.
+At the owner's request ("complete it, either by another prompt or by yourself") the agent tried to merge;
+the session's safety check refused it (a person must merge), and nothing changed. The owner then merged
+all five in the browser at 04:18–04:19 UTC, but #4–#7 still had their stacked bases, so each merged into
+the branch of the PR before it and only #3 reached `staging/railway` (`8c5b9ff`, deployed). PR #8
+(`dd5/customs-unions` → `staging/railway`, head `9496b15`) lands #4–#7 in one merge; the merged tree is
+the one CI tested on PR #7. After it, the prompt continues from step 5, whose commit check catches a
+partial landing like this one.
+
+**Owner decisions** (19 Oct): D-030 (every remaining market automated, cluster by cluster, in the E-022
+order); D-027's reading confirmed. The UNCTAD and WTO permission requests were redrafted for the owner to
+send, to trains@unctad.org and idb@wto.org, the contacts the WITS and WTO terms give.
+
+**Built** on `dd5/archetype-runs`, from PR #7's head (PR #9, into `staging/railway`; docs/36 §10 step 7):
+the portal has no screen for adding a product (products come from sign-up or the seed scripts), so the
+D-003 runs could not be set up by hand.
+- `src/lib/demand-discovery-v5/archetype-runs.ts`, `scripts/dd5-archetype-runs.ts`. `start
+  --actor-email=<agent, ops supervisor or admin>` creates or reuses "[TEST] DD5 archetypes": a test
+  exporter made paid by a manual membership the named account grants (`grantManualMembership`, 90 days,
+  at the configured monthly plan price, no money moved, audited), with one product per archetype in
+  `PHASE_1_GATE_POLICY_V1` (rice 100630, brassware 741810, carpets 570110). It proposes and confirms each
+  HS 2022 code as that account with `proposeClassification` / `confirmClassification`, the portal's own
+  services, so the confirmation is audited and starts v5 by itself. Repeating it confirms nothing again
+  (a confirmed code without a run gets one, trigger `manual`); `--rerun` starts fresh runs. `status`
+  shows each product's newest run and, once it has finished, markets by status, how each market's duty
+  was found (official, a union's common tariff, agent-read, published rule, estimate, none), the top N
+  and the docs/36 §8 comparison with India's real destinations. Refuses production.
+- `src/lib/demand-discovery-v5/calibration-report.ts`: the comparison itself, moved out of
+  `scripts/dd5-compare-top10.ts` (unchanged output) so both scripts share it.
+
+**Checks run.** New test `demand-discovery-v5-archetype-runs` (4: duty basis, staff only, exporter,
+membership, products and confirmations with their audit trail, repeat safety, status). The 13 related
+files (v5, Phase 1 gate, product classification, membership) pass together locally: 181 tests.
+`tsc --noEmit` and ESLint clean.
+
+**Staging after merge** (owner's Claude Code, after PR #8 and the status-page steps):
+`npx tsx --env-file=tmp/rw/operator.env scripts/dd5-archetype-runs.ts start
+--actor-email=atlas-ops@staging-atlas.invalid`, then the same script with `status` until all three runs
+have finished; each archetype's `comparison.verdict` is the docs/36 §8 check.
 
 ## Risk register
 
