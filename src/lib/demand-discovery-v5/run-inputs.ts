@@ -43,7 +43,7 @@ import { createUsdRateResolver, type UsdRate } from './fx';
 import { logisticsEstimates } from './logistics-fallback';
 import { resolveOfficialDuty, storedDuty, type OfficialDutyResolution } from './official-duty';
 import { policyHash } from './policy';
-import { acquireV5Tariffs } from './tariff-step';
+import { acquireV5Tariffs, summarizeTariffOutcomes } from './tariff-step';
 import { coordinateInputs, ecgcInputs } from './reference-inputs';
 import { testHsRevision, worldTotals, type HsRevisionTest } from './hs-revision';
 import { splitByAge } from './world-bank';
@@ -303,18 +303,11 @@ export async function loadRunInputs(args: {
     const step = await acquireV5Tariffs({ job_id: args.job_id ?? `demand_discovery_v5:${args.hs6}`, hs6: args.hs6, markets, resolution_clock: args.as_of, live_fetch_timeout_ms: config.tariff_live_fetch_timeout_ms, correlation_id: args.correlation_id });
     tariffAsOf = step.tariff_clock;
     tariffStep = { status: 'used', resolution_clock: args.as_of.toISOString(), tariff_clock: step.tariff_clock.toISOString(), outcomes: step.outcomes };
-    const failed = step.outcomes.filter((item) => item.outcome === 'failed' || item.outcome === 'timed_out');
-    if (failed.length) {
-      degraded = true;
-      notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${failed.length === 1 ? "that market's duty is" : "those markets' duties are"} not the official rate this run.`);
-    }
-    // D-029: a connected source with no release saved yet (Singapore before its first nightly copy)
-    // is not a failure of this run. The duty falls back as for any market without an official rate:
-    // the published rule where one covers the product (Singapore has one), otherwise the estimate.
-    const unsaved = step.outcomes.filter((item) => item.outcome === 'no_release');
-    if (unsaved.length) {
-      notes.push(`No official tariff release is saved yet for ${unsaved.map((item) => item.country_code).join(', ')}, so ${unsaved.length === 1 ? "that market's duty is" : "those markets' duties are"} not the official rate this run.`);
-    }
+    // Only a failed or timed-out look-up degrades the run; a source with nothing saved yet (D-029) or one
+    // that does not cover the product for a market is said, not a failure (`summarizeTariffOutcomes`).
+    const summary = summarizeTariffOutcomes(step.outcomes);
+    if (summary.degraded) degraded = true;
+    notes.push(...summary.notes);
   }
   const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd, score_india_preference: policy.duty.score_india_preference });
   for (const origin of official.origins) origins.add(origin);

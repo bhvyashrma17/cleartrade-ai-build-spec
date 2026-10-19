@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, test } from 'vitest';
 import { setTariffAdapterResolverForTesting } from '../src/lib/country-truth/tariff-acquisition';
-import { acquireV5Tariffs } from '../src/lib/demand-discovery-v5/tariff-step';
+import { acquireV5Tariffs, summarizeTariffOutcomes } from '../src/lib/demand-discovery-v5/tariff-step';
 import { validationError } from '../src/lib/errors';
 import type { MarketAccessAdapter } from '../src/lib/job-handlers/market-access';
 import type { MarketAccessIngestResult } from '../src/lib/market-access/contract';
@@ -77,9 +77,35 @@ describe('v5 tariff look-up', () => {
     setTariffAdapterResolverForTesting((country) => (country === 'SG' ? saved : country === 'KR' ? broken : undefined));
     const step = await acquireV5Tariffs({ job_id: `job-${randomUUID()}`, hs6: '100630', markets: ['SG', 'KR'], resolution_clock: new Date('2026-10-14T06:00:00Z'), live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:00:00Z') });
     expect(step.outcomes.map((item) => [item.country_code, item.outcome, item.reason])).toEqual([
-      ['KR', 'failed', 'Some details need attention before this can be saved.'],
+      // A validation error's reason is what its fields say, not the generic envelope message.
+      ['KR', 'failed', 'unreadable'],
       ['SG', 'no_release', 'No official Singapore SSO tariff release has been imported and activated.'],
     ]);
+  });
+
+  test('a source that does not cover the product for a market is recorded as not covered: the run is not degraded, and says so', async () => {
+    // Andorra applies the EU tariff to HS chapters 25–97 only; the TARIC service refuses rice (chapter 10) by design.
+    const partial: MarketAccessAdapter = {
+      provider_key: 'fixture_partial_union', retrieval: 'retained_release',
+      async fetch() { throw validationError([{ field: 'hs6', code: 'outside_customs_union', message: 'AD applies the EU common customs tariff only to HS chapters 25–97; its own tariff applies to chapter 10, so TARIC evidence must not be used for it.' }]); },
+    };
+    setTariffAdapterResolverForTesting((country) => (country === 'AD' ? partial : undefined));
+    const step = await acquireV5Tariffs({ job_id: `job-${randomUUID()}`, hs6: '100630', markets: ['AD'], resolution_clock: new Date('2026-10-14T06:00:00Z'), live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:00:00Z') });
+    expect(step.outcomes).toMatchObject([{ country_code: 'AD', outcome: 'not_covered', provider_key: 'fixture_partial_union', snapshot_id: null, reason: expect.stringContaining('only to HS chapters 25–97') }]);
+    expect(summarizeTariffOutcomes(step.outcomes)).toEqual({
+      degraded: false,
+      notes: ["The connected tariff source does not cover this product for AD, where the market's own tariff applies, so that market's duty is not the official rate this run."],
+    });
+  });
+
+  test('only a failed or timed-out look-up degrades the run', () => {
+    const at = (country_code: string, outcome: 'acquired' | 'failed' | 'timed_out' | 'no_release' | 'not_covered') => ({ country_code, outcome, provider_key: null, retrieval: null, snapshot_id: null, snapshot_created_by_run: null, retrieved_at: null, source_version: null, authority_release_id: null, classification_resolution: null, tariff_coverage: null, reason: null, elapsed_ms: 0 });
+    expect(summarizeTariffOutcomes([at('DE', 'acquired'), at('SG', 'no_release'), at('AD', 'not_covered')]).degraded).toBe(false);
+    expect(summarizeTariffOutcomes([at('DE', 'acquired'), at('FR', 'failed'), at('US', 'timed_out')])).toEqual({
+      degraded: true,
+      notes: ["The official tariff look-up failed for FR, US, so those markets' duties are not the official rate this run."],
+    });
+    expect(summarizeTariffOutcomes([])).toEqual({ degraded: false, notes: [] });
   });
 
   test('with no market connected to a source, nothing is asked and the clock is the run clock or now', async () => {
