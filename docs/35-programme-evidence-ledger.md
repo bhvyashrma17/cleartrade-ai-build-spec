@@ -1141,7 +1141,8 @@ in words. Updated for the seven markets: routing (six routes added; AE and BR le
 list), provider lists, the adapter count (88 → 95), directory counts and pointers, archetype status, the
 policy version. `tsc --noEmit` clean; ESLint clean on the 26 changed files. Full suite locally: 2,240
 passed, 5 skipped, 3 failed, the three that fail only in this local harness (`market-scan-requests`,
-`pilot-e2e`, `staff-provisioning`), as before. CI: on PR #10.
+`pilot-e2e`, `staff-provisioning`), as before. CI passed on PR #10 at `4cb27b7` (run 39238917895: Prisma
+validate, typecheck, lint, the full test suite, the production build and the Docker build).
 
 **Staging** (owner's Claude Code, after PR #10 merges): build each bundle from the files already in the
 owner's `~/Downloads/cleartrade-tariff-sources/cluster-1/` with `scripts/build-tariff-schedule-bundle.ts`,
