@@ -36,16 +36,16 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-023 | 2026-10-14 | Rupee figures beside dollar figures in the Demand Discovery views follow today's ECB rate (the owner chose this over the rate frozen with the run); stored run values stay in US dollars. | Owner | Demand Discovery v5 |
 | D-024 | 2026-10-14 | Official tariffs for every market from free sources, researched country by country, keeping agents' work to a minimum; in parallel the owner asks UNCTAD (TRAINS) and the WTO for permission to show their tariff data in the product. | Owner | Demand Discovery v5, Customs Atlas |
 | D-025 | 2026-10-14 | Fill four further data gaps: the six missing capitals and customs-union duty estimates; a second exchange-rate source (IMF) after a terms check; market-level sanctions programmes from the UN, US and EU lists; UNCTAD's shipping-connectivity index as a logistics fallback after a terms check. | Owner | Demand Discovery v5 |
+| D-026 | 2026-10-18 | v5 scores India's preferential rate where the official tariff publishes one for India and it is not a tariff quota, instead of the ordinary rate; the ordinary rate stays beside it (policy v6, E-022). | Owner | Demand Discovery v5 |
+| D-027 | 2026-10-18 | The agent's 10% is a tenth of ClearTrade's 1% success fee. Owner's words: "yes, but charged as additional agent fee later" — read as a separate agent fee charged to the exporter on top of the 1%, at a later stage. Recorded, not built: `payouts.ts` still pays the agent share out of the success fee. | Owner | Fees, payouts |
+| D-028 | 2026-10-18 | Approved as built in PR #5: Hong Kong's zero duty from C&ED's published statement; the seven other published rules; agent-read official lines at quality 0.9; agents may record lines from the eight licence-pending sources, one cited rate per line (R-24); the logistics estimate from shipping connectivity at quality 0.5; sanctions as flags only. Also approved: a customs union's common tariff counts as its members' official duty before national exceptions are modelled, labelled and below full quality; currencies the ECB does not publish use US Treasury reporting rates. | Owner | Demand Discovery v5, Customs Atlas |
+| D-029 | 2026-10-18 | Singapore's tariff is acquired automatically inside SSO's permitted window (03:00–07:00 SGT) every day and saved; runs read the saved copy at any time. Saved copies refreshed on a schedule are acceptable for other markets where that is the only way. | Owner | Customs Atlas |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
-roadmap §26. Pending with PR #5 (E-021), confirmed by merging it or changed before: Hong Kong's zero
-duty read from C&ED's published statement rather than its licence-pending duty-rate content; the seven
-other published rules; agent-read official lines scored at quality 0.9; the logistics estimate from
-shipping connectivity at quality 0.5; sanctions programmes as flags that never change a score; agents
-recording a line from the eight sources whose reuse is licence-pending (HK beyond its rule, MY, CL, ZA,
-UY, BD, PK, JM) — allowed as built, one cited rate per line (docs/37 §6), or hidden there until each
-licence is settled (R-24).
+roadmap §26; the next automation wave after the customs unions (proposed in E-022: the 40 researched
+markets without a readable source, as saved copies, largest Indian export markets first; the seven
+licence-pending sources stay with agents until a licence is settled).
 
 ## Entries
 
@@ -842,6 +842,82 @@ stacked on PR #4. CI's first attempt then failed on both docs-only ledger commit
 passes locally in isolation (4 of 4) and in the full suite; CI's logs cannot be read from the agent
 session (R-25). Later attempts are on the PR's checks.
 
+### E-022 · 2026-10-18 · Preferential rate scored, US Treasury rates, Singapore saved nightly (in review)
+
+**Owner decisions applied** (18 Oct 2026): D-026 (preferential rate), D-028 (Treasury rates; the
+customs-union part is E-023), D-029 (Singapore). D-027 is recorded only.
+
+**Built** on `dd5/tariffs-auto`, stacked on PR #5 (docs/36 §2, §4, §7.1, §10; docs/37 §1, §5a):
+- *Preferential rate (D-026).* Policy v6 (`demand-discovery-v5-policy-v6`; no run used it before):
+  `duty.score_india_preference` (on). Where the official tariff publishes a preference for India that is
+  not a tariff quota and not above the ordinary rate, v5 scores it; the ordinary rate stays beside it and
+  the reason says claiming it needs proof of Indian origin; a quota preference is shown, never scored.
+  `tariff-semantics.ts` records `is_quota`; `contract.ts` keeps the pack's parsed preferential duty on the
+  evidence row; frozen inputs v4 carry the rate basis (`official-duty.ts`, `duty-inputs.ts`,
+  `metrics.ts`, `explain.ts`, `run-inputs.ts`).
+- *US Treasury reporting rates (D-028).* `src/lib/fx/treasury.ts` reads the Fiscal Data
+  `rates_of_exchange` API (public domain, quarterly, amended between quarters after a 10% move). Its
+  live format was checked on 18 Oct through the owner's browser and is the fixture (record date
+  30 Sep 2026: 168 rows, sha256 `4cfa4df8…53a8`, three amendments effective 15 Oct). 158 descriptions
+  map to ISO codes; 10 are left out on purpose (dollarised markets, the euro zone, Cuba's discontinued
+  convertible peso, and Syria's pound, whose 15 Feb 2026 amendment from 11,000 to 110 per dollar is a
+  redenomination with an unconfirmed ISO code). Each response is kept raw with
+  one observation per row, an amendment under its own effective date. A run uses a Treasury rate only
+  for a currency the ECB does not publish (or answered 404 for), within 120 days, and fetches the list
+  once when none is stored (`fx_treasury_fallback`, `fx_treasury_max_lookback_days`). The Ops panel
+  shows the switch and the newest stored day.
+- *Singapore saved nightly (D-029).* `src/lib/market-access/providers/singapore-refresh.ts`, swept from
+  the worker every ten minutes (outside 03:00–07:00 SGT it reads nothing): once per Singapore day,
+  starting before 06:00, it acquires the consolidated First Schedule and its provenance pages, reads
+  them with the strict reader and compares the canonical tariff with the saved copy. Unchanged →
+  recorded only; no copy yet → imported and activated once it passes qualification (the reader plus
+  shape checks: rice not dutiable; liquor, tobacco, motor cars and petrol dutiable; ≥90% of lines
+  duty-free; line count within 10% of the release in use); changed → imported and held for review,
+  because a saved release records the amendment chain reviewed in code (to S 67/2026);
+  `activate_changed_tariff` makes changes active, and a held release activates the next night once it
+  is on. Failures: at most 3 a night, 30 minutes apart, the release in use untouched. Every attempt is
+  an audit event (`authority_refresh` / `SG_SSO_CUSTOMS_DUTIES`). Switch `market_access.authority_refresh`
+  (off), through the audited config API (validated) or `scripts/authority-refresh.ts`
+  (`--enable/--disable/--status/--run-now/--acquire-only`); `import-retained-authority-release.ts`
+  takes `--family=SG` for a bundle acquired elsewhere. Singapore joins `DESTINATION_ADAPTERS` as a
+  retained release and leaves the unconfigured list (connected 57, researched 61, directory 100). A
+  retained-release source with nothing imported is now `no_release` in the acquisition (noted in the
+  run, not a failure, the run is not partial); before Singapore's first copy its duty comes from its
+  published rule and the SSO First Schedule is the agent's pointer. Ops → Demand Discovery v5 shows the
+  refresh state.
+
+**Checks run.** New tests: `fx-treasury` (5), `singapore-refresh` (7: window and once-a-night rules,
+config validation, qualification, first copy activated and read by the adapter at any hour, unchanged,
+changed and held then activated, failures capped and spaced); preference cases in
+`demand-discovery-v5-official-duty` (2), `-metrics` (1) and `-run`; `no_release` in
+`demand-discovery-v5-tariff-step`; routing, directory and ops-view updates. The affected files (12)
+pass together locally. Full suite in one schema, run on this branch with E-023's changes on top: 149
+files, 2,215 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006. `tsc --noEmit`
+and ESLint clean on every changed file. CI on PR #6's head `aae6baf` (run 39125655678): passed. The
+staging commands below were run as written, apart from the env file, against a throwaway local test
+database: `--status`, `--enable` (config version 1, through the audited path), `--run-now` outside the
+window (`not_due`, nothing fetched) and `--disable`.
+
+**Next automation wave (open owner decision, proposed here).** Of the 153 markets that needed an agent
+for an official duty (E-021), 24 are read automatically after E-023, leaving 129: 40 with a researched
+national source that cannot be read in place but could be saved and refreshed on a schedule as D-029
+allows (China, the UAE, Türkiye, Mexico, Thailand, Brazil, Egypt, Switzerland and the Philippines among
+them), one reader each, largest Indian export markets first; 37 small markets whose official page,
+schedule or law an agent can read; 7 licence-pending sources, which stay with agents until a licence is
+settled; and 45 with nothing online (Cabo Verde and South Sudan among them).
+
+**Not verified.** Whether the Railway worker can reach `sso.agc.gov.sg`, and the live SSO page against
+the reader: the first window run on staging is the live qualification (R-26). A staging run with a
+Treasury-converted price.
+
+**Staging after merge** (owner's Claude Code; nothing fetches from SSO until switched on):
+1. Deploy; policy v6 and Treasury rates apply to new runs.
+2. `npx tsx --env-file=tmp/rw/operator.env scripts/authority-refresh.ts --enable
+   --actor-email=<ops supervisor> --changed-by=<admin> --reason="Save Singapore's tariff nightly on
+   staging (D-029)"`; after the next window (00:30–04:30 IST) `--status` shows the attempt. If SSO
+   refuses the worker, run `--acquire-only --out=<file>` inside the window on a machine that can reach
+   it and import the file with `import-retained-authority-release.ts --family=SG`.
+
 ## Risk register
 
 
@@ -870,5 +946,6 @@ session (R-25). Later attempts are on the PR's checks.
 | R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Open (E-021) — the list carries its check date | Monthly re-check; a new edition of `curated:sanctions-programmes` |
 | R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
 | R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
-| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Open (E-021) — owner decision pending with PR #5 | Allowed as built (one cited rate per line); or hide the form for those sources until each licence is settled |
+| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Accepted (D-028): allowed as built, one cited rate per line | Automated reading of these sources still waits for each licence |
 | R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |
+| R-26 | The Railway worker may not reach Singapore Statutes Online, or SSO may refuse automated requests from a cloud address; the live First Schedule has only been read through fixtures that follow the reviewed pack | Open (E-022) — nothing is fetched until `market_access.authority_refresh` is switched on; failures are recorded and the release in use is untouched | The first window run on staging is the live qualification; otherwise `--acquire-only` on a machine that can reach SSO, inside the window, and import the file |

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, test } from 'vitest';
 import { setTariffAdapterResolverForTesting } from '../src/lib/country-truth/tariff-acquisition';
 import { acquireV5Tariffs } from '../src/lib/demand-discovery-v5/tariff-step';
+import { validationError } from '../src/lib/errors';
 import type { MarketAccessAdapter } from '../src/lib/job-handlers/market-access';
 import type { MarketAccessIngestResult } from '../src/lib/market-access/contract';
 import { prisma } from '../src/lib/prisma';
@@ -65,6 +66,20 @@ describe('v5 tariff look-up', () => {
     expect(step.outcomes.find((item) => item.country_code === 'FR')!.reason).toBe('Fixture release could not be read.');
     expect(step.tariff_clock.toISOString()).toBe('2026-10-14T06:02:00.000Z');
     expect(await prisma.marketAccessEvidenceSnapshot.count({ where: { hs6_code: hs6 } })).toBe(2);
+  });
+
+  test('a retained-release source with nothing imported yet is recorded as no release, not as a failure (D-029)', async () => {
+    const saved: MarketAccessAdapter = {
+      provider_key: 'fixture_window_release', retrieval: 'retained_release',
+      async fetch() { throw validationError([{ field: 'release', code: 'missing', message: 'No official Singapore SSO tariff release has been imported and activated.' }]); },
+    };
+    const broken: MarketAccessAdapter = { provider_key: 'fixture_broken', retrieval: 'retained_release', async fetch() { throw validationError([{ field: 'bundle', code: 'corrupt_archive', message: 'unreadable' }]); } };
+    setTariffAdapterResolverForTesting((country) => (country === 'SG' ? saved : country === 'KR' ? broken : undefined));
+    const step = await acquireV5Tariffs({ job_id: `job-${randomUUID()}`, hs6: '100630', markets: ['SG', 'KR'], resolution_clock: new Date('2026-10-14T06:00:00Z'), live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:00:00Z') });
+    expect(step.outcomes.map((item) => [item.country_code, item.outcome, item.reason])).toEqual([
+      ['KR', 'failed', 'Some details need attention before this can be saved.'],
+      ['SG', 'no_release', 'No official Singapore SSO tariff release has been imported and activated.'],
+    ]);
   });
 
   test('with no market connected to a source, nothing is asked and the clock is the run clock or now', async () => {

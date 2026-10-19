@@ -18,6 +18,8 @@
  *      unconfigured source, whose adapter fails, or whose live fetch times out is recorded with its
  *      reason and the run continues. Its market access stays unavailable — with that reason — in the
  *      assessment. Tariff evidence is a gate requirement (docs/34), not a run requirement.
+ *      A retained-release source with no release imported yet is `no_release`, not `failed`: nothing
+ *      was attempted that could fail (D-029 — Singapore's release is saved in its nightly window).
  *
  * Every finished destination is handed to `onOutcome` immediately so the caller can checkpoint it;
  * a retried run passes those outcomes back in `completed` and they are not acquired again.
@@ -32,6 +34,7 @@ export type TariffAcquisitionOutcomeKind =
   | 'acquired'
   | 'unconfigured_source'
   | 'no_source'
+  | 'no_release'
   | 'failed'
   | 'timed_out'
   | 'skipped_over_cap';
@@ -166,8 +169,17 @@ async function acquireOne(countryCode: string, args: TariffAcquisitionArgs): Pro
       tariff_coverage: snapshot.tariff_coverage,
     });
   } catch (error) {
+    const missing = adapter.retrieval === 'retained_release' ? noReleaseImported(error) : null;
+    if (missing) return outcome(countryCode, 'no_release', startedAt, { ...identity, reason: safeReason(missing) });
     return outcome(countryCode, 'failed', startedAt, { ...identity, reason: safeReason(error) });
   }
+}
+
+/** Every retained-release service reports "nothing imported and activated yet" the same way; its message, or null. */
+function noReleaseImported(error: unknown): string | null {
+  const fields = (error as { fields?: { field?: string; code?: string; message?: string }[] } | null)?.fields;
+  const field = Array.isArray(fields) ? fields.find((item) => item.field === 'release' && item.code === 'missing') : undefined;
+  return field ? field.message || 'No official release has been imported and activated.' : null;
 }
 
 const byCountry = (outcomes: Iterable<TariffAcquisitionOutcome>) =>

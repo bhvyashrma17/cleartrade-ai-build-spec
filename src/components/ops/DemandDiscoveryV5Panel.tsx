@@ -14,6 +14,19 @@ const RUN_TONE: Record<JobStatus, 'positive' | 'warning' | 'critical' | 'neutral
   queued: 'neutral', processing: 'info', completed: 'positive', partial: 'warning', failed: 'critical', cancelled: 'neutral',
 };
 
+/** D-029: the copy of Singapore's tariff runs read, saved by the worker between 03:00 and 07:00 Singapore Time. */
+function SingaporeTariffLine({ status }: { status: DemandDiscoveryV5Operations['singapore_tariff'] }) {
+  const last = status.attempts[0] ?? null;
+  return (
+    <p className="text-xs text-[var(--color-text-muted)]">
+      Singapore tariff, saved nightly 03:00–07:00 Singapore Time: refresh {status.enabled ? 'on' : 'off'} ·
+      in use: {status.active ? `${status.active.release_identifier}${status.active.consolidated_as_at ? ` (SSO as at ${status.active.consolidated_as_at})` : ''}` : 'none saved yet (runs use Singapore’s published duty rule)'}
+      {status.held ? ` · changed tariff held for review: ${status.held.release_identifier}` : ''} ·
+      last attempt: {last ? `${fmt(last.at)} ${last.outcome}${last.reason ? ` — ${last.reason}` : ''}` : 'none'}
+    </p>
+  );
+}
+
 export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscoveryV5Operations }) {
   const missing = overview.reference.filter((item) => !item.active);
   return (
@@ -29,8 +42,10 @@ export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscovery
         {overview.environment} · policy {overview.switches.policy_version} · auto-start {overview.switches.auto_start_on_classification ? 'on' : 'off'} ·
         official tariff look-up {overview.switches.tariff_acquisition ? 'on' : 'off'} ·
         Comtrade newest year {overview.switches.comtrade_newest_year ? 'on' : 'off'} · Comtrade market fallback {overview.switches.comtrade_market_fallback ? 'on' : 'off'} ·
-        ECB rates {overview.switches.fx_fetch_missing ? 'fetched by runs when missing' : 'not fetched'} (newest stored EUR/USD: {day(overview.fx.latest_usd_observation)})
+        ECB rates {overview.switches.fx_fetch_missing ? 'fetched by runs when missing' : 'not fetched'} (newest stored EUR/USD: {day(overview.fx.latest_usd_observation)}) ·
+        US Treasury rates for other currencies {overview.switches.fx_treasury_fallback ? 'on' : 'off'} (newest stored: {day(overview.fx.latest_treasury_observation)})
       </p>
+      <SingaporeTariffLine status={overview.singapore_tariff} />
 
       <div>
         <h3 className="text-sm font-semibold text-primary">Last 7 days</h3>

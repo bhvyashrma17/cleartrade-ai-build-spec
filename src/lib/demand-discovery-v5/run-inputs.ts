@@ -48,7 +48,9 @@ import { splitByAge } from './world-bank';
 import type { TradeFlowInput } from './series';
 
 // v3 (17 Oct 2026): adds `logistics_estimate` and the LSCI reference (D-025).
-export const V5_INPUTS_SCHEMA_VERSION = 'demand-discovery-v5-inputs-v3';
+// v4 (18 Oct 2026): each official duty records its `basis` and, for a scored preference, the
+// `standard` rate it replaced (D-026).
+export const V5_INPUTS_SCHEMA_VERSION = 'demand-discovery-v5-inputs-v4';
 
 /** The product facts a run needs, frozen into the run's snapshot at enqueue. */
 export interface V5ProductFacts {
@@ -119,7 +121,7 @@ async function availability(year: number) {
  * Reads stored evidence; with `tariff_acquisition` on, the run has just looked the product up in every
  * market with a Customs Atlas source (`tariff-step.ts`), and `as_of` is the tariff clock.
  */
-async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate> }) {
+async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate>; score_india_preference?: boolean }) {
   const origins = allowedEvidenceOrigins();
   const snapshots = await prisma.marketAccessEvidenceSnapshot.findMany({
     where: { country_code: { in: [...args.markets] }, OR: [{ hs_code_scope: args.hs6 }, { hs6_code: args.hs6 }], retrieved_at: { lte: args.as_of }, evidence_origin: { in: origins } },
@@ -156,7 +158,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
       snapshots: marketSnapshots,
       evidence: rows,
     });
-    let resolution = resolveOfficialDuty({ as_of: args.as_of, tariffs: selected.tariffs, rows: new Map(rows.map((row) => [row.id, row])), minimum_confidence: args.minimum_confidence, usd_per_unit: (currency) => fx.get(currency)?.rate ?? null });
+    let resolution = resolveOfficialDuty({ as_of: args.as_of, tariffs: selected.tariffs, rows: new Map(rows.map((row) => [row.id, row])), minimum_confidence: args.minimum_confidence, usd_per_unit: (currency) => fx.get(currency)?.rate ?? null, score_india_preference: args.score_india_preference ?? false });
     if (resolution.status === 'none' && marketSnapshots.some((snapshot) => snapshot.classification_resolution === 'classification_refinement_required')) {
       resolution = { status: 'none', reason: "This HS6 splits into national lines with different duties in this market; the official duty needs the product's declarable line." };
     }
@@ -172,6 +174,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     ? resolution
     : {
         status: resolution.status, source: resolution.source, national_line: resolution.national_line, fact_ids: resolution.fact_ids, snapshot_ids: resolution.snapshot_ids, preference: resolution.preference,
+        basis: resolution.basis, ...(resolution.standard ? { standard: resolution.standard } : {}),
         ...(resolution.recorded_by_agent ? { recorded_by_agent: true } : {}),
         ...(resolution.status === 'percent' ? { duty_percent: resolution.duty_percent } : resolution.status === 'specific' ? { usd_per_kg: resolution.usd_per_kg, expression: resolution.expression, fx: resolution.fx } : { reason: resolution.reason, expression: resolution.expression }),
       }]));
@@ -276,7 +279,7 @@ export async function loadRunInputs(args: {
     notes.push('Markets without a World Bank logistics score have no logistics estimate: the shipping connectivity index is not imported.');
   }
   // D-025: currencies fixed against one the ECB publishes are converted through their peg.
-  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing, pegs: currencyPegs?.rows ?? [] });
+  const rates = createUsdRateResolver({ as_of: args.as_of, lookback_days: config.fx_max_lookback_days, fetch_missing: config.fx_fetch_missing, pegs: currencyPegs?.rows ?? [], treasury: { enabled: config.fx_treasury_fallback, lookback_days: config.fx_treasury_max_lookback_days } });
 
   // D-020: ask every market with a Customs Atlas source for this product's tariff before reading
   // tariff evidence. What is acquired is admitted at the tariff clock (no earlier than any retrieval).
@@ -289,10 +292,17 @@ export async function loadRunInputs(args: {
     const failed = step.outcomes.filter((item) => item.outcome === 'failed' || item.outcome === 'timed_out');
     if (failed.length) {
       degraded = true;
-      notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${failed.length === 1 ? 'that market uses' : 'those markets use'} the estimate.`);
+      notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${failed.length === 1 ? "that market's duty is" : "those markets' duties are"} not the official rate this run.`);
+    }
+    // D-029: a connected source with no release saved yet (Singapore before its first nightly copy)
+    // is not a failure of this run. The duty falls back as for any market without an official rate:
+    // the published rule where one covers the product (Singapore has one), otherwise the estimate.
+    const unsaved = step.outcomes.filter((item) => item.outcome === 'no_release');
+    if (unsaved.length) {
+      notes.push(`No official tariff release is saved yet for ${unsaved.map((item) => item.country_code).join(', ')}, so ${unsaved.length === 1 ? "that market's duty is" : "those markets' duties are"} not the official rate this run.`);
     }
   }
-  const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd });
+  const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd, score_india_preference: policy.duty.score_india_preference });
   for (const origin of official.origins) origins.add(origin);
   if (!official.official_count) {
     notes.push(config.tariff_acquisition

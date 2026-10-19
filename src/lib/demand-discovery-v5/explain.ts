@@ -164,10 +164,18 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
       const estimated = !result.estimated ? '' : typeof inputs.customs_union === 'string' ? ` (estimated from the ${inputs.customs_union}'s common external tariff)` : ' (estimated)';
       // An official specific duty is shown with what it is per kilogram: the percentage is derived.
       const specific = typeof inputs.duty_expression === 'string' ? ` (${inputs.duty_expression} at this market's prices)` : '';
-      const sentence = duty === 0 ? `Indian goods enter duty-free${estimated}` : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific}${estimated}`;
-      const preference = num(inputs.preference_percent);
       // D-024: a rate an agent read from the official tariff says so.
       const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)' : '';
+      // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
+      if (inputs.rate === 'india_preference') {
+        const standardPercent = num(inputs.standard_percent);
+        const standard = standardPercent != null ? formatPercent(standardPercent) : typeof inputs.standard_duty === 'string' && inputs.standard_duty ? inputs.standard_duty : null;
+        const preferential = duty === 0 ? "Indian goods enter duty-free at India's preferential rate" : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific} at India's preferential rate`;
+        return `${preferential}${read}${standard ? ` (standard rate ${standard})` : ''}; claiming it needs proof of Indian origin.`;
+      }
+      const sentence = duty === 0 ? `Indian goods enter duty-free${estimated}` : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific}${estimated}`;
+      const preference = num(inputs.preference_percent);
+      if (preference != null && preference < duty && inputs.preference_quota === 'yes') return `${sentence}${read}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} applies only within a tariff quota.`;
       if (preference != null && preference < duty) return `${sentence}${read}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} may apply with proof of Indian origin.`;
       return `${sentence}${read}.`;
     }
