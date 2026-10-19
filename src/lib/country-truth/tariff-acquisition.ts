@@ -65,6 +65,11 @@ function resolveAdapter(countryCode: string): MarketAccessAdapter | undefined {
   return resolverOverride ? resolverOverride(countryCode) : DESTINATION_ADAPTERS[countryCode];
 }
 
+/** The Customs Atlas adapter that would serve `countryCode`, or undefined when none is connected (honours the test seam). */
+export function tariffAdapterFor(countryCode: string): MarketAccessAdapter | undefined {
+  return resolveAdapter(countryCode.trim().toUpperCase());
+}
+
 const TIMED_OUT = Symbol('timed_out');
 
 async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T | typeof TIMED_OUT> {

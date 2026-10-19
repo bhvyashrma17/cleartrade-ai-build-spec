@@ -7,6 +7,9 @@ import { EvidenceCompletenessStatus, EvidenceOrigin, JobStatus, JobType, MarketA
 import type { DocumentStorage, StoredObject } from '../src/lib/document-storage';
 import { isCostedJobType } from '../src/lib/billing/costed-work';
 import { setV5ComtradeAccessForTesting } from '../src/lib/demand-discovery-v5/comtrade-step';
+import { setTariffAdapterResolverForTesting } from '../src/lib/country-truth/tariff-acquisition';
+import type { MarketAccessAdapter } from '../src/lib/job-handlers/market-access';
+import type { MarketAccessIngestResult } from '../src/lib/market-access/contract';
 import { autoStartDemandDiscoveryV5, demandDiscoveryV5Availability } from '../src/lib/demand-discovery-v5/service';
 import { setDemandDiscoveryV5StorageForTesting } from '../src/lib/job-handlers/demand-discovery-v5';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
@@ -54,9 +57,9 @@ class MemoryStorage implements DocumentStorage {
   async healthcheck() {}
 }
 
-const wdi = (indicator: string, rows: [string, number][]) => Buffer.from(JSON.stringify([
+const wdi = (indicator: string, rows: [string, number, string?][]) => Buffer.from(JSON.stringify([
   { page: 1, pages: 1, per_page: 20000, total: rows.length, lastupdated: '2026-07-01' },
-  rows.map(([iso3, value]) => ({ indicator: { id: indicator, value: indicator }, country: { id: iso3.slice(0, 2), value: iso3 }, countryiso3code: iso3, date: '2022', value, unit: '', obs_status: '', decimal: 2 })),
+  rows.map(([iso3, value, year]) => ({ indicator: { id: indicator, value: indicator }, country: { id: iso3.slice(0, 2), value: iso3 }, countryiso3code: iso3, date: year ?? '2022', value, unit: '', obs_status: '', decimal: 2 })),
 ]));
 const getDa = (period: number, reporters: [number, string][]) => Buffer.from(JSON.stringify({
   elapsedTime: '0.1 secs', count: reporters.length, error: '',
@@ -91,6 +94,9 @@ interface FrozenInputs {
   provider_coordinates: unknown;
   comtrade: { newest_year: { evidence_ids: string[] }; market_fallback: unknown };
   exporter: { usd_per_kg: unknown; yearly_kg: unknown };
+  fx_fetches: unknown[];
+  tariff_acquisition: unknown;
+  world_bank_too_old: Record<string, unknown>;
 }
 interface Breakdown { newest_year: unknown; metrics: { key: string; score: number | null; inputs: Record<string, unknown> }[] }
 
@@ -163,17 +169,38 @@ async function confirmCereal(productId: string, actor: Principal) {
   return confirmClassification({ classification_id: candidate.id, product_id: productId }, actor, MARKER);
 }
 
+/** D-020: the UAE answers a live tariff look-up during the run (5% ad valorem); no other market has a source here. */
+const tariffLookups: string[] = [];
+const uaeTariff: MarketAccessAdapter = {
+  provider_key: 'fixture_live', retrieval: 'live_fetch',
+  async fetch(request): Promise<MarketAccessIngestResult> {
+    tariffLookups.push(`${request.destination_country}/${request.hs6}`);
+    const duty = { kind: 'ad_valorem' as const, ad_valorem_rate_percent: 5, specific_amount: null, specific_currency: null, specific_unit: null, specific_unit_quantity: null, expression: '5%', note: null };
+    const line = { national_tariff_code: `${request.hs6}00`, description: 'Fixture line', declarable: true, effective_from: new Date('2026-01-01T00:00:00Z'), effective_to: null, general_duty: duty, control_codes: [], preference_area_ids: [] };
+    return {
+      jurisdiction: 'AE', country_code: 'AE', hs6: request.hs6, hs_revision: 'HS2022', provider: 'uae_fixture', source_authority: 'UAE fixture authority', source_dataset: 'fixture',
+      source_dataset_version: 'fixture-v1', source_reference: `https://example.test/AE/${request.hs6}`, national_code_system: 'EU_TARIC', parser_version: 'fixture-v1',
+      retrieved_at: new Date(), evidence_class: 'authoritative_public', recorded_by_id: null,
+      resolution: { resolution: 'exact', resolved_line: line, candidates: [line], candidate_count: 1, differences: [], reason: 'fixture' },
+      general_duty: duty, india_preference: { applicability: 'not_applicable', duty: null, geographic_area_id: null, basis: 'fixture: no India preference' },
+      lines: [], requirements: [], regulatory_coverage_complete: false, raw_evidence: { marker: MARKER },
+    };
+  },
+};
+
 beforeAll(async () => {
   const id = `${MARKER}-ops`;
   await prisma.user.create({ data: { id, email: `${id}@test.local`, name: 'Dataset Operator', role: UserRole.admin } });
   ops = { id, email: `${id}@test.local`, name: 'Dataset Operator', role: UserRole.admin, exporter_org_id: null, tier: OrgTier.paid };
   registerAllJobHandlers();
   setDemandDiscoveryV5StorageForTesting(storage);
+  setTariffAdapterResolverForTesting((country) => (country === 'AE' ? uaeTariff : undefined));
   setV5ComtradeAccessForTesting({ mode: 'authenticated', api_key: 'test-key', credential_fingerprint: `${MARKER}-key`, source_origin: EvidenceOrigin.fixture, reason: null, fetch: fakeComtrade, sleep: async () => {} });
 });
 
 afterAll(async () => {
   setDemandDiscoveryV5StorageForTesting(null);
+  setTariffAdapterResolverForTesting(null);
   setV5ComtradeAccessForTesting(null);
   // Leave nothing "ready" or "active" behind for suites sharing this schema.
   await prisma.tradeDatasetRelease.updateMany({ where: { dataset_version: VERSION, status: TradeDatasetReleaseStatus.ready }, data: { status: TradeDatasetReleaseStatus.superseded, superseded_at: new Date() } });
@@ -196,7 +223,8 @@ describe('Demand Discovery v5 runs', () => {
     expect(await importBaci('HS17', [2019, 2020, 2021, 2022, 2023, 2024])).toMatchObject({ change: 'NEW' });
     expect(await importBaci('HS22', [2022, 2023, 2024])).toMatchObject({ change: 'NEW' });
     const reference = (dataset_key: string, bytes: Buffer) => importReferenceDataset({ actor: ops, dataset_key, bytes, source_url: `https://example.test/${dataset_key}`, retrieved_at: new Date('2026-10-13T00:00:00Z'), correlation_id: randomUUID(), evidence_origin: EvidenceOrigin.fixture });
-    await reference('wdi:LP.LPI.OVRL.XQ', wdi('LP.LPI.OVRL.XQ', [['USA', 3.8], ['DEU', 4.1], ['ARE', 4.0], ['NPL', 2.5]]));
+    // Burundi's score is from 2010: past the 10-year limit (D-021), so the run must not use it.
+    await reference('wdi:LP.LPI.OVRL.XQ', wdi('LP.LPI.OVRL.XQ', [['USA', 3.8], ['DEU', 4.1], ['ARE', 4.0], ['NPL', 2.5], ['BDI', 2.1, '2010']]));
     await reference('wdi:TM.TAX.TCOM.SM.AR.ZS', wdi('TM.TAX.TCOM.SM.AR.ZS', [['USA', 4], ['DEU', 9], ['ARE', 5], ['NPL', 12]]));
     await reference('comtrade:availability:2024', getDa(2024, [[842, 'USA'], [276, 'DEU'], [784, 'ARE']]));
     await reference('comtrade:availability:2025', getDa(2025, [[842, 'USA']]));
@@ -248,7 +276,9 @@ describe('Demand Discovery v5 runs', () => {
     const assessments = await prisma.marketAssessment.findMany({ where: { run_id: run.id } });
     expect(assessments).toHaveLength(218);
     const by = new Map(assessments.map((row) => [row.country_code, row]));
-    expect(by.get('US')).toMatchObject({ market_status: 'ranked', rank: 1, data_year: 2025, handed_off: true, model_version: 'market-opportunity-v5', classification_hs6_code: '100890', evidence_origins: [EvidenceOrigin.fixture] });
+    // A run's origins: the synthetic datasets, plus the UAE tariff looked up during the run, which
+    // the market-access contract records as public authoritative evidence.
+    expect(by.get('US')).toMatchObject({ market_status: 'ranked', rank: 1, data_year: 2025, handed_off: true, model_version: 'market-opportunity-v5', classification_hs6_code: '100890', evidence_origins: [EvidenceOrigin.fixture, EvidenceOrigin.public_real] });
     expect(by.get('DE')).toMatchObject({ market_status: 'ranked', data_year: 2024 });
     expect((by.get('AE')!.score_breakdown as unknown as Breakdown).newest_year).toEqual({ linked: null, refusal: 'implausible_change' });
     expect(by.get('KP')).toMatchObject({ market_status: 'excluded', eligibility_status: 'ineligible', overall_score: null, rank: null });
@@ -260,7 +290,9 @@ describe('Demand Discovery v5 runs', () => {
     const duty = (by.get('US')!.score_breakdown as unknown as Breakdown).metrics.find((metric) => metric.key === 'duty');
     expect(duty).toMatchObject({ estimated: true, inputs: { duty_percent: 4, basis: 'estimate', agreement_scope: 'none' } });
     const uaeDuty = (by.get('AE')!.score_breakdown as unknown as Breakdown).metrics.find((metric) => metric.key === 'duty');
-    expect(uaeDuty).toMatchObject({ inputs: { duty_percent: 2.5, agreement_scope: 'comprehensive', agreement: 'India–UAE CEPA' } });
+    // Looked up during the run (D-020): the UAE's official 5% replaces the CEPA estimate of 2.5%.
+    expect(uaeDuty).toMatchObject({ inputs: { basis: 'official', duty_percent: 5 } });
+    expect(tariffLookups[0]).toBe('AE/100890');
     const ranks = assessments.filter((row) => row.rank != null).map((row) => row.rank!).sort((a, b) => a - b);
     expect(ranks).toEqual(Array.from({ length: ranks.length }, (_, index) => index + 1));
     expect(closed.summary).toMatchObject({ markets: 218, excluded: 1, ranked: ranks.length, handed_off: expect.arrayContaining([expect.objectContaining({ market: 'US', rank: 1 })]) });
@@ -281,7 +313,12 @@ describe('Demand Discovery v5 runs', () => {
     expect(metric('NP', 'duty')).toMatchObject({ score: 60, inputs: { basis: 'official', duty_percent: 10, preference_percent: 0, preference_applicability: 'potentially_applicable_requires_origin_proof' } });
     expect((by.get('NP')!.reasons as { text: string }[]).map((reason) => reason.text).join(' ')).not.toMatch(/estimated\)/);
     expect(frozen.official_duty.markets).toMatchObject({ DE: { status: 'specific' }, NP: { status: 'percent' } });
-    expect(Object.keys(frozen.official_duty.markets).sort()).toEqual(['DE', 'NP']);
+    // The EUR rate for DE's specific duty was already stored, so the run read it and fetched nothing.
+    expect(frozen.fx_fetches).toEqual([]);
+    expect(frozen.world_bank_too_old).toMatchObject({ max_age_years: 10, 'wdi:LP.LPI.OVRL.XQ': { BI: 2010 } });
+    expect((closed.summary as { notes: string[] }).notes).toContain('World Bank figures more than 10 years old are not used: the logistics score for 1 market.');
+    expect(Object.keys(frozen.official_duty.markets).sort()).toEqual(['AE', 'DE', 'NP']);
+    expect(frozen.tariff_acquisition).toMatchObject({ status: 'used', outcomes: [{ country_code: 'AE', outcome: 'acquired', provider_key: 'fixture_live', retrieval: 'live_fetch' }] });
     expect((closed.summary as { notes: string[] }).notes.filter((note) => /official tariff/.test(note))).toEqual([]);
 
     // A retry replaces the result set rather than appending to it.
