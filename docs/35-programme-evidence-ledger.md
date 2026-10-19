@@ -1188,6 +1188,45 @@ release activated automatically, a changed tariff held for review, 3 attempts 30
 attempt yet at 15:30 IST; the first window opens at 19:00 UTC (00:30 IST on 20 Oct). The step 11 check
 of `/ops/discovery` is still the owner's.
 
+### E-027 · 2026-10-19 · Calibration investigation (read-only); Andorra no longer fails a run (in review)
+
+**Investigation** (owner's Claude Code, read-only on staging: guard values and database identity checked,
+fingerprint `62587019d354`, every query in a `READ ONLY` transaction, nothing written; requested in E-026):
+- **Why rice is `partial`.** One cause: Andorra's look-up `failed` (provider `eu_taric`, reason "Some
+  details need attention before this can be saved."). Andorra applies the EU tariff to HS chapters 25–97
+  only; rice is chapter 10, and the TARIC service refuses it by design (`outside_customs_union`, already
+  tested in `customs-territory-aliases`). Andorra was acquired in the brassware and carpets runs. The rest
+  of the rice run: 79 look-ups acquired, Singapore `no_release`, both Comtrade steps used, no ECB fetch
+  failed. The job's notes are kept under `result.missing`.
+- **Scoring identity.** All three runs: `demand-discovery-v5-policy-v6`, policy hash
+  `fa51be0c05c734cefe5ceeaa6651fcfb7157474fc791679ec685b96d4550e658`. Staging has no
+  `demand_discovery.v5` config row in any state, so runs use the policy in the code (v7 from PR #10).
+- **The missed markets** (scores 0–100). Rice: demand is high (84–90; Iran 59.6), and they lose on price
+  headroom (Benin 8.4, Guinea 3.5, Iraq 44.3), openness (Iran 0.7, Guinea 4.4), country risk (Iran and
+  Iraq 20, Yemen 0), logistics (30–52) and duty (the ECOWAS members 60, a 10% rate). Brassware: price
+  headroom 0 for the UK and Saudi Arabia, 7 for Mauritius, 16.2 for Nepal; openness 1.1 for Nepal, 11.8
+  for Mauritius. The test products have no price or capacity, so exporter fit is empty and every run is
+  scored on 90 of 100 points; brassware stability is missing everywhere (3 growth rates, 4 needed).
+- **Reading.** Two metrics count India's own success against a market. Openness, `100 × (1 − HHI)`, is
+  lowest where India itself supplies most of the imports. Price headroom compares the market's typical
+  price with India's median export price across all markets, so a market where India sells at the local
+  price (West African rice) or sells a niche above the market's average (UK brassware) scores near zero.
+  Country risk, logistics and duty reflect real costs of those markets and are not in question.
+
+**Fixed** on `dd5/acquisition-not-covered`, from PR #10's head (PR #11): a source that refuses a product
+outside its coverage for a market (`outside_customs_union`) is recorded as `not_covered`, not `failed`, so
+the run is not degraded and says the market's own tariff applies there. A validation error's reason now
+carries what its fields say instead of the generic message. The run's tariff notes are one function,
+`summarizeTariffOutcomes` (`tariff-step.ts`).
+
+**Checks run.** `demand-discovery-v5-tariff-step` (+2: not covered, and only a failure or timeout
+degrades), `customs-territory-aliases` (+1: the real TARIC adapter records Andorra's rice as not covered),
+with `country-truth-tariff-acquisition`, `customs-union-pack` and `tariff-schedule-pack`: 38 tests pass.
+`tsc --noEmit` and ESLint clean.
+
+**Next.** A read-only export of the three runs' assessments to the owner's Downloads (outside the
+repository), so each scoring option can be re-scored on the real runs before the owner chooses (R-30).
+
 ## Risk register
 
 

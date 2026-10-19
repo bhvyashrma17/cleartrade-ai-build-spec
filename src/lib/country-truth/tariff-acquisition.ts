@@ -35,6 +35,8 @@ export type TariffAcquisitionOutcomeKind =
   | 'unconfigured_source'
   | 'no_source'
   | 'no_release'
+  /** The connected source does not cover this product for this market (Andorra outside HS 25–97). */
+  | 'not_covered'
   | 'failed'
   | 'timed_out'
   | 'skipped_over_cap';
@@ -89,8 +91,15 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T | 
 
 /** One line, bounded: an operator-readable reason that cannot carry a stack or a response body. */
 function safeReason(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
+  // A validation error's own message is generic ("Some details need attention…"); its fields say what.
+  const details = validationFields(error).map((field) => field.message).filter((message): message is string => !!message);
+  const text = details.length ? details.join('; ') : error instanceof Error ? error.message : String(error);
   return text.replace(/\s+/g, ' ').trim().slice(0, 300) || 'Adapter failed without a message.';
+}
+
+function validationFields(error: unknown): { field?: string; code?: string; message?: string }[] {
+  const fields = (error as { fields?: unknown } | null)?.fields;
+  return Array.isArray(fields) ? fields as { field?: string; code?: string; message?: string }[] : [];
 }
 
 function outcome(
@@ -171,14 +180,16 @@ async function acquireOne(countryCode: string, args: TariffAcquisitionArgs): Pro
   } catch (error) {
     const missing = adapter.retrieval === 'retained_release' ? noReleaseImported(error) : null;
     if (missing) return outcome(countryCode, 'no_release', startedAt, { ...identity, reason: safeReason(missing) });
+    // A source that serves this market for part of the tariff only refuses the rest by design; the
+    // market's own tariff applies there, so this is not a failure of the run.
+    if (validationFields(error).some((field) => field.code === 'outside_customs_union')) return outcome(countryCode, 'not_covered', startedAt, { ...identity, reason: safeReason(error) });
     return outcome(countryCode, 'failed', startedAt, { ...identity, reason: safeReason(error) });
   }
 }
 
 /** Every retained-release service reports "nothing imported and activated yet" the same way; its message, or null. */
 function noReleaseImported(error: unknown): string | null {
-  const fields = (error as { fields?: { field?: string; code?: string; message?: string }[] } | null)?.fields;
-  const field = Array.isArray(fields) ? fields.find((item) => item.field === 'release' && item.code === 'missing') : undefined;
+  const field = validationFields(error).find((item) => item.field === 'release' && item.code === 'missing');
   return field ? field.message || 'No official release has been imported and activated.' : null;
 }
 

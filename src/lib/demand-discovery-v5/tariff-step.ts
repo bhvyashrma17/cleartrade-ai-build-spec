@@ -55,3 +55,23 @@ export async function acquireV5Tariffs(args: {
   outcomes.sort((left, right) => left.country_code.localeCompare(right.country_code));
   return { outcomes, tariff_clock: tariffClockFor(args.resolution_clock, outcomes, (args.now ?? (() => new Date()))()) };
 }
+
+const thatMarket = (count: number) => (count === 1 ? "that market's duty is" : "those markets' duties are");
+
+/**
+ * What a run says about its tariff look-up, and whether it is degraded. Only a look-up that failed or
+ * timed out degrades the run (it completes as `partial`). A source with nothing saved yet (D-029,
+ * Singapore before its first nightly copy) and a source that does not cover the product for a market
+ * (Andorra outside HS 25–97, where its own tariff applies) are not failures; the duty falls back as for
+ * any market without an official rate, and the run says so.
+ */
+export function summarizeTariffOutcomes(outcomes: readonly TariffAcquisitionOutcome[]): { degraded: boolean; notes: string[] } {
+  const notes: string[] = [];
+  const failed = outcomes.filter((item) => item.outcome === 'failed' || item.outcome === 'timed_out');
+  if (failed.length) notes.push(`The official tariff look-up failed for ${failed.map((item) => item.country_code).join(', ')}, so ${thatMarket(failed.length)} not the official rate this run.`);
+  const unsaved = outcomes.filter((item) => item.outcome === 'no_release');
+  if (unsaved.length) notes.push(`No official tariff release is saved yet for ${unsaved.map((item) => item.country_code).join(', ')}, so ${thatMarket(unsaved.length)} not the official rate this run.`);
+  const uncovered = outcomes.filter((item) => item.outcome === 'not_covered');
+  if (uncovered.length) notes.push(`The connected tariff source does not cover this product for ${uncovered.map((item) => item.country_code).join(', ')}, where the market's own tariff applies, so ${thatMarket(uncovered.length)} not the official rate this run.`);
+  return { degraded: failed.length > 0, notes };
+}
