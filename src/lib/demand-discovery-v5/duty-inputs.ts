@@ -9,6 +9,9 @@
  * unavailable, never zero. An official duty that cannot be reduced to one rate falls back to the
  * estimate and says why; an official specific duty carries the estimate as its fallback for a
  * market whose unit value turns out to be unknown.
+ *
+ * Policy v5: where a market has no tariff line for the product, a published rule (`rule_rates`) —
+ * a free port's zero, or one rate for all goods — gives the duty before any estimate does.
  */
 import type { IndiaTradeAgreementRow } from '@/lib/reference-datasets/parsers';
 import type { DemandDiscoveryV5Policy } from './policy';
@@ -69,6 +72,13 @@ export function dutyInputs(args: {
     const reference = averages.get(union.reference_market);
     return reference && reference.value >= 0 ? { value: reference.value, union: union.union } : null;
   };
+  const day = args.as_of.toISOString().slice(0, 10);
+  /** v5: a published rule that covers this product on the run's date (not past its review date). */
+  const ruleFor = (market: string): Extract<DutyInput, { kind: 'rule' }> | null => {
+    const entry = args.policy.rule_rates?.[market];
+    if (!entry || day > entry.review_by || entry.except_hs.some((prefix) => args.hs6.startsWith(prefix))) return null;
+    return { kind: 'rule', duty_percent: entry.duty_percent, rule: entry.rule, basis: entry.basis, source_url: entry.source_url };
+  };
   const estimateFor = (market: string, officialNote: string | null): EstimatedDuty | null => {
     const average = averageFor(market);
     if (!average) return null;
@@ -81,11 +91,17 @@ export function dutyInputs(args: {
   for (const market of args.markets) {
     const official = args.official.get(market);
     if (official?.status === 'percent') {
-      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference });
+      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     if (official?.status === 'specific') {
-      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null) });
+      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      continue;
+    }
+    // A rule (v5) stands in for a missing tariff line, never for official evidence that exists but yields no rate.
+    const rule = official?.status === 'unusable' ? null : ruleFor(market);
+    if (rule) {
+      result.set(market, rule);
       continue;
     }
     const note = official?.status === 'unusable' ? official.reason : null;

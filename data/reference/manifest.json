@@ -44,6 +44,22 @@
       "bytes": 1629,
       "derived_from": null,
       "note": "Curated by ClearTrade: the six screening markets CEPII GeoDist (2011) does not list; every row cites where its coordinates were read (Natural Earth, public domain; Wikipedia infoboxes for facts)."
+    },
+    {
+      "file": "currency-pegs-v1.json",
+      "dataset_key": "curated:currency-pegs",
+      "sha256": "64ddb6d2a46fb8372022072f1741b3cb61fc057411e533b56bc9ace0769c0825",
+      "bytes": 5115,
+      "derived_from": null,
+      "note": "Curated by ClearTrade: fourteen currencies fixed against a currency the ECB publishes; every row states the rate as its source states it and names the source (central bank page, or the authority's statement as reported)."
+    },
+    {
+      "file": "sanctions-programmes-v1.json",
+      "dataset_key": "curated:sanctions-programmes",
+      "sha256": "bf2660faae28a456ab5cb2f6e8d94d526d318023947ba57c872741df69a56c50",
+      "bytes": 8369,
+      "derived_from": null,
+      "note": "Curated by ClearTrade, checked 17 Oct 2026: country-level UN Security Council regimes, US comprehensive and sectoral programmes and EU regimes for the markets they cover; every row names its legal basis and where it was read."
     }
   ]
 }

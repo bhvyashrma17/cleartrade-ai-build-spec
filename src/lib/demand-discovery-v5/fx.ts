@@ -12,10 +12,16 @@
  * A fetch that fails never fails the run: the rate is unavailable, the metric that needed it says
  * why, and the run is marked degraded. An ECB 404 means the ECB publishes no series for that
  * currency — a fact about the source, recorded as unavailable rather than as a failure.
+ *
+ * D-025: a currency the ECB does not publish but whose rate is fixed against one it does
+ * (`curated:currency-pegs`) is converted through its peg — the anchor's ECB rate on the run date
+ * times the published parity — without asking the ECB for a series it does not have. A stored ECB
+ * rate, where one exists, always comes first.
  */
 import { appEnvironment } from '@/lib/evidence-environment';
 import { deriveFxRate, ECB_BASE_CURRENCY, ecbSeriesKey, ingestEcbSeries } from '@/lib/fx/ecb';
 import { prisma } from '@/lib/prisma';
+import { anchorPerUnit, type CurrencyPegRow } from '@/lib/reference-datasets/currency-pegs';
 
 export interface FxFetchRecord {
   currency: string;
@@ -38,8 +44,9 @@ type Ingest = typeof ingestEcbSeries;
 
 const day = (value: Date) => value.toISOString().slice(0, 10);
 
-export function createUsdRateResolver(args: { as_of: Date; lookback_days: number; fetch_missing: boolean; ingest?: Ingest }) {
+export function createUsdRateResolver(args: { as_of: Date; lookback_days: number; fetch_missing: boolean; ingest?: Ingest; pegs?: readonly CurrencyPegRow[] }) {
   const ingest = args.ingest ?? ingestEcbSeries;
+  const pegs = new Map((args.pegs ?? []).map((peg) => [peg.currency, peg] as const));
   const earliest = new Date(args.as_of.getTime() - args.lookback_days * 86_400_000);
   const window = { start_date: day(earliest), end_date: day(args.as_of) };
   const rates = new Map<string, Promise<UsdRate>>();
@@ -74,8 +81,22 @@ export function createUsdRateResolver(args: { as_of: Date; lookback_days: number
     return pending;
   }
 
+  /** USD per unit through a published peg: the anchor's own rate times the parity. */
+  async function viaPeg(code: string, peg: CurrencyPegRow): Promise<UsdRate> {
+    const anchor = await usdOf(peg.anchor);
+    const parity = { anchor: peg.anchor, units_per_anchor: peg.units_per_anchor, anchor_per_unit: peg.anchor_per_unit, authority: peg.authority, source_url: peg.source_url, source_kind: peg.source_kind };
+    if (anchor.rate == null) {
+      const why = typeof anchor.frozen?.reason === 'string' ? anchor.frozen.reason : 'no rate';
+      return { rate: null, frozen: { currency: code, status: 'unavailable', reason: `${code} is fixed to ${peg.anchor}, and the ${peg.anchor} rate is unavailable: ${why}`, peg: parity } };
+    }
+    const rate = anchor.rate * anchorPerUnit(peg);
+    return { rate, frozen: { currency: code, rate, derivation: 'peg', formula: `USD per 1 ${code} = (USD per 1 ${peg.anchor}) × (${peg.anchor} per 1 ${code})`, peg: parity, anchor_rate: anchor.frozen } };
+  }
+
   async function resolve(code: string): Promise<UsdRate> {
     let derived = await derive(code);
+    const peg = pegs.get(code);
+    if (derived.status === 'unavailable' && peg) return viaPeg(code, peg);
     if (derived.status === 'unavailable' && args.fetch_missing) {
       // EUR is the denominator of every ECB series, so it is never fetched; every other leg is.
       const legs = [code, 'USD'].filter((currency) => currency !== ECB_BASE_CURRENCY);
@@ -86,21 +107,23 @@ export function createUsdRateResolver(args: { as_of: Date; lookback_days: number
     return { rate: derived.rate.rate, frozen: { currency: code, ...derived.rate } };
   }
 
+  function usdOf(currency: string | null): Promise<UsdRate> {
+    if (!currency) return Promise.resolve({ rate: null, frozen: null });
+    const code = currency.trim().toUpperCase();
+    if (code === 'USD') return Promise.resolve({ rate: 1, frozen: { currency: 'USD', rate: 1, derivation: 'identity' } });
+    // A malformed code on a product form is not a provider failure: no fetch, no degraded run.
+    if (!/^[A-Z]{3}$/.test(code)) return Promise.resolve({ rate: null, frozen: { currency: code, status: 'unavailable', reason: `"${currency}" is not an ISO 4217 currency code.` } });
+    let pending = rates.get(code);
+    if (!pending) {
+      pending = resolve(code);
+      rates.set(code, pending);
+    }
+    return pending;
+  }
+
   return {
     /** USD per one unit of `currency` on the run date, or null with the reason frozen. */
-    usd(currency: string | null): Promise<UsdRate> {
-      if (!currency) return Promise.resolve({ rate: null, frozen: null });
-      const code = currency.trim().toUpperCase();
-      if (code === 'USD') return Promise.resolve({ rate: 1, frozen: { currency: 'USD', rate: 1, derivation: 'identity' } });
-      // A malformed code on a product form is not a provider failure: no fetch, no degraded run.
-      if (!/^[A-Z]{3}$/.test(code)) return Promise.resolve({ rate: null, frozen: { currency: code, status: 'unavailable', reason: `"${currency}" is not an ISO 4217 currency code.` } });
-      let pending = rates.get(code);
-      if (!pending) {
-        pending = resolve(code);
-        rates.set(code, pending);
-      }
-      return pending;
-    },
+    usd: usdOf,
     /** Every ECB fetch this run made, in currency order. */
     async fetches(): Promise<FxFetchRecord[]> {
       const records = await Promise.all([...fetches.values()]);
