@@ -41,11 +41,14 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-028 | 2026-10-18 | Approved as built in PR #5: Hong Kong's zero duty from C&ED's published statement; the seven other published rules; agent-read official lines at quality 0.9; agents may record lines from the eight licence-pending sources, one cited rate per line (R-24); the logistics estimate from shipping connectivity at quality 0.5; sanctions as flags only. Also approved: a customs union's common tariff counts as its members' official duty before national exceptions are modelled, labelled and below full quality; currencies the ECB does not publish use US Treasury reporting rates. | Owner | Demand Discovery v5, Customs Atlas |
 | D-029 | 2026-10-18 | Singapore's tariff is acquired automatically inside SSO's permitted window (03:00–07:00 SGT) every day and saved; runs read the saved copy at any time. Saved copies refreshed on a schedule are acceptable for other markets where that is the only way. | Owner | Customs Atlas |
 | D-030 | 2026-10-19 | Every remaining market's tariff is to be read by the system so agents no longer check it, built in small clusters completed one at a time, until all the markets v5 screens are covered. Owner's words: "integrate them in our system in order that agent doesn't has to check, break in small clusters and complete chunk to chunk. in the end i want all 200+ markets incorporated." Order: the recommendation in E-022, which the owner accepted ("your recommendation"): the 40 researched national sources first, as saved copies where that is the only way (D-029), largest Indian export markets first; the seven licence-pending sources stay with agents until a licence is settled. Each cluster still gets its own source and rights check (docs/37 §6). | Owner | Customs Atlas, Demand Discovery v5 |
+| D-031 | 2026-10-19 | A market's own tariff read automatically from a retained official schedule scores like an agent's reading of it (quality 0.9) and is labelled "read from <the tariff>; trade remedies are not checked", because trade remedies and temporary measures outside the schedule are not read. Owner's choice: "Like an agent's reading (Recommended)" (policy v7, E-025). | Owner | Demand Discovery v5, Customs Atlas |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
-roadmap §26; how the seven licence-pending sources and the 45 markets with no tariff online are covered
-once the researched sources are done (D-030; the replies from UNCTAD and the WTO bear on both).
+roadmap §26; how the seven licence-pending sources and the 45 ranked markets with no tariff online are
+covered once the researched sources are done (D-030; the replies from
+UNCTAD and the WTO bear on both); whether v5's scoring changes after the rice and brassware calibration
+failures (E-026, R-30).
 
 ## Entries
 
@@ -1045,6 +1048,146 @@ files (v5, Phase 1 gate, product classification, membership) pass together local
 --actor-email=atlas-ops@staging-atlas.invalid`, then the same script with `status` until all three runs
 have finished; each archetype's `comparison.verdict` is the docs/36 §8 check.
 
+### E-025 · 2026-10-19 · Cluster 1: seven markets read from four retained tariff schedules (in review)
+
+**What and why.** The first cluster of D-030, in E-022's order (accepted by the owner): the researched
+national sources, largest Indian export markets first. The UAE, China and Brazil are the largest Indian
+export markets among the researched sources whose official tariff can be downloaded whole; the same
+files serve Bahrain (the GCC common tariff) and Argentina, Paraguay and Uruguay (the Mercosur common
+external tariff). Connected markets 81 → 88; researched, not automatable 48 → 41; directory 89,
+unchanged (`tests/tariff-source-directory.test.ts`).
+
+**Sources.** Downloaded through the owner's built-in browser on 19 Oct with the owner's permission for
+the batch ("Yes, download them"), copied into the session and pinned by SHA-256 and size
+(`tariff-schedule-sources.ts`): Dubai Customs' 12-digit GCC unified tariff of 23 Jul 2025
+(`IntegratedCustomsTariff.pdf`, 13,777,457 bytes, `f1be9097…`); the UAE's schedule under the India–UAE
+CEPA, Annex 2B (`Schedule-of-UAE.pdf`, as circulated by the Council for Leather Exports; the Commerce
+Ministry's own page no longer resolves; 1,445,387 bytes, `b9cd37fd…`); CAMEX's workbook of Annexes I–X
+of Gecex Resolution 272/2021, updated 5 Oct 2026 (1,439,408 bytes, `37954a6f…`); China's 2026 import and
+export tariff (70,026,277 bytes, `76af4db0…`) and Annex 1 of the 2026 adjustment plan (517,981 bytes,
+`0600b251…`). Three more Chinese files of the batch (the plan, its Annex 4 line changes and Annex 6 FTA
+rates) were read for context and are not used.
+
+**Rights check (D-030).** Each release records its basis in the bundle manifest (`rights_basis`, which the
+reader requires) and in the import record: UAE Federal Decree-Law No. 38 of 2021, Art. 3(2) (official
+documents, such as laws, regulations, resolutions and international conventions, are not protected);
+Brazil's Law 9.610/1998, Art. 8(IV) (texts of treaties, laws, decrees, regulations and other official
+acts); China's Copyright Law (2020), Art. 5 (resolutions, decisions and orders of State organs, other
+administrative documents, mere information about facts). Tariff facts only are used; the files are
+retained privately as provenance. Dubai Customs' own website terms were searched for and not found (R-29).
+
+**Owner decision** (19 Oct): D-031, scoring like an agent's reading.
+
+**Built** on `dd5/cluster-1-schedules`, from PR #9's head (PR #10, into `staging/railway`):
+- `src/lib/market-access/providers/tariff-schedule-readers.ts` (the GCC tariff and the CEPA schedule by
+  measured column positions, each duty tied to the nearest code row; China's book with provisional △,
+  footnotes resolved on their page, the AP rate among wrapped agreement entries, split glyphs joined;
+  China's Annex 1; the CAMEX workbook by column names), `tariff-schedule-sources.ts` (the four releases
+  and the assembly of the lines a market pays), `tariff-schedule-bundle.ts` (deterministic bundle; every
+  official file re-hashed at import), `tariff-schedule-market-access.ts` (the duty on the day asked, dated
+  rates, India's preference, validity), `tariff-schedule-service.ts` (import, activation, look-up,
+  `no_release` before import); seven adapters in `job-handlers/market-access.ts`; three national code
+  systems in `contract.ts`; pointers in `tariff-source-directory.ts`.
+- v5: policy v7 adds `quality.official_schedule_read` = 0.9 (a new version because v6 was live on staging,
+  E-026); a schedule read is marked in `run-inputs.ts` and carried by `official-duty.ts`,
+  `duty-inputs.ts`, `metrics.ts` and `assess.ts`; `explain.ts` says "(read from <the tariff>; trade
+  remedies are not checked)"; the archetype status counts `schedule_read`.
+- `scripts/build-tariff-schedule-bundle.ts`; families GCC, MERCOSUR, CN and BR in
+  `scripts/import-retained-authority-release.ts`.
+- Two defects in existing code, fixed: (1) v5 read an ordinary official duty only from its expression
+  text, so a duty published in words (the EAEU's "0,03 евро за 1 кг", China's "1 元 / 千克") never
+  converted and no exchange rate was fetched for it; the pack's own parsed duty now comes first, as it
+  already did for preferences (`official-duty.ts`, `run-inputs.ts`). Until this lands, staging scores
+  EAEU duties per kilogram as estimates, although docs/37 §4a said they were converted. (2) Where lines
+  beneath one HS6 carry the same duty but different India rates, the first line's rate would have been
+  stated; now none is.
+
+**What the releases read** (build output from the official files): GCC 13,449 lines, of which 117
+PROHIBITED or special-goods lines and 3 without a printed rate are not scored; India's CEPA rate on
+11,650 lines for the UAE, 88 lines excluded. Mercosur 10,516 lines; 1,618 BK/BIT lines not scored.
+China 8,972 lines: 600 whole-line provisional rates, the AP rate on 2,440, 31 duties per kilogram or
+square metre, 3 "the lower of" duties, 335 provisional rates for part of a line said as notes. Brazil
+10,516 lines: Annex II's rate on 9,404, dated exception rates on 1,517, notes on 261.
+
+**Bundles.** Two builds of each, with the file arguments in either order, gave the same bytes:
+
+| Release | Identifier | Bytes | SHA-256 |
+|---|---|---|---|
+| GCC | `gcc-ict-dubai-2025-07-23-uae-cepa-annex2b` | 15,447,069 | `b978a31d78d039da28970fd05b16194121ae78afc6a87ab0a204d972dde3fb51` |
+| MERCOSUR | `camex-tec-2026-10-05` | 1,620,953 | `3b6c6d559945d530994e1b0925c397ee553b912d2d538bea6ccc5ccf31575263` |
+| CN | `cn-tariff-2026` | 70,698,823 | `0e9c7bf7c7a8577810d94ba69e19dfb98a7cb5cc0e2010eca93631b57a692b43` |
+| BR | `camex-applied-2026-10-05` | 1,662,998 | `f60b7eefdc841b3541e54d6460c9772b8e789553075f541eb466d6a5c5e44e38` |
+
+**Local import check** (a fresh local database with every migration; the real import command with
+`--expect-sha256` and `--activate`): each release imported as `NEW_RELEASE`, active, and its repeat as
+`UNCHANGED` (same release). Read back for Indian goods on 19 Oct 2026:
+
+| Market | Rice 100630 | Brassware 741810 | Carpets 570110 | Black tea 090240 | Cotton yarn 520512 | Cotton shirts 620520 |
+|---|---|---|---|---|---|---|
+| AE | 0% (India 0%) | 5% (India 0%) | 5% (India 0%) | 0% (India 0%) | 5% (India 0%) | 5% (India 0%) |
+| BH | 0% | 5% | 5% | 0% | 5% | 5% |
+| AR, PY, UY | — (4 lines, different duties) | 16% | 35% | 9% | 18% | 35% |
+| CN | 65% (out-of-quota) | 7% | 6% | 15% (India 7.5%) | 5% (India 3.5%) | 6% (India 3%) |
+| BR | — (4 lines, different duties) | 14.4% | 35% | 9% | 18% | 35% |
+
+**Checks run.** New test `tariff-schedule-pack` (16 tests): the five readers on layouts measured from the
+official files; the assembly rules; the bundle (deterministic; another file, a changed line count,
+edited lines, a swapped official file and a missing rights basis all refused); import, activation and
+look-ups for China, the GCC and Brazil (`no_release` first, the validity window, dated rates, India's rate
+by CEPA year, lines with different India rates); v5 end to end (a stored snapshot becomes an official
+duty marked as a schedule read, scored at 0.9 with its sentence; a duty in yuan per kilogram converted);
+the real releases' configuration. `demand-discovery-v5-official-duty` gains a test for a duty published
+in words. Updated for the seven markets: routing (six routes added; AE and BR leave the unconfigured
+list), provider lists, the adapter count (88 → 95), directory counts and pointers, archetype status, the
+policy version. `tsc --noEmit` clean; ESLint clean on the 26 changed files. Full suite locally: 2,240
+passed, 5 skipped, 3 failed, the three that fail only in this local harness (`market-scan-requests`,
+`pilot-e2e`, `staff-provisioning`), as before. CI passed on PR #10 at `4cb27b7` (run 39238917895: Prisma
+validate, typecheck, lint, the full test suite, the production build and the Docker build).
+
+**Staging** (owner's Claude Code, after PR #10 merges): build each bundle from the files already in the
+owner's `~/Downloads/cleartrade-tariff-sources/cluster-1/` with `scripts/build-tariff-schedule-bundle.ts`,
+confirm the printed SHA-256 against the table above, and import it with
+`scripts/import-retained-authority-release.ts --family=<GCC|MERCOSUR|CN|BR> --expect-sha256=<that value>
+--activate` and `--env-file=tmp/rw/operator.env`.
+
+### E-026 · 2026-10-19 · Staging: archetype runs finished; carpets pass, rice and brassware are calibration failures
+
+**Merged.** The owner merged PR #8 at 04:57:45 UTC and PR #9 at 04:57:59 UTC (`staging/railway` at
+`96c4176`). The owner's Claude Code then ran `scripts/dd5-archetype-runs.ts start` and `status` (checks
+at 10:48, 10:58 and 11:08 IST; final output exit 0, staging, database fingerprint `62587019d354`,
+exporter `cmveszmdh0000ue64agqpuzy6`; `comparison_error` null for all three):
+
+| | Rice 100630 | Brassware 741810 | Carpets 570110 |
+|---|---|---|---|
+| Run | `cmveszorv000eue640z3rbw2v` | `cmveszqy2000uue64qe42f9wm` | `cmveszsr3001aue64l381xl0m` |
+| Status (finished, UTC) | partial (05:23:41) | completed (05:28:51) | completed (05:34:07) |
+| Markets by status | ranked 214, not_enough_data 3, excluded 1 | ranked 196, not_enough_data 13, no_recorded_demand 8, excluded 1 | ranked 188, not_enough_data 23, no_recorded_demand 6, excluded 1 |
+| Duty basis | official 47, common tariff 14, rule 8, estimate 122, none 26 | official 19, common tariff 24, rule 8, estimate 138, none 28 | official 20, common tariff 19, rule 8, estimate 144, none 26 |
+| Common tariffs used | ECOWAS 14 | EAEU 5, EAC 5, ECOWAS 14 | EAC 5, ECOWAS 14 |
+| Overlap with India's real top 10 | 3/10 | 4/10 | 8/10 |
+| Verdict | calibration_failure | calibration_failure | pass |
+| Missed (rank in run) | IR 112, GN 81, IQ 48, BJ 43, YE 40, TG 30, CI 19 | ET 172, MU 67, SA 51, NP 36, GB 13, CA 11 | SE 21, FR 13 |
+
+Run top 10: rice US, GB, SA, AU, JP, CA, OM, AE, DE, QA; brassware US, DE, AU, IT, NL, CN, FR, KR, AE,
+JP; carpets US, CH, AE, JP, SG, GB, CA, IT, AU, DE. India's real top 10: rice SA, IR, IQ, BJ, AE, GN, YE,
+US, TG, CI; brassware US, NP, GB, CA, SA, AE, DE, AU, ET, MU; carpets US, DE, AU, CA, GB, SE, IT, AE,
+CH, FR. No duty was agent-recorded.
+
+**Reading** (docs/36 §10 step 7: a calibration failure is a finding, starting from the missed markets).
+Rice ranks high-income markets first, while India's real rice buyers in West Africa and the Gulf are
+ranked 19th to 112th; brassware misses Nepal, Ethiopia and Mauritius, with the UK and Canada just
+outside the top 10. The customs-union releases are in use; rice gets ECOWAS only, as E-023 found (EAC
+rice is stayed, EAEU rice spans lines with different duties). Not yet known: why the rice run is
+`partial`. Requested from the owner's Claude Code, read-only: the rice run's job result and its failed
+tariff outcomes; the policy version and hash each run used and whether staging stores a v5 policy; the
+metric scores of the missed markets and of each run's top 3. No scoring change before the owner sees
+the options (R-30).
+
+**Singapore.** `market_access.authority_refresh` is on (actor `atlas-ops@staging-atlas.invalid`, first
+release activated automatically, a changed tariff held for review, 3 attempts 30 minutes apart); no
+attempt yet at 15:30 IST; the first window opens at 19:00 UTC (00:30 IST on 20 Oct). The step 11 check
+of `/ops/discovery` is still the owner's.
+
 ## Risk register
 
 
@@ -1078,3 +1221,5 @@ have finished; each archetype's `comparison.verdict` is the docs/36 §8 check.
 | R-26 | The Railway worker may not reach Singapore Statutes Online, or SSO may refuse automated requests from a cloud address; the live First Schedule has only been read through fixtures that follow the reviewed pack | Open (E-022) — nothing is fetched until `market_access.authority_refresh` is switched on; failures are recorded and the release in use is untouched | The first window run on staging is the live qualification; otherwise `--acquire-only` on a machine that can reach SSO, inside the window, and import the file |
 | R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
+| R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Open (E-026) | Read-only look at the missed markets' metric scores; options with a recommended default for the owner before any scoring change |

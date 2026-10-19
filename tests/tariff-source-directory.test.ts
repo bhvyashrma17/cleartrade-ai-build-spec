@@ -8,6 +8,7 @@ import {
   CUSTOMS_UNION_TARIFFS, TARIFF_SOURCE_DIRECTORY, customsUnionFor, manualTariffCheckFor, officialTariffSourceFor,
 } from '@/lib/market-access/tariff-source-directory';
 import { customsUnionSourceFor } from '@/lib/market-access/providers/customs-union-sources';
+import { tariffScheduleSourceFor } from '@/lib/market-access/providers/tariff-schedule-sources';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 
 /** D-024: every market Demand Discovery screens has a known place its official tariff comes from. */
@@ -33,15 +34,16 @@ describe('tariff source directory', () => {
       if (source.kind === 'none') missing.push(code);
     }
     expect(missing).toEqual([]);
-    expect(Object.fromEntries(kinds)).toEqual({ connected: 81, documented: 48, directory: 89 });
+    expect(Object.fromEntries(kinds)).toEqual({ connected: 88, documented: 41, directory: 89 });
   });
 
   test('a directory entry never shadows a researched determination, nor a connected adapter except where its read can leave a duty open', () => {
     for (const code of Object.keys(TARIFF_SOURCE_DIRECTORY)) {
       expect(unconfiguredSourceForCountry(code), code).toBeNull();
       // Andorra outside its customs union; Singapore before its first nightly copy (D-029); a customs
-      // union's members, whose own exceptions are checked at the national source (D-028).
-      if (!['AD', 'SG'].includes(code) && !customsUnionSourceFor(code)) expect(DESTINATION_ADAPTERS[code], code).toBeUndefined();
+      // union's members, whose own exceptions are checked at the national source (D-028); a retained
+      // schedule's markets, for the lines it leaves open (D-030).
+      if (!['AD', 'SG'].includes(code) && !customsUnionSourceFor(code) && !tariffScheduleSourceFor(code)) expect(DESTINATION_ADAPTERS[code], code).toBeUndefined();
     }
   });
 
@@ -93,5 +95,11 @@ describe('tariff source directory', () => {
     // Singapore is connected, but its duty stays estimated until the first nightly copy is saved.
     expect(officialTariffSourceFor('SG')).toMatchObject({ kind: 'connected', provider_key: 'sg_sso_customs_duties_order' });
     expect(manualTariffCheckFor('SG', '100630')).toMatchObject({ authority: expect.stringContaining('Singapore Statutes Online'), source_url: expect.stringMatching(/^https:\/\/sso\.agc\.gov\.sg\//) });
+    // D-030: China and Brazil are read from their own tariffs, the UAE and Argentina from their union's;
+    // each keeps its researched national source as the pointer for the lines left open.
+    for (const [code, label] of [['CN', 'China’s 2026 customs tariff'], ['BR', 'Brazil’s CAMEX applied tariff'], ['AE', 'GCC common customs tariff'], ['AR', 'Mercosur common external tariff']] as const) {
+      expect(officialTariffSourceFor(code), code).toMatchObject({ kind: 'connected' });
+      expect(manualTariffCheckFor(code), code).toMatchObject({ source_url: expect.stringMatching(/^https:\/\//), note: expect.stringContaining(label) });
+    }
   });
 });

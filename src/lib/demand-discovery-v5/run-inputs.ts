@@ -20,6 +20,7 @@ import type { DocumentStorage } from '@/lib/document-storage';
 import { prerequisitesNotMet } from '@/lib/errors';
 import { allowedEvidenceOrigins } from '@/lib/evidence-environment';
 import { CUSTOMS_UNION_PROVIDERS } from '@/lib/market-access/providers/customs-union-sources';
+import { tariffScheduleBasisFor } from '@/lib/market-access/providers/tariff-schedule-sources';
 import { parseDutyExpression } from '@/lib/market-access/tariff-semantics';
 import { prisma } from '@/lib/prisma';
 import { ecgcRatingRowSchema } from '@/lib/reference-datasets/ecgc';
@@ -40,7 +41,7 @@ import { dutyInputs, tariffSector, type SectorTariff } from './duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg } from './exporter-inputs';
 import { createUsdRateResolver, type UsdRate } from './fx';
 import { logisticsEstimates } from './logistics-fallback';
-import { resolveOfficialDuty, type OfficialDutyResolution } from './official-duty';
+import { resolveOfficialDuty, storedDuty, type OfficialDutyResolution } from './official-duty';
 import { policyHash } from './policy';
 import { acquireV5Tariffs } from './tariff-step';
 import { coordinateInputs, ecgcInputs } from './reference-inputs';
@@ -142,7 +143,9 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     : [];
   const currencies = new Set<string>();
   for (const row of evidence) {
-    const parsed = parseDutyExpression(row.duty_expression);
+    // The pack's own reading first: a duty published in words ("0,03 евро за 1 кг", "1 元 / 千克") has its
+    // currency there, not in anything the shared expression parser can read.
+    const parsed = storedDuty(row) ?? parseDutyExpression(row.duty_expression);
     if (parsed.kind === 'specific' && parsed.specific_currency) currencies.add(parsed.specific_currency);
   }
   const fx = new Map<string, UsdRate>();
@@ -171,6 +174,11 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
       // D-028: a customs union's common external tariff says so, and scores below a national tariff.
       const union = marketSnapshots.map((snapshot) => (snapshotIds.includes(snapshot.id) ? CUSTOMS_UNION_PROVIDERS.get(snapshot.provider) : undefined)).find(Boolean);
       if (union) resolution = { ...resolution, common_tariff: { union: union.key, label: union.label } };
+      // D-030: a retained schedule is either a union's common tariff (D-028) or the market's own tariff
+      // read without trade remedies (D-031); each says so and scores accordingly.
+      const schedule = marketSnapshots.map((snapshot) => (snapshotIds.includes(snapshot.id) ? tariffScheduleBasisFor(snapshot.provider, market) : null)).find(Boolean);
+      if (schedule?.basis === 'common_tariff') resolution = { ...resolution, common_tariff: { union: schedule.key, label: schedule.label } };
+      if (schedule?.basis === 'national_schedule') resolution = { ...resolution, schedule_read: { schedule: schedule.key, label: schedule.label } };
     }
     resolutions.set(market, resolution);
   }
@@ -181,6 +189,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
         basis: resolution.basis, ...(resolution.standard ? { standard: resolution.standard } : {}),
         ...(resolution.recorded_by_agent ? { recorded_by_agent: true } : {}),
         ...(resolution.common_tariff ? { common_tariff: resolution.common_tariff } : {}),
+        ...(resolution.schedule_read ? { schedule_read: resolution.schedule_read } : {}),
         ...(resolution.status === 'percent' ? { duty_percent: resolution.duty_percent } : resolution.status === 'specific' ? { usd_per_kg: resolution.usd_per_kg, expression: resolution.expression, fx: resolution.fx } : { reason: resolution.reason, expression: resolution.expression }),
       }]));
   return {

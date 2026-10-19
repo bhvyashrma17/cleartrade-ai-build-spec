@@ -146,15 +146,16 @@ export async function startArchetypeRuns(args: { actor: Principal; correlation_i
 }
 
 /** How a market's duty was found, from the duty metric v5 stored with it. */
-export type DutyBasis = 'official' | 'common_tariff' | 'agent_recorded' | 'rule' | 'estimate' | 'none';
+export type DutyBasis = 'official' | 'common_tariff' | 'schedule_read' | 'agent_recorded' | 'rule' | 'estimate' | 'none';
 
-export function dutyBasisOf(scoreBreakdown: unknown): { basis: DutyBasis; union: string | null } {
+export function dutyBasisOf(scoreBreakdown: unknown): { basis: DutyBasis; union: string | null; schedule?: string } {
   const metrics = (scoreBreakdown as { metrics?: { key?: string; score?: number | null; inputs?: Record<string, unknown> }[] } | null)?.metrics ?? [];
   const duty = metrics.find((metric) => metric.key === 'duty');
   if (!duty || duty.score == null) return { basis: 'none', union: null };
   const inputs = duty.inputs ?? {};
   if (inputs.basis === 'official') {
     if (typeof inputs.common_tariff === 'string' && inputs.common_tariff) return { basis: 'common_tariff', union: inputs.common_tariff };
+    if (typeof inputs.schedule_read === 'string' && inputs.schedule_read) return { basis: 'schedule_read', union: null, schedule: inputs.schedule_read };
     return { basis: inputs.recorded_by_agent === 'yes' ? 'agent_recorded' : 'official', union: null };
   }
   if (inputs.basis === 'rule') return { basis: 'rule', union: null };
@@ -172,6 +173,8 @@ export interface ArchetypeStatusItem {
     /** Over the markets v5 did not exclude. */
     duty_basis: Record<DutyBasis, number>;
     common_tariff_markets: Record<string, number>;
+    /** Markets whose own tariff was read from a retained schedule (D-031), by schedule. */
+    schedule_read_markets: Record<string, number>;
     top: { rank: number; market: string; overall: number | null }[];
   } | null;
   comparison: { verdict: string; overlap: number; top: number; india_top: string[]; run_top: string[]; missed: { market: string; status: string | null; rank: number | null }[] } | null;
@@ -189,8 +192,9 @@ export async function archetypeRunStatus(args: { compare?: boolean; top?: number
     if (run && FINISHED.includes(run.status)) {
       const rows = await prisma.marketAssessment.findMany({ where: { run_id: run.id }, select: { country_code: true, market_status: true, rank: true, overall_score: true, score_breakdown: true } });
       const byStatus: Record<string, number> = {};
-      const dutyBasis: Record<DutyBasis, number> = { official: 0, common_tariff: 0, agent_recorded: 0, rule: 0, estimate: 0, none: 0 };
+      const dutyBasis: Record<DutyBasis, number> = { official: 0, common_tariff: 0, schedule_read: 0, agent_recorded: 0, rule: 0, estimate: 0, none: 0 };
       const unions: Record<string, number> = {};
+      const schedules: Record<string, number> = {};
       for (const row of rows) {
         const status = row.market_status ?? 'unknown';
         byStatus[status] = (byStatus[status] ?? 0) + 1;
@@ -198,9 +202,10 @@ export async function archetypeRunStatus(args: { compare?: boolean; top?: number
         const duty = dutyBasisOf(row.score_breakdown);
         dutyBasis[duty.basis] += 1;
         if (duty.union) unions[duty.union] = (unions[duty.union] ?? 0) + 1;
+        if (duty.schedule) schedules[duty.schedule] = (schedules[duty.schedule] ?? 0) + 1;
       }
       const ranked = rows.filter((row): row is typeof row & { rank: number } => row.rank != null).sort((a, b) => a.rank - b.rank).slice(0, top);
-      item.markets = { by_status: byStatus, duty_basis: dutyBasis, common_tariff_markets: unions, top: ranked.map((row) => ({ rank: row.rank, market: row.country_code, overall: row.overall_score })) };
+      item.markets = { by_status: byStatus, duty_basis: dutyBasis, common_tariff_markets: unions, schedule_read_markets: schedules, top: ranked.map((row) => ({ rank: row.rank, market: row.country_code, overall: row.overall_score })) };
       if (args.compare !== false) {
         try {
           const report = await compareRunWithIndiaExports(run.id, top);

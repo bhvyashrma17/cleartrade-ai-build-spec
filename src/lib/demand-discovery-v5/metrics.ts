@@ -200,7 +200,7 @@ export interface DutyPreferenceNote { applicability: string; duty_expression: st
 export interface StandardDutyNote { duty_percent: number | null; expression: string | null }
 
 /** Which rate an official duty carries: India's published preference, or the ordinary rate. */
-type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string } };
+type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string }; schedule_read?: { schedule: string; label: string } };
 
 /** §4.7: the sector average times the agreement factor. `official_note` says why an official duty was not usable. */
 export interface EstimatedDuty {
@@ -243,7 +243,7 @@ function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Polic
  * official specific duty into its ad-valorem equivalent; without it that duty falls back to the
  * estimate, saying so.
  */
-export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number; agent_recorded?: number; common_tariff?: number }, marketUsdPerKg: number | null = null): MetricResult {
+export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number; agent_recorded?: number; common_tariff?: number; schedule_read?: number }, marketUsdPerKg: number | null = null): MetricResult {
   if (!input) return unavailable('duty', 'No official tariff source and no sector average to estimate from.');
   if (input.kind === 'unusable') return unavailable('duty', input.reason);
   const ceiling = policy.duty.ceiling_percent;
@@ -254,11 +254,13 @@ export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, qua
   const standardNote = preferred && input.standard ? input.standard : null;
   // D-028: a customs union's common external tariff scores below a national one and names itself.
   const union = (input.kind === 'official' || input.kind === 'official_specific') ? input.common_tariff ?? null : null;
-  const officialQuality = byAgent ? quality.agent_recorded ?? quality.official : union ? quality.common_tariff ?? quality.official : quality.official;
+  // D-031: a market's own tariff read from a retained schedule scores like an agent's reading and names itself.
+  const schedule = (input.kind === 'official' || input.kind === 'official_specific') ? input.schedule_read ?? null : null;
+  const officialQuality = byAgent ? quality.agent_recorded ?? quality.official : union ? quality.common_tariff ?? quality.official : schedule ? quality.schedule_read ?? quality.official : quality.official;
   const official = (percent: number, extra: Record<string, string | number>, preference: DutyPreferenceNote | null | undefined): MetricResult => ({
     key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: officialQuality, reason: null,
     inputs: {
-      duty_percent: round(percent, 4), basis: 'official', ...extra, ...(byAgent ? { recorded_by_agent: 'yes' } : {}), ...(union ? { common_tariff: union.label } : {}),
+      duty_percent: round(percent, 4), basis: 'official', ...extra, ...(byAgent ? { recorded_by_agent: 'yes' } : {}), ...(union ? { common_tariff: union.label } : {}), ...(schedule ? { schedule_read: schedule.label } : {}),
       ...(preferred ? { rate: 'india_preference', standard_percent: standardNote?.duty_percent == null ? null : round(standardNote.duty_percent, 4), standard_duty: standardNote?.expression ?? null } : {}),
       ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4), ...(preference.quota ? { preference_quota: 'yes' } : {}) } : {}),
     },
