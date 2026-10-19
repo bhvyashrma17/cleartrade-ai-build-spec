@@ -200,7 +200,7 @@ describe('v5 access, risk and exporter-fit metrics', () => {
 
   // D-026 (policy v6): India's published preference scored instead of the standard rate.
   test('duty: a scored preference says so, keeps the standard rate beside it, and a quota preference is only shown', () => {
-    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v6');
+    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v7');
     expect(POLICY.duty.score_india_preference).toBe(true);
     const preference = { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: '2.5%', percent: 2.5 };
     const scored = scoreDuty({ kind: 'official', duty_percent: 2.5, source: 'USITC HTS 1006304010', preference, rate_basis: 'india_preference', standard: { duty_percent: 11.2, expression: '11.2%' } }, POLICY, duty);

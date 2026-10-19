@@ -167,7 +167,9 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
       // D-024: a rate an agent read from the official tariff says so.
       const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
         // D-028: a customs union's common external tariff names itself; the member's own exceptions are not checked.
-        : typeof inputs.common_tariff === 'string' ? ` under the ${inputs.common_tariff}; this market's own exceptions are not checked` : '';
+        : typeof inputs.common_tariff === 'string' ? ` under the ${inputs.common_tariff}; this market's own exceptions are not checked`
+        // D-031: a market's own tariff read from a retained schedule names itself; trade remedies are not checked.
+        : typeof inputs.schedule_read === 'string' ? ` (read from ${inputs.schedule_read}; trade remedies are not checked)` : '';
       // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
       if (inputs.rate === 'india_preference') {
         const standardPercent = num(inputs.standard_percent);

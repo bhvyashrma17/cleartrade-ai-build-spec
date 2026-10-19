@@ -11,12 +11,12 @@ The authoritative per-market data lives in code, where a test holds it complete:
 `src/lib/market-access/unconfigured-sources.ts` (researched sources that cannot be read automatically)
 and `src/lib/demand-discovery-v5/policy.ts` (`rule_rates`). The table in §7 is generated from them.
 
-## 1. Where every market stands (18 Oct 2026)
+## 1. Where every market stands (19 Oct 2026)
 
 | Status | Markets | Meaning |
 |---|---|---|
-| Connected | 81 | The official tariff is read automatically (Customs Atlas). 53 before this work, plus Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff, Singapore, read from the copy saved each night in its permitted window (D-029, §5a), and 24 members of three customs unions read from their union's common external tariff (D-028, §4a). |
-| Researched, not automatable | 48 | The official source is known and recorded with the reason it cannot be read automatically (licence pending, source incomplete, no machine interface, credentials, investigation required). |
+| Connected | 88 | The official tariff is read automatically (Customs Atlas). 53 before this work, plus Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff, Singapore, read from the copy saved each night in its permitted window (D-029, §5a), 24 members of three customs unions read from their union's common external tariff (D-028, §4a), and cluster 1 (D-030, §4b): the UAE and Bahrain on the GCC common tariff, Argentina, Paraguay and Uruguay on the Mercosur common external tariff, and China and Brazil read from their own published tariffs. |
+| Researched, not automatable | 41 | The official source is known and recorded with the reason it cannot be read automatically (licence pending, source incomplete, no machine interface, credentials, investigation required). |
 | Directory | 89 | The publishing authority and where its tariff can be read, for an agent; 6 of these are scored by a published rule. |
 
 `tests/tariff-source-directory.test.ts` fails if any screened market has none of the three. Of the
@@ -24,11 +24,15 @@ directory's 89, 43 name an official page, schedule or law to read (6 of them the
 rule) and 46 have no official copy online (the agent asks the authority; the duty stays estimated until
 then). A connected market keeps its directory entry or researched source as the agent's pointer where
 the automatic read can leave its duty open: Andorra's chapters 1–24, Singapore before its first saved
-copy, and a customs-union member's own exceptions.
+copy, a customs-union member's own exceptions, and the lines a retained tariff schedule leaves open
+(§4b).
 
 ## 2. How v5 finds a market's duty, in order
 
-1. **Official tariff line, read automatically** (Customs Atlas evidence, quality 1).
+1. **Official tariff line, read automatically** (Customs Atlas evidence, quality 1). Two kinds are
+   labelled and score lower: a customs union's common tariff (D-028, quality 0.8, §4a and §4b), and a
+   market's own tariff read from a retained official schedule without its trade remedies (D-031,
+   quality 0.9, labelled "read from <the tariff>; trade remedies are not checked", §4b).
 2. **Official tariff line, read by an agent** (authoritative-manual evidence, quality 0.9, labelled
    "read from the official tariff by a ClearTrade agent") — §3.
 3. **A published rule** (policy v5 `rule_rates`, quality 1) where the market has no line for the product.
@@ -78,8 +82,9 @@ One union source can serve many markets, with national exceptions that must be c
 | EAEU | — | EEC Council Decision No. 80 (14 Sep 2021) on Kazakhstan's official legal portal | Connected (§4a); Kazakhstan, Kyrgyzstan and Armenia apply lower WTO-commitment rates on listed lines, not modelled. |
 | CEMAC | CM, CF, TD, CG, GQ, GA | Not found online | New CEEAC–CEMAC tariff in force in Cameroon from 1 Jan 2026. |
 | SACU | ZA, BW, NA, LS, SZ | SARS Schedule 1 | SARS terms require written consent for automated acquisition. |
-| GCC | AE, BH | — | Saudi Arabia, Kuwait, Qatar and Oman are connected; national exceptions differ. |
-| CARICOM, SICA, MERCOSUR | national | — | National exception lists; read the national tariff. |
+| GCC | — | GCC unified customs tariff, 12-digit edition published by Dubai Customs (PDF) | Connected (§4b) for AE and BH; Saudi Arabia, Kuwait, Qatar and Oman are connected nationally; national exemptions differ. |
+| MERCOSUR | — | Mercosur common external tariff, Annex I of Gecex Resolution 272/2021 (CAMEX workbook) | Connected (§4b): AR, PY and UY on the common tariff; Brazil on its own applied tariff from the same workbook. The other members' exception lists are not modelled. |
+| CARICOM, SICA | national | — | National exception lists; read the national tariff. |
 
 ## 4a. Common external tariffs read for members (D-028)
 
@@ -117,21 +122,64 @@ from one retained release pinned to the official files read on 18 Oct 2026
   --family=<union>` imports it. Until a union's release is active, a run records its members as
   `no_release`.
 
-## 5. Proposed automation order
+## 4b. Cluster 1: tariff schedules read automatically (D-030, D-031)
 
-Largest gains for Indian exporters first; each needs a source qualification like the existing Customs
-Atlas packs, and the first three need the owner's decision on whether a common-tariff rate may be used
-as the official rate where national exceptions are not yet modelled.
+The owner asked on 19 Oct 2026 for every market an agent still checks to be read by the system, cluster
+by cluster (D-030). Cluster 1 is the largest Indian export markets among the researched sources whose
+official tariff can be downloaded whole — the UAE, China and Brazil — with the partners the same files
+serve. Four releases, each pinned to the official files read on 19 Oct 2026
+(`src/lib/market-access/providers/tariff-schedule-*.ts`, ledger E-025):
 
-| Order | Markets | Source | What it needs |
-|---|---|---|---|
-| 1 | RU, BY, KZ, KG, AM | EAEU common customs tariff (Decision No. 80 and amendments) | Done (D-028, §4a); the KZ/KG/AM exception lists remain. |
-| 2 | BJ, BF, CI, GW, ML, NE, SN, TG (+ GM, GH, GN, LR, NG, SL) | UEMOA TEC 2022 v4 | Done (D-028, §4a); national supplementary measures remain. |
-| 3 | KE, UG, TZ, RW, BI | EAC CET 2022 + annual Gazette | Done (D-028, §4a) to 30 June 2027; per-row attribution of table I stays remains. |
-| 4 | BR | Camex TEC with national exceptions (official spreadsheet) | Owner decision to replace the Siscomex route recorded for BR. |
-| 5 | NC | Open data (data.gouv.nc, Licence Ouverte 2.0, updated daily) | Live API check from a machine that can reach it. |
-| 6 | AE | Dubai Customs open data | Terms of the dataset and GCC exceptions. |
-| 7 | SG | Implemented provider; acquisition only inside 03:00–07:00 SGT | Done (D-029): saved nightly by the worker, §5a. |
+| Release | Markets | Read as | Lines | Not scored automatically |
+|---|---|---|---|---|
+| GCC unified customs tariff, 12-digit edition of Dubai Customs (23 Jul 2025), with the UAE's CEPA schedule (Annex 2B) | AE, BH | Common tariff (D-028, quality 0.8) | 13,449; India's CEPA rate stated for the UAE on 11,650 lines, by year from 1 May 2022 | 117 PROHIBITED or special-goods lines; 3 lines with no printed rate; 88 lines excluded from the UAE's CEPA concessions carry no India rate |
+| Mercosur common external tariff (Annex I of Gecex Resolution 272/2021, CAMEX workbook of 5 Oct 2026) | AR, PY, UY | Common tariff (D-028, quality 0.8) | 10,516 NCM lines | 1,618 capital-goods (BK) and IT (BIT) lines, which each member applies under its own regime |
+| China's 2026 customs tariff with Annex 1 (provisional rates) of the 2026 adjustment plan | CN | Own tariff (D-031, quality 0.9) | 8,972 lines; 600 whole-line provisional rates replace MFN; the Asia-Pacific Trade Agreement rate is India's preference on 2,440 lines (needs origin proof); 31 duties per kilogram or square metre and 3 "the lower of" duties kept with every operand | Tariff-rate quotas (the out-of-quota rate is scored and the quota said); 335 provisional rates for part of a line (said, not scored); nothing after 31 Dec 2026 until the 2027 tariff is imported |
+| Brazil's applied tariff (Annexes I–X of Gecex Resolution 272/2021, same workbook) | BR | Own tariff (D-031, quality 0.9) | 10,516 lines: Annex II's applied rate where listed (9,404), else the TEC; whole-line rates of the LETEC, LEBIT/BK and temporary-increase lists replace it while in force (1,517 lines) | A line with two different exception rates in force on the day; ex-tarifários, quotas and the automotive list (261 lines say them) |
+
+- A market's own tariff read this way is official evidence labelled *read from <the tariff>*: v5 scores
+  it at quality 0.9 (`quality.official_schedule_read`, policy v7) and the market's reason says "read
+  from China's 2026 customs tariff; trade remedies are not checked". The GCC and Mercosur releases are
+  common tariffs, labelled and scored as in §4a.
+- Not modelled, and said with every duty: trade remedies (anti-dumping, countervailing, safeguard
+  duties) and temporary measures outside the schedules; the GCC members' own exemptions; Argentina's,
+  Paraguay's and Uruguay's national exception lists and regimes (Uruguay's own tariff stays
+  licence-pending; the common tariff comes from Brazil's publication of it); India–Mercosur PTA margins.
+- The UAE's CEPA year is counted from each anniversary of 1 May 2022 (the stricter reading: it never
+  states a rate lower than the schedule's for the day); where lines beneath one HS6 carry different
+  India rates, no single India rate is stated.
+- Rights (D-030): UAE Federal Decree-Law No. 38 of 2021, Art. 3(2), Brazil's Law 9.610/1998, Art. 8(IV),
+  and China's Copyright Law (2020), Art. 5, exclude official texts from copyright; each bundle and its
+  import record carry the basis. Dubai Customs' own website terms were not located.
+- Building and importing: `npx tsx scripts/build-tariff-schedule-bundle.ts --schedule=<GCC|MERCOSUR|CN|BR>
+  --file=<official file> … --out=<zip>` recognises the files by checksum and writes a deterministic
+  bundle (two builds give the same bytes, whatever the file order); `scripts/import-retained-authority-release.ts
+  --family=<GCC|MERCOSUR|CN|BR>` imports it. Until a release is active, a run records its markets as
+  `no_release`.
+
+## 5. Automation order (D-030)
+
+Clusters of researched national sources, largest Indian export markets first, each completed — sources,
+rights check, reader, tests, staging import — before the next starts. Each cluster's membership is
+confirmed against India's export values (BACI) before it starts.
+
+| Cluster | Markets | Status |
+|---|---|---|
+| Customs unions | 24 members of ECOWAS, the EAC and the EAEU | Done (D-028, §4a) |
+| SG | Singapore | Done (D-029, §5a): saved nightly |
+| 1 | AE, BH, AR, PY, UY, CN, BR | Done (D-030, D-031, §4b), pending merge and staging import |
+| 2 | TR, TH, MX | Next: the largest remaining Indian export markets among the researched sources |
+| 3 | EG, PH, JO, CH | |
+| 4 | Central America (GT, SV, HN, NI, CR — one common tariff; PA), CO, EC, DO | |
+| 5 | UA, RS, BA, ME, MK, XK, MD | |
+| 6 | BW, NA, ZM | SACU's own schedule is SARS's (licence pending), so each member's publication |
+| 7 | KH, LA, MN, BN, MV, LB, BO, TT, BZ | |
+
+Then the 37 small markets whose official page, schedule or law an agent can read (§1), as saved copies
+where that is the only way (D-029); then the 45 that v5 ranks with nothing online (46 in the directory,
+which also lists North Korea, excluded from v5), which depend on the UNCTAD and WTO replies. The seven
+licence-pending sources (HK beyond its rule, MY, CL, ZA, BD, PK, JM) stay with agents until each licence
+is settled (open decision, ledger).
 
 ## 5a. Singapore: saved in its window every night (D-029)
 
@@ -177,11 +225,10 @@ minutes; outside the window the sweep reads nothing):
 - National tariffs are legal instruments; many copyright laws exclude official texts, but each
   automated source still gets its own rights check (as the existing packs record). An agent reading
   one published rate from an official page and citing it is the authoritative-manual path the Customs
-  Atlas already defines. Whether that extends to the eight sources whose reuse is licence-pending (HK
-  beyond its rule, MY, CL, ZA, UY, BD, PK, JM) is an owner decision pending with PR #5 (ledger R-24);
-  the form allows it as built.
+  Atlas already defines. The owner extended it to the eight sources whose reuse is licence-pending (HK
+  beyond its rule, MY, CL, ZA, UY, BD, PK, JM), one cited rate per line (D-028, ledger R-24).
 
-## 7. Every market (generated 17 Oct 2026; Singapore and the customs-union members updated 18 Oct 2026)
+## 7. Every market (generated 17 Oct 2026; Singapore and the customs-union members updated 18 Oct 2026, cluster 1 on 19 Oct 2026)
 
 | Market | Official tariff now | Union | Where to read it |
 |---|---|---|---|
@@ -192,14 +239,14 @@ minutes; outside the window the sweep reads nothing):
 | Angola (AO) | No official copy found online |  | Administração Geral Tributária (AGT) — Pauta Aduaneira 2024; no official copy found online. |
 | Anguilla (AI) | No official copy found online |  | Anguilla Customs Department — No current schedule found online. |
 | Antigua and Barbuda (AG) | No official copy found online | CARICOM | Customs and Excise Division, Antigua and Barbuda — CET with national exceptions under the Customs Duties Act; no schedule found online. |
-| Argentina (AR) | Researched, not automatable (source insufficient) | MERCOSUR | [Argentina ARCA / Secretariat of Commerce — SIM national tariff execution](https://www.argentina.gob.ar/produccion/comercio-exterior) |
+| Argentina (AR) | Connected (`mercosur_tec_camex`): Mercosur common external tariff | MERCOSUR | Read automatically; its own exceptions: [Argentina ARCA / Secretariat of Commerce — SIM national tariff execution](https://www.argentina.gob.ar/produccion/comercio-exterior) |
 | Armenia (AM) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
 | Aruba (AW) | Agent reads it |  | [Departamento di Aduana Aruba](https://www.gobierno.aw/en/import-duties) — Government page on import duties. |
 | Australia (AU) | Connected (`au_abf_working_tariff`) |  | Read automatically |
 | Austria (AT) | Connected (`eu_taric`) | EU | Read automatically |
 | Azerbaijan (AZ) | Agent reads it |  | [State Customs Committee of Azerbaijan](https://customs.gov.az/en/faydali/gomruk-statistikasi/tariff-statistics) — Rates set by Cabinet of Ministers decision; the committee publishes tariff statistics. |
 | Bahamas (BS) | Agent reads it |  | [Bahamas Customs Department](https://www.bahamascustoms.gov.bs/resources/laws-on-line/) — Customs Duty (Most Favoured Nation) Tariff Act and amendments. |
-| Bahrain (BH) | Researched, not automatable (bulk distribution only) | GCC | [Bahrain Ministry of Interior, Customs Affairs — Unified Customs Tariff](https://www.bahrain.bh/wps/portal/en/BNP/ServicesCatalogue/GSX-UI-PServiceDetails?psID=1322) |
+| Bahrain (BH) | Connected (`gcc_unified_customs_tariff`): GCC common customs tariff | GCC | Read automatically; its own exceptions: [Bahrain Ministry of Interior, Customs Affairs — Unified Customs Tariff](https://www.bahrain.bh/wps/portal/en/BNP/ServicesCatalogue/GSX-UI-PServiceDetails?psID=1322) |
 | Bangladesh (BD) | Researched, not automatable (license pending) |  | [Bangladesh National Board of Revenue / Customs — National Tariff](https://customs.gov.bd/files/Tariff-2025-2026%2829-07-2025%29.pdf) |
 | Barbados (BB) | No official copy found online | CARICOM | Barbados Revenue Authority, Customs and Excise Department — CET with national exceptions; no schedule found online. |
 | Belarus (BY) | Connected (`eaeu_common_customs_tariff`): EAEU common customs tariff | EAEU | Read automatically; its own exceptions: [Kazakhstan Ministry of Finance / Open Data portal — EAEU nomenclature and Common Customs Tariff](https://data.egov.kz/datasets/view?index=euraziyalyk_ekonomikalyk_odakt) |
@@ -212,7 +259,7 @@ minutes; outside the window the sweep reads nothing):
 | Bonaire, Sint Eustatius and Saba (BQ) | Rule; v5 rule 0% |  | [Belastingdienst Caribisch Nederland](https://english.belastingdienst-cn.nl/topics/customs-business/company-import-tax) — Import tax is 0% on all goods; general expenditure tax applies separately. |
 | Bosnia and Herzegovina (BA) | Researched, not automatable (source insufficient) |  | [Bosnia and Herzegovina Indirect Taxation Authority (UIO/ITA) — national customs tariff](https://www.uino.gov.ba/portal/bs/carine/carinska-tarifa/) |
 | Botswana (BW) | Researched, not automatable (individual investigation required) | SACU | [Botswana Unified Revenue Service / SACU — Customs and Excise Tariff](https://www.burs.org.bw/index.php/customsexcisemain/customs-and-exercise-downloads) |
-| Brazil (BR) | Researched, not automatable (credential not provisioned) | MERCOSUR | [Receita Federal / Portal Único de Comércio Exterior (Siscomex)](https://www.gov.br/mdic/pt-br/assuntos/camex/se-camex/strat/tarifas/vigentes) |
+| Brazil (BR) | Connected (`br_camex_applied_tariff`): its CAMEX applied tariff, read without trade remedies | MERCOSUR | Read automatically; the lines left open: [Receita Federal / Portal Único de Comércio Exterior (Siscomex)](https://www.gov.br/mdic/pt-br/assuntos/camex/se-camex/strat/tarifas/vigentes) |
 | Brunei Darussalam (BN) | Researched, not automatable (individual investigation required) |  | [Brunei Royal Customs and Excise Department — Brunei Darussalam Tariff and Trade Classification](https://www.customs.gov.bn/ref-rced/) |
 | Bulgaria (BG) | Connected (`eu_taric`) | EU | Read automatically |
 | Burkina Faso (BF) | Connected (`ecowas_cet_uemoa_tec_2022`): ECOWAS common external tariff | UEMOA | Read automatically; its own exceptions: [Direction Générale des Douanes du Burkina Faso](https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf) — Applies the UEMOA edition of the ECOWAS CET. |
@@ -331,8 +378,8 @@ minutes; outside the window the sweep reads nothing):
 | Palau (PW) | No official copy found online |  | Palau Bureau of Revenue and Taxation — The 2023 tax reform introduced a goods and services tax; the remaining import tax was not confirmed. |
 | Panama (PA) | Researched, not automatable (source insufficient) |  | [Panama National Customs Authority — Interactive National Tariff](https://aranceles.ana.gob.pa/) |
 | Papua New Guinea (PG) | Agent reads it |  | [Papua New Guinea Customs Service](https://customs.gov.pg/tev/tariff) — Online tariff; also the Customs Tariff Act 1990, HS 2022 edition. |
-| Paraguay (PY) | Researched, not automatable (source insufficient) | MERCOSUR | [Paraguay Ministry of Economy and Finance — National Tariff](https://economia.gov.py/index.php/paraguay-y-el-mundo/aranceles-la-importacion/arancel-nacional-vigente) |
-| People's Republic of China (CN) | Researched, not automatable (individual investigation required) |  | [People's Republic of China Ministry of Finance / General Administration of Customs — 2026 Customs Tariff](https://gss.mof.gov.cn/gzdt/zhengcefabu/202512/t20251231_3981044.htm) |
+| Paraguay (PY) | Connected (`mercosur_tec_camex`): Mercosur common external tariff | MERCOSUR | Read automatically; its own exceptions: [Paraguay Ministry of Economy and Finance — National Tariff](https://economia.gov.py/index.php/paraguay-y-el-mundo/aranceles-la-importacion/arancel-nacional-vigente) |
+| People's Republic of China (CN) | Connected (`cn_customs_tariff_2026`): its 2026 customs tariff, read without trade remedies |  | Read automatically; the lines left open: [People's Republic of China Ministry of Finance / General Administration of Customs — 2026 Customs Tariff](https://gss.mof.gov.cn/gzdt/zhengcefabu/202512/t20251231_3981044.htm) |
 | Peru (PE) | Connected (`pe_sunat_customs_tariff`) |  | Read automatically |
 | Philippines (PH) | Researched, not automatable (no documented machine interface) |  | [Philippine Tariff Commission — Philippine Tariff Finder (MFN, AIFTA and other FTA schedules, AHTN 2022)](https://finder.tariffcommission.gov.ph/about) |
 | Poland (PL) | Connected (`eu_taric`) | EU | Read automatically |
@@ -389,11 +436,11 @@ minutes; outside the window the sweep reads nothing):
 | Tuvalu (TV) | No official copy found online |  | Tuvalu Customs — No official schedule found online. |
 | Uganda (UG) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Uganda Revenue Authority / East African Community — CET national execution](https://ura.go.ug/en/download/common-external-tariff-2022-version/0/) |
 | Ukraine (UA) | Researched, not automatable (source insufficient) |  | [State Customs Service of Ukraine — Rates of import and export duties](https://data.gov.ua/dataset/duty-rates) |
-| United Arab Emirates (AE) | Researched, not automatable (individual investigation required) | GCC | [Dubai Customs / Dubai Pulse — Customs Agreements, Commodity and Tariff](https://www.dubaicustoms.gov.ae/en/PoliciesAndNotices/Documents/IntegratedCustomsTariffv4.pdf) |
+| United Arab Emirates (AE) | Connected (`gcc_unified_customs_tariff`): GCC common customs tariff, with India's CEPA rate | GCC | Read automatically; its own exceptions: [Dubai Customs / Dubai Pulse — Customs Agreements, Commodity and Tariff](https://www.dubaicustoms.gov.ae/en/PoliciesAndNotices/Documents/IntegratedCustomsTariffv4.pdf) |
 | United Kingdom (GB) | Connected (`uk_tariff`) |  | Read automatically |
 | United Republic of Tanzania (TZ) | Connected (`eac_common_external_tariff`): EAC common external tariff | EAC | Read automatically; its own exceptions: [Tanzania Revenue Authority / East African Community — CET national execution](https://www.eac.int/press-releases/142-customs/3544-eac-ministers-adopt-measures-to-strengthen-regional-trade-and-industrialization) |
 | United States of America (US) | Connected (`us_hts`) |  | Read automatically |
-| Uruguay (UY) | Researched, not automatable (license pending) | MERCOSUR | [Uruguay Ministry of Economy and Finance — National Tariff](https://www.gub.uy/ministerio-economia-finanzas/politicas-y-gestion/nomenclatura-aranceles-uruguay) |
+| Uruguay (UY) | Connected (`mercosur_tec_camex`): Mercosur common external tariff | MERCOSUR | Read automatically; its own exceptions (licence pending): [Uruguay Ministry of Economy and Finance — National Tariff](https://www.gub.uy/ministerio-economia-finanzas/politicas-y-gestion/nomenclatura-aranceles-uruguay) |
 | Uzbekistan (UZ) | Connected (`uz_lex_customs_tariff`) |  | Read automatically |
 | Vanuatu (VU) | Agent reads it |  | [Vanuatu Customs and Inland Revenue](https://vanuatucustoms.gov.vu/images/Customs_Tariff/2024/IMPORT%20DUTIES%20CONSOLIDATION%20AMENDMENT%20ACT%20NO.%2024%20OF%202023.pdf) — Import Duties (Consolidation) Amendment Act No. 24 of 2023. |
 | Venezuela (VE) | No official copy found online |  | SENIAT — Arancel de Aduanas by decree in the Gaceta Oficial; temporary exonerations change often. |
@@ -411,6 +458,11 @@ minutes; outside the window the sweep reads nothing):
 - Directory: re-check the links yearly; a changed source is a code change with the test.
 - A market that becomes connected leaves the directory (the test refuses an entry that shadows an
   adapter, except where the automatic read can leave a duty open: Andorra's chapters 1–24, Singapore
-  before its first nightly copy, and a customs-union member's own exceptions).
+  before its first nightly copy, a customs-union member's own exceptions, and the lines a tariff
+  schedule leaves open).
 - Customs unions: the EAC release must be renewed with each July Gazette (it states nothing after
   30 June 2027); a new UEMOA or EAEU edition is a new release with its own pins (§4a).
+- Tariff schedules (§4b): China's release states nothing after 31 December 2026, so the 2027 tariff must
+  be imported when the Customs Tariff Commission publishes it (late December); the CAMEX workbook
+  changes with most months' Gecex resolutions, so Brazil's and Mercosur's releases are re-read when it
+  is updated; a new GCC edition or CEPA schedule is a new release with its own pins.

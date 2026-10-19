@@ -45,6 +45,7 @@ import { importMoroccoRelease } from '@/lib/market-access/providers/morocco-serv
 import { importTunisiaRelease } from '@/lib/market-access/providers/tunisia-service';
 import { importSingaporeRelease } from '@/lib/market-access/providers/singapore-service';
 import { importCustomsUnionRelease } from '@/lib/market-access/providers/customs-union-service';
+import { importTariffScheduleRelease } from '@/lib/market-access/providers/tariff-schedule-service';
 import { prisma } from '@/lib/prisma';
 import { validateDatabaseEnvironment } from '@/lib/runtime-config';
 import type { Principal } from '@/types';
@@ -95,6 +96,11 @@ const DATED_FAMILIES: Record<string, { source_family: string; run: (args: DatedI
   EAEU: { source_family: 'EAEU_CCT', run: (args) => importCustomsUnionRelease('EAEU', args) },
   ECOWAS: { source_family: 'ECOWAS_CET_UEMOA_TEC', run: (args) => importCustomsUnionRelease('ECOWAS', args) },
   EAC: { source_family: 'EAC_CET', run: (args) => importCustomsUnionRelease('EAC', args) },
+  // D-030: tariff-schedule releases built with scripts/build-tariff-schedule-bundle.ts from the official files.
+  GCC: { source_family: 'GCC_UNIFIED_TARIFF', run: (args) => importTariffScheduleRelease('GCC', args) },
+  MERCOSUR: { source_family: 'MERCOSUR_TEC', run: (args) => importTariffScheduleRelease('MERCOSUR', args) },
+  CN: { source_family: 'CN_CUSTOMS_TARIFF', run: (args) => importTariffScheduleRelease('CN', args) },
+  BR: { source_family: 'BR_CAMEX_TARIFF', run: (args) => importTariffScheduleRelease('BR', args) },
 };
 
 async function main() {

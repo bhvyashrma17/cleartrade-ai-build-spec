@@ -395,7 +395,9 @@ describe('unconfigured authoritative sources', () => {
       expect(source!.references.every((reference) => reference.startsWith('https://')), country).toBe(true);
       expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
       // D-028: Kenya's national source stays researched; its duty is read from the EAC common tariff.
-      if (country === 'KE') expect(DESTINATION_ADAPTERS.KE?.provider_key, country).toBe('eac_common_external_tariff');
+      // D-030: so does Bahrain's; its duty is read from the GCC common tariff.
+      const union = ({ KE: 'eac_common_external_tariff', BH: 'gcc_unified_customs_tariff' } as Record<string, string>)[country];
+      if (union) expect(DESTINATION_ADAPTERS[country]?.provider_key, country).toBe(union);
       else expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
 
@@ -405,14 +407,14 @@ describe('unconfigured authoritative sources', () => {
   });
 
   test('remaining Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
-    // KE left with D-028: its ingest reads the EAC common external tariff.
-    const countries = ['MY', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'EG', 'JO', 'BH'];
+    // KE left with D-028: its ingest reads the EAC common external tariff. BH left with D-030: the GCC common tariff.
+    const countries = ['MY', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'EG', 'JO'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-c-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(14);
+    expect(outcomes).toHaveLength(13);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
@@ -456,7 +458,11 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       expect(source!.references.every((reference) => reference.startsWith('https://')), country).toBe(true);
       expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
       // D-028: these members' national sources stay researched; their duty is read from their union's common tariff.
-      const union = ({ GH: 'ecowas_cet_uemoa_tec_2022', CI: 'ecowas_cet_uemoa_tec_2022', SN: 'ecowas_cet_uemoa_tec_2022', TZ: 'eac_common_external_tariff', UG: 'eac_common_external_tariff', RW: 'eac_common_external_tariff' } as Record<string, string>)[country];
+      // D-030: China's, the UAE's and Brazil's stay researched too; their duty is read from a retained tariff schedule.
+      const union = ({
+        GH: 'ecowas_cet_uemoa_tec_2022', CI: 'ecowas_cet_uemoa_tec_2022', SN: 'ecowas_cet_uemoa_tec_2022', TZ: 'eac_common_external_tariff', UG: 'eac_common_external_tariff', RW: 'eac_common_external_tariff',
+        CN: 'cn_customs_tariff_2026', AE: 'gcc_unified_customs_tariff', BR: 'br_camex_applied_tariff',
+      } as Record<string, string>)[country];
       if (union) expect(DESTINATION_ADAPTERS[country]?.provider_key, country).toBe(union);
       else expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
@@ -464,13 +470,14 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
 
   test('Mega-Wave D blockers complete independently without tariff evidence or invented zeroes', async () => {
     // GH, CI, SN, TZ, UG and RW left with D-028: their ingest reads their union's common external tariff.
-    const countries = ['CN', 'TH', 'BN', 'KH', 'LA', 'MN', 'AE', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'ZM', 'BW', 'NA'];
+    // CN, AE and BR left with D-030: their ingest reads a retained tariff schedule.
+    const countries = ['TH', 'BN', 'KH', 'LA', 'MN', 'LB', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'ZM', 'BW', 'NA'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-d-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(19);
+    expect(outcomes).toHaveLength(16);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');

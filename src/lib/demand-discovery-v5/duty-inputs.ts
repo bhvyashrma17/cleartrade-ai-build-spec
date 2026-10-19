@@ -99,12 +99,14 @@ export function dutyInputs(args: {
       : {};
     // D-028: a customs union's common external tariff keeps its label.
     const union = official && official.status !== 'none' && official.common_tariff ? { common_tariff: official.common_tariff } : {};
+    // D-031: a market's own tariff read from a retained schedule keeps its label.
+    const schedule = official && official.status !== 'none' && official.schedule_read ? { schedule_read: official.schedule_read } : {};
     if (official?.status === 'percent') {
-      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...union, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...union, ...schedule, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     if (official?.status === 'specific') {
-      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...union, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...union, ...schedule, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     // A rule (v5) stands in for a missing tariff line, never for official evidence that exists but yields no rate.

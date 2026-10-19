@@ -25,6 +25,7 @@ describe('Demand Discovery v5 archetype runs', () => {
     expect(dutyBasisOf(metrics({ basis: 'official', duty_percent: 5 }))).toEqual({ basis: 'official', union: null });
     expect(dutyBasisOf(metrics({ basis: 'official', duty_percent: 10, common_tariff: 'ECOWAS common external tariff' }))).toEqual({ basis: 'common_tariff', union: 'ECOWAS common external tariff' });
     expect(dutyBasisOf(metrics({ basis: 'official', duty_percent: 10, recorded_by_agent: 'yes' }))).toEqual({ basis: 'agent_recorded', union: null });
+    expect(dutyBasisOf(metrics({ basis: 'official', duty_percent: 6, schedule_read: 'China’s 2026 customs tariff' }))).toEqual({ basis: 'schedule_read', union: null, schedule: 'China’s 2026 customs tariff' });
     expect(dutyBasisOf(metrics({ basis: 'rule', duty_percent: 0 }))).toEqual({ basis: 'rule', union: null });
     expect(dutyBasisOf(metrics({ basis: 'estimate', duty_percent: 7.5 }))).toEqual({ basis: 'estimate', union: null });
     expect(dutyBasisOf(metrics({ basis: 'official', duty_percent: 5 }, null))).toEqual({ basis: 'none', union: null });
@@ -98,8 +99,9 @@ describe('Demand Discovery v5 archetype runs', () => {
     expect(item.run).toMatchObject({ id: run.id, status: 'completed' });
     expect(item.markets).toEqual({
       by_status: { ranked: 4, not_enough_data: 1, excluded: 1 },
-      duty_basis: { official: 1, common_tariff: 1, agent_recorded: 0, rule: 1, estimate: 1, none: 1 },
+      duty_basis: { official: 1, common_tariff: 1, schedule_read: 0, agent_recorded: 0, rule: 1, estimate: 1, none: 1 },
       common_tariff_markets: { 'ECOWAS common external tariff': 1 },
+      schedule_read_markets: {},
       top: [{ rank: 1, market: 'SA', overall: 81 }, { rank: 2, market: 'SN', overall: 74 }, { rank: 3, market: 'KE', overall: 70 }],
     });
     // A run without its frozen BACI inputs cannot be compared; status says why instead of failing.

@@ -43,6 +43,8 @@ import { fetchMoroccoMarketAccess } from '@/lib/market-access/providers/morocco-
 import { fetchTunisiaMarketAccess } from '@/lib/market-access/providers/tunisia-service';
 import { fetchSingaporeMarketAccess } from '@/lib/market-access/providers/singapore-service';
 import { CUSTOMS_UNION_SOURCES, type CustomsUnionKey } from '@/lib/market-access/providers/customs-union-sources';
+import { TARIFF_SCHEDULE_SOURCES, type TariffScheduleKey } from '@/lib/market-access/providers/tariff-schedule-sources';
+import { fetchTariffScheduleMarketAccess } from '@/lib/market-access/providers/tariff-schedule-service';
 import { fetchCustomsUnionMarketAccess } from '@/lib/market-access/providers/customs-union-service';
 
 export interface MarketAccessAdapterRequest {
@@ -229,6 +231,20 @@ const CUSTOMS_UNION_ADAPTERS = Object.fromEntries(Object.values(CUSTOMS_UNION_SO
   return source.members.map((code) => [code, adapter] as const);
 }));
 
+/**
+ * D-030: retained tariff schedules — a market's own national tariff (China, Brazil) or its customs
+ * union's common tariff (GCC for the UAE and Bahrain, Mercosur for Argentina, Paraguay and Uruguay),
+ * one release per official publication (`tariff-schedule-service.ts`).
+ */
+const tariffScheduleAdapter = (key: TariffScheduleKey): MarketAccessAdapter => ({
+  provider_key: TARIFF_SCHEDULE_SOURCES[key].provider, retrieval: 'retained_release',
+  fetch: (request) => fetchTariffScheduleMarketAccess(key, request.destination_country, request.hs6, { now: request.now, origin_country: request.origin_country }),
+});
+const TARIFF_SCHEDULE_ADAPTERS = Object.fromEntries(Object.values(TARIFF_SCHEDULE_SOURCES).flatMap((source) => {
+  const adapter = tariffScheduleAdapter(source.key);
+  return Object.keys(source.countries).map((code) => [code, adapter] as const);
+}));
+
 const SINGAPORE_ADAPTER: MarketAccessAdapter = { provider_key: 'sg_sso_customs_duties_order', retrieval: 'retained_release', fetch: (request) => fetchSingaporeMarketAccess(request.hs6, { now: request.now, origin_country: request.origin_country }) };
 
 /**
@@ -265,6 +281,7 @@ export const DESTINATION_ADAPTERS: Readonly<Record<string, MarketAccessAdapter>>
   TN: TUNISIA_ADAPTER,
   SG: SINGAPORE_ADAPTER,
   ...CUSTOMS_UNION_ADAPTERS,
+  ...TARIFF_SCHEDULE_ADAPTERS,
   ...Object.fromEntries(UK_TARIFF_DESTINATIONS.map((code) => [code, UK_ADAPTER] as const)),
   ...Object.fromEntries(US_HTS_DESTINATIONS.map((code) => [code, US_ADAPTER] as const)),
   ...Object.fromEntries(EU_TARIC_DESTINATIONS.map((code) => [code, EU_TARIC_ADAPTER] as const)),

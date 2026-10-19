@@ -50,6 +50,10 @@ export type NationalCodeSystem =
   | 'EAEU_CN_FEA'
   | 'ECOWAS_CET_NTS'
   | 'EAC_CET_HS2022'
+  /** D-030: retained national schedules and further common tariffs (`tariff-schedule-sources.ts`). */
+  | 'MERCOSUR_NCM_TEC'
+  | 'BR_NCM_CAMEX'
+  | 'CN_CUSTOMS_TARIFF'
   /** A declarable line an agent read from a market's own official tariff (`manual-capture-service.ts`). */
   | 'NATIONAL_TARIFF_LINE';
 

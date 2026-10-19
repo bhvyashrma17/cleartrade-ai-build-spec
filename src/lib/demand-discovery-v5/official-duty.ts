@@ -53,6 +53,8 @@ interface Resolved {
   recorded_by_agent?: boolean;
   /** D-028: the line is a customs union's common external tariff, read for a member; national exceptions are not modelled. */
   common_tariff?: { union: string; label: string };
+  /** D-031: the market's own official tariff read from a retained schedule; trade remedies are not checked. */
+  schedule_read?: { schedule: string; label: string };
   national_line: string | null;
   preference: OfficialPreferenceNote | null;
   /** Absent on resolutions made before D-026: the ordinary rate. */
@@ -101,7 +103,7 @@ type RateOutcome =
   | { status: 'unusable'; reason: string; expression: string | null };
 
 /** The pack's own parsed duty, when the evidence row retained one (`raw_evidence.duty`). */
-function storedDuty(row: Pick<OfficialTariffRow, 'raw_evidence'> | undefined): ParsedDuty | null {
+export function storedDuty(row: Pick<OfficialTariffRow, 'raw_evidence'> | undefined): ParsedDuty | null {
   const duty = row?.raw_evidence && typeof row.raw_evidence === 'object' ? (row.raw_evidence as { duty?: unknown }).duty : null;
   if (!duty || typeof duty !== 'object') return null;
   const candidate = duty as ParsedDuty;
@@ -178,7 +180,9 @@ export function resolveOfficialDuty(args: {
     snapshot_ids: [...new Set([row.snapshot_id, ...(preference && preferenceRow ? [preferenceRow.snapshot_id] : [])])].sort(),
   };
 
-  const standard = rateOf(ordinary.value.rate_percent, row.duty_expression, args.usd_per_unit, 'official');
+  // The pack's own reading first, as for the preference: a duty published in words (EAEU euro per
+  // kilogram, China's yuan per kilogram) is otherwise unreadable to the shared expression parser.
+  const standard = rateOf(ordinary.value.rate_percent, row.duty_expression, args.usd_per_unit, 'official', storedDuty(row));
   if (args.score_india_preference && preference && !preference.quota && preferenceRow) {
     const preferred = rateOf(preferenceFact!.value.rate_percent, preferenceRow.duty_expression, args.usd_per_unit, 'preferential', storedDuty(preferenceRow));
     // Never score a preference above the rate it is meant to reduce.

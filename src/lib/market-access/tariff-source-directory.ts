@@ -20,6 +20,7 @@
  */
 import { DESTINATION_ADAPTERS } from '@/lib/job-handlers/market-access';
 import { customsUnionSourceFor } from './providers/customs-union-sources';
+import { tariffScheduleSourceFor } from './providers/tariff-schedule-sources';
 import { unconfiguredSourceForCountry } from './unconfigured-sources';
 
 export const TARIFF_SOURCE_DIRECTORY_CHECKED_ON = '2026-10-17';
@@ -98,8 +99,8 @@ export const CUSTOMS_UNION_TARIFFS: Readonly<Record<string, CustomsUnionTariff>>
     name: 'Gulf Cooperation Council common customs tariff',
     members: ['SA', 'KW', 'QA', 'OM', 'AE', 'BH'],
     authority: 'GCC customs administrations',
-    source_url: null,
-    note: 'Mostly 5%, with national exceptions; each member publishes its own execution. Saudi Arabia, Kuwait, Qatar and Oman are connected.',
+    source_url: 'https://www.dubaicustoms.gov.ae/en/PoliciesAndNotices/Documents/IntegratedCustomsTariff.pdf',
+    note: 'Mostly 5%, with national exceptions; each member publishes its own execution. Saudi Arabia, Kuwait, Qatar and Oman are connected from their own tariffs; the UAE and Bahrain are connected (D-028, D-030) from the unified tariff as Dubai Customs publishes it, with the UAE’s CEPA rates for Indian goods.',
   },
   CARICOM: {
     name: 'CARICOM common external tariff',
@@ -119,8 +120,8 @@ export const CUSTOMS_UNION_TARIFFS: Readonly<Record<string, CustomsUnionTariff>>
     name: 'MERCOSUR common external tariff',
     members: ['AR', 'BR', 'PY', 'UY'],
     authority: 'MERCOSUR; each member executes it nationally',
-    source_url: null,
-    note: 'Each member keeps national exception lists; read the national tariff.',
+    source_url: 'https://www.gov.br/mdic/pt-br/assuntos/camex/se-camex/strat/tarifas/vigentes',
+    note: 'Each member keeps national exception lists. Brazil is connected (D-030) from its CAMEX workbook; Argentina, Paraguay and Uruguay from its Annex I, the common external tariff (D-028), their exception lists and capital-goods/IT regimes not modelled.',
   },
 });
 
@@ -323,6 +324,15 @@ export function manualTariffCheckFor(countryCode: string, hs6?: string): { autho
       const authority = entry?.authority ?? documented?.authority;
       if (!authority) return null;
       return { authority, source_url: entry?.source_url ?? documented?.references[0] ?? null, note: `Read automatically from the ${union.label}; check here for this market's own exceptions. ${union.member_notes[code] ?? ''}`.trim() };
+    }
+    // D-030: a retained schedule leaves some lines open (special goods, ex-tarifários, capital-goods
+    // regimes, quota lines); the market's own source is where an agent checks those.
+    const schedule = tariffScheduleSourceFor(code);
+    if (schedule) {
+      const documented = unconfiguredSourceForCountry(code);
+      const authority = entry?.authority ?? documented?.authority;
+      if (!authority) return null;
+      return { authority, source_url: entry?.source_url ?? documented?.references[0] ?? null, note: `Read automatically from ${schedule.countries[code]?.basis === 'common_tariff' ? 'the ' : ''}${schedule.label}; check here for the lines it leaves open. ${schedule.countries[code]?.note ?? ''}`.trim() };
     }
     if (!entry) return null;
     const chapter = hs6 ? Number(hs6.slice(0, 2)) : null;

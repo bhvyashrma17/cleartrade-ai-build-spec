@@ -86,6 +86,15 @@ describe('official duty on Indian goods (v5)', () => {
     expect((resolution as { usd_per_kg: number }).usd_per_kg).toBeCloseTo(0.1573, 6);
   });
 
+  test('an ordinary duty published in words is read from the pack’s own parsed duty (EAEU euro per kilogram)', () => {
+    const eaeu = { kind: 'specific', ad_valorem_rate_percent: null, specific_amount: 0.03, specific_currency: 'EUR', specific_unit: 'kg', specific_unit_quantity: 1, expression: '0,03 евро за 1 кг', note: null };
+    const words = { country_code: 'KZ', source_authority: 'EEC Council Decision No. 80', duty_expression: '0,03 евро за 1 кг', duty_kind: 'specific', national_tariff_code: '1006300000' };
+    const union = [{ id: 'snap-1', provider: 'eaeu_common_customs_tariff', source_dataset: null }];
+    expect(resolve('KZ', [row('kz-cct', { ...words, raw_evidence: { duty: eaeu } })], union).resolution).toMatchObject({ status: 'specific', usd_per_kg: expect.closeTo(0.033, 9), expression: '0,03 евро за 1 кг', fx: { currency: 'EUR', usd_per_unit: 1.1 } });
+    // Without the pack's reading, the words are not a rate.
+    expect(resolve('KZ', [row('kz-cct', words)], union).resolution).toMatchObject({ status: 'unusable' });
+  });
+
   test('official but not one rate: compound, per litre, or a currency without a published rate', () => {
     expect(resolve('GB', [row('a', { duty_expression: '12% + 50 EUR / 100 kg', duty_kind: 'compound' })]).resolution).toMatchObject({ status: 'unusable', reason: expect.stringMatching(/cannot be reduced to one rate: Compound duty/) });
     expect(resolve('GB', [row('b', { duty_expression: '2.00 GBP / l', duty_kind: 'specific' })]).resolution).toMatchObject({ status: 'unusable', reason: expect.stringMatching(/per l, which a price per kilogram cannot convert/) });
