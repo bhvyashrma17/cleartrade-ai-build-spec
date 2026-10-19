@@ -46,6 +46,10 @@ export type NationalCodeSystem =
   | 'VN_AHTN_2022'
   | 'MA_TDI_2022'
   | 'TN_NDP_2022'
+  /** D-028: a customs union's common external tariff, serving each member (`customs-union-sources.ts`). */
+  | 'EAEU_CN_FEA'
+  | 'ECOWAS_CET_NTS'
+  | 'EAC_CET_HS2022'
   /** A declarable line an agent read from a market's own official tariff (`manual-capture-service.ts`). */
   | 'NATIONAL_TARIFF_LINE';
 

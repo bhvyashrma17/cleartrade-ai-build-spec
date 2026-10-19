@@ -165,7 +165,9 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
       // An official specific duty is shown with what it is per kilogram: the percentage is derived.
       const specific = typeof inputs.duty_expression === 'string' ? ` (${inputs.duty_expression} at this market's prices)` : '';
       // D-024: a rate an agent read from the official tariff says so.
-      const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)' : '';
+      const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
+        // D-028: a customs union's common external tariff names itself; the member's own exceptions are not checked.
+        : typeof inputs.common_tariff === 'string' ? ` under the ${inputs.common_tariff}; this market's own exceptions are not checked` : '';
       // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
       if (inputs.rate === 'india_preference') {
         const standardPercent = num(inputs.standard_percent);

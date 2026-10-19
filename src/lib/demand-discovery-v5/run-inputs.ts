@@ -19,6 +19,7 @@ import { buildCountryScreeningUniverse } from '@/lib/country-screening/universe'
 import type { DocumentStorage } from '@/lib/document-storage';
 import { prerequisitesNotMet } from '@/lib/errors';
 import { allowedEvidenceOrigins } from '@/lib/evidence-environment';
+import { CUSTOMS_UNION_PROVIDERS } from '@/lib/market-access/providers/customs-union-sources';
 import { parseDutyExpression } from '@/lib/market-access/tariff-semantics';
 import { prisma } from '@/lib/prisma';
 import { ecgcRatingRowSchema } from '@/lib/reference-datasets/ecgc';
@@ -167,6 +168,9 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
       // D-024: a line an agent read from the official tariff says so wherever it is shown.
       const snapshotIds = resolution.snapshot_ids;
       if (marketSnapshots.some((snapshot) => snapshotIds.includes(snapshot.id) && snapshot.provider === 'authoritative_manual')) resolution = { ...resolution, recorded_by_agent: true };
+      // D-028: a customs union's common external tariff says so, and scores below a national tariff.
+      const union = marketSnapshots.map((snapshot) => (snapshotIds.includes(snapshot.id) ? CUSTOMS_UNION_PROVIDERS.get(snapshot.provider) : undefined)).find(Boolean);
+      if (union) resolution = { ...resolution, common_tariff: { union: union.key, label: union.label } };
     }
     resolutions.set(market, resolution);
   }
@@ -176,6 +180,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
         status: resolution.status, source: resolution.source, national_line: resolution.national_line, fact_ids: resolution.fact_ids, snapshot_ids: resolution.snapshot_ids, preference: resolution.preference,
         basis: resolution.basis, ...(resolution.standard ? { standard: resolution.standard } : {}),
         ...(resolution.recorded_by_agent ? { recorded_by_agent: true } : {}),
+        ...(resolution.common_tariff ? { common_tariff: resolution.common_tariff } : {}),
         ...(resolution.status === 'percent' ? { duty_percent: resolution.duty_percent } : resolution.status === 'specific' ? { usd_per_kg: resolution.usd_per_kg, expression: resolution.expression, fx: resolution.fx } : { reason: resolution.reason, expression: resolution.expression }),
       }]));
   return {

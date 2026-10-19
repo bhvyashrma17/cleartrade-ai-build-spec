@@ -394,7 +394,9 @@ describe('unconfigured authoritative sources', () => {
       expect(source!.references.length, country).toBeGreaterThan(0);
       expect(source!.references.every((reference) => reference.startsWith('https://')), country).toBe(true);
       expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
-      expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
+      // D-028: Kenya's national source stays researched; its duty is read from the EAC common tariff.
+      if (country === 'KE') expect(DESTINATION_ADAPTERS.KE?.provider_key, country).toBe('eac_common_external_tariff');
+      else expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
 
     // Oman is now activated and should no longer be unconfigured
@@ -403,13 +405,14 @@ describe('unconfigured authoritative sources', () => {
   });
 
   test('remaining Mega-Wave C blockers complete independently and never emit zero or market evidence', async () => {
-    const countries = ['MY', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'KE', 'EG', 'JO', 'BH'];
+    // KE left with D-028: its ingest reads the EAC common external tariff.
+    const countries = ['MY', 'HK', 'TR', 'CH', 'RS', 'BA', 'MD', 'XK', 'CL', 'MX', 'ZA', 'EG', 'JO', 'BH'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-c-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(15);
+    expect(outcomes).toHaveLength(14);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
@@ -452,18 +455,22 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       expect(source!.references.length, country).toBeGreaterThan(0);
       expect(source!.references.every((reference) => reference.startsWith('https://')), country).toBe(true);
       expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
-      expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
+      // D-028: these members' national sources stay researched; their duty is read from their union's common tariff.
+      const union = ({ GH: 'ecowas_cet_uemoa_tec_2022', CI: 'ecowas_cet_uemoa_tec_2022', SN: 'ecowas_cet_uemoa_tec_2022', TZ: 'eac_common_external_tariff', UG: 'eac_common_external_tariff', RW: 'eac_common_external_tariff' } as Record<string, string>)[country];
+      if (union) expect(DESTINATION_ADAPTERS[country]?.provider_key, country).toBe(union);
+      else expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
   });
 
   test('Mega-Wave D blockers complete independently without tariff evidence or invented zeroes', async () => {
-    const countries = ['CN', 'TH', 'BN', 'KH', 'LA', 'MN', 'AE', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'GH', 'CI', 'SN', 'TZ', 'UG', 'RW', 'ZM', 'BW', 'NA'];
+    // GH, CI, SN, TZ, UG and RW left with D-028: their ingest reads their union's common external tariff.
+    const countries = ['CN', 'TH', 'BN', 'KH', 'LA', 'MN', 'AE', 'LB', 'BR', 'EC', 'BO', 'GT', 'SV', 'HN', 'NI', 'BZ', 'ZM', 'BW', 'NA'];
     const outcomes = await Promise.all(countries.map((country) => runMarketAccessIngest({
       job_id: `mega-wave-d-${country}`,
       payload: { country_code: country, hs_code: '100630', origin_country: 'IN' },
     } as never)));
 
-    expect(outcomes).toHaveLength(25);
+    expect(outcomes).toHaveLength(19);
     for (const [index, outcome] of outcomes.entries()) {
       const result = outcome.result as Record<string, unknown>;
       expect(outcome.status, countries[index]).toBe('completed');
@@ -494,7 +501,9 @@ TH: 'individual_investigation_required', BN: 'individual_investigation_required'
       expect(source!.reason, country).toBe(reason);
       expect(source!.references.length, country).toBeGreaterThan(0);
       expect(source!.unblocked_by.trim().length, country).toBeGreaterThan(40);
-      expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
+      // D-028: Ghana's own tariff stays researched; its duty is read from the ECOWAS common tariff.
+      if (country === 'GH') expect(DESTINATION_ADAPTERS.GH?.provider_key, country).toBe('ecowas_cet_uemoa_tec_2022');
+      else expect(DESTINATION_ADAPTERS[country], country).toBeUndefined();
     }
 
     for (const country of ['MV']) {

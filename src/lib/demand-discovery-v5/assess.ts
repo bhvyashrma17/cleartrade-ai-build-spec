@@ -232,7 +232,7 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
         for (const key of ['market_size', 'growth', 'stability', 'india_foothold', 'price_headroom', 'openness', 'distance_fit', 'price_fit', 'volume_fit'] as const) metrics.push(unavailableTrade(key, reason));
       }
       metrics.push(
-        scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate, agent_recorded: quality.official_agent_recorded }, marketUv),
+        scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate, agent_recorded: quality.official_agent_recorded, common_tariff: quality.official_common_tariff }, marketUv),
         scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy, input.lpi_too_old?.get(context.market) ?? null, logisticsEstimate(context.market)),
         scoreCountryRisk(rating ?? null, quality.official, policy),
       );

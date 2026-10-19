@@ -124,7 +124,7 @@ below live in `demand_discovery.v5` config and are frozen into the run.
 | 4 | India's foothold · 10 | share `s = X(IN→m) / M(m)` in %, latest year; share score = `40 + 60 × min(1, log10(1+s) / log10(11))`; trend = OLS slope of yearly shares, −5 → 0 to +5 pp/yr → 100; foothold = 70% share + 30% trend | latest year observed |
 | 5 | Price headroom · 10 | `r = UVm / UVin`: `UVm` = quantity-weighted median of the market's supplier unit values, `UVin` = quantity-weighted median of India's export unit values to all markets, both FOB, Tukey 1.5 IQR outliers removed; score = `clamp(50 + 50 × ln r / ln 1.5)` | ≥ 3 supplier flows with quantity, and India's `UVin` |
 | 6 | Openness · 5 | `HHI = Σ share_s²`; score = `100 × (1 − HHI)` | latest year, supplier sum within 95–105% of `M` |
-| 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin — India's published preference when it is not a quota (policy v6), else the ordinary rate — specific duties converted with `UVm` (read automatically, or by an agent — quality 0.9, labelled); else a published rule (policy v5 `rule_rates`); else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, a rule, or an estimate input |
+| 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin — India's published preference when it is not a quota (policy v6), else the ordinary rate — specific duties converted with `UVm` (read automatically, or by an agent — quality 0.9, labelled; a customs union's common external tariff read for a member — quality 0.8, labelled, D-028); else a published rule (policy v5 `rule_rates`); else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, a rule, or an estimate input |
 | 8 | Distance fit · 5 | `D̄ = Σ wₛ ln dist(s,m)` (wₛ = supplier value share); `Δ = ln dist(IN,m) − D̄`; score = 100 if `Δ ≤ 0`, else `100 × e^(−Δ)` | supplier mix and coordinates |
 | 9 | Logistics · 5 | `(LPI − 1) / 4 × 100`; without an LPI (policy v5), the LPI predicted from shipping connectivity: OLS of LPI on `ln(LSCI)` over the run's markets with both (≥ 30), clamped to 1–5, quality 0.5, labelled | an LPI value, or an LSCI value and the fit |
 | 10 | Country risk · 10 | ECGC grade: A1 100, A2 85, B1 70, B2 55, C1 40, C2 20, D 0; Restricted Cover Group I caps at 40, Group II caps at 20; off cover = 0 | the market is on the list |
@@ -163,7 +163,8 @@ points are shared among the rest. A metric is never scored as zero for lack of d
 - Confidence = (live points / 100) × evidence quality × 0.8^lag. Evidence quality is the
   points-weighted mean of each live metric's quality: BACI where the market reported that year 1.0;
   BACI partner-only 0.85; Comtrade-reported fallback 0.9; chain-linked newest year 0.95; duty
-  estimate 0.5; LPI 0.9 (2022 data). Lag = the newest year any market has, minus this market's.
+  estimate 0.5; an official duty read by an agent 0.9; a customs union's common external tariff read
+  for a member 0.8 (D-028); LPI 0.9 (2022 data). Lag = the newest year any market has, minus this market's.
 - Gates run before scoring: comprehensive UN sanctions (initially North Korea) → `excluded`;
   ECGC Group II or off cover → `flagged`; no recorded trade in the window → `no_recorded_demand`.
 
@@ -411,6 +412,11 @@ reads the frozen releases and passes their rows in).
   schedule. Rules stop applying after their review date until checked again.
 - An agent-read line is as good as the reading: the record keeps the reader, the source address and
   the date, and v5 gives it quality 0.9, not 1.
+- A customs union's common external tariff (D-028; docs/37 §4a) is the member's rate except where the
+  member applies a line its own way. Lines the release records as applied differently (EAC stays, EAEU
+  tariff notes) are not scored automatically; national exception lists that are not in the release
+  (Kazakhstan's WTO-commitment rates, for one) are not modelled, so v5 gives these duties quality 0.8
+  and says whose tariff they are.
 - The logistics estimate assumes that LPI and shipping connectivity move together; the fit's r² is
   recorded with every estimate. WDI's copy of the index ends in 2020 for most markets.
 - A Treasury reporting rate is quarterly (amended only after a 10% move), so a duty in such a currency

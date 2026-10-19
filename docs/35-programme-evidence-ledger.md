@@ -918,6 +918,88 @@ Treasury-converted price.
    refuses the worker, run `--acquire-only --out=<file>` inside the window on a machine that can reach
    it and import the file with `import-retained-authority-release.ts --family=SG`.
 
+### E-023 · 2026-10-18 · Customs-union tariffs read for 24 members (in review)
+
+**Decision applied:** D-028 — a customs union's common tariff counts as its members' official duty
+before national exceptions are modelled, labelled and below full quality.
+
+**Sources** (retrieved 18 Oct 2026 through the owner's browser; pinned in
+`src/lib/market-access/providers/customs-union-sources.ts`):
+
+| File | Bytes | SHA-256 | From |
+|---|---|---|---|
+| UEMOA TEC 2022 v4 (PDF, 482 pages) | 2,739,663 | `e7774d3f…c5ae` | UEMOA Commission document centre |
+| EAC CET 2022 as updated June 2025 (PDF, 577 pages) | 4,818,693 | `9d894c29…af9f` | East African Business Council library |
+| EAC Gazette Vol. AT 1 No. 16, 30 June 2026 (PDF, 122 pages) | 2,034,714 | `555b8fdd…3907` | East African Business Council library |
+| EAEU Council Decision No. 80, consolidated (Adilet API JSON, updated 15 Sep 2026) | 5,349,622 | `34724774…ed88` | Kazakhstan's Legal Information System |
+
+The EAC Secretariat's repository did not answer, so both EAC publications came from the EABC's library;
+they are the official texts and their checksums are pinned. The EAEU text's editor's note announces
+nomenclature amendments (Board Decision No. 43 of 7 Apr 2026, in force no earlier than 1 Jul 2026) that
+it did not yet carry.
+
+**Built** on `dd5/customs-unions`, stacked on PR #6 (docs/36 §4, §9; docs/37 §1, §4, §4a, §5, §7, §8):
+- Members served: ECOWAS (UEMOA edition, DD column) BF, BJ, CI, GH, GM, GN, GW, LR, ML, NE, NG, SL, SN,
+  TG; EAC BI, KE, RW, TZ, UG; EAEU AM, BY, KG, KZ, RU. Not served: Cabo Verde (own Pauta Aduaneira) and
+  South Sudan (applies the EAC CET only in part).
+- `customs-union-parsers.ts`: UEMOA and EAC PDFs from pdfjs coordinates (columns from each page's header
+  row; a continuation page without one uses the last headed page with the same layout; a rate is tied to
+  its code row wherever the wrapped description puts it); the Gazette's tables by notice and table, the
+  amendment table's new rates by row; the EAEU HTML rows with rate forms and footnote marks. Duty
+  remission notices are not read.
+- `customs-union-sources.ts` assembles the lines: EAC sensitive items at their Schedule 2 rate, the ten
+  amended lines at their new rate, stays as exceptions (Kenya: table III; Uganda: II, IV–VII; tables I,
+  VIII and IX, which name states row by row, for every member); EAEU rates under a tariff note as
+  exceptions for every member.
+- `customs-union-bundle.ts` (deterministic bundle; reading checks every file against the pins, the line
+  count and each line), `customs-union-market-access.ts` (the member's result names the union and what is
+  not modelled for it; no duty where the release records the member applies a line differently; nothing
+  after the EAC release's 30 June 2027), `customs-union-service.ts` (shared release lifecycle; a member
+  of a union without an active release is `no_release`). 24 adapters (connected 81, researched 48,
+  directory 89); members keep their national source as the agent's pointer.
+- v5: `quality.official_common_tariff` 0.8, inside policy v6 (no run has used v6); the reason reads
+  "under the <union> common external tariff; this market's own exceptions are not checked".
+- `scripts/build-customs-union-bundle.ts` builds a bundle from the official files without a database;
+  `import-retained-authority-release.ts` takes `--family=EAEU|ECOWAS|EAC`.
+
+**Real files, read locally (18 Oct):**
+- ECOWAS: 380 tariff pages, 6,380 lines (0% 102, 5% 2,368, 10% 1,469, 20% 2,289, 35% 152), no conflicts.
+  The text's only other ten-digit code (8701.20.10.00) appears inside descriptions.
+- EAC: Schedule 1 5,961 lines — every eight-digit code row in the text — and Schedule 2 50 (all 50 "SI"
+  resolved); 10 amendments, all on Schedule 1 lines; 1,056 codes named in stays (1,055 on Schedule 1
+  lines). Duties: 5,911 ad valorem, 50 "the higher of" mixed.
+- EAEU: 13,007 lines: 11,229 ad valorem, 503 euro per unit, 1,000 "not less than", 34 added, 214 set only
+  by a note, 27 other forms (kept, unparsed); 1,212 carry a tariff note.
+- Bundles, rebuilt byte-identical: ECOWAS 2,050,473 bytes `ce0cc831b182562414776d930f3f06892f782db23bc5afe8a1a48ff8ced38454`;
+  EAC 5,198,660 bytes `ae02dfdf82348b279940163f1cd02fa1db44119a7e2ebbe539e8a0c4f16f02d3`; EAEU 851,709 bytes
+  `16d9ceb360f67f0b10ce597f7ecb84f319077b1b44ce44e931ef4e9861d338a1`.
+- Read back through the market-access code at 18 Oct 2026, for example: Senegal and Nigeria rice 10%,
+  shirts 20%, medicines 0%; Kenya and Tanzania tea 35%, cotton yarn 10%, shirts 25%, rice not scored
+  (Gazette stay); Russia and Kazakhstan tea 0%, cotton yarn 5%, cotton T-shirts €1.75/kg, medicines and
+  auto parts not scored (tariff notes), rice split across lines with different duties.
+
+**Checks run.** New tests: `customs-union-parsers` (7), `customs-union-pack` (4). Updated:
+`market-access-providers`, `market-access-job-routing`, `tariff-source-directory`,
+`green-wave-authority-pack`. Full suite in one schema: 149 files, 2,215 passed, 5 skipped, 3 failed — the
+three local-harness-only failures of E-006. `tsc --noEmit` (scripts included) and ESLint clean on every
+changed file. CI on PR #7's head `b19c33e` (run 39125800182): passed. The three import commands below
+were run as written, apart from the env file, against a throwaway local test database with the
+delivered bundles: each NEW_RELEASE then UNCHANGED, and active. Read back from those releases at 18 Oct
+2026: Senegal rice 10%, Nigeria cotton shirts 20%, Kenya black tea 35%, Tanzania rice not scored (stay),
+Russia black tea 0%, Kazakhstan cotton yarn 5%, Russia medicines not scored (tariff notes).
+
+**Staging after merge** (owner's Claude Code, after PR #6's steps). The three bundles are in
+`~/Downloads/cleartrade-union-bundles/` on the owner's Mac (delivered 18 Oct; SHA-256 checked there); a
+rebuild from the official files in `~/Downloads` with `scripts/build-customs-union-bundle.ts` gives the
+same bytes. For each union, with `D=~/Downloads/cleartrade-union-bundles`:
+```
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=ECOWAS --file=$D/cleartrade-union-ECOWAS-uemoa-tec-2022-v4.zip --expect-sha256=ce0cc831b182562414776d930f3f06892f782db23bc5afe8a1a48ff8ced38454 --release=uemoa-tec-2022-v4 --reference-date=2024-09-01 --retrieved-at=2026-10-18 --source-url=https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=EAC --file=$D/cleartrade-union-EAC-cet-2022-ln160-2026.zip --expect-sha256=ae02dfdf82348b279940163f1cd02fa1db44119a7e2ebbe539e8a0c4f16f02d3 --release=eac-cet-2022-jun2025-ln160-2026 --reference-date=2026-06-30 --retrieved-at=2026-10-18 --source-url="https://eabc-online.com/download/eac-common-external-tariff-version-2022-as-updated-june-2025/?wpdmdl=11694" --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=EAEU --file=$D/cleartrade-union-EAEU-adilet-2026-09-15.zip --expect-sha256=16d9ceb360f67f0b10ce597f7ecb84f319077b1b44ce44e931ef4e9861d338a1 --release=adilet-H21EV000080-2026-09-15 --reference-date=2026-09-15 --retrieved-at=2026-10-18 --source-url=https://adilet.zan.kz/rus/docs/H21EV000080 --actor-email=<ops supervisor> --activate
+```
+Each import runs twice and must report the second as UNCHANGED. Then run a product with a member market
+(Senegal or Kenya): its duty reads "under the … common external tariff".
+
 ## Risk register
 
 
@@ -949,3 +1031,5 @@ Treasury-converted price.
 | R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Accepted (D-028): allowed as built, one cited rate per line | Automated reading of these sources still waits for each licence |
 | R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |
 | R-26 | The Railway worker may not reach Singapore Statutes Online, or SSO may refuse automated requests from a cloud address; the live First Schedule has only been read through fixtures that follow the reviewed pack | Open (E-022) — nothing is fetched until `market_access.authority_refresh` is switched on; failures are recorded and the release in use is untouched | The first window run on staging is the live qualification; otherwise `--acquire-only` on a machine that can reach SSO, inside the window, and import the file |
+| R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
+| R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |

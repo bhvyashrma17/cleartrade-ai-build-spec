@@ -65,7 +65,7 @@ export interface DemandDiscoveryV5Policy {
   confidence: { recency_decay_per_year: number };
   /** §5.3: a newest-year change beyond this factor either way is treated as a provisional-data error. */
   chain_link: { max_change_ratio: number };
-  quality: { baci_market_reported: number; baci_partner_only: number; comtrade_fallback: number; chain_linked: number; duty_estimate: number; logistics_lpi: number; logistics_lsci_estimate: number; official: number; official_agent_recorded: number };
+  quality: { baci_market_reported: number; baci_partner_only: number; comtrade_fallback: number; chain_linked: number; duty_estimate: number; logistics_lpi: number; logistics_lsci_estimate: number; official: number; official_agent_recorded: number; official_common_tariff: number };
   hs_revision: { max_total_divergence: number };
   labels: { big_size_score: number; big_growth_score: number; india_sells_share_percent: number; pays_above_ratio: number; low_duty_percent: number; hub_reexport_ratio: number };
   /** Markets excluded outright (D-016): comprehensive UN sanctions. */
@@ -81,6 +81,9 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   // no LPI exists (D-025). No run used v4.
   // v6 (18 Oct 2026): duty.score_india_preference — India's published preference, when it is not a
   // tariff quota, is scored instead of the ordinary rate (D-026).
+  //     v6 also carries quality.official_common_tariff (D-028): a customs union's common external
+  //     tariff read as the official rate for a member, below full quality because national
+  //     exceptions are not modelled. No run used v6 before this was added.
   policy_version: 'demand-discovery-v5-policy-v6',
   model_version: DEMAND_DISCOVERY_V5_MODEL,
   points: {
@@ -171,7 +174,7 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   ranking: { minimum_live_points: 60, required_metrics: ['market_size', 'growth'], handoff_count: 10 },
   confidence: { recency_decay_per_year: 0.8 },
   chain_link: { max_change_ratio: 10 },
-  quality: { baci_market_reported: 1, baci_partner_only: 0.85, comtrade_fallback: 0.9, chain_linked: 0.95, duty_estimate: 0.5, logistics_lpi: 0.9, logistics_lsci_estimate: 0.5, official: 1, official_agent_recorded: 0.9 },
+  quality: { baci_market_reported: 1, baci_partner_only: 0.85, comtrade_fallback: 0.9, chain_linked: 0.95, duty_estimate: 0.5, logistics_lpi: 0.9, logistics_lsci_estimate: 0.5, official: 1, official_agent_recorded: 0.9, official_common_tariff: 0.8 },
   hs_revision: { max_total_divergence: 0.02 },
   labels: { big_size_score: 70, big_growth_score: 60, india_sells_share_percent: 1, pays_above_ratio: 1.2, low_duty_percent: 5, hub_reexport_ratio: 0.5 },
   excluded_markets: { KP: 'Comprehensive UN Security Council sanctions (resolution 1718 and successors)' },
@@ -204,6 +207,8 @@ export function assertPolicy(policy: DemandDiscoveryV5Policy) {
   if (!(policy.window_years >= 2)) throw new Error('The window needs at least two years.');
   if (!(policy.duty.official_minimum_confidence >= 0 && policy.duty.official_minimum_confidence <= 100)) throw new Error('The official duty confidence minimum must be a percentage.');
   if (typeof policy.duty.score_india_preference !== 'boolean') throw new Error('duty.score_india_preference must be true or false.');
+  for (const [key, value] of Object.entries(policy.quality)) if (!(value > 0 && value <= 1)) throw new Error(`quality.${key} must be in (0, 1].`);
+  if (!(policy.quality.official_common_tariff < policy.quality.official)) throw new Error('A common external tariff must score below a national official tariff.');
   if (!(Number.isInteger(policy.world_bank.max_age_years) && policy.world_bank.max_age_years >= 0)) throw new Error('The World Bank age limit must be a whole number of years.');
   if (!(Number.isInteger(policy.logistics.lsci_fallback_minimum_pairs) && policy.logistics.lsci_fallback_minimum_pairs >= 10)) throw new Error('The logistics estimate needs at least ten markets to fit on.');
   for (const [market, entry] of Object.entries(policy.customs_unions)) {

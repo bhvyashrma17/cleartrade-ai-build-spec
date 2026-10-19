@@ -7,6 +7,7 @@ import { DESTINATION_ADAPTERS } from '@/lib/job-handlers/market-access';
 import {
   CUSTOMS_UNION_TARIFFS, TARIFF_SOURCE_DIRECTORY, customsUnionFor, manualTariffCheckFor, officialTariffSourceFor,
 } from '@/lib/market-access/tariff-source-directory';
+import { customsUnionSourceFor } from '@/lib/market-access/providers/customs-union-sources';
 import { unconfiguredSourceForCountry } from '@/lib/market-access/unconfigured-sources';
 
 /** D-024: every market Demand Discovery screens has a known place its official tariff comes from. */
@@ -32,14 +33,15 @@ describe('tariff source directory', () => {
       if (source.kind === 'none') missing.push(code);
     }
     expect(missing).toEqual([]);
-    expect(Object.fromEntries(kinds)).toEqual({ connected: 57, documented: 61, directory: 100 });
+    expect(Object.fromEntries(kinds)).toEqual({ connected: 81, documented: 48, directory: 89 });
   });
 
   test('a directory entry never shadows a researched determination, nor a connected adapter except where its read can leave a duty open', () => {
     for (const code of Object.keys(TARIFF_SOURCE_DIRECTORY)) {
       expect(unconfiguredSourceForCountry(code), code).toBeNull();
-      // Andorra outside its customs union; Singapore before its first nightly copy (D-029).
-      if (!['AD', 'SG'].includes(code)) expect(DESTINATION_ADAPTERS[code], code).toBeUndefined();
+      // Andorra outside its customs union; Singapore before its first nightly copy (D-029); a customs
+      // union's members, whose own exceptions are checked at the national source (D-028).
+      if (!['AD', 'SG'].includes(code) && !customsUnionSourceFor(code)) expect(DESTINATION_ADAPTERS[code], code).toBeUndefined();
     }
   });
 
@@ -79,7 +81,11 @@ describe('tariff source directory', () => {
 
   test('where an agent checks a duty by hand: nowhere for a connected market, the source otherwise', () => {
     expect(manualTariffCheckFor('DE')).toBeNull();
-    expect(manualTariffCheckFor('KE')).toMatchObject({ authority: expect.stringContaining('Kenya Revenue Authority'), source_url: expect.stringMatching(/^https:\/\//) });
+    // D-028: Kenya is read from the EAC common tariff; where Kenya applies a line its own way, its national source is the pointer.
+    expect(manualTariffCheckFor('KE')).toMatchObject({ authority: expect.stringContaining('Kenya Revenue Authority'), source_url: expect.stringMatching(/^https:\/\//), note: expect.stringContaining('EAC common external tariff') });
+    expect(manualTariffCheckFor('BJ')).toMatchObject({ authority: expect.stringContaining('Bénin'), note: expect.stringContaining('ECOWAS common external tariff') });
+    expect(officialTariffSourceFor('CV')).toMatchObject({ kind: 'directory' });
+    expect(officialTariffSourceFor('SS')).toMatchObject({ kind: 'directory' });
     expect(manualTariffCheckFor('MM')).toMatchObject({ source_url: expect.stringContaining('mopf.gov.mm') });
     // Andorra: the EU tariff covers brassware (chapter 74), not rice (chapter 10).
     expect(manualTariffCheckFor('AD', '741810')).toBeNull();

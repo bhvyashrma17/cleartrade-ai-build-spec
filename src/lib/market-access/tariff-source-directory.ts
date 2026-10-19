@@ -8,7 +8,8 @@
  * the official page, schedule or law where the current rates can be read, and the customs union
  * whose common external tariff the market applies. A connected market appears here only where its
  * automatic read can leave a duty estimated for a reason an agent can check by hand: Andorra's
- * chapters 1–24, and Singapore while no nightly copy is saved (D-029).
+ * chapters 1–24, Singapore while no nightly copy is saved (D-029), and the members of a customs union
+ * read from its common external tariff, whose own exceptions are checked at the national source (D-028).
  *
  * It is guidance for a ClearTrade agent checking a duty by hand. Nothing here is tariff evidence and
  * nothing here is scored: an agent who reads a rate from one of these sources records it through the
@@ -18,6 +19,7 @@
  * `source_url` means no official copy was found online; the agent then asks the authority directly.
  */
 import { DESTINATION_ADAPTERS } from '@/lib/job-handlers/market-access';
+import { customsUnionSourceFor } from './providers/customs-union-sources';
 import { unconfiguredSourceForCountry } from './unconfigured-sources';
 
 export const TARIFF_SOURCE_DIRECTORY_CHECKED_ON = '2026-10-17';
@@ -55,21 +57,21 @@ export const CUSTOMS_UNION_TARIFFS: Readonly<Record<string, CustomsUnionTariff>>
     members: ['BJ', 'BF', 'CV', 'CI', 'GM', 'GH', 'GN', 'GW', 'LR', 'ML', 'NE', 'NG', 'SN', 'SL', 'TG'],
     authority: 'ECOWAS Commission',
     source_url: 'https://ecotis.ecowas.int/?p=24111',
-    note: 'Five bands from 0% to 35%, plus national supplementary measures and Community levies.',
+    note: 'Five bands from 0% to 35%, plus national supplementary measures and Community levies. Read automatically for every member but Cabo Verde, which keeps its own tariff, from the UEMOA edition (D-028).',
   },
   UEMOA: {
     name: 'UEMOA edition of the ECOWAS common external tariff',
     members: ['BJ', 'BF', 'CI', 'GW', 'ML', 'NE', 'SN', 'TG'],
     authority: 'UEMOA Commission',
     source_url: 'https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf',
-    note: 'TEC 2022, version 4: one schedule for all eight UEMOA members, with the regional levies.',
+    note: 'TEC 2022, version 4: one schedule for all eight UEMOA members, with the regional levies. Connected (D-028): its DD column is read as the ECOWAS common external tariff.',
   },
   EAC: {
     name: 'East African Community common external tariff',
     members: ['KE', 'UG', 'TZ', 'RW', 'BI', 'SS', 'CD', 'SO'],
     authority: 'EAC Secretariat',
     source_url: 'https://repository.eac.int/items/e30ab63f-9077-40d3-9b44-8f9863584319',
-    note: 'CET 2022 (four bands: 0%, 10%, 25%, 35%), changed each July by the EAC Gazette, with per-country stays of application. DR Congo and Somalia have joined but do not yet apply it.',
+    note: 'CET 2022 (four bands: 0%, 10%, 25%, 35%), changed each July by the EAC Gazette, with per-country stays of application. DR Congo and Somalia have joined but do not yet apply it. Connected (D-028) for Burundi, Kenya, Rwanda, Tanzania and Uganda with the 2026/27 Gazette; South Sudan applies it only in part.',
   },
   CEMAC: {
     name: 'CEEAC–CEMAC common external tariff',
@@ -90,7 +92,7 @@ export const CUSTOMS_UNION_TARIFFS: Readonly<Record<string, CustomsUnionTariff>>
     members: ['RU', 'BY', 'KZ', 'KG', 'AM'],
     authority: 'Eurasian Economic Commission',
     source_url: 'https://adilet.zan.kz/rus/docs/H21EV000080',
-    note: 'EEC Council Decision No. 80 of 14 September 2021 and its amendments. Kazakhstan, Kyrgyzstan and Armenia apply lower WTO-commitment rates on listed lines.',
+    note: 'EEC Council Decision No. 80 of 14 September 2021 and its amendments. Kazakhstan, Kyrgyzstan and Armenia apply lower WTO-commitment rates on listed lines. Connected (D-028) from the consolidated text; those national rates are not modelled.',
   },
   GCC: {
     name: 'Gulf Cooperation Council common customs tariff',
@@ -313,6 +315,15 @@ export function manualTariffCheckFor(countryCode: string, hs6?: string): { autho
   const source = officialTariffSourceFor(code);
   if (source.kind === 'connected') {
     const entry = TARIFF_SOURCE_DIRECTORY[code];
+    // D-028: a common-tariff duty is left open where the member applies a line its own way; its
+    // national source (directory entry or researched source) is where that is checked.
+    const union = customsUnionSourceFor(code);
+    if (union) {
+      const documented = unconfiguredSourceForCountry(code);
+      const authority = entry?.authority ?? documented?.authority;
+      if (!authority) return null;
+      return { authority, source_url: entry?.source_url ?? documented?.references[0] ?? null, note: `Read automatically from the ${union.label}; check here for this market's own exceptions. ${union.member_notes[code] ?? ''}`.trim() };
+    }
     if (!entry) return null;
     const chapter = hs6 ? Number(hs6.slice(0, 2)) : null;
     if (code === 'AD' && !(chapter != null && chapter < 25)) return null;
