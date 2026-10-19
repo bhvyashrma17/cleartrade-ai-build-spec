@@ -176,15 +176,12 @@ export const UNCONFIGURED_MARKET_ACCESS_SOURCES: Readonly<Record<string, Unconfi
     references: ['https://www.bahrain.bh/wps/portal/en/BNP/ServicesCatalogue/GSX-UI-PServiceDetails?psID=1322', 'https://bahrain.bh/wps/portal/CustomsConditionsRegulations_en', 'https://www.bahrain.bh/wps/wcm/connect/0d8e85f5-f34a-4e2c-bcba-e75debbe32c9/Open%2BData%2BLicense%2B%D8%B1%D8%AE%D8%B5%D8%A9%2B%D8%A7%D9%84%D8%A8%D9%8A%D8%A7%D9%86%D8%A7%D8%AA%2B%D8%A7%D9%84%D9%85%D9%81%D8%AA%D9%88%D8%AD%D8%A9.pdf?CVID=pxw8t4P&MOD=AJPERES'],
     unblocked_by: 'A Bahrain-eligible Ofoq account must acquire the current e-copy and preserve its purchase terms; those terms must permit ClearTrade retention/transformation, after which its schema, national overlays, update history and India treatment can be qualified.',
   },
-  SG_CUSTOMS_STCCED: {
-    jurisdiction: 'SG',
-    country_codes: ['SG'],
-    authority: 'Attorney-General’s Chambers of Singapore — Singapore Statutes Online, Customs (Duties) Order (O 4)',
-    reason: 'source_insufficient',
-    determination: 'A sanctioned autonomous route exists: the current consolidated First Schedule publishes the 8-digit code, description, unit, full and preferential customs duty and excise duty; SSO permits electronic-platform reproduction and automated extraction from 03:00–07:00 Singapore Time under its stated conditions. The provider, immutable bundle reader, duty-component parser and acquisition-window gate are implemented. Activation remains fail-closed because no complete current SSO artifact has yet been acquired and qualified during that permitted window; fixture tests are not live authority qualification.',
-    references: ['https://sso.agc.gov.sg/SL/CA1960-OR4?ProvIds=Sc4-XX-Sc4-', 'https://sso.agc.gov.sg/Terms-of-Use', 'https://www.customs.gov.sg/doing-business/business-resources/hs-classification-of-goods/classifying-my-products/'],
-    unblocked_by: 'During 03:00–07:00 Singapore Time, run the implemented official acquisition, retain the complete current consolidated bundle, and pass full row-count/layout, real-line semantic, deterministic replay and live authority qualification checks before wiring SG into the destination adapter and staging-pending queue.',
-  },
+  // SG_CUSTOMS_STCCED was here until D-029 (18 Oct 2026). Singapore Statutes Online permits automated
+  // extraction from 03:00 to 07:00 Singapore Time, so the worker now saves the consolidated First
+  // Schedule in that window every night and runs read the saved release
+  // (src/lib/market-access/providers/singapore-refresh.ts). Until the first saved copy passes
+  // qualification a run records `no_release` for Singapore; the SSO source stays the manual pointer
+  // (tariff-source-directory.ts).
   MV_CUSTOMS_TARIFF: {
     jurisdiction: 'MV',
     country_codes: ['MV'],

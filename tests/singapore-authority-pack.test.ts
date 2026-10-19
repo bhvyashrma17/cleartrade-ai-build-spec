@@ -129,8 +129,10 @@ describe('Singapore First Schedule semantics', () => {
 });
 
 describe('Singapore qualification boundary', () => {
-  test('provider code exists but routing stays fail-closed until a lawful live full-schedule qualification', () => {
-    expect(DESTINATION_ADAPTERS.SG).toBeUndefined();
-    expect(unconfiguredSourceForCountry('SG')).toMatchObject({ reason: 'source_insufficient' });
+  test('D-029: routed as a retained release saved in the SSO window; a run reads only a qualified, activated copy', () => {
+    // The adapter reads the active release and nothing else: before the nightly refresh has saved
+    // and qualified one, the acquisition records `no_release` (tests/demand-discovery-v5-tariff-step).
+    expect(DESTINATION_ADAPTERS.SG).toMatchObject({ provider_key: 'sg_sso_customs_duties_order', retrieval: 'retained_release' });
+    expect(unconfiguredSourceForCountry('SG')).toBeNull();
   });
 });

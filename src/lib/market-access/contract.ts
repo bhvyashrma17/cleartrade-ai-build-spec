@@ -45,7 +45,13 @@ export type NationalCodeSystem =
   | 'UZ_TN_VED'
   | 'VN_AHTN_2022'
   | 'MA_TDI_2022'
-  | 'TN_NDP_2022';
+  | 'TN_NDP_2022'
+  /** D-028: a customs union's common external tariff, serving each member (`customs-union-sources.ts`). */
+  | 'EAEU_CN_FEA'
+  | 'ECOWAS_CET_NTS'
+  | 'EAC_CET_HS2022'
+  /** A declarable line an agent read from a market's own official tariff (`manual-capture-service.ts`). */
+  | 'NATIONAL_TARIFF_LINE';
 
 /**
  * Discovery-grade evidence compares markets while exposing what is still unresolved.
@@ -208,6 +214,10 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
       geographic_area_id: preference.geographic_area_id,
       applicability: preference.applicability,
       basis: preference.basis,
+      // D-026: v5 scores a published India preference unless it is a tariff quota, from the pack's
+      // own reading of the preferential duty (the shared expression parser does not read "Free").
+      ...(preference.is_quota != null ? { is_quota: preference.is_quota } : {}),
+      ...(preference.duty ? { duty: preference.duty as unknown } : {}),
       ...(preference.raw_evidence ?? {}),
     } as Prisma.InputJsonValue,
   });

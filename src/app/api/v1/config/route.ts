@@ -15,7 +15,7 @@ import { requirePrincipal } from '@/lib/auth';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
-import { marketAccessOrchestrationPolicyProblems } from '@/lib/config';
+import { authorityRefreshConfigProblems, marketAccessOrchestrationPolicyProblems } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { updateConfigSchema, zodFieldErrors } from '@/lib/validators';
 
@@ -42,6 +42,10 @@ export async function POST(request: NextRequest) {
 
     if (key === 'country_truth.market_access_orchestration') {
       const problems = marketAccessOrchestrationPolicyProblems(value);
+      if (problems.length) throw validationError(problems.map((message) => ({ field: 'value', code: 'invalid', message })));
+    }
+    if (key === 'market_access.authority_refresh') {
+      const problems = authorityRefreshConfigProblems(value);
       if (problems.length) throw validationError(problems.map((message) => ({ field: 'value', code: 'invalid', message })));
     }
 

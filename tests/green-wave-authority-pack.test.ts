@@ -157,8 +157,11 @@ describe('green-wave country semantics and routing', () => {
     for (const country of ['NP', 'BT', 'AL', 'MU', 'LK']) { expect(DESTINATION_ADAPTERS[country]?.provider_key).toBe(GREEN_WAVE_CONFIGS[country as keyof typeof GREEN_WAVE_CONFIGS].provider); expect(unconfiguredSourceForCountry(country)).toBeNull(); }
     expect(unconfiguredSourceForCountry('ME')?.reason).toBe('individual_investigation_required');
     expect(unconfiguredSourceForCountry('MK')?.reason).toBe('individual_investigation_required');
-    // 45 accepted + Sri Lanka, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia pending + six customs-territory aliases pending.
-    expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(60);
+    // 45 accepted + Sri Lanka, Indonesia, Saudi Arabia, Qatar, Kuwait, Uzbekistan, Vietnam, Morocco and Tunisia pending + six customs-territory aliases pending
+    // + Martinique, San Marino and Andorra (chapters 25–97) on the EU tariff
+    // + Singapore, read from the copy saved nightly in the SSO window (D-029)
+    // + 24 customs-union members on their union's common external tariff (D-028).
+    expect(Object.keys(DESTINATION_ADAPTERS)).toHaveLength(88);
   });
 });
 

@@ -9,6 +9,7 @@
  * conditional UPDATE, so two workers cannot take the same row.
  *
  * Loop, per tick:
+ *   0. the hourly membership sweep and the nightly authority-window refresh (each self-throttled)
  *   1. reclaim jobs abandoned by a crashed worker
  *   2. claim one job and run it
  *   3. if nothing was claimable, sleep for the configured interval
@@ -26,6 +27,7 @@ import {hostname} from 'node:os';
 import {log,reportError} from '../src/lib/observability';
 import {validateRuntimeEnvironment} from '../src/lib/runtime-config';
 import {expireLapsedMemberships} from '../src/lib/billing/subscription-service';
+import {runDueAuthorityRefreshes} from '../src/lib/market-access/providers/singapore-refresh';
 
 let shuttingDown = false;
 let activeJobId: string | null = null;
@@ -52,6 +54,27 @@ async function sweepLapsedMemberships(): Promise<void> {
   const { downgraded } = await expireLapsedMemberships({ correlationId: `worker-membership-sweep:${instanceId}` });
   if (downgraded.length > 0) log('info', 'memberships_expired', { count: downgraded.length });
 }
+
+/**
+ * D-029: official tariffs an authority lets us fetch only in a window (Singapore Statutes Online,
+ * 03:00–07:00 Singapore Time) are saved here, inside it, so runs at any hour read the saved copy.
+ * Outside the window this reads nothing; inside it, `singapore-refresh.ts` decides from the switch
+ * (`market_access.authority_refresh`, off by default) and tonight's attempts whether to fetch.
+ * A refresh failure is recorded and reported, never allowed to stop the job loop.
+ */
+const AUTHORITY_REFRESH_SWEEP_INTERVAL_MS = Number(process.env.AUTHORITY_REFRESH_SWEEP_INTERVAL_MS ?? 600_000);
+let lastAuthorityRefreshAt = 0;
+
+async function sweepAuthorityRefresh(): Promise<void> {
+  if (Date.now() - lastAuthorityRefreshAt < AUTHORITY_REFRESH_SWEEP_INTERVAL_MS) return;
+  lastAuthorityRefreshAt = Date.now();
+  try {
+    const { singapore } = await runDueAuthorityRefreshes({ correlation_id: `worker-authority-refresh:${instanceId}:${new Date().toISOString().slice(0, 10)}` });
+    if (singapore.status !== 'not_due') log(singapore.status === 'failed' ? 'warn' : 'info', 'authority_refresh', { source: 'SG_SSO_CUSTOMS_DUTIES', status: singapore.status, release_id: singapore.release_id ?? undefined, reason: singapore.reason ?? undefined });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_authority_refresh' });
+  }
+}
 const instanceId=process.env.WORKER_INSTANCE_ID??`${hostname()}-${process.pid}`,heartbeatId=`worker:${instanceId}`;
 let consecutiveFailures=0;
 async function heartbeat(status='ready',lastError?:string){await prisma.workerHeartbeat.upsert({where:{id:heartbeatId},create:{id:heartbeatId,instance_id:instanceId,status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():null,consecutive_failures:consecutiveFailures},update:{status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():undefined,consecutive_failures:consecutiveFailures}});}
@@ -62,6 +85,7 @@ async function tick(): Promise<boolean> {
   // Before claiming work, not after: a tick that finds a job returns early below, so a
   // busy worker would otherwise never reach the sweep at all.
   await sweepLapsedMemberships();
+  await sweepAuthorityRefresh();
 
   const reclaimed = await reclaimStaleJobs();
   if (reclaimed.requeued || reclaimed.failed) {

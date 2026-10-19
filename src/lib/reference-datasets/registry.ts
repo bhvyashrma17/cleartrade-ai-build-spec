@@ -4,6 +4,9 @@
  * what form its bytes take.
  */
 import { z } from 'zod';
+import { CAPITALS_SUPPLEMENT_KEY, CAPITALS_SUPPLEMENT_PARSER_VERSION, capitalSupplementRowSchema, parseCapitalsSupplement } from './capitals-supplement';
+import { CURRENCY_PEGS_KEY, CURRENCY_PEGS_PARSER_VERSION, currencyPegRowSchema, parseCurrencyPegs } from './currency-pegs';
+import { SANCTIONS_PROGRAMMES_KEY, SANCTIONS_PROGRAMMES_PARSER_VERSION, parseSanctionsProgrammes, sanctionsProgrammeRowSchema } from './sanctions-programmes';
 import { ECGC_PARSER_VERSION, ecgcRatingRowSchema, parseEcgcCountryRiskText } from './ecgc';
 import { GEO_CEPII_PARSER_VERSION, capitalRowSchema, parseGeoCepiiCsv } from './geodist';
 import {
@@ -52,6 +55,8 @@ export const WDI_INDICATORS = {
   'LP.LPI.OVRL.XQ': 'Logistics performance index, overall (1 = low to 5 = high)',
   'TM.TAX.MANF.SM.AR.ZS': 'Tariff rate, applied, simple mean, manufactured products (%)',
   'TM.TAX.TCOM.SM.AR.ZS': 'Tariff rate, applied, simple mean, primary products (%)',
+  /** UNCTAD's liner shipping connectivity index as the World Bank republishes it; the v5 logistics estimate (D-025). */
+  'IS.SHP.GCNW.XQ': 'Liner shipping connectivity index (maximum value in 2004 = 100)',
 } as const;
 export type WdiIndicatorId = keyof typeof WDI_INDICATORS;
 
@@ -150,7 +155,49 @@ const GEO_CEPII: ReferenceDatasetDefinition = {
   },
 };
 
-const FIXED: readonly ReferenceDatasetDefinition[] = [INDIA_TRADE_AGREEMENTS, ECGC_COUNTRY_RISK, GEO_CEPII];
+/** Capitals GeoDist does not list, curated with a source per row (docs/36 §9). */
+const CAPITALS_SUPPLEMENT: ReferenceDatasetDefinition = {
+  key: CAPITALS_SUPPLEMENT_KEY,
+  description: 'Capital coordinates for screening markets CEPII GeoDist (2011) does not list',
+  licence: 'curated-from-public-sources',
+  parser_version: CAPITALS_SUPPLEMENT_PARSER_VERSION,
+  source_form: 'curated',
+  row_schema: capitalSupplementRowSchema,
+  parse(bytes) {
+    const parsed = parseCapitalsSupplement(bytes);
+    return { version: `capitals-supplement-v1 compiled ${parsed.compiled_on}`, rows: parsed.rows, validation: { markets: parsed.rows.map((row) => row.iso2) } };
+  },
+};
+
+/** Official fixed exchange rates against a currency the ECB publishes, a source per row (D-025). */
+const CURRENCY_PEGS: ReferenceDatasetDefinition = {
+  key: CURRENCY_PEGS_KEY,
+  description: 'Official fixed exchange rates of currencies the ECB does not publish',
+  licence: 'curated-from-public-sources',
+  parser_version: CURRENCY_PEGS_PARSER_VERSION,
+  source_form: 'curated',
+  row_schema: currencyPegRowSchema,
+  parse(bytes) {
+    const parsed = parseCurrencyPegs(bytes);
+    return { version: `currency-pegs-v1 compiled ${parsed.compiled_on}`, rows: parsed.rows, validation: { currencies: parsed.rows.map((row) => row.currency) } };
+  },
+};
+
+/** Country-level sanctions programmes (UN, US, EU), a legal basis and source per row (D-025). */
+const SANCTIONS_PROGRAMMES: ReferenceDatasetDefinition = {
+  key: SANCTIONS_PROGRAMMES_KEY,
+  description: 'Country-level sanctions programmes of the UN Security Council, the US and the EU',
+  licence: 'curated-from-public-sources',
+  parser_version: SANCTIONS_PROGRAMMES_PARSER_VERSION,
+  source_form: 'curated',
+  row_schema: sanctionsProgrammeRowSchema,
+  parse(bytes) {
+    const parsed = parseSanctionsProgrammes(bytes);
+    return { version: `sanctions-programmes-v1 checked ${parsed.checked_on}`, rows: parsed.rows, validation: { markets: [...new Set(parsed.rows.map((row) => row.country_code))], programmes: parsed.rows.length } };
+  },
+};
+
+const FIXED: readonly ReferenceDatasetDefinition[] = [INDIA_TRADE_AGREEMENTS, ECGC_COUNTRY_RISK, GEO_CEPII, CAPITALS_SUPPLEMENT, CURRENCY_PEGS, SANCTIONS_PROGRAMMES];
 
 export function referenceDatasetDefinition(key: string): ReferenceDatasetDefinition {
   const fixed = FIXED.find((definition) => definition.key === key);

@@ -210,6 +210,11 @@ export interface IndiaPreferenceDetermination {
   basis: string;
   /** The authority's geographic-area identifier the candidate measure was published under. */
   geographic_area_id: string | null;
+  /**
+   * True when the candidate measure is a tariff quota: a volume entitlement that may be exhausted,
+   * never an applied rate to score (D-026). Absent on determinations made before it was recorded.
+   */
+  is_quota?: boolean;
   /** Preference-specific provenance when it is supplied by a different authority than the tariff. */
   source_authority?: string;
   source_reference?: string;
@@ -247,6 +252,7 @@ export function determineIndiaPreference(input: IndiaPreferenceInput): IndiaPref
       applicability: 'potentially_applicable_requires_origin_proof',
       duty: measure.duty,
       geographic_area_id: measure.geographic_area_id,
+      is_quota: false,
       // Even a measure published FOR India is conditional on the goods actually originating in
       // India under that agreement's rules of origin, which is a shipment fact, not a schedule
       // fact. Nothing in a published tariff can establish it.
@@ -260,6 +266,7 @@ export function determineIndiaPreference(input: IndiaPreferenceInput): IndiaPref
       applicability: 'potentially_applicable_requires_origin_proof',
       duty: measure.duty,
       geographic_area_id: measure.geographic_area_id,
+      is_quota: true,
       basis: 'The only India-specific measure is a tariff quota. A quota rate is a volume entitlement, not an unconditional applied rate, and requires quota availability at the time of import.',
     };
   }
@@ -270,6 +277,7 @@ export function determineIndiaPreference(input: IndiaPreferenceInput): IndiaPref
       applicability: 'potentially_applicable_requires_origin_proof',
       duty: measure.duty,
       geographic_area_id: measure.geographic_area_id,
+      is_quota: measure.is_quota,
       basis: `A preferential measure covers group ${measure.geographic_area_id}, which the source proves includes India; rules-of-origin qualification is still required.`,
     };
   }

@@ -7,9 +7,14 @@ import { JobStatus } from '@prisma/client';
 import { getConfig } from '@/lib/config';
 import { forbidden } from '@/lib/errors';
 import { appEnvironment } from '@/lib/evidence-environment';
+import { TREASURY_PROVIDER } from '@/lib/fx/treasury';
+import { singaporeRefreshStatus } from '@/lib/market-access/providers/singapore-refresh';
 import { isOps } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
+import { CAPITALS_SUPPLEMENT_KEY } from '@/lib/reference-datasets/capitals-supplement';
+import { CURRENCY_PEGS_KEY } from '@/lib/reference-datasets/currency-pegs';
+import { SANCTIONS_PROGRAMMES_KEY } from '@/lib/reference-datasets/sanctions-programmes';
 import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import type { Principal } from '@/types';
@@ -39,6 +44,7 @@ export interface V5RunRow {
 function referenceDatasets(latestYear: number | null): Omit<V5DatasetStatus, 'active'>[] {
   return [
     { key: 'wdi:LP.LPI.OVRL.XQ', label: 'World Bank logistics index', when_missing: 'Logistics is not scored.' },
+    { key: 'wdi:IS.SHP.GCNW.XQ', label: 'UNCTAD shipping connectivity (World Bank)', when_missing: 'Markets without a logistics score get no logistics estimate.' },
     { key: 'wdi:TM.TAX.TCOM.SM.AR.ZS', label: 'World Bank tariff average, primary products', when_missing: 'No duty estimate for HS chapters 01–27.' },
     { key: 'wdi:TM.TAX.MANF.SM.AR.ZS', label: 'World Bank tariff average, manufactured products', when_missing: 'No duty estimate for manufactured goods.' },
     ...(latestYear == null ? [] : [
@@ -48,6 +54,9 @@ function referenceDatasets(latestYear: number | null): Omit<V5DatasetStatus, 'ac
     { key: 'india:trade-agreements', label: "India's trade agreements", when_missing: 'Duty estimates assume no trade agreement.' },
     { key: ECGC_COUNTRY_RISK_KEY, label: 'ECGC country risk list (short term)', when_missing: 'Country risk is not scored.' },
     { key: GEO_CEPII_KEY, label: 'CEPII GeoDist capitals', when_missing: 'Distance is not scored.' },
+    { key: CAPITALS_SUPPLEMENT_KEY, label: 'Capitals GeoDist lacks (curated)', when_missing: 'Six markets (BL, BQ, ME, SS, SX, VA) have no distance score.' },
+    { key: SANCTIONS_PROGRAMMES_KEY, label: 'Sanctions programmes (curated)', when_missing: 'Markets carry no UN, US or EU sanctions flag.' },
+    { key: CURRENCY_PEGS_KEY, label: 'Currency pegs (curated)', when_missing: 'Prices and specific duties in pegged currencies the ECB does not publish (SAR, QAR, OMR, NPR, the CFA francs and others) cannot be converted.' },
   ];
 }
 
@@ -72,6 +81,15 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
     orderBy: { observation_date: 'desc' },
     select: { observation_date: true },
   });
+  // D-028: the newest stored US Treasury reporting rate, used for floating currencies the ECB lacks.
+  const latestTreasury = await prisma.authoritativeFxObservation.findFirst({
+    where: { environment, provider: TREASURY_PROVIDER },
+    orderBy: { observation_date: 'desc' },
+    select: { observation_date: true },
+  });
+
+  // D-029: Singapore's tariff is read from the copy the worker saves in its nightly window.
+  const singaporeTariff = await singaporeRefreshStatus();
 
   const since = new Date(Date.now() - 7 * 86_400_000);
   const [recent, counts] = await Promise.all([
@@ -109,10 +127,12 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
       comtrade_newest_year: config.comtrade_newest_year,
       comtrade_market_fallback: config.comtrade_market_fallback,
       fx_fetch_missing: config.fx_fetch_missing,
+      fx_treasury_fallback: config.fx_treasury_fallback,
       tariff_acquisition: config.tariff_acquisition,
       policy_version: config.policy.policy_version,
     },
-    fx: { latest_usd_observation: latestUsd?.observation_date ?? null },
+    fx: { latest_usd_observation: latestUsd?.observation_date ?? null, latest_treasury_observation: latestTreasury?.observation_date ?? null },
+    singapore_tariff: singaporeTariff,
     baci: baci.map((release) => ({ hs_revision: release.hs_revision, dataset_version: release.dataset_version, first_year: release.first_year, last_year: release.last_year, completed_at: release.completed_at, evidence_origin: release.evidence_origin })),
     reference: expected.map((item): V5DatasetStatus => {
       const release = byKey.get(item.key);

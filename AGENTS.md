@@ -181,6 +181,7 @@ govern every PR.
 | `docs/34-phase-1-acceptance-gate.md` | The Phase 1 acceptance gate: proposed thresholds, qualifying-market and Atlas-tariff definitions, evidence matrix, report fields, and the staging runbook for `scripts/gate-phase-1.ts` |
 | `docs/35-programme-evidence-ledger.md` | **Read before starting any roadmap work package.** Append-only record of verified repository/CI/staging state, owner decisions, checks run and open risks |
 | `docs/36-demand-discovery-v5.md` | Demand Discovery v5 (owner-approved 13 Oct 2026): all 218 markets per product from CEPII BACI with Comtrade fallback and newest-year chain-link, the 12 metrics, the five-part score, labels, gates, auto-start on HS confirmation |
+| `docs/37-tariff-sources.md` | Official tariffs for every market (D-024): where each of the 218 markets' tariff comes from (connected, researched, directory, published rule), the agent's recording flow, customs unions, licences and the automation order |
 
 ## Build order (don't build portal-by-portal)
 

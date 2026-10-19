@@ -106,6 +106,10 @@ describe('v5 assessment across every market', () => {
     expect(np).toMatchObject({ flagged: true, flag_reasons: ['ECGC cover is restricted (Group II)'] });
     expect(metricOf(np, 'market_size').quality).toBe(POLICY.quality.baci_partner_only);
     expect(np.labels.map((label) => label.key)).toEqual(expect.arrayContaining(['estimated_from_partners', 'ecgc_cover_restricted']));
+    // D-025: a sanctions programme is a flag beside the ECGC one; the market is scored and ranked exactly as before.
+    const flagged = new Map(assessMarkets(input({ sanctions: new Map([['NP', ['UN: invented programme for the test']], ['US', ['US: another invented one']]]) })).markets.map((market) => [market.market, market]));
+    expect(flagged.get('NP')).toMatchObject({ flagged: true, flag_reasons: ['ECGC cover is restricted (Group II)', 'UN: invented programme for the test'], overall_exact: np.overall_exact, rank: np.rank });
+    expect(flagged.get('US')).toMatchObject({ flagged: true, overall_exact: markets.get('US')!.overall_exact, rank: markets.get('US')!.rank, handed_off: markets.get('US')!.handed_off });
     const mv = markets.get('MV')!;
     expect(mv).toMatchObject({ source: 'comtrade_fallback', window: [2019, 2020, 2021, 2022, 2023], data_year: 2023, lag: 2 });
     expect(metricOf(mv, 'price_headroom').inputs).toMatchObject({ market_valuation: 'cif', year: 2023 });

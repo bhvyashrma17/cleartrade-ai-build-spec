@@ -33,10 +33,19 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-020 | 2026-10-14 | v5 runs look up the product's official tariff in every market with a Customs Atlas source, behind a config switch (`demand_discovery.v5.tariff_acquisition`, on by default) (E-018, E-019). | Owner | Demand Discovery v5 |
 | D-021 | 2026-10-14 | A World Bank value more than 10 years old on the run's date counts as missing (R-20; policy v3). | Owner | Demand Discovery v5 |
 | D-022 | 2026-10-14 | No release-level Comtrade-only fallback: an environment without a BACI release keeps the earlier engine, and the BACI import is part of each environment's bootstrap. The owner's reply "yes" to the recommendation "no" was read as agreement; recorded as such pending correction. | Owner | Demand Discovery v5 |
+| D-023 | 2026-10-14 | Rupee figures beside dollar figures in the Demand Discovery views follow today's ECB rate (the owner chose this over the rate frozen with the run); stored run values stay in US dollars. | Owner | Demand Discovery v5 |
+| D-024 | 2026-10-14 | Official tariffs for every market from free sources, researched country by country, keeping agents' work to a minimum; in parallel the owner asks UNCTAD (TRAINS) and the WTO for permission to show their tariff data in the product. | Owner | Demand Discovery v5, Customs Atlas |
+| D-025 | 2026-10-14 | Fill four further data gaps: the six missing capitals and customs-union duty estimates; a second exchange-rate source (IMF) after a terms check; market-level sanctions programmes from the UN, US and EU lists; UNCTAD's shipping-connectivity index as a logistics fallback after a terms check. | Owner | Demand Discovery v5 |
+| D-026 | 2026-10-18 | v5 scores India's preferential rate where the official tariff publishes one for India and it is not a tariff quota, instead of the ordinary rate; the ordinary rate stays beside it (policy v6, E-022). | Owner | Demand Discovery v5 |
+| D-027 | 2026-10-18 | The agent's 10% is a tenth of ClearTrade's 1% success fee. Owner's words: "yes, but charged as additional agent fee later" — read as a separate agent fee charged to the exporter on top of the 1%, at a later stage. Recorded, not built: `payouts.ts` still pays the agent share out of the success fee. | Owner | Fees, payouts |
+| D-028 | 2026-10-18 | Approved as built in PR #5: Hong Kong's zero duty from C&ED's published statement; the seven other published rules; agent-read official lines at quality 0.9; agents may record lines from the eight licence-pending sources, one cited rate per line (R-24); the logistics estimate from shipping connectivity at quality 0.5; sanctions as flags only. Also approved: a customs union's common tariff counts as its members' official duty before national exceptions are modelled, labelled and below full quality; currencies the ECB does not publish use US Treasury reporting rates. | Owner | Demand Discovery v5, Customs Atlas |
+| D-029 | 2026-10-18 | Singapore's tariff is acquired automatically inside SSO's permitted window (03:00–07:00 SGT) every day and saved; runs read the saved copy at any time. Saved copies refreshed on a schedule are acceptable for other markets where that is the only way. | Owner | Customs Atlas |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
-roadmap §26.
+roadmap §26; the next automation wave after the customs unions (proposed in E-022: the 40 researched
+markets without a readable source, as saved copies, largest Indian export markets first; the seven
+licence-pending sources stay with agents until a licence is settled).
 
 ## Entries
 
@@ -739,6 +748,258 @@ fetch, and drops a 2010 logistics score with its note. Full suite in one schema,
 138 files, 2,159 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006. CI on
 `21025dc` (run 38538913819): passed. PR #3 into `staging/railway`.
 
+### E-020 · 2026-10-14 · v5: rupees beside dollars, customs-union estimates, missing capitals; tariff programme baseline
+
+**Built** on `dd5/v5-coverage`, stacked on PR #3 (docs/36 §7.1, §9, §10):
+- Rupees (D-023): `src/lib/fx/display-rate.ts` reads the newest ECB INR and USD observations, fetches
+  both series when the newest stored day is older than the newest the ECB could have published (at
+  most once an hour per process) and crosses them on one day; `src/lib/money-format.ts` writes lakh
+  and crore and appends the rupee figure to every dollar amount; the exporter's market list, market
+  page and the agent control table show it with the rate and its day. Price sentences now give the
+  per-kilogram prices behind the ratio.
+- Policy v4 `customs_unions`: LU, MQ, SM (EU, all chapters) and AD (EU, chapters 25–97) borrow the EU's
+  common external tariff average for the estimate, labelled as such; each entry names its legal basis.
+- `curated:capitals-supplement` (`data/reference/capitals-supplement-v1.json`, sha256 `b799dd98…0823`):
+  BL, BQ, ME, SS, SX and VA, a source per row (Natural Earth v5.1.2, public domain, for ME, SS, VA;
+  Wikipedia infobox coordinates for BL, BQ, SX); used only where GeoDist has no row. Not yet imported on
+  staging (docs/36 §10 step 5).
+
+**Tariff programme baseline** (D-024), from the repository's own registries over the 218 markets:
+53 connected (`DESTINATION_ADAPTERS`), 62 researched and blocked with a recorded reason
+(`unconfigured-sources.ts`: licence pending, source insufficient, no machine interface, credentials,
+investigation required), 103 not yet researched. Two near-term routes found: Singapore's provider,
+bundle reader and parser are implemented and wait only for an acquisition inside SSO's permitted
+03:00–07:00 SGT window plus qualification; Hong Kong levies no customs tariff on imports (Customs and
+Excise Department, Cargo Clearance page; Basic Law Art. 114), only excise on four commodities. UNCTAD
+TRAINS (via WITS) is free to access but silent on commercial display; the WTO's terms permit
+non-commercial use only without the Secretariat's approval; ITC Market Access Map forbids commercial
+exploitation without ITC's written permission. Permission emails to UNCTAD and the WTO were drafted for
+the owner.
+
+**Checks run.** New tests: `money-format` (3), `fx-display-rate` (3), `capitals-supplement` (3), one
+customs-union case in `demand-discovery-v5-metrics`. Full suite in one schema: 141 files, 2,169 passed,
+5 skipped, 3 failed — the three local-harness-only failures of E-006. ESLint and `tsc --noEmit` clean on
+every changed file. CI on `3cb7656` (run 38548231223): passed. PR #4, stacked on PR #3.
+
+### E-021 · 2026-10-17 · Tariffs for every market, pegged currencies, logistics estimate, sanctions flags
+
+**Built** on `dd5/tariff-coverage`, stacked on PR #4 (docs/36 §2, §4, §7.1, §9, §10; docs/37):
+- Customs Atlas: Martinique and San Marino join Åland and Monaco on the EU tariff, Andorra for HS
+  chapters 25–97 only (refused before any release is read otherwise); `src/lib/market-access/taric/service.ts`.
+  Releases imported before this record the narrower destination scope; the legal basis is in code.
+- Policy v5 (`demand-discovery-v5-policy-v5`; no run used v4): `rule_rates` for HK, MO, SG, SX, BQ, VA
+  (0%) and TL, BL (5%), each with source, excepted goods and review date; quality
+  `official_agent_recorded` 0.9; `logistics.lsci_fallback_minimum_pairs` 30 and quality
+  `logistics_lsci_estimate` 0.5.
+- `src/lib/market-access/tariff-source-directory.ts`: all 218 screened markets resolve to a connected
+  adapter (56), a researched determination (62) or a directory entry (100: 54 with an official page,
+  schedule or law, 46 with none online); customs-union sources for ECOWAS/UEMOA, EAC, EAEU, CEMAC,
+  SACU, GCC, CARICOM, SICA, MERCOSUR. The agent's market table shows where to read the tariff and
+  records the declarable line (`src/components/agent/RecordOfficialDuty.tsx`,
+  `POST /api/v1/market-access/manual-captures`, `src/lib/market-access/manual-capture-service.ts`):
+  market and HS6 from the stored assessment, assigned agent or Ops only, authoritative-manual
+  evidence, audit event `market_access_manual_capture`. v5 labels such a line "read from the official
+  tariff by a ClearTrade agent".
+- `curated:currency-pegs` (`data/reference/currency-pegs-v1.json`, sha256 `64ddb6d2…0825`): 14
+  currencies, 9 read on the authority's own page, 4 from the authority's statement as reported, 1 from
+  a reference work; the v5 resolver converts through the anchor's ECB rate without requesting a series
+  the ECB does not publish.
+- `wdi:IS.SHP.GCNW.XQ` registered; `src/lib/demand-discovery-v5/logistics-fallback.ts` fits LPI on
+  ln(LSCI) per run; frozen inputs v3 carry `logistics_estimate`.
+- `curated:sanctions-programmes` (`data/reference/sanctions-programmes-v1.json`, sha256 `bf2660fa…6c50`):
+  24 programmes checked 17 Oct 2026 (UN regimes for 14 markets; US CU, IR, KP comprehensive and RU, BY,
+  VE sectoral; EU RU, BY, IR, KP), shown as v5 flags.
+
+**Duty coverage** (policy v5 against the 13 Oct World Bank files, over the 217 markets v5 ranks): official
+without an agent in 64 (56 connected, 8 by rule), estimated in 128, neither in 25. Of the 153 an agent can
+make official, 60 have a researched source and 48 a directory page, schedule or law; in 45 nothing is
+online and the agent asks the authority.
+
+**Research** (docs/37 §7 lists every market): country by country for the 103 markets without a recorded
+source, from the authorities' own sites and official legal publications. IMF exchange rates need the
+IMF's permission for commercial reuse, so pegs were curated instead; US Treasury reporting rates
+(public domain, quarterly, about 170 currencies) are the free route for floating currencies but their
+live format could not be checked from the agent session (R-17). Iran's UN sanctions were re-imposed on
+27 Sep 2025 and remain contested (CRS IF11583, July 2026); the UN arms embargo on South Sudan was
+renewed in May 2026; OFAC lists no Syria programme (Syrian Sanctions Regulations removed in 2025).
+
+**Not done:** floating currencies (Treasury source); common-tariff parsers (docs/37 §5); Singapore's
+window acquisition job; replies from UNCTAD and the WTO.
+
+**Staging after merge:** import `curated:currency-pegs`, `curated:sanctions-programmes` and
+`wdi:IS.SHP.GCNW.XQ` (docs/36 §10 step 5), after PR #4's capitals supplement.
+
+**Checks run.** New tests: `tariff-source-directory` (6), `currency-pegs` (3), `sanctions-programmes` (3),
+`manual-tariff-capture` (3, including the next run reading the recorded line as official and labelled),
+two peg cases in `demand-discovery-v5-fx`, rule-rate and logistics-estimate cases in
+`demand-discovery-v5-metrics`, a sanctions-flag case in `demand-discovery-v5-assess`, the Andorra scope
+case in `customs-territory-aliases`, and the agent hand-check line in `demand-control`. Full suite in one
+schema: 145 files, 2,189 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006.
+`tsc --noEmit` and ESLint clean on every changed file. CI on `8e07d05` (run 39024922864): passed. PR #5,
+stacked on PR #4. CI's first attempt then failed on both docs-only ledger commits, `4714db8` (run
+39025584959, passed on re-run) and `154d582` (run 39026589659), in `country-truth-phase-1h-assessment`
+("computed under a different payload"), whose code and test this change does not touch. That file
+passes locally in isolation (4 of 4) and in the full suite; CI's logs cannot be read from the agent
+session (R-25). Later attempts are on the PR's checks.
+
+### E-022 · 2026-10-18 · Preferential rate scored, US Treasury rates, Singapore saved nightly (in review)
+
+**Owner decisions applied** (18 Oct 2026): D-026 (preferential rate), D-028 (Treasury rates; the
+customs-union part is E-023), D-029 (Singapore). D-027 is recorded only.
+
+**Built** on `dd5/tariffs-auto`, stacked on PR #5 (docs/36 §2, §4, §7.1, §10; docs/37 §1, §5a):
+- *Preferential rate (D-026).* Policy v6 (`demand-discovery-v5-policy-v6`; no run used it before):
+  `duty.score_india_preference` (on). Where the official tariff publishes a preference for India that is
+  not a tariff quota and not above the ordinary rate, v5 scores it; the ordinary rate stays beside it and
+  the reason says claiming it needs proof of Indian origin; a quota preference is shown, never scored.
+  `tariff-semantics.ts` records `is_quota`; `contract.ts` keeps the pack's parsed preferential duty on the
+  evidence row; frozen inputs v4 carry the rate basis (`official-duty.ts`, `duty-inputs.ts`,
+  `metrics.ts`, `explain.ts`, `run-inputs.ts`).
+- *US Treasury reporting rates (D-028).* `src/lib/fx/treasury.ts` reads the Fiscal Data
+  `rates_of_exchange` API (public domain, quarterly, amended between quarters after a 10% move). Its
+  live format was checked on 18 Oct through the owner's browser and is the fixture (record date
+  30 Sep 2026: 168 rows, sha256 `4cfa4df8…53a8`, three amendments effective 15 Oct). 158 descriptions
+  map to ISO codes; 10 are left out on purpose (dollarised markets, the euro zone, Cuba's discontinued
+  convertible peso, and Syria's pound, whose 15 Feb 2026 amendment from 11,000 to 110 per dollar is a
+  redenomination with an unconfirmed ISO code). Each response is kept raw with
+  one observation per row, an amendment under its own effective date. A run uses a Treasury rate only
+  for a currency the ECB does not publish (or answered 404 for), within 120 days, and fetches the list
+  once when none is stored (`fx_treasury_fallback`, `fx_treasury_max_lookback_days`). The Ops panel
+  shows the switch and the newest stored day.
+- *Singapore saved nightly (D-029).* `src/lib/market-access/providers/singapore-refresh.ts`, swept from
+  the worker every ten minutes (outside 03:00–07:00 SGT it reads nothing): once per Singapore day,
+  starting before 06:00, it acquires the consolidated First Schedule and its provenance pages, reads
+  them with the strict reader and compares the canonical tariff with the saved copy. Unchanged →
+  recorded only; no copy yet → imported and activated once it passes qualification (the reader plus
+  shape checks: rice not dutiable; liquor, tobacco, motor cars and petrol dutiable; ≥90% of lines
+  duty-free; line count within 10% of the release in use); changed → imported and held for review,
+  because a saved release records the amendment chain reviewed in code (to S 67/2026);
+  `activate_changed_tariff` makes changes active, and a held release activates the next night once it
+  is on. Failures: at most 3 a night, 30 minutes apart, the release in use untouched. Every attempt is
+  an audit event (`authority_refresh` / `SG_SSO_CUSTOMS_DUTIES`). Switch `market_access.authority_refresh`
+  (off), through the audited config API (validated) or `scripts/authority-refresh.ts`
+  (`--enable/--disable/--status/--run-now/--acquire-only`); `import-retained-authority-release.ts`
+  takes `--family=SG` for a bundle acquired elsewhere. Singapore joins `DESTINATION_ADAPTERS` as a
+  retained release and leaves the unconfigured list (connected 57, researched 61, directory 100). A
+  retained-release source with nothing imported is now `no_release` in the acquisition (noted in the
+  run, not a failure, the run is not partial); before Singapore's first copy its duty comes from its
+  published rule and the SSO First Schedule is the agent's pointer. Ops → Demand Discovery v5 shows the
+  refresh state.
+
+**Checks run.** New tests: `fx-treasury` (5), `singapore-refresh` (7: window and once-a-night rules,
+config validation, qualification, first copy activated and read by the adapter at any hour, unchanged,
+changed and held then activated, failures capped and spaced); preference cases in
+`demand-discovery-v5-official-duty` (2), `-metrics` (1) and `-run`; `no_release` in
+`demand-discovery-v5-tariff-step`; routing, directory and ops-view updates. The affected files (12)
+pass together locally. Full suite in one schema, run on this branch with E-023's changes on top: 149
+files, 2,215 passed, 5 skipped, 3 failed — the three local-harness-only failures of E-006. `tsc --noEmit`
+and ESLint clean on every changed file. CI on PR #6's head `aae6baf` (run 39125655678): passed. The
+staging commands below were run as written, apart from the env file, against a throwaway local test
+database: `--status`, `--enable` (config version 1, through the audited path), `--run-now` outside the
+window (`not_due`, nothing fetched) and `--disable`.
+
+**Next automation wave (open owner decision, proposed here).** Of the 153 markets that needed an agent
+for an official duty (E-021), 24 are read automatically after E-023, leaving 129: 40 with a researched
+national source that cannot be read in place but could be saved and refreshed on a schedule as D-029
+allows (China, the UAE, Türkiye, Mexico, Thailand, Brazil, Egypt, Switzerland and the Philippines among
+them), one reader each, largest Indian export markets first; 37 small markets whose official page,
+schedule or law an agent can read; 7 licence-pending sources, which stay with agents until a licence is
+settled; and 45 with nothing online (Cabo Verde and South Sudan among them).
+
+**Not verified.** Whether the Railway worker can reach `sso.agc.gov.sg`, and the live SSO page against
+the reader: the first window run on staging is the live qualification (R-26). A staging run with a
+Treasury-converted price.
+
+**Staging after merge** (owner's Claude Code; nothing fetches from SSO until switched on):
+1. Deploy; policy v6 and Treasury rates apply to new runs.
+2. `npx tsx --env-file=tmp/rw/operator.env scripts/authority-refresh.ts --enable
+   --actor-email=<ops supervisor> --changed-by=<admin> --reason="Save Singapore's tariff nightly on
+   staging (D-029)"`; after the next window (00:30–04:30 IST) `--status` shows the attempt. If SSO
+   refuses the worker, run `--acquire-only --out=<file>` inside the window on a machine that can reach
+   it and import the file with `import-retained-authority-release.ts --family=SG`.
+
+### E-023 · 2026-10-18 · Customs-union tariffs read for 24 members (in review)
+
+**Decision applied:** D-028 — a customs union's common tariff counts as its members' official duty
+before national exceptions are modelled, labelled and below full quality.
+
+**Sources** (retrieved 18 Oct 2026 through the owner's browser; pinned in
+`src/lib/market-access/providers/customs-union-sources.ts`):
+
+| File | Bytes | SHA-256 | From |
+|---|---|---|---|
+| UEMOA TEC 2022 v4 (PDF, 482 pages) | 2,739,663 | `e7774d3f…c5ae` | UEMOA Commission document centre |
+| EAC CET 2022 as updated June 2025 (PDF, 577 pages) | 4,818,693 | `9d894c29…af9f` | East African Business Council library |
+| EAC Gazette Vol. AT 1 No. 16, 30 June 2026 (PDF, 122 pages) | 2,034,714 | `555b8fdd…3907` | East African Business Council library |
+| EAEU Council Decision No. 80, consolidated (Adilet API JSON, updated 15 Sep 2026) | 5,349,622 | `34724774…ed88` | Kazakhstan's Legal Information System |
+
+The EAC Secretariat's repository did not answer, so both EAC publications came from the EABC's library;
+they are the official texts and their checksums are pinned. The EAEU text's editor's note announces
+nomenclature amendments (Board Decision No. 43 of 7 Apr 2026, in force no earlier than 1 Jul 2026) that
+it did not yet carry.
+
+**Built** on `dd5/customs-unions`, stacked on PR #6 (docs/36 §4, §9; docs/37 §1, §4, §4a, §5, §7, §8):
+- Members served: ECOWAS (UEMOA edition, DD column) BF, BJ, CI, GH, GM, GN, GW, LR, ML, NE, NG, SL, SN,
+  TG; EAC BI, KE, RW, TZ, UG; EAEU AM, BY, KG, KZ, RU. Not served: Cabo Verde (own Pauta Aduaneira) and
+  South Sudan (applies the EAC CET only in part).
+- `customs-union-parsers.ts`: UEMOA and EAC PDFs from pdfjs coordinates (columns from each page's header
+  row; a continuation page without one uses the last headed page with the same layout; a rate is tied to
+  its code row wherever the wrapped description puts it); the Gazette's tables by notice and table, the
+  amendment table's new rates by row; the EAEU HTML rows with rate forms and footnote marks. Duty
+  remission notices are not read.
+- `customs-union-sources.ts` assembles the lines: EAC sensitive items at their Schedule 2 rate, the ten
+  amended lines at their new rate, stays as exceptions (Kenya: table III; Uganda: II, IV–VII; tables I,
+  VIII and IX, which name states row by row, for every member); EAEU rates under a tariff note as
+  exceptions for every member.
+- `customs-union-bundle.ts` (deterministic bundle; reading checks every file against the pins, the line
+  count and each line), `customs-union-market-access.ts` (the member's result names the union and what is
+  not modelled for it; no duty where the release records the member applies a line differently; nothing
+  after the EAC release's 30 June 2027), `customs-union-service.ts` (shared release lifecycle; a member
+  of a union without an active release is `no_release`). 24 adapters (connected 81, researched 48,
+  directory 89); members keep their national source as the agent's pointer.
+- v5: `quality.official_common_tariff` 0.8, inside policy v6 (no run has used v6); the reason reads
+  "under the <union> common external tariff; this market's own exceptions are not checked".
+- `scripts/build-customs-union-bundle.ts` builds a bundle from the official files without a database;
+  `import-retained-authority-release.ts` takes `--family=EAEU|ECOWAS|EAC`.
+
+**Real files, read locally (18 Oct):**
+- ECOWAS: 380 tariff pages, 6,380 lines (0% 102, 5% 2,368, 10% 1,469, 20% 2,289, 35% 152), no conflicts.
+  The text's only other ten-digit code (8701.20.10.00) appears inside descriptions.
+- EAC: Schedule 1 5,961 lines — every eight-digit code row in the text — and Schedule 2 50 (all 50 "SI"
+  resolved); 10 amendments, all on Schedule 1 lines; 1,056 codes named in stays (1,055 on Schedule 1
+  lines). Duties: 5,911 ad valorem, 50 "the higher of" mixed.
+- EAEU: 13,007 lines: 11,229 ad valorem, 503 euro per unit, 1,000 "not less than", 34 added, 214 set only
+  by a note, 27 other forms (kept, unparsed); 1,212 carry a tariff note.
+- Bundles, rebuilt byte-identical: ECOWAS 2,050,473 bytes `ce0cc831b182562414776d930f3f06892f782db23bc5afe8a1a48ff8ced38454`;
+  EAC 5,198,660 bytes `ae02dfdf82348b279940163f1cd02fa1db44119a7e2ebbe539e8a0c4f16f02d3`; EAEU 851,709 bytes
+  `16d9ceb360f67f0b10ce597f7ecb84f319077b1b44ce44e931ef4e9861d338a1`.
+- Read back through the market-access code at 18 Oct 2026, for example: Senegal and Nigeria rice 10%,
+  shirts 20%, medicines 0%; Kenya and Tanzania tea 35%, cotton yarn 10%, shirts 25%, rice not scored
+  (Gazette stay); Russia and Kazakhstan tea 0%, cotton yarn 5%, cotton T-shirts €1.75/kg, medicines and
+  auto parts not scored (tariff notes), rice split across lines with different duties.
+
+**Checks run.** New tests: `customs-union-parsers` (7), `customs-union-pack` (4). Updated:
+`market-access-providers`, `market-access-job-routing`, `tariff-source-directory`,
+`green-wave-authority-pack`. Full suite in one schema: 149 files, 2,215 passed, 5 skipped, 3 failed — the
+three local-harness-only failures of E-006. `tsc --noEmit` (scripts included) and ESLint clean on every
+changed file. CI on PR #7's head `b19c33e` (run 39125800182): passed. The three import commands below
+were run as written, apart from the env file, against a throwaway local test database with the
+delivered bundles: each NEW_RELEASE then UNCHANGED, and active. Read back from those releases at 18 Oct
+2026: Senegal rice 10%, Nigeria cotton shirts 20%, Kenya black tea 35%, Tanzania rice not scored (stay),
+Russia black tea 0%, Kazakhstan cotton yarn 5%, Russia medicines not scored (tariff notes).
+
+**Staging after merge** (owner's Claude Code, after PR #6's steps). The three bundles are in
+`~/Downloads/cleartrade-union-bundles/` on the owner's Mac (delivered 18 Oct; SHA-256 checked there); a
+rebuild from the official files in `~/Downloads` with `scripts/build-customs-union-bundle.ts` gives the
+same bytes. For each union, with `D=~/Downloads/cleartrade-union-bundles`:
+```
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=ECOWAS --file=$D/cleartrade-union-ECOWAS-uemoa-tec-2022-v4.zip --expect-sha256=ce0cc831b182562414776d930f3f06892f782db23bc5afe8a1a48ff8ced38454 --release=uemoa-tec-2022-v4 --reference-date=2024-09-01 --retrieved-at=2026-10-18 --source-url=https://e-docucenter.uemoa.int/sites/default/files/2024-09/UEMOA_TEC2022_V4.pdf --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=EAC --file=$D/cleartrade-union-EAC-cet-2022-ln160-2026.zip --expect-sha256=ae02dfdf82348b279940163f1cd02fa1db44119a7e2ebbe539e8a0c4f16f02d3 --release=eac-cet-2022-jun2025-ln160-2026 --reference-date=2026-06-30 --retrieved-at=2026-10-18 --source-url="https://eabc-online.com/download/eac-common-external-tariff-version-2022-as-updated-june-2025/?wpdmdl=11694" --actor-email=<ops supervisor> --activate
+npx tsx --env-file=tmp/rw/operator.env scripts/import-retained-authority-release.ts --family=EAEU --file=$D/cleartrade-union-EAEU-adilet-2026-09-15.zip --expect-sha256=16d9ceb360f67f0b10ce597f7ecb84f319077b1b44ce44e931ef4e9861d338a1 --release=adilet-H21EV000080-2026-09-15 --reference-date=2026-09-15 --retrieved-at=2026-10-18 --source-url=https://adilet.zan.kz/rus/docs/H21EV000080 --actor-email=<ops supervisor> --activate
+```
+Each import runs twice and must report the second as UNCHANGED. Then run a product with a member market
+(Senegal or Kenya): its duty reads "under the … common external tariff".
+
 ## Risk register
 
 
@@ -764,3 +1025,11 @@ fetch, and drops a 2010 logistics score with its note. Full suite in one schema,
 | R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |
 | R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Closed (E-018) — the owner re-derived both from the originals; byte-identical | — |
 | R-20 | v5 uses each country's latest World Bank value however old: tariff averages as old as 2002 and logistics scores as old as 2007 feed the duty estimate and the logistics metric | Decided (D-021): values more than 10 years old count as missing — built in E-019, pending merge | v5 runs on staging after E-019 deploys |
+| R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Open (E-021) — the list carries its check date | Monthly re-check; a new edition of `curated:sanctions-programmes` |
+| R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
+| R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
+| R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Accepted (D-028): allowed as built, one cited rate per line | Automated reading of these sources still waits for each licence |
+| R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |
+| R-26 | The Railway worker may not reach Singapore Statutes Online, or SSO may refuse automated requests from a cloud address; the live First Schedule has only been read through fixtures that follow the reviewed pack | Open (E-022) — nothing is fetched until `market_access.authority_refresh` is switched on; failures are recorded and the release in use is untouched | The first window run on staging is the live qualification; otherwise `--acquire-only` on a machine that can reach SSO, inside the window, and import the file |
+| R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
+| R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |

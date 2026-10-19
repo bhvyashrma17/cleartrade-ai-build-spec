@@ -3,6 +3,7 @@
  * already computed: nothing here changes a score, and every sentence states an observed value —
  * never a projection of what the exporter will earn (docs/14 §3a framing rule).
  */
+import { formatUsdPerKg } from '@/lib/money-format';
 import type { DemandDiscoveryV5Policy, MetricKey } from './policy';
 import type { EcgcCover, MetricResult } from './metrics';
 import type { ScoredMarket } from './score';
@@ -146,28 +147,49 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
     }
     case 'price_headroom': {
       const ratio = num(inputs.ratio) ?? 1;
-      if (Math.abs(ratio - 1) < 0.005) return "Buyers here pay about the same as India's usual export price.";
+      const market = num(inputs.market_usd_per_kg);
+      const india = num(inputs.india_usd_per_kg);
+      const prices = market != null && india != null ? ` They pay ${formatUsdPerKg(market)}; India usually sells at ${formatUsdPerKg(india)}.` : '';
+      if (Math.abs(ratio - 1) < 0.005) return `Buyers here pay about the same as India's usual export price.${prices}`;
       return ratio > 1
-        ? `Buyers here pay ${costs ? 'only ' : ''}about ${formatPercent((ratio - 1) * 100)} more than India's usual export price.`
-        : `Buyers here pay about ${formatPercent((1 - ratio) * 100)} less than India's usual export price.`;
+        ? `Buyers here pay ${costs ? 'only ' : ''}about ${formatPercent((ratio - 1) * 100)} more than India's usual export price.${prices}`
+        : `Buyers here pay about ${formatPercent((1 - ratio) * 100)} less than India's usual export price.${prices}`;
     }
     case 'openness':
       return result.score! >= 60 ? `Supply is spread across ${inputs.suppliers} countries; no one dominates.` : 'A few countries supply most of the imports.';
     case 'duty': {
       const duty = num(inputs.duty_percent) ?? 0;
-      const estimated = result.estimated ? ' (estimated)' : '';
+      // Policy v5: a published rule gives the duty; the rule itself says why.
+      if (inputs.basis === 'rule') return `${duty === 0 ? 'Indian goods enter duty-free.' : `Duty on Indian goods is ${formatPercent(duty)}.`} ${String(inputs.rule)}`;
+      const estimated = !result.estimated ? '' : typeof inputs.customs_union === 'string' ? ` (estimated from the ${inputs.customs_union}'s common external tariff)` : ' (estimated)';
       // An official specific duty is shown with what it is per kilogram: the percentage is derived.
       const specific = typeof inputs.duty_expression === 'string' ? ` (${inputs.duty_expression} at this market's prices)` : '';
+      // D-024: a rate an agent read from the official tariff says so.
+      const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
+        // D-028: a customs union's common external tariff names itself; the member's own exceptions are not checked.
+        : typeof inputs.common_tariff === 'string' ? ` under the ${inputs.common_tariff}; this market's own exceptions are not checked` : '';
+      // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
+      if (inputs.rate === 'india_preference') {
+        const standardPercent = num(inputs.standard_percent);
+        const standard = standardPercent != null ? formatPercent(standardPercent) : typeof inputs.standard_duty === 'string' && inputs.standard_duty ? inputs.standard_duty : null;
+        const preferential = duty === 0 ? "Indian goods enter duty-free at India's preferential rate" : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific} at India's preferential rate`;
+        return `${preferential}${read}${standard ? ` (standard rate ${standard})` : ''}; claiming it needs proof of Indian origin.`;
+      }
       const sentence = duty === 0 ? `Indian goods enter duty-free${estimated}` : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific}${estimated}`;
       const preference = num(inputs.preference_percent);
-      if (preference != null && preference < duty) return `${sentence}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} may apply with proof of Indian origin.`;
-      return `${sentence}.`;
+      if (preference != null && preference < duty && inputs.preference_quota === 'yes') return `${sentence}${read}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} applies only within a tariff quota.`;
+      if (preference != null && preference < duty) return `${sentence}${read}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} may apply with proof of Indian origin.`;
+      return `${sentence}${read}.`;
     }
     case 'distance_fit':
       return result.score === 100
         ? 'India is no farther away than its usual suppliers.'
         : `India is farther away than its usual suppliers (${formatKm(num(inputs.india_km) ?? 0)} against ${formatKm(num(inputs.usual_supplier_km) ?? 0)}).`;
     case 'logistics':
+      // Policy v5: no World Bank score, so the one shipping connectivity predicts.
+      if (inputs.basis === 'lsci_estimate') {
+        return `No World Bank logistics score exists; from its shipping connections (UNCTAD index ${(num(inputs.lsci) ?? 0).toFixed(1)}, ${inputs.lsci_year}) it would rate about ${(num(inputs.predicted_lpi) ?? 0).toFixed(1)} out of 5.`;
+      }
       return `Logistics performance is rated ${(num(inputs.lpi) ?? 0).toFixed(1)} out of 5 (World Bank).`;
     case 'country_risk': {
       const grade = String(inputs.grade);
@@ -176,10 +198,13 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
     }
     case 'price_fit': {
       const ratio = num(inputs.ratio) ?? 1;
-      if (Math.abs(ratio - 1) < 0.005) return 'Your price matches what this market usually pays.';
+      const market = num(inputs.market_usd_per_kg);
+      const yours = num(inputs.your_usd_per_kg);
+      const prices = market != null && yours != null ? ` You quote ${formatUsdPerKg(yours)}; buyers here usually pay ${formatUsdPerKg(market)}.` : '';
+      if (Math.abs(ratio - 1) < 0.005) return `Your price matches what this market usually pays.${prices}`;
       return ratio > 1
-        ? `Your price is about ${formatPercent((1 - 1 / ratio) * 100)} below what this market usually pays.`
-        : `Your price is about ${formatPercent((1 / ratio - 1) * 100)} above what this market usually pays.`;
+        ? `Your price is about ${formatPercent((1 - 1 / ratio) * 100)} below what this market usually pays.${prices}`
+        : `Your price is about ${formatPercent((1 / ratio - 1) * 100)} above what this market usually pays.${prices}`;
     }
     case 'volume_fit': {
       const share = (num(inputs.your_share_of_market) ?? 0) * 100;

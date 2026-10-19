@@ -22,13 +22,14 @@ const row = (id: string, overrides: Partial<Row>): Row => ({
 });
 const FX: Record<string, number> = { GBP: 1.3, EUR: 1.1, USD: 1 };
 
-function resolve(country: string, rows: Row[], snapshots: { id: string; provider: string | null; source_dataset: string | null }[] = [{ id: 'snap-1', provider: 'uk_trade_tariff', source_dataset: null }]) {
+function resolve(country: string, rows: Row[], snapshots: { id: string; provider: string | null; source_dataset: string | null }[] = [{ id: 'snap-1', provider: 'uk_trade_tariff', source_dataset: null }], scoreIndiaPreference = false) {
   const selected = selectTariffFactsOnly({ scope: scope(country), snapshots, evidence: rows });
   return {
     selected,
-    resolution: resolveOfficialDuty({ as_of: AS_OF, tariffs: selected.tariffs, rows: new Map(rows.map((item) => [item.id, item])), minimum_confidence: 50, usd_per_unit: (currency) => FX[currency] ?? null }),
+    resolution: resolveOfficialDuty({ as_of: AS_OF, tariffs: selected.tariffs, rows: new Map(rows.map((item) => [item.id, item])), minimum_confidence: 50, usd_per_unit: (currency) => FX[currency] ?? null, score_india_preference: scoreIndiaPreference }),
   };
 }
+const preferred = (country: string, rows: Row[]) => resolve(country, rows, [{ id: 'snap-1', provider: 'uk_trade_tariff', source_dataset: null }], true).resolution;
 
 describe('official duty on Indian goods (v5)', () => {
   test('an ad-valorem ordinary duty is the rate; a preference published for India is noted, not scored', () => {
@@ -38,9 +39,42 @@ describe('official duty on Indian goods (v5)', () => {
     ]);
     expect(resolution).toEqual({
       status: 'percent', duty_percent: 11.2, source: 'USITC HTS 1006304010', national_line: '1006304010',
-      preference: { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: 'Free', percent: null },
+      preference: { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: 'Free', percent: null }, basis: 'standard',
       fact_ids: ['market_access_tariff:us-mfn', 'market_access_tariff:us-pref'], snapshot_ids: ['snap-1'],
     });
+  });
+
+  // D-026 (policy v6): India's published preference is scored unless it is a tariff quota.
+  test('with the switch on, a preference published for India is scored and the standard rate kept beside it', () => {
+    const mfn = row('us-mfn', { country_code: 'US', source_authority: 'USITC HTS', duty_expression: '11.2%', duty_kind: 'ad_valorem', tariff_rate_percent: 11.2, national_tariff_code: '1006304010' });
+    const pref = (overrides: Partial<Row>) => row('us-pref', { country_code: 'US', rule_type: 'preferential_tariff_india', source_authority: 'USITC HTS', preference_applicability: 'potentially_applicable_requires_origin_proof', confidence: 0.5, national_tariff_code: '1006304010', ...overrides });
+    expect(preferred('US', [mfn, pref({ duty_expression: '2.5%', duty_kind: 'ad_valorem' })])).toMatchObject({
+      status: 'percent', duty_percent: 2.5, basis: 'india_preference', standard: { duty_percent: 11.2, expression: '11.2%' },
+      preference: { duty_expression: '2.5%', percent: 2.5 }, fact_ids: ['market_access_tariff:us-mfn', 'market_access_tariff:us-pref'],
+    });
+    // "Free" is read from the pack's own parsed duty, which the evidence row now keeps.
+    const free = { kind: 'ad_valorem', ad_valorem_rate_percent: 0, specific_amount: null, specific_currency: null, specific_unit: null, specific_unit_quantity: null, expression: 'Free', note: null };
+    expect(preferred('US', [mfn, pref({ duty_expression: 'Free', duty_kind: 'ad_valorem', raw_evidence: { duty: free } })])).toMatchObject({ status: 'percent', duty_percent: 0, basis: 'india_preference', preference: { percent: 0 } });
+    // A specific preference is converted like the ordinary duty.
+    expect(preferred('GB', [
+      row('gb-mfn', { duty_expression: '121.00 GBP / 1000 kg', duty_kind: 'specific' }),
+      row('gb-pref', { rule_type: 'preferential_tariff_india', duty_expression: '50.00 GBP / 1000 kg', duty_kind: 'specific', preference_applicability: 'potentially_applicable_requires_origin_proof', confidence: 0.5 }),
+    ])).toMatchObject({ status: 'specific', expression: '50.00 GBP / 1000 kg', basis: 'india_preference', standard: { duty_percent: null, expression: '121.00 GBP / 1000 kg' } });
+    // The switch off keeps the ordinary rate.
+    expect(resolve('US', [mfn, pref({ duty_expression: '2.5%', duty_kind: 'ad_valorem' })]).resolution).toMatchObject({ status: 'percent', duty_percent: 11.2, basis: 'standard' });
+  });
+
+  test('a quota preference, a preference above the standard rate, or one that is not one rate is not scored', () => {
+    const mfn = row('jp-mfn', { country_code: 'JP', source_authority: 'Japan Customs', duty_expression: '10%', duty_kind: 'ad_valorem', tariff_rate_percent: 10, national_tariff_code: '100630090' });
+    const pref = (overrides: Partial<Row>) => row('jp-pref', { country_code: 'JP', rule_type: 'preferential_tariff_india', source_authority: 'Japan Customs', preference_applicability: 'potentially_applicable_requires_origin_proof', confidence: 0.5, national_tariff_code: '100630090', ...overrides });
+    // Older rows say "tariff quota" in their basis; newer ones also carry the flag.
+    const quotaByWords = preferred('JP', [mfn, pref({ duty_expression: '0%', duty_kind: 'ad_valorem', preference_basis: 'The only India-specific measure is a tariff quota. A quota rate is a volume entitlement, not an unconditional applied rate, and requires quota availability at the time of import.' })]);
+    expect(quotaByWords).toMatchObject({ status: 'percent', duty_percent: 10, basis: 'standard', preference: { percent: 0, quota: true } });
+    expect(preferred('JP', [mfn, pref({ duty_expression: '0%', duty_kind: 'ad_valorem', raw_evidence: { is_quota: true } })])).toMatchObject({ duty_percent: 10, basis: 'standard', preference: { quota: true } });
+    expect(preferred('JP', [mfn, pref({ duty_expression: '12%', duty_kind: 'ad_valorem' })])).toMatchObject({ duty_percent: 10, basis: 'standard' });
+    expect(preferred('JP', [mfn, pref({ duty_expression: '5% + 20 JPY / kg', duty_kind: 'compound' })])).toMatchObject({ duty_percent: 10, basis: 'standard' });
+    // Unknown applicability is no preference at all.
+    expect(preferred('JP', [mfn, pref({ duty_expression: '0%', duty_kind: 'ad_valorem', preference_applicability: 'unknown' })])).toMatchObject({ duty_percent: 10, basis: 'standard', preference: null });
   });
 
   test('a specific duty per mass becomes USD per kg at the frozen exchange rate', () => {

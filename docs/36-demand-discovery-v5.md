@@ -38,9 +38,13 @@ evidence; policies are frozen per run; a market's latest usable year is chosen p
 | CEPII GeoDist `geo_cepii` | Capital coordinates for distance fit (great-circle, km) | Etalab 2.0; 225 countries | Static (2011); snapshot once |
 | ECGC Country Risk Classification, short term | Country risk (§4.10) | Public circular, `main.ecgc.in`; reuse terms to confirm | Each new ECGC list |
 | World Bank WDI `LP.LPI.OVRL.XQ` | Logistics performance, 1–5 | CC BY 4.0; latest value 2022 | Yearly check |
+| World Bank WDI `IS.SHP.GCNW.XQ` (UNCTAD liner shipping connectivity) | Logistics estimate where no LPI exists (policy v5, D-025) | CC BY 4.0; latest value 2020 for most markets | Yearly check |
 | World Bank WDI `TM.TAX.MANF.SM.AR.ZS`, `TM.TAX.TCOM.SM.AR.ZS` | Sector average applied tariff for the duty estimate | CC BY 4.0; latest 2022 | Yearly check |
 | India's trade agreements (curated) | Duty estimate factor and the "trade agreement" note | Department of Commerce agreement pages; each entry cites its source and in-force date | On each new agreement |
-| Customs Atlas (docs/33-global-tariff-source-contract, WP2) | Official duty for Indian origin, 53 of the 218 markets | Per authority release | Per release |
+| Currency pegs (curated, `curated:currency-pegs`) | Converting the 14 pegged currencies the ECB does not publish (D-025) | Central bank pages or the authority's statement as reported; one source per row | On a change of parity |
+| US Treasury Reporting Rates of Exchange (Fiscal Data API) | Converting floating currencies the ECB does not publish (D-028) | Public domain (US Government work) | Quarterly, with amendments; fetched by runs when none is stored |
+| Sanctions programmes (curated, `curated:sanctions-programmes`) | Market flags: UN Security Council regimes, US and EU programmes (D-025) | Legal basis and source per row; checked 17 Oct 2026 | Monthly check |
+| Customs Atlas (docs/33-global-tariff-source-contract, WP2) | Official duty for Indian origin, 56 of the 218 markets (docs/37) | Per authority release | Per release |
 
 Network note (R-17): the agent session cannot reach CEPII, the World Bank or Comtrade. Downloads run
 on the owner's machine or the Railway worker; imports follow the retained-release discipline
@@ -120,9 +124,9 @@ below live in `demand_discovery.v5` config and are frozen into the run.
 | 4 | India's foothold · 10 | share `s = X(IN→m) / M(m)` in %, latest year; share score = `40 + 60 × min(1, log10(1+s) / log10(11))`; trend = OLS slope of yearly shares, −5 → 0 to +5 pp/yr → 100; foothold = 70% share + 30% trend | latest year observed |
 | 5 | Price headroom · 10 | `r = UVm / UVin`: `UVm` = quantity-weighted median of the market's supplier unit values, `UVin` = quantity-weighted median of India's export unit values to all markets, both FOB, Tukey 1.5 IQR outliers removed; score = `clamp(50 + 50 × ln r / ln 1.5)` | ≥ 3 supplier flows with quantity, and India's `UVin` |
 | 6 | Openness · 5 | `HHI = Σ share_s²`; score = `100 × (1 − HHI)` | latest year, supplier sum within 95–105% of `M` |
-| 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin, specific duties converted with `UVm`; else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, or an estimate input |
+| 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin — India's published preference when it is not a quota (policy v6), else the ordinary rate — specific duties converted with `UVm` (read automatically, or by an agent — quality 0.9, labelled; a customs union's common external tariff read for a member — quality 0.8, labelled, D-028); else a published rule (policy v5 `rule_rates`); else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, a rule, or an estimate input |
 | 8 | Distance fit · 5 | `D̄ = Σ wₛ ln dist(s,m)` (wₛ = supplier value share); `Δ = ln dist(IN,m) − D̄`; score = 100 if `Δ ≤ 0`, else `100 × e^(−Δ)` | supplier mix and coordinates |
-| 9 | Logistics · 5 | `(LPI − 1) / 4 × 100` | an LPI value |
+| 9 | Logistics · 5 | `(LPI − 1) / 4 × 100`; without an LPI (policy v5), the LPI predicted from shipping connectivity: OLS of LPI on `ln(LSCI)` over the run's markets with both (≥ 30), clamped to 1–5, quality 0.5, labelled | an LPI value, or an LSCI value and the fit |
 | 10 | Country risk · 10 | ECGC grade: A1 100, A2 85, B1 70, B2 55, C1 40, C2 20, D 0; Restricted Cover Group I caps at 40, Group II caps at 20; off cover = 0 | the market is on the list |
 | 11 | Price fit · 5 | `r = UVm / pe`, `pe` = the exporter's FOB (or EXW) price per kg in USD (unit net weight; ECB cross rate frozen on the run); same mapping as #5 | price, incoterm FOB/EXW, unit weight, and an FX rate |
 | 12 | Volume fit · 5 | `v = 12 × monthly capacity (t) / Q(m)`; 100 at `v ≤ 2%`, 0 at `v ≥ 25%`, log-linear between | capacity convertible to tonnes, and `Q(m)` |
@@ -159,7 +163,8 @@ points are shared among the rest. A metric is never scored as zero for lack of d
 - Confidence = (live points / 100) × evidence quality × 0.8^lag. Evidence quality is the
   points-weighted mean of each live metric's quality: BACI where the market reported that year 1.0;
   BACI partner-only 0.85; Comtrade-reported fallback 0.9; chain-linked newest year 0.95; duty
-  estimate 0.5; LPI 0.9 (2022 data). Lag = the newest year any market has, minus this market's.
+  estimate 0.5; an official duty read by an agent 0.9; a customs union's common external tariff read
+  for a member 0.8 (D-028); LPI 0.9 (2022 data). Lag = the newest year any market has, minus this market's.
 - Gates run before scoring: comprehensive UN sanctions (initially North Korea) → `excluded`;
   ECGC Group II or off cover → `flagged`; no recorded trade in the window → `no_recorded_demand`.
 
@@ -262,7 +267,10 @@ reads the frozen releases and passes their rows in).
   Saint Barthélemy is not on the list. `cepii:geo_cepii` keeps one capital per country (225); four
   withdrawn 2011 codes map to the successor with the same capital (ZR→CD Kinshasa, AN→CW Willemstad,
   YU→RS Belgrade, TP→TL Dili), checked against the row's city. Six markets have no capital row
-  (BL, BQ, ME, SS, SX, VA) and their distance fit is unavailable. BACI's 490 ("Other Asia, nes") is
+  (BL, BQ, ME, SS, SX, VA); since 14 Oct their capitals come from `curated:capitals-supplement`
+  (`data/reference/capitals-supplement-v1.json`, a source per row: Natural Earth, public domain, for
+  ME, SS and VA; Wikipedia infobox coordinates for BL, BQ and SX), used only where GeoDist has no
+  row. BACI's 490 ("Other Asia, nes") is
   placed at Taipei only because CEPII documents it as Taiwan and GeoDist numbers Taiwan 490 too.
 - **BACI parser v2.** V202601's country file leaves Namibia's `country_iso2` empty ("NA" read as
   missing) with `country_iso3` NAM. v2 takes the alpha-2 from the file's own alpha-3 when the cell
@@ -275,10 +283,12 @@ reads the frozen releases and passes their rows in).
   assessment's own rules (`selectTariffFactsOnly`: clock, status, supersession, exact HS6 line,
   licensed-content approval; authoritative public assertions only; confidence ≥
   `duty.official_minimum_confidence`, policy v2). The scored rate is the market's ordinary
-  (third-country) duty — what Indian goods pay without claiming a preference. A preference
-  published for India is shown beside it ("0% may apply with proof of Indian origin") and not
-  scored, because a published preferential line is not applicability (`tariff-semantics.ts`). An
-  ad-valorem duty is used as published; a specific duty per kg or tonne is converted with the ECB
+  (third-country) duty — what Indian goods pay without claiming a preference. Policy v6 (D-026,
+  18 Oct 2026): where the tariff publishes a preference for India that is not a tariff quota, that
+  preferential rate is scored instead ("Duty on Indian goods is 2.5% at India's preferential rate
+  (standard rate 11.2%); claiming it needs proof of Indian origin."), read from the pack's own
+  parsed duty where the evidence row keeps it; a quota preference, one above the standard rate or
+  one that is not a single rate is shown and not scored. An ad-valorem duty is used as published; a specific duty per kg or tonne is converted with the ECB
   rate frozen on the run and, in the score, the market's median supplier unit value (the reason
   shows the published expression); compound, mixed, per-litre or per-item duties and currencies
   without an ECB rate fall back to the labelled estimate with the reason recorded.
@@ -291,8 +301,11 @@ reads the frozen releases and passes their rows in).
   160 MB shared bundle cache between two of them. What a run acquires is admitted at its tariff
   clock (no earlier than the run's clock or any retrieval, as in the deep run); an identical release
   ingest is reused, not duplicated. Every market's outcome is frozen in `tariff_acquisition`; a failed
-  or timed-out look-up makes the run `partial` and that market uses the estimate. With the switch off
-  a run reads only evidence ingested earlier, as before.
+  or timed-out look-up makes the run `partial` and that market's duty is not the official rate (the
+  published rule where one covers the product, otherwise the estimate). A retained-release source with
+  nothing imported yet is `no_release` (D-029): said in the run's notes, not a failure, so the run is
+  not `partial` — Singapore before the worker has saved its first nightly copy (docs/37 §5a). With the
+  switch off a run reads only evidence ingested earlier, as before.
 - **Exchange rates (14 Oct 2026, E-018).** Nothing loaded ECB rates into an environment, so a price
   outside US dollars and every specific duty went unconverted. A run now reads stored ECB
   observations first; when no single published day within `fx_max_lookback_days` carries every leg,
@@ -314,6 +327,47 @@ reads the frozen releases and passes their rows in).
   whether runs can start here and why not, the switches and policy version, each dataset a run reads
   with its version and what its absence costs, last-7-day run counts by status, and the 20 latest
   runs with their ranked count, top markets and the notes on what each could not use.
+- **Rupees beside dollars (14 Oct 2026, D-023).** Every dollar amount in a market's reasons and
+  breakdown is followed by its rupee figure at the newest ECB rate (`src/lib/fx/display-rate.ts`,
+  `src/lib/money-format.ts`: lakh and crore), with the rate and its day named on the page. The figure
+  follows today's rate, so it changes from day to day (the owner's choice over the rate frozen with
+  the run); stored run values stay in US dollars. The newest stored day older than the newest
+  publishable ECB day triggers one fetch of the INR and USD series, at most once an hour per process.
+  Price sentences now state the per-kilogram prices behind the ratio ("They pay $2.10/kg; India
+  usually sells at $1.80/kg").
+- **Customs-union estimates (policy v4).** A market with no World Bank tariff average of its own
+  borrows its customs union's common external tariff for the estimate, labelled as such: LU, MQ and
+  SM from the EU (all chapters), AD from the EU for chapters 25–97 only. Each entry names its legal
+  basis in `customs_unions`.
+- **Tariffs for every market (17 Oct 2026, D-024, docs/37).** Martinique, San Marino and Andorra
+  (chapters 25–97) now read the EU tariff (Customs Atlas, 56 markets connected). Policy v5
+  `rule_rates`: eight markets whose duty follows from a published rule — free ports (HK, MO, SX, BQ,
+  VA, and SG outside its dutiable goods) and one-rate markets (Timor-Leste 5%, Saint-Barthélemy 5%) —
+  each with its official source, the goods it leaves out and a review date. Every other market has a
+  directory entry naming where its tariff can be read; the agent's market table links it and lets an
+  assigned agent record the product's declarable line (`POST /api/v1/market-access/manual-captures`),
+  which the next run scores at quality 0.9 and labels "read from the official tariff by a ClearTrade
+  agent".
+- **Pegged currencies (D-025).** `curated:currency-pegs`: 14 currencies the ECB does not publish (AED,
+  BAM, BHD, BND, BTN, KMF, NPR, OMR, QAR, SAR, XAF, XCD, XOF, XPF) convert through their anchor's ECB
+  rate on the run date; the frozen rate names the parity and its source. A stored ECB rate always
+  comes first.
+- **Floating currencies (D-028, 18 Oct 2026).** A currency the ECB does not publish and no peg covers
+  (LKR, TWD, VND, PEN, GEL, ALL, MUR, KWD, UZS, MAD, TND and about 120 more) converts at the newest
+  US Treasury reporting rate in force on the run date within `fx_treasury_max_lookback_days` (120):
+  `src/lib/fx/treasury.ts` maps the Fiscal Data descriptions to ISO codes (US-dollar economies, the
+  euro, Cuba's convertible peso and the redenominated Syrian pound are left out) and keeps the raw
+  response as an `AuthoritativeFxSnapshot`. With `fx_fetch_missing` on, a run that finds none stored
+  fetches the list once; `fx_treasury_fallback` switches the fallback off. It never stands in for a
+  currency the ECB quotes, and `/ops/discovery` shows the newest stored Treasury day.
+- **Logistics estimate (policy v5, D-025).** Where no World Bank LPI is usable, logistics uses the LPI
+  that UNCTAD's liner shipping connectivity index predicts (`wdi:IS.SHP.GCNW.XQ`), fitted on the run's
+  markets with both; labelled as an estimate, quality 0.5, the fit frozen in `logistics_estimate`.
+  Landlocked markets have no index and stay unscored.
+- **Sanctions programmes (D-025).** `curated:sanctions-programmes`: UN Security Council country
+  regimes (14 markets), US comprehensive (Cuba, Iran, North Korea) and sectoral (Russia, Belarus,
+  Venezuela) programmes and EU regimes (Russia, Belarus, Iran, North Korea), shown as flags on the
+  market. A flag never changes a score; North Korea stays excluded by policy (D-016).
 - **Owner decisions of 14 Oct 2026 (E-018).** Tariff look-up inside runs: built, behind a switch
   (D-020). World Bank age limit: 10 years (D-021). The release-level Comtrade fallback of §3.3: not
   built (D-022) — an environment with no BACI release keeps the earlier engine, and the BACI import
@@ -336,19 +390,39 @@ reads the frozen releases and passes their rows in).
 - Duty estimates (§4.7) can be wrong for a specific product; they are always labelled.
 - World Bank values more than 10 years old count as missing (D-021). With that limit 184 of the 218
   markets have a tariff average and 166 a logistics score; values up to 10 years old are still used.
-- The official duty is the ordinary rate even where an Indian preference may apply, so it can
-  overstate the duty an exporter who qualifies under rules of origin would pay; the preference is
-  shown. The estimate path, by contrast, assumes an agreement in force is used (§4.7).
+- Where the tariff publishes a preference for India (policy v6), the score assumes the exporter
+  can prove Indian origin; one who cannot pays the standard rate shown beside it. Evidence stored
+  before 18 Oct 2026 lacks the pack's parsed preferential duty, so a preference written only as
+  "Free" there is shown, not scored, until the product is looked up again. The estimate path
+  likewise assumes an agreement in force is used (§4.7).
 - A specific duty's percentage uses the FOB unit value of the market's suppliers; customs value is
   usually CIF, so the derived percentage reads slightly high.
 - The weights are judgment until deal outcomes exist; refit them then.
 - Licence: R-14 (Comtrade, accepted by the owner), R-15 (BACI built on Comtrade data; legal check),
   ECGC and World Bank terms to confirm.
 - GeoDist dates from 2011: South Sudan, Montenegro, Bonaire, Sint Maarten, Saint Barthélemy and the
-  Holy See have no capital row, so their distance fit is unavailable. The ECGC list does not rate
-  Saint Barthélemy.
+  Holy See have no capital row there; their capitals come from the curated supplement. The ECGC list
+  does not rate Saint Barthélemy.
+- A duty estimate from a customs union (policy v4) uses the union's common external tariff as the
+  World Bank reports it for a member (Germany for the EU): it inherits that member's data year.
 - The ECGC parser reads one layout. A new circular that changes it fails the import with the line
   that broke; it is never half-read.
+- A published rule (policy v5) covers ordinary goods only; the goods it leaves out fall back to the
+  estimate, and Saint-Barthélemy's and Timor-Leste's rates are levies on all goods rather than a tariff
+  schedule. Rules stop applying after their review date until checked again.
+- An agent-read line is as good as the reading: the record keeps the reader, the source address and
+  the date, and v5 gives it quality 0.9, not 1.
+- A customs union's common external tariff (D-028; docs/37 §4a) is the member's rate except where the
+  member applies a line its own way. Lines the release records as applied differently (EAC stays, EAEU
+  tariff notes) are not scored automatically; national exception lists that are not in the release
+  (Kazakhstan's WTO-commitment rates, for one) are not modelled, so v5 gives these duties quality 0.8
+  and says whose tariff they are.
+- The logistics estimate assumes that LPI and shipping connectivity move together; the fit's r² is
+  recorded with every estimate. WDI's copy of the index ends in 2020 for most markets.
+- A Treasury reporting rate is quarterly (amended only after a 10% move), so a duty in such a currency
+  converts at a rate up to a quarter old; the frozen rate names its date.
+- Sanctions programmes change often; the curated list carries the day it was checked and must be
+  re-checked monthly. It holds country programmes only — named people and firms are screened per buyer.
 
 ## 10. Bringing an environment up (operator runbook)
 
@@ -392,12 +466,29 @@ touches production.
      --file=data/reference/india-trade-agreements-v1.json --expect-sha256=0e2588c971dd25605033f74cfb62e94b2d4b17486560e54ad104919d678d8075 \
      --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/india-trade-agreements-v1.json \
      --retrieved-at=2026-10-13 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=curated:capitals-supplement \
+     --file=data/reference/capitals-supplement-v1.json --expect-sha256=b799dd988c6f0a63b6991b484775bb3d0207ed8b046a50d2c0a73796e40e0823 \
+     --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/capitals-supplement-v1.json \
+     --retrieved-at=2026-10-14 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=curated:currency-pegs \
+     --file=data/reference/currency-pegs-v1.json --expect-sha256=64ddb6d2a46fb8372022072f1741b3cb61fc057411e533b56bc9ace0769c0825 \
+     --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/currency-pegs-v1.json \
+     --retrieved-at=2026-10-17 --actor-email=<operator>
+   npx tsx --env-file=<env> scripts/import-reference-dataset.ts --dataset=curated:sanctions-programmes \
+     --file=data/reference/sanctions-programmes-v1.json --expect-sha256=bf2660faae28a456ab5cb2f6e8d94d526d318023947ba57c872741df69a56c50 \
+     --source-url=https://github.com/bhvyashrma17/cleartrade-ai-build-spec/blob/<merged commit>/data/reference/sanctions-programmes-v1.json \
+     --retrieved-at=2026-10-17 --actor-email=<operator>
    ```
+
+   Shipping connectivity (policy v5): download
+   `https://api.worldbank.org/v2/country/all/indicator/IS.SHP.GCNW.XQ?format=json&per_page=20000&mrnev=1`,
+   then import it as `--dataset=wdi:IS.SHP.GCNW.XQ` with its own sha256, that URL as `--source-url` and
+   the download date as `--retrieved-at`.
 
    R-19, once: `pdftotext -layout <ECGC PDF> -` and a CSV export of `geo_cepii.dta` should reproduce
    the two derived files byte for byte; if not, diff before importing the re-derived file.
 6. **Check.** `/ops/discovery` shows "Runs can start", no dataset "Not imported", official tariff
-   look-up on and ECB rates fetched by runs when missing. Customs Atlas releases must be active in the
+   look-up on, ECB rates fetched by runs when missing and US Treasury rates on for other currencies. Customs Atlas releases must be active in the
    environment (docs/33 §3 step 4) for the look-up to find release-backed tariffs.
 7. **Archetype runs** (D-003): for a paid test tenant, create rice `100630`, brassware `741810` and
    carpets `570110` and confirm each classification; v5 starts by itself. When each run finishes:

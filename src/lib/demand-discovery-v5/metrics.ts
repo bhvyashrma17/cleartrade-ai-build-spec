@@ -4,6 +4,7 @@
  * inputs is unavailable — it is never scored as zero.
  */
 import type { DemandDiscoveryV5Policy, MetricKey } from './policy';
+import type { LogisticsEstimate } from './logistics-fallback';
 import { tooOldReason } from './world-bank';
 import { importsIn, type MarketSeries, type UnitValuePoint } from './series';
 
@@ -192,8 +193,14 @@ export function scoreOpenness(series: MarketSeries, year: number, quality: numbe
 
 // --- 7–9 access -------------------------------------------------------------------------------
 
-/** A preference published for Indian goods: shown beside the official duty, never scored. */
-export interface DutyPreferenceNote { applicability: string; duty_expression: string | null; percent: number | null }
+/** A preference published for Indian goods. D-026 (policy v6): scored when it is not a tariff quota; a quota is only shown. */
+export interface DutyPreferenceNote { applicability: string; duty_expression: string | null; percent: number | null; quota?: boolean }
+
+/** D-026: the ordinary (MFN) rate that a scored preference stands in for, as published. */
+export interface StandardDutyNote { duty_percent: number | null; expression: string | null }
+
+/** Which rate an official duty carries: India's published preference, or the ordinary rate. */
+type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string } };
 
 /** §4.7: the sector average times the agreement factor. `official_note` says why an official duty was not usable. */
 export interface EstimatedDuty {
@@ -202,13 +209,17 @@ export interface EstimatedDuty {
   agreement_scope: 'comprehensive' | 'partial' | 'none';
   agreement_name: string | null;
   official_note?: string | null;
+  /** The customs union whose common external tariff stood in for the market's own average. */
+  customs_union?: string | null;
 }
 
 export type DutyInput =
-  | { kind: 'official'; duty_percent: number; source: string; preference?: DutyPreferenceNote | null }
+  | ({ kind: 'official'; duty_percent: number; source: string; preference?: DutyPreferenceNote | null; recorded_by_agent?: boolean } & OfficialRate)
   /** A specific duty per kilogram, in USD; the score divides it by the market's unit value. */
-  | { kind: 'official_specific'; usd_per_kg: number; expression: string; source: string; preference?: DutyPreferenceNote | null; estimate: EstimatedDuty | null }
+  | ({ kind: 'official_specific'; usd_per_kg: number; expression: string; source: string; preference?: DutyPreferenceNote | null; estimate: EstimatedDuty | null; recorded_by_agent?: boolean } & OfficialRate)
   | EstimatedDuty
+  /** A published rule fixes the duty for every good it covers (policy `rule_rates`): a free port's zero, or one rate for all goods. */
+  | { kind: 'rule'; duty_percent: number; rule: string; basis: string; source_url: string }
   /** Official evidence exists but yields no rate, and nothing to estimate from. */
   | { kind: 'unusable'; reason: string }
   | null;
@@ -221,6 +232,7 @@ function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Polic
     key: 'duty', score: round(100 * (1 - Math.min(estimate, ceiling) / ceiling), 4), quality, reason: null, estimated: true,
     inputs: {
       duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), agreement_scope: input.agreement_scope, agreement: input.agreement_name,
+      ...(input.customs_union ? { customs_union: input.customs_union } : {}),
       ...(officialNote ? { official_note: officialNote } : {}),
     },
   };
@@ -231,18 +243,33 @@ function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Polic
  * official specific duty into its ad-valorem equivalent; without it that duty falls back to the
  * estimate, saying so.
  */
-export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number }, marketUsdPerKg: number | null = null): MetricResult {
+export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, quality: { official: number; estimate: number; agent_recorded?: number; common_tariff?: number }, marketUsdPerKg: number | null = null): MetricResult {
   if (!input) return unavailable('duty', 'No official tariff source and no sector average to estimate from.');
   if (input.kind === 'unusable') return unavailable('duty', input.reason);
   const ceiling = policy.duty.ceiling_percent;
+  // D-024: a line an agent read from the official tariff keeps its own (policy) quality and says so.
+  const byAgent = (input.kind === 'official' || input.kind === 'official_specific') && input.recorded_by_agent === true;
+  // D-026: a scored preference says so and keeps the ordinary rate it stands in for.
+  const preferred = (input.kind === 'official' || input.kind === 'official_specific') && input.rate_basis === 'india_preference';
+  const standardNote = preferred && input.standard ? input.standard : null;
+  // D-028: a customs union's common external tariff scores below a national one and names itself.
+  const union = (input.kind === 'official' || input.kind === 'official_specific') ? input.common_tariff ?? null : null;
+  const officialQuality = byAgent ? quality.agent_recorded ?? quality.official : union ? quality.common_tariff ?? quality.official : quality.official;
   const official = (percent: number, extra: Record<string, string | number>, preference: DutyPreferenceNote | null | undefined): MetricResult => ({
-    key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: quality.official, reason: null,
+    key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: officialQuality, reason: null,
     inputs: {
-      duty_percent: round(percent, 4), basis: 'official', ...extra,
-      ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4) } : {}),
+      duty_percent: round(percent, 4), basis: 'official', ...extra, ...(byAgent ? { recorded_by_agent: 'yes' } : {}), ...(union ? { common_tariff: union.label } : {}),
+      ...(preferred ? { rate: 'india_preference', standard_percent: standardNote?.duty_percent == null ? null : round(standardNote.duty_percent, 4), standard_duty: standardNote?.expression ?? null } : {}),
+      ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4), ...(preference.quota ? { preference_quota: 'yes' } : {}) } : {}),
     },
   });
   if (input.kind === 'official') return official(input.duty_percent, { source: input.source }, input.preference);
+  if (input.kind === 'rule') {
+    return {
+      key: 'duty', score: round(100 * (1 - Math.min(input.duty_percent, ceiling) / ceiling), 4), quality: quality.official, reason: null,
+      inputs: { duty_percent: round(input.duty_percent, 4), basis: 'rule', rule: input.rule, source: input.basis, source_url: input.source_url },
+    };
+  }
   if (input.kind === 'official_specific') {
     if (marketUsdPerKg != null && marketUsdPerKg > 0) {
       return official((input.usd_per_kg / marketUsdPerKg) * 100, { source: input.source, duty_expression: input.expression, duty_usd_per_kg: round(input.usd_per_kg, 6), market_usd_per_kg: round(marketUsdPerKg, 6) }, input.preference);
@@ -279,7 +306,20 @@ export function scoreDistanceFit(
   return { key: 'distance_fit', score: round(score, 4), quality, reason: null, inputs: { india_km: round(indiaKm, 1), usual_supplier_km: round(Math.exp(averageLog), 1), covered_share: round(coveredShare, 4) } };
 }
 
-export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy, tooOldYear: number | null = null): MetricResult {
+/**
+ * Logistics from the World Bank LPI; where none is usable (v5), the LPI that shipping connectivity
+ * predicts (`logistics-fallback.ts`), labelled as an estimate with its own quality.
+ */
+export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy, tooOldYear: number | null = null, estimate: (LogisticsEstimate & { quality: number }) | null = null): MetricResult {
+  if (lpi == null && estimate) {
+    return {
+      key: 'logistics', score: round(linearScore(estimate.predicted_lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality: estimate.quality, reason: null, estimated: true,
+      inputs: {
+        basis: 'lsci_estimate', predicted_lpi: round(estimate.predicted_lpi, 2), lsci: round(estimate.lsci, 2), lsci_year: estimate.lsci_year,
+        fit_pairs: estimate.fit.pairs, fit_r2: round(estimate.fit.r2, 3), ...(tooOldYear != null ? { lpi_too_old_year: tooOldYear } : {}),
+      },
+    };
+  }
   if (lpi == null) return unavailable('logistics', tooOldYear != null ? tooOldReason('logistics score', tooOldYear, policy) : 'No logistics performance score for this market.');
   return { key: 'logistics', score: round(linearScore(lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality, reason: null, inputs: { lpi } };
 }
