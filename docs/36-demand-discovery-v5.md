@@ -490,8 +490,11 @@ touches production.
 6. **Check.** `/ops/discovery` shows "Runs can start", no dataset "Not imported", official tariff
    look-up on, ECB rates fetched by runs when missing and US Treasury rates on for other currencies. Customs Atlas releases must be active in the
    environment (docs/33 §3 step 4) for the look-up to find release-backed tariffs.
-7. **Archetype runs** (D-003): for a paid test tenant, create rice `100630`, brassware `741810` and
-   carpets `570110` and confirm each classification; v5 starts by itself. When each run finishes:
+7. **Archetype runs** (D-003): `npx tsx --env-file=<env> scripts/dd5-archetype-runs.ts start
+   --actor-email=<agent, ops supervisor or admin>` sets up a paid test tenant with rice `100630`,
+   brassware `741810` and carpets `570110` and confirms each classification as that account; v5 starts by
+   itself. `scripts/dd5-archetype-runs.ts status` shows the runs and, once each has finished, its top 10
+   compared with India's real destinations; the full comparison for one run:
    `npx tsx --env-file=<env> scripts/dd5-compare-top10.ts --run=<run id>`. `verdict: calibration_failure`
    (the top 10 leaves out more than half of India's ten largest destinations) is a finding to
    investigate through `missed`, not a pass.
