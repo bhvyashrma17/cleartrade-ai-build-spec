@@ -156,6 +156,7 @@ Requirement key: **R** required · **r** recommended · **o** optional · **–*
 | `COMTRADE_CLIENT` | R | R | R | public | ClearTrade | `mock` | `real` | `comtrade/index.ts` |
 | `COMTRADE_API_KEY` | o | R | R | **secret** | UN Comtrade | unset unless testing live | provider key | `comtrade/real-client.ts` |
 | `COMTRADE_BASE_URL` | o | o | o | public | UN Comtrade | unset | provider default | `comtrade/real-client.ts` |
+| `CENSUS_API_KEY` | o | o | o | **secret** | U.S. Census Bureau (free key, api.census.gov/data/key_signup.html) | unset | provider key; without it US regional demand is shown as unavailable | `job-handlers/regional-demand.ts` (D-033, docs/38) |
 | `DISCOVERY_ENGINE` | o | r | r | public | ClearTrade | `warehouse` | `warehouse` (`mock` rejected) | `discovery/index.ts` |
 | `DISCOVERY_MOCK_LATENCY_MS` | o | – | – | public | ClearTrade | unset | – | `discovery/index.ts` |
 | `RATIONALE_WRITER` | o | o | o | public | ClearTrade | `template` | `template` | `discovery/rationale/index.ts` |
