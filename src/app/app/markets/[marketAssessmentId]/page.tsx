@@ -20,6 +20,7 @@ import { todayInrPerUsd } from '@/lib/fx/display-rate';
 import { RupeeRateProvider } from '@/components/fx/RupeeRate';
 import { isV5Assessment, v5Detail, type V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { allowedEvidenceOrigins, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
+import { regionalDemandView } from '@/lib/regional-demand/service';
 
 export default async function MarketDetailPage({
   params,
@@ -58,6 +59,9 @@ export default async function MarketDetailPage({
   const v5: V5Detail | null = isV5Assessment(assessment)
     ? v5Detail(assessment, await prisma.marketAssessment.count({ where: { run_id: assessment.run_id, market_status: 'ranked' } }))
     : null;
+
+  // D-033: where inside the market the product arrives (v5 markets with an official regional source).
+  const regional = v5 ? await regionalDemandView(assessment.id, assessment.country_code) : null;
 
   const snapshot = assessment.run.input_snapshot as { description?: string | null } | null;
 
@@ -100,6 +104,8 @@ export default async function MarketDetailPage({
         }}
         productDescription={snapshot?.description ?? assessment.product?.name ?? null}
         v5={v5}
+        regional={regional}
+        canRequestRegional={tier === OrgTier.paid}
       />
     </RupeeRateProvider>
   );

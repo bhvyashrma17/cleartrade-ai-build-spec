@@ -584,6 +584,8 @@ enum JobType {
   /// Demand Discovery v5 (docs/36): every screening market for one confirmed HS6, from the
   /// retained BACI release, reference datasets and a batched Comtrade newest year.
   demand_discovery_v5
+  /// Regional demand inside one v5 market (D-033, docs/38): states and ports for the US.
+  regional_demand_discovery
 }
 
 enum NotificationChannel {
@@ -1370,6 +1372,9 @@ model MarketAssessment {
   flag_reasons    Json      @default("[]")
   /// Among the top markets passed on to regional and buyer discovery (D-019).
   handed_off      Boolean   @default(false)
+
+  /// Where inside the market the product's imports arrive (D-033, docs/38).
+  regional_demand_runs RegionalDemandRun[]
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
@@ -5496,4 +5501,45 @@ model ReferenceDatasetRelease {
 enum ReferenceDatasetReleaseStatus {
   active
   superseded
+}
+
+enum RegionalDemandStatus {
+  queued
+  running
+  completed
+  /// The source could not be asked (for example, no API key is configured); `reason` says why.
+  unavailable
+  failed
+}
+
+/// Regional demand inside one Demand Discovery v5 market (D-033, docs/38): where in the market the
+/// product's imports arrive. For the US: states of destination and ports of entry, from the Census
+/// Bureau's monthly trade figures. One row per request; the market page shows the newest completed
+/// row. `result` is written once when the run completes and never recalculated.
+model RegionalDemandRun {
+  id                   String               @id @default(cuid())
+  market_assessment_id String
+  exporter_org_id      String
+  product_id           String?
+  country_code         String               @db.VarChar(2)
+  hs6_code             String               @db.VarChar(6)
+  /// Which official source answers for this market, e.g. `us_census_intltrade`.
+  source_key           String
+  status               RegionalDemandStatus @default(queued)
+  /// hand_off (a top-10 market, D-019) | requested (from the market page) | operator (a script).
+  trigger              String
+  requested_by_id      String?
+  job_id               String?
+  result               Json?
+  /// Why the run is unavailable or failed, in plain words.
+  reason               String?
+  evidence_origin      EvidenceOrigin       @default(public_real)
+  retrieved_at         DateTime?
+  created_at           DateTime             @default(now())
+  completed_at         DateTime?
+
+  market_assessment MarketAssessment @relation(fields: [market_assessment_id], references: [id], onDelete: Cascade)
+
+  @@index([market_assessment_id, created_at])
+  @@index([exporter_org_id, created_at])
 }

@@ -16,6 +16,8 @@ import { format } from 'date-fns';
 import { Button, MetricCard, StatusChip, UpgradeNotice } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
 import { V5Breakdown, type V5Detail } from './V5Breakdown';
+import { RegionalDemand } from './RegionalDemand';
+import type { RegionalDemandView } from '@/lib/regional-demand/service';
 
 type Tier = 'guest' | 'free' | 'paid';
 
@@ -57,6 +59,8 @@ export function MarketDetail({
   buyerDiscoveryHref,
   productDescription,
   v5 = null,
+  regional = null,
+  canRequestRegional = false,
 }: {
   tier: Tier;
   assessment: AssessmentDetail;
@@ -64,6 +68,9 @@ export function MarketDetail({
   productDescription: string | null;
   /** Present for a Demand Discovery v5 assessment, which replaces the earlier score breakdown. */
   v5?: V5Detail | null;
+  /** D-033: where inside the market the product arrives. Present for v5 markets. */
+  regional?: RegionalDemandView | null;
+  canRequestRegional?: boolean;
 }) {
   const buyersUrl = buyerDiscoveryHref.productId
     ? `/app/buyers?product_id=${encodeURIComponent(buyerDiscoveryHref.productId)}&country=${buyerDiscoveryHref.countryCode}`
@@ -80,6 +87,13 @@ export function MarketDetail({
       {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
 
       {v5 ? <V5Breakdown detail={v5} /> : null}
+
+      {regional ? (
+        <section className="mt-6">
+          <SectionTitle>Where in {countryName(assessment.country_code)} it is imported</SectionTitle>
+          <RegionalDemand assessmentId={assessment.id} countryName={countryName(assessment.country_code)} initial={regional} canRequest={canRequestRegional} />
+        </section>
+      ) : null}
 
       {!v5 && assessment.rationale ? (
         <p className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm text-[var(--color-text-secondary)]">

@@ -43,6 +43,8 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-030 | 2026-10-19 | Every remaining market's tariff is to be read by the system so agents no longer check it, built in small clusters completed one at a time, until all the markets v5 screens are covered. Owner's words: "integrate them in our system in order that agent doesn't has to check, break in small clusters and complete chunk to chunk. in the end i want all 200+ markets incorporated." Order: the recommendation in E-022, which the owner accepted ("your recommendation"): the 40 researched national sources first, as saved copies where that is the only way (D-029), largest Indian export markets first; the seven licence-pending sources stay with agents until a licence is settled. Each cluster still gets its own source and rights check (docs/37 §6). | Owner | Customs Atlas, Demand Discovery v5 |
 | D-031 | 2026-10-19 | A market's own tariff read automatically from a retained official schedule scores like an agent's reading of it (quality 0.9) and is labelled "read from <the tariff>; trade remedies are not checked", because trade remedies and temporary measures outside the schedule are not read. Owner's choice: "Like an agent's reading (Recommended)" (policy v7, E-025). | Owner | Demand Discovery v5, Customs Atlas |
 | D-032 | 2026-10-19 | v5 scoring policy v8: India's own success no longer counts against a market — openness is measured among India's competitors, and where India already supplies 10% or more of a market a lower market price is not counted against it — and a new metric, India's sales (10 points), scores how much India already sells there; price headroom 10 → 5 and market size 20 → 15. Owner's choice, "B: fix both + India's sales (Recommended)", after the re-score in E-028. | Owner | Demand Discovery v5 |
+| D-033 | 2026-10-22 | Country expansion (D-030) is on hold. For a pitch on 24 Oct, Regional Demand Discovery and Real Buyer Discovery are built for a smaller set of markets and must work end to end on staging. Owner's words: "hold on country expansion … i want operational demand, regional, buyer. maybe for a shorter area not 218. but operational. full fledged." Owner's choices: the US, the UK and Canada ("US + UK + Canada (Recommended)"); demonstration product carpets 570110; the owner signs up for the free Census Bureau API key; the agent may download HMRC's `importers2608.zip` and ISED's three 2023 importer files to the owner's Mac. | Owner | Regional and buyer discovery (docs/38) |
+| D-034 | 2026-10-22 | Buyers from the official importer lists are shown as published, including sole traders' names — the owner chose "Every published entry" over the recommended "Companies only, no contacts". No contact details are added. | Owner | Real Buyer Discovery (docs/38) |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -1279,6 +1281,44 @@ passed, 0 failed, under the local database harness. The full suite runs in CI on
 **Staging after merge.** Re-run the three archetypes (`scripts/dd5-archetype-runs.ts start --rerun`, then
 `status`); these runs also use cluster 1's tariffs and the Andorra fix.
 
+### E-029 · 2026-10-22 · Regional demand for the US (D-033), PR A
+
+**Objective.** Stage 2 of the product order for the pitch on 24 Oct: where inside a v5 market the
+product's imports arrive, starting with the US. docs/38 §1.
+
+**Sources verified today.** The Census Bureau's `intltrade/imports/statehs` and `porths` variable lists
+(STATE or PORT/PORT_NAME, I_COMMODITY at HS2/4/6/10, CTY_CODE, GEN/CNT/VES/AIR values and weights,
+YEAR, MONTH); a request without a key is refused ("A valid key must be included with each data API
+request"), so the key is required (D-033). HMRC's importer file (`importers2608.zip`, 4,541,202 bytes,
+SHA-256 `68a53b84d61cedfe30e8b5849d9cb3184ed5eaad768aca9babc483ed0aa4f46b`, 107,633 lines: period, line
+number, name, five address lines, postcode, up to 50 eight-digit codes; 86 traders list a 570110 code
+for Aug 2026) and ISED's Canadian Importers Database 2023 file list (licence `ca-ogl-lgo`) were
+checked for the next PR; ISED's site answered 503 ("urgent maintenance") on 22 Oct, so its files are
+not downloaded yet.
+
+**Branch.** `dd6/regional-demand-us`, stacked on `dd5/scoring-v8` (PR #12).
+
+**Files.** `prisma/schema.prisma` and migration `20261022100000_regional_demand_runs` (job type
+`regional_demand_discovery`, enum `RegionalDemandStatus`, table `RegionalDemandRun`);
+`src/lib/regional-demand/{census,service}.ts`; `src/lib/job-handlers/regional-demand.ts` (registered in
+`job-handlers/index.ts`; costed in `billing/costed-work.ts`); the hand-off in
+`job-handlers/demand-discovery-v5.ts`; `GET`/`POST /api/v1/market-assessments/:id/regional-demand`; the
+market page (`page.tsx`, `MarketDetail.tsx`, new `RegionalDemand.tsx`); `scripts/regional-demand.ts`;
+`tests/regional-demand-census.test.ts` (8) and `tests/regional-demand.test.ts` (7); docs/38 (new), docs/28
+and `.env.example` (`CENSUS_API_KEY`), AGENTS.md (doc map).
+
+**Checks run (agent workspace).** `tsc --noEmit` clean. ESLint clean on the 13 changed or new code and test
+files. New tests: 15 passed. Full suite under the local database harness: 2,260 passed, 5 skipped, 3
+failed — the same three local-harness-only failures as on earlier PRs (`market-scan-requests`,
+`pilot-e2e`, `staff-provisioning`). CI runs the canonical suite on the PR.
+
+**Not verified.** No live Census answer has been read: the agent session has no key and cannot reach
+api.census.gov. The reader follows the published variable lists; the first staging run after the key
+is set is the first real read (R-32).
+
+**Staging after merge (owner).** Set `CENSUS_API_KEY` on the staging web and worker services, then run
+`scripts/regional-demand.ts request --run=<carpets v5 run> --actor-email=<ops supervisor>` and `status`.
+
 ## Risk register
 
 
@@ -1314,3 +1354,5 @@ passed, 0 failed, under the local database harness. The full suite runs in CI on
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
 | R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |
+| R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
+| R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
