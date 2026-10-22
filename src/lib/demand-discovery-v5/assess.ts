@@ -1,6 +1,6 @@
 /**
  * Demand Discovery v5 for one product across every screening market (docs/36). Pure: the caller
- * reads the frozen releases and passes their rows in; this computes the twelve metrics for each
+ * reads the frozen releases and passes their rows in; this computes the thirteen metrics for each
  * market, gates, scores, ranks, labels and explains them. Nothing here reads a database or a network.
  *
  * Years per market:
@@ -15,8 +15,8 @@ import { assertPolicy, DEMAND_DISCOVERY_V5_MODEL, policyHash, type DemandDiscove
 import type { LogisticsEstimate } from './logistics-fallback';
 import { buildMarketSeries, importsIn, indiaExportUnitValues, marketUnitValues, type MarketSeries, type TradeFlowInput } from './series';
 import {
-  averageImportsUsd, marketMedianUnitValue, scoreCountryRisk, scoreDistanceFit, scoreDuty, scoreGrowth, scoreIndiaFoothold, scoreLogistics,
-  scoreMarketSize, scoreOpenness, scorePriceFit, scorePriceHeadroom, scoreStability, scoreVolumeFit,
+  averageImportsUsd, averageIndiaSalesUsd, marketMedianUnitValue, scoreCountryRisk, scoreDistanceFit, scoreDuty, scoreGrowth, scoreIndiaFoothold, scoreIndiaSales,
+  scoreLogistics, scoreMarketSize, scoreOpenness, scorePriceFit, scorePriceHeadroom, scoreStability, scoreVolumeFit,
   type DutyInput, type EcgcRating, type MetricResult,
 } from './metrics';
 import { chainLinkNewestYear, extendWindow, type ChainLinkRefusal, type ComtradeNewestYearInput, type LinkedNewestYear } from './chain-link';
@@ -124,6 +124,14 @@ interface MarketContext {
   excluded_reason: string | null;
   no_recorded_demand: boolean;
   average_imports: number | null;
+  /** v8: India's exports to the market over the market-size years (with the linked newest year where India's figure was linked). */
+  india_sales: number | null;
+}
+
+/** India's share of the market's imports in a year, in percent, or null without recorded imports. */
+function indiaShareIn(series: MarketSeries, year: number): number | null {
+  const data = series.years.get(year);
+  return data && data.total_usd > 0 ? (data.india_usd / data.total_usd) * 100 : null;
 }
 
 export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
@@ -183,11 +191,14 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
       foothold_series: indiaLinked ? demandSeries : series, foothold_window: indiaLinked ? demandWindow : window,
       excluded_reason: excludedReason, no_recorded_demand: noRecordedDemand,
       average_imports: !excludedReason && demandSeries ? averageImportsUsd(demandSeries, demandWindow, policy) : null,
+      india_sales: !excludedReason && series ? averageIndiaSalesUsd(indiaLinked ? demandSeries! : series, indiaLinked ? demandWindow : window, policy) : null,
     };
   });
 
   const sizes = contexts.map((context) => context.average_imports).filter((value): value is number => value != null);
   const largest = sizes.length ? Math.max(...sizes) : null;
+  const indiaSales = contexts.map((context) => context.india_sales).filter((value): value is number => value != null);
+  const largestIndiaSales = indiaSales.length ? Math.max(...indiaSales) : null;
 
   const indiaFlows = input.india_exports ? sortFlows([...input.india_exports]) : baseFlows;
   const indiaUnitValues = new Map<number, { usd_per_kg: number | null; destinations: number }>();
@@ -221,7 +232,8 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
           scoreGrowth(context.demand_series!, context.demand_window, linkedQuality, policy),
           scoreStability(context.demand_series!, context.demand_window, linkedQuality, policy),
           scoreIndiaFoothold(context.foothold_series!, context.foothold_window, indiaQuality, policy),
-          priced(scorePriceHeadroom(marketUv, indiaUv(structureYear), context.quality, policy)),
+          scoreIndiaSales(context.india_sales, largestIndiaSales, indiaQuality, policy),
+          priced(scorePriceHeadroom(marketUv, indiaUv(structureYear), context.quality, policy, indiaShareIn(series, structureYear))),
           scoreOpenness(series, structureYear, context.quality, policy),
           scoreDistanceFit(series, structureYear, input.coordinates, context.quality, policy),
           because(priced(scorePriceFit(marketUv, input.exporter.usd_per_kg, context.quality, policy)), input.exporter.usd_per_kg == null, input.exporter.price_reason),
@@ -229,7 +241,7 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
         );
       } else {
         const reason = 'No trade dataset covers this market.';
-        for (const key of ['market_size', 'growth', 'stability', 'india_foothold', 'price_headroom', 'openness', 'distance_fit', 'price_fit', 'volume_fit'] as const) metrics.push(unavailableTrade(key, reason));
+        for (const key of ['market_size', 'growth', 'stability', 'india_foothold', 'india_sales', 'price_headroom', 'openness', 'distance_fit', 'price_fit', 'volume_fit'] as const) metrics.push(unavailableTrade(key, reason));
       }
       metrics.push(
         scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate, agent_recorded: quality.official_agent_recorded, common_tariff: quality.official_common_tariff, schedule_read: quality.official_schedule_read }, marketUv),

@@ -9,7 +9,7 @@ import { baciFlowsToTradeFlows, sortFlows } from '../src/lib/demand-discovery-v5
 import type { MarketYear } from '../src/lib/demand-discovery-v5/series';
 
 const OPEN: MarketGate = { excluded_reason: null, no_recorded_demand: false, flag_reasons: [] };
-const ALL: MetricKey[] = ['market_size', 'growth', 'stability', 'india_foothold', 'price_headroom', 'openness', 'duty', 'distance_fit', 'logistics', 'country_risk', 'price_fit', 'volume_fit'];
+const ALL: MetricKey[] = ['market_size', 'growth', 'stability', 'india_foothold', 'india_sales', 'price_headroom', 'openness', 'duty', 'distance_fit', 'logistics', 'country_risk', 'price_fit', 'volume_fit'];
 
 const metric = (key: MetricKey, score: number | null, extra: Partial<MetricResult> = {}): MetricResult => ({ key, score, quality: score == null ? 0 : 1, reason: score == null ? 'missing' : null, inputs: {}, ...extra });
 const allAt = (score: number) => ALL.map((key) => metric(key, score));
@@ -19,19 +19,21 @@ describe('v5 score', () => {
   test('overall is the points-weighted mean of live metrics; missing metrics drop out, never count as zero', () => {
     const full = scoreMarket({ market: 'DE', gate: OPEN, metrics: allAt(50), data_year: 2024 }, POLICY);
     expect(full).toMatchObject({ status: 'ranked', overall: 50, live_points: 100 });
-    expect(full.parts.map((part) => [part.part, part.points, part.score])).toEqual([['demand', 35, 50], ['india_opportunity', 25, 50], ['access', 20, 50], ['risk', 10, 50], ['exporter_fit', 10, 50]]);
+    // Policy v8 (D-032): demand 30 (size 15), India's opportunity 30 (with India's sales).
+    expect(full.parts.map((part) => [part.part, part.points, part.score])).toEqual([['demand', 30, 50], ['india_opportunity', 30, 50], ['access', 20, 50], ['risk', 10, 50], ['exporter_fit', 10, 50]]);
 
     const sparse = scoreMarket({
       market: 'DE', gate: OPEN, data_year: 2024,
-      metrics: [metric('market_size', 80), metric('growth', 60), metric('duty', 100), metric('country_risk', 70), metric('openness', 50), metric('logistics', 40), ...['stability', 'india_foothold', 'price_headroom', 'distance_fit', 'price_fit', 'volume_fit'].map((key) => metric(key as MetricKey, null))],
+      metrics: [metric('market_size', 80), metric('growth', 60), metric('duty', 100), metric('country_risk', 70), metric('openness', 50), metric('logistics', 40), metric('india_sales', 60), ...['stability', 'india_foothold', 'price_headroom', 'distance_fit', 'price_fit', 'volume_fit'].map((key) => metric(key as MetricKey, null))],
     }, POLICY);
-    expect(sparse).toMatchObject({ status: 'ranked', live_points: 60, overall_exact: 72.5, overall: 73, shortfall: null });
+    // (80×15 + 60×10 + 100×10 + 70×10 + 50×5 + 40×5 + 60×10) / 65 = 70.
+    expect(sparse).toMatchObject({ status: 'ranked', live_points: 65, overall_exact: 70, overall: 70, shortfall: null });
     expect(sparse.parts.find((part) => part.part === 'exporter_fit')).toEqual({ part: 'exporter_fit', points: 10, live_points: 0, score: null });
   });
 
   test('ranking needs 60 live points and both size and growth; otherwise not_enough_data with its partial score', () => {
     const short = scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: [metric('market_size', 80), metric('growth', 60), metric('duty', 100), metric('country_risk', 70), metric('openness', 50)] }, POLICY);
-    expect(short).toMatchObject({ status: 'not_enough_data', live_points: 55, overall: 75, shortfall: { live_points: 55, minimum_live_points: 60, missing_required: [] } });
+    expect(short).toMatchObject({ status: 'not_enough_data', live_points: 50, overall: 75, shortfall: { live_points: 50, minimum_live_points: 60, missing_required: [] } });
     const noGrowth = scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: ALL.map((key) => metric(key, key === 'growth' ? null : 70)) }, POLICY);
     expect(noGrowth).toMatchObject({ status: 'not_enough_data', live_points: 90, overall: 70, shortfall: { missing_required: ['growth'] } });
   });

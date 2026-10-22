@@ -118,12 +118,13 @@ below live in `demand_discovery.v5` config and are frozen into the run.
 
 | # | Metric · points | Formula | Available when |
 |---|---|---|---|
-| 1 | Market size · 20 | `S = mean(M over the last 3 years)`; score = `100 × clamp((log10 S − log10 floor) / (log10 Smax − log10 floor))`, floor $100,000, `Smax` = the largest `S` among the 218 markets for this product | ≥ 1 of the 3 years observed |
+| 1 | Market size · 15 (20 before policy v8) | `S = mean(M over the last 3 years)`; score = `100 × clamp((log10 S − log10 floor) / (log10 Smax − log10 floor))`, floor $100,000, `Smax` = the largest `S` among the 218 markets for this product | ≥ 1 of the 3 years observed |
 | 2 | Growth · 10 | 70% CAGR over the window, 30% last-year change; each maps −20% → 0 to +20% → 100, linear, clamped. A zero at either end makes CAGR `not_calculable` (as in v4) and growth falls back to momentum; momentum needs only a positive year before the last, so imports that stop score a real −100%, not a missing value | imports in the year before the last, or at both ends of the window |
 | 3 | Stability · 5 | population SD of yearly growth rates, in percentage points; score = `100 × (1 − min(SD, 50) / 50)` | ≥ 4 growth rates |
 | 4 | India's foothold · 10 | share `s = X(IN→m) / M(m)` in %, latest year; share score = `40 + 60 × min(1, log10(1+s) / log10(11))`; trend = OLS slope of yearly shares, −5 → 0 to +5 pp/yr → 100; foothold = 70% share + 30% trend | latest year observed |
-| 5 | Price headroom · 10 | `r = UVm / UVin`: `UVm` = quantity-weighted median of the market's supplier unit values, `UVin` = quantity-weighted median of India's export unit values to all markets, both FOB, Tukey 1.5 IQR outliers removed; score = `clamp(50 + 50 × ln r / ln 1.5)` | ≥ 3 supplier flows with quantity, and India's `UVin` |
-| 6 | Openness · 5 | `HHI = Σ share_s²`; score = `100 × (1 − HHI)` | latest year, supplier sum within 95–105% of `M` |
+| 4a | India's sales · 10 (policy v8, D-032) | `V` = India's exports to the market, `mean(X(IN→m))` over the same three years as market size (the linked newest year where India's figure was linked); score = `100 × clamp((log10 V − log10 floor) / (log10 Vmax − log10 floor))`, floor $100,000, `Vmax` = India's largest market for this product; a real zero (imports recorded, none from India) scores 0 | ≥ 1 of the 3 years with recorded imports |
+| 5 | Price headroom · 5 (10 before v8) | `r = UVm / UVin`: `UVm` = quantity-weighted median of the market's supplier unit values, `UVin` = quantity-weighted median of India's export unit values to all markets, both FOB, Tukey 1.5 IQR outliers removed; score = `clamp(50 + 50 × ln r / ln 1.5)`; from v8, at least 50 where India supplies `prices.proven_share_percent` (10%) or more of the market in that year, said in the reason | ≥ 3 supplier flows with quantity, and India's `UVin` |
+| 6 | Openness · 5 | `HHI = Σ share_s²`; score = `100 × (1 − HHI)`; from v8 (`openness.exclude_india`) over India's competitors only, their shares renormalised (100 where India is the only supplier) | latest year, supplier sum within 95–105% of `M` |
 | 7 | Duty on Indian goods · 10 | official: the line's duty for Indian origin — India's published preference when it is not a quota (policy v6), else the ordinary rate — specific duties converted with `UVm` (read automatically, or by an agent — quality 0.9, labelled; a customs union's common external tariff read for a member — quality 0.8, labelled, D-028; a market's own tariff read from a retained schedule without its trade remedies — quality 0.9, labelled, D-031, policy v7); else a published rule (policy v5 `rule_rates`); else the estimate of §4.7; score = `100 × (1 − min(d, 25) / 25)` | official evidence, a rule, or an estimate input |
 | 8 | Distance fit · 5 | `D̄ = Σ wₛ ln dist(s,m)` (wₛ = supplier value share); `Δ = ln dist(IN,m) − D̄`; score = 100 if `Δ ≤ 0`, else `100 × e^(−Δ)` | supplier mix and coordinates |
 | 9 | Logistics · 5 | `(LPI − 1) / 4 × 100`; without an LPI (policy v5), the LPI predicted from shipping connectivity: OLS of LPI on `ln(LSCI)` over the run's markets with both (≥ 30), clamped to 1–5, quality 0.5, labelled | an LPI value, or an LSCI value and the fit |
@@ -145,14 +146,20 @@ value the metric is unavailable. Estimates carry quality 0.5 and the label "Duty
 
 | Part | Metrics (points) | Total |
 |---|---|---|
-| Demand | size 20, growth 10, stability 5 | 35 |
-| India's opportunity | foothold 10, price headroom 10, openness 5 | 25 |
+| Demand | size 15, growth 10, stability 5 | 30 |
+| India's opportunity | foothold 10, India's sales 10, price headroom 5, openness 5 | 30 |
 | Access | duty 10, distance fit 5, logistics 5 | 20 |
 | Risk | country risk 10 | 10 |
 | Exporter fit | price fit 5, volume fit 5 | 10 |
 
 `overall = Σ (score_i × points_i) / Σ live points`, rounded. Unavailable metrics drop out and their
 points are shared among the rest. A metric is never scored as zero for lack of data.
+
+Policy v8 (D-032, 19 Oct 2026) changed the parts from 35 / 25 / 20 / 10 / 10 after the archetype
+calibration (ledger E-026–E-028): India's own success no longer counts against a market (openness
+among India's competitors; no price penalty where India already supplies 10% or more), and India's
+sales are scored. Re-scored on the three staging runs, India's real top 10 in the run's top 10 went
+from 3 / 4 / 8 (rice, brassware, carpets) to 5 / 7 / 10; the staging rerun confirms it.
 
 ### 5.2 Ranking and confidence
 
@@ -251,7 +258,7 @@ reads the frozen releases and passes their rows in).
 - **Results.** `GET /api/v1/discovery-runs/:id/market-assessments` orders by `rank`, then score,
   and returns status, rank, live points, data year, parts, labels, reasons and flags. `/app/markets`
   shows the ranked list (top 10 first), the not-ranked markets apart with why, and what the run could
-  not use; the market page shows the five parts and twelve measures, a gap as a gap.
+  not use; the market page shows the five parts and their measures (twelve, thirteen from policy v8), a gap as a gap.
 - **India's agreements.** Curated in `data/reference/india-trade-agreements-v1.json`, one row per
   agreement and partner, each citing the source of its entry-into-force date (DGFT Appendix 2A for
   the older agreements; PIB, EFTA, the Welsh Government and NZ reporting for the 2022–2026 ones).
@@ -326,7 +333,7 @@ reads the frozen releases and passes their rows in).
 - **Agent and ops views (13 Oct 2026, E-016).** The agent's market control table
   (`/agent/exporters/:org/products/:product/markets/manage`) reads a v5 run's stored rank — only
   ranked markets have one, so a partial score is shown as partial and never ranked — orders by it,
-  shows each market's status, flags and top-10 hand-off, and opens the same five-part, twelve-measure
+  shows each market's status, flags and top-10 hand-off, and opens the same five-part, per-measure
   breakdown the exporter sees (`src/lib/demand-discovery-v5/detail.ts`, one builder for both). An
   agent decision freezes the stored rank, not a count of scores. `/ops/discovery` gains a v5 panel:
   whether runs can start here and why not, the switches and policy version, each dataset a run reads

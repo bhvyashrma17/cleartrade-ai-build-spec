@@ -42,13 +42,13 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-029 | 2026-10-18 | Singapore's tariff is acquired automatically inside SSO's permitted window (03:00–07:00 SGT) every day and saved; runs read the saved copy at any time. Saved copies refreshed on a schedule are acceptable for other markets where that is the only way. | Owner | Customs Atlas |
 | D-030 | 2026-10-19 | Every remaining market's tariff is to be read by the system so agents no longer check it, built in small clusters completed one at a time, until all the markets v5 screens are covered. Owner's words: "integrate them in our system in order that agent doesn't has to check, break in small clusters and complete chunk to chunk. in the end i want all 200+ markets incorporated." Order: the recommendation in E-022, which the owner accepted ("your recommendation"): the 40 researched national sources first, as saved copies where that is the only way (D-029), largest Indian export markets first; the seven licence-pending sources stay with agents until a licence is settled. Each cluster still gets its own source and rights check (docs/37 §6). | Owner | Customs Atlas, Demand Discovery v5 |
 | D-031 | 2026-10-19 | A market's own tariff read automatically from a retained official schedule scores like an agent's reading of it (quality 0.9) and is labelled "read from <the tariff>; trade remedies are not checked", because trade remedies and temporary measures outside the schedule are not read. Owner's choice: "Like an agent's reading (Recommended)" (policy v7, E-025). | Owner | Demand Discovery v5, Customs Atlas |
+| D-032 | 2026-10-19 | v5 scoring policy v8: India's own success no longer counts against a market — openness is measured among India's competitors, and where India already supplies 10% or more of a market a lower market price is not counted against it — and a new metric, India's sales (10 points), scores how much India already sells there; price headroom 10 → 5 and market size 20 → 15. Owner's choice, "B: fix both + India's sales (Recommended)", after the re-score in E-028. | Owner | Demand Discovery v5 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
 roadmap §26; how the seven licence-pending sources and the 45 ranked markets with no tariff online are
 covered once the researched sources are done (D-030; the replies from
-UNCTAD and the WTO bear on both); whether v5's scoring changes after the rice and brassware calibration
-failures (E-026, R-30).
+UNCTAD and the WTO bear on both).
 
 ## Entries
 
@@ -1227,6 +1227,58 @@ with `country-truth-tariff-acquisition`, `customs-union-pack` and `tariff-schedu
 **Next.** A read-only export of the three runs' assessments to the owner's Downloads (outside the
 repository), so each scoring option can be re-scored on the real runs before the owner chooses (R-30).
 
+### E-028 · 2026-10-19 · Cluster 1 on staging; the archetypes re-scored; scoring v8 (in review)
+
+**Merged.** PR #10 at 12:49:11 UTC (`d2455ba`) and PR #11 at 12:59:00 UTC (`1ecac58`), by the owner.
+
+**Cluster 1 on staging** (owner's Claude Code, before PR #11): guard values staging; `staging/railway`
+at `d2455ba` deployed to both services (`SUCCESS`, 12:49Z) and `/api/health/ready` ready. The four
+bundles were built on the owner's Mac from the files in `~/Downloads/cleartrade-tariff-sources/cluster-1`
+and each SHA-256 equalled E-025's, so the build is reproducible across machines. Imports (staging,
+fingerprint `62587019d354`): GCC `cmvf9ej460001uemer7yyjhyo`, MERCOSUR `cmvf9eq1l0001uenbf8t5zra5`, BR
+`cmvf9ew1l0001ueo22x6eqblz`, CN `cmvf9f4ve0001ueoq927bm5ck`; each `NEW_RELEASE`, active, its repeat
+`UNCHANGED`. No runs started, no config changed. Connected markets on staging: 88.
+
+**Calibration export** (owner's Claude Code; guard values and database identity checked, every query in
+one `READ ONLY` transaction, nothing written, no secrets printed):
+`~/Downloads/cleartrade-calibration/archetype-assessments-2026-10-19.json`, 3,955,624 bytes, SHA-256
+`c7d7e269498c1ab5bab44dc9cd6a546720c7154f158d3035f6e17fcf416ea353`: every assessment of the three runs
+with its score breakdown, and the comparison with India's top 10 and top 20 (top 20: rice 7, brassware
+10, carpets 16). Copied into the session through the desktop bridge and checked by hash.
+
+**Re-score.** Re-scoring the stored metrics reproduces every stored rank of the three runs exactly. India's
+real top 10 within the run's top 10 (rice / brassware / carpets; 5 passes):
+
+| Scoring | Rice | Brassware | Carpets |
+|---|---|---|---|
+| Policy v7 (today) | 3 | 4 | 8 |
+| Openness among India's competitors | 2 | 5 | 8 |
+| No price penalty where India has ≥ 10% | 3 | 5 | 8 |
+| Both | 2 | 5 | 8 |
+| Both, and India's sales (10 points; price headroom 5, market size 15) | 5 | 7 | 10 |
+
+India's sales were approximated as the stored share times the stored imports (the code uses India's
+exports over the market-size years); with ±25% noise on them, rice stayed at 5 in 39 of 40 draws, and a
+floor of $1 million or $10 million instead of $100,000 did worse. Under the last option the rice top 10 is
+US, SA, GB, QA, AU, AE, BJ, CA, SG, CI; brassware gains GB (4th) and NP (9th); carpets equals India's
+top 10. Iran, Iraq and Yemen stay out on payment risk. The owner chose it (D-032).
+
+**Built** on `dd5/scoring-v8`, from `staging/railway` at `1ecac58` (PR #12): policy v8 (`points`, `parts`,
+`prices.proven_share_percent` 10, `openness.exclude_india`, `india_sales.floor_usd` $100,000; checked by
+`assertPolicy`); `metrics.ts` (`averageIndiaSalesUsd`, `scoreIndiaSales`, the price floor with the share
+it rests on, openness over India's competitors with India's share and the all-supplier HHI kept beside
+it); `assess.ts` (India's sales over the same years and series as the foothold; the largest across the
+markets); plain-language sentences (`explain.ts`); the market page lists "India's sales here"; docs/36
+§4 and §5.1. Earlier runs keep their stored scores; an old breakdown shows only the measures it has.
+
+**Checks run (agent workspace, 22 Oct 2026).** `tsc --noEmit` clean. ESLint clean on the 9 changed code and
+test files. The 16 Demand Discovery, tariff and gate test files (`demand-discovery-v5-*`, `demand-control`,
+`phase-1-gate`, `money-format`, `manual-tariff-capture`, `tariff-schedule-pack`, `customs-union-pack`): 197
+passed, 0 failed, under the local database harness. The full suite runs in CI on the PR.
+
+**Staging after merge.** Re-run the three archetypes (`scripts/dd5-archetype-runs.ts start --rerun`, then
+`status`); these runs also use cluster 1's tariffs and the Andorra fix.
+
 ## Risk register
 
 
@@ -1261,4 +1313,4 @@ repository), so each scoring option can be re-scored on the real runs before the
 | R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
-| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Open (E-026) | Read-only look at the missed markets' metric scores; options with a recommended default for the owner before any scoring change |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |

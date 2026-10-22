@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { assertPolicy, DEMAND_DISCOVERY_V5_DEFAULT_POLICY as POLICY, policyHash, type DemandDiscoveryV5Policy } from '../src/lib/demand-discovery-v5/policy';
 import { buildMarketSeries, importsIn, indiaExportUnitValues, marketUnitValues, type MarketSeries, type TradeFlowInput } from '../src/lib/demand-discovery-v5/series';
 import {
-  averageImportsUsd, greatCircleKm, marketMedianUnitValue, olsSlope, priceRatioScore, scoreCountryRisk, scoreDistanceFit, scoreDuty, scoreGrowth,
-  scoreIndiaFoothold, scoreLogistics, scoreMarketSize, scoreOpenness, scorePriceFit, scorePriceHeadroom, scoreStability, scoreVolumeFit,
+  averageImportsUsd, averageIndiaSalesUsd, greatCircleKm, marketMedianUnitValue, olsSlope, priceRatioScore, scoreCountryRisk, scoreDistanceFit, scoreDuty, scoreGrowth,
+  scoreIndiaFoothold, scoreIndiaSales, scoreLogistics, scoreMarketSize, scoreOpenness, scorePriceFit, scorePriceHeadroom, scoreStability, scoreVolumeFit,
   tukeyFilter, weightedMedian,
 } from '../src/lib/demand-discovery-v5/metrics';
 import { agreementInForce, dutyInputs, tariffSector, type IndiaTradeAgreement } from '../src/lib/demand-discovery-v5/duty-inputs';
@@ -23,11 +23,12 @@ function seriesOf(values: number[], market = 'DE'): MarketSeries {
 }
 
 describe('v5 policy', () => {
-  test('the default policy is valid, its points sum to 100 and its parts match D-012', () => {
+  test('the default policy is valid, its points sum to 100 and its parts match D-012 as changed by D-032', () => {
     expect(() => assertPolicy(POLICY)).not.toThrow();
     const partTotal = (part: keyof DemandDiscoveryV5Policy['parts']) => POLICY.parts[part].reduce((sum, key) => sum + POLICY.points[key], 0);
     expect({ demand: partTotal('demand'), india: partTotal('india_opportunity'), access: partTotal('access'), risk: partTotal('risk'), fit: partTotal('exporter_fit') })
-      .toEqual({ demand: 35, india: 25, access: 20, risk: 10, fit: 10 });
+      .toEqual({ demand: 30, india: 30, access: 20, risk: 10, fit: 10 });
+    expect(POLICY.points).toMatchObject({ market_size: 15, india_foothold: 10, india_sales: 10, price_headroom: 5, openness: 5 });
   });
 
   test('the hash is stable under key order and changes with any value', () => {
@@ -37,7 +38,8 @@ describe('v5 policy', () => {
   });
 
   test('refuses points that do not sum to 100, a metric outside the parts, and inverted ranges', () => {
-    expect(() => assertPolicy({ ...POLICY, points: { ...POLICY.points, market_size: 21 } })).toThrow(/sum to 101/);
+    expect(() => assertPolicy({ ...POLICY, points: { ...POLICY.points, market_size: POLICY.points.market_size + 1 } })).toThrow(/sum to 101/);
+    expect(() => assertPolicy({ ...POLICY, prices: { ...POLICY.prices, proven_share_percent: 0 } })).toThrow(/proven share/);
     expect(() => assertPolicy({ ...POLICY, parts: { ...POLICY.parts, demand: ['market_size', 'growth'] } })).toThrow(/exactly one part/);
     expect(() => assertPolicy({ ...POLICY, volume: { ...POLICY.volume, full_share: 0.3 } })).toThrow(/Volume/);
     expect(() => assertPolicy({ ...POLICY, chain_link: { max_change_ratio: 1 } })).toThrow(/chain-link/);
@@ -165,9 +167,41 @@ describe("v5 India's opportunity metrics", () => {
     expect(scorePriceHeadroom(3, null, 1, POLICY)).toMatchObject({ score: null, reason: expect.stringMatching(/India's export price/) });
   });
 
-  test('openness is 100 × (1 − HHI), refused when the supplier breakdown does not cover imports', () => {
+  test("India's sales (v8): India's exports over the market-size years, on a log scale to India's largest market; a real zero scores 0", () => {
+    const window = [2019, 2020, 2021, 2022, 2023, 2024];
+    const benin = buildMarketSeries([flow(2022, 'IN', 'BJ', 1_000_000), flow(2023, 'IN', 'BJ', 2_000_000), flow(2024, 'IN', 'BJ', 3_000_000), flow(2024, 'TH', 'BJ', 500_000)], ['BJ']).get('BJ')!;
+    expect(averageIndiaSalesUsd(benin, window, POLICY)).toBe(2_000_000);
+    // Floor $100,000 to top $100 million: (log10 2,000,000 − 5) / 3 = 43.37.
+    expect(scoreIndiaSales(2_000_000, 100_000_000, 1, POLICY)).toMatchObject({ score: expect.closeTo(43.3677, 3), inputs: { average_india_exports_usd: 2_000_000, largest_india_market_usd: 100_000_000 } });
+    expect(scoreIndiaSales(100_000_000, 100_000_000, 1, POLICY).score).toBe(100);
+    expect(scoreIndiaSales(0, 100_000_000, 1, POLICY).score).toBe(0);
+    // Imports recorded but none from India is a real zero; no imports at all is a gap.
+    expect(averageIndiaSalesUsd(buildMarketSeries([flow(2024, 'TH', 'GN', 10)], ['GN']).get('GN')!, window, POLICY)).toBe(0);
+    expect(averageIndiaSalesUsd(buildMarketSeries([], ['TV']).get('TV')!, window, POLICY)).toBeNull();
+    expect(scoreIndiaSales(null, 100_000_000, 1, POLICY)).toMatchObject({ score: null, reason: expect.stringMatching(/No recorded imports/) });
+    expect(metricSentence(scoreIndiaSales(2_000_000, 100_000_000, 1, POLICY))).toBe("India's exports here averaged $2.0 million a year over the last three years (its largest market takes $100.0 million).");
+    expect(metricSentence(scoreIndiaSales(0, 100_000_000, 1, POLICY))).toBe('India has not sold this product here in the last three years.');
+  });
+
+  test('price headroom (v8): a lower price is not counted against a market where India already supplies 10% or more', () => {
+    expect(scorePriceHeadroom(2, 3, 1, POLICY, 25)).toMatchObject({ score: 50, inputs: { ratio: expect.closeTo(0.6667, 3), india_share_percent: 25, not_counted_against: 'yes' } });
+    expect(scorePriceHeadroom(2, 3, 1, POLICY, 5).score).toBe(0);
+    expect(scorePriceHeadroom(2, 3, 1, POLICY).score).toBe(0);
+    const higher = scorePriceHeadroom(3, 2, 1, POLICY, 25);
+    expect(higher.score).toBe(100);
+    expect(higher.inputs).not.toHaveProperty('not_counted_against');
+    expect(metricSentence(scorePriceHeadroom(2, 3, 1, POLICY, 25))).toBe("Buyers here pay about 33.3% less than India's usual export price. They pay $2.00/kg; India usually sells at $3.00/kg. India already supplies 25% of this market at these prices, so this is not counted against it.");
+  });
+
+  test('openness is 100 × (1 − HHI) among India\'s competitors (v8), refused when the supplier breakdown does not cover imports', () => {
     const series = buildMarketSeries([flow(2024, 'CN', 'DE', 50), flow(2024, 'VN', 'DE', 50)], ['DE']).get('DE')!;
-    expect(scoreOpenness(series, 2024, 1, POLICY)).toMatchObject({ score: 50, inputs: { hhi: 0.5, suppliers: 2 } });
+    expect(scoreOpenness(series, 2024, 1, POLICY)).toMatchObject({ score: 50, inputs: { rival_hhi: 0.5, rivals: 2, india_share_percent: 0, all_suppliers_hhi: 0.5, suppliers: 2 } });
+    // India supplying most of a market is not a closed market for India: the rivals are measured.
+    const indiaLed = buildMarketSeries([flow(2024, 'IN', 'BJ', 80), flow(2024, 'TH', 'BJ', 10), flow(2024, 'PK', 'BJ', 10)], ['BJ']).get('BJ')!;
+    expect(scoreOpenness(indiaLed, 2024, 1, POLICY)).toMatchObject({ score: 50, inputs: { rival_hhi: 0.5, rivals: 2, india_share_percent: 80, all_suppliers_hhi: 0.66 } });
+    expect(scoreOpenness(indiaLed, 2024, 1, { ...POLICY, openness: { ...POLICY.openness, exclude_india: false } })).toMatchObject({ score: 34, inputs: { hhi: 0.66, suppliers: 3 } });
+    const indiaOnly = buildMarketSeries([flow(2024, 'IN', 'NP', 40)], ['NP']).get('NP')!;
+    expect(scoreOpenness(indiaOnly, 2024, 1, POLICY)).toMatchObject({ score: 100, inputs: { rivals: 0, india_share_percent: 100 } });
     series.years.get(2024)!.total_usd = 200;
     expect(scoreOpenness(series, 2024, 1, POLICY)).toMatchObject({ score: null, inputs: { coverage: 0.5 } });
     expect(scoreOpenness(series, 2023, 1, POLICY).score).toBeNull();
@@ -200,7 +234,7 @@ describe('v5 access, risk and exporter-fit metrics', () => {
 
   // D-026 (policy v6): India's published preference scored instead of the standard rate.
   test('duty: a scored preference says so, keeps the standard rate beside it, and a quota preference is only shown', () => {
-    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v7');
+    expect(POLICY.policy_version).toBe('demand-discovery-v5-policy-v8');
     expect(POLICY.duty.score_india_preference).toBe(true);
     const preference = { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: '2.5%', percent: 2.5 };
     const scored = scoreDuty({ kind: 'official', duty_percent: 2.5, source: 'USITC HTS 1006304010', preference, rate_basis: 'india_preference', standard: { duty_percent: 11.2, expression: '11.2%' } }, POLICY, duty);

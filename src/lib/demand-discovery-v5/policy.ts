@@ -9,7 +9,7 @@ export const DEMAND_DISCOVERY_V5_MODEL = 'market-opportunity-v5';
 
 export type MetricKey =
   | 'market_size' | 'growth' | 'stability'
-  | 'india_foothold' | 'price_headroom' | 'openness'
+  | 'india_foothold' | 'india_sales' | 'price_headroom' | 'openness'
   | 'duty' | 'distance_fit' | 'logistics'
   | 'country_risk'
   | 'price_fit' | 'volume_fit';
@@ -27,8 +27,15 @@ export interface DemandDiscoveryV5Policy {
   growth: { cagr_weight: number; momentum_weight: number; floor_percent: number; ceiling_percent: number };
   stability: { minimum_rates: number; ceiling_pp: number };
   foothold: { share_weight: number; trend_weight: number; zero_share_score: number; full_share_percent: number; trend_floor_pp_per_year: number; trend_ceiling_pp_per_year: number; minimum_trend_points: number };
-  prices: { neutral_ratio: number; full_ratio: number; minimum_suppliers_with_quantity: number; outlier_iqr_multiple: number };
-  openness: { supplier_coverage_min: number; supplier_coverage_max: number };
+  /**
+   * `proven_share_percent` (v8, D-032): where India already supplies at least this share of the market,
+   * a market price below India's usual export price is not counted against it (headroom at least neutral).
+   */
+  prices: { neutral_ratio: number; full_ratio: number; minimum_suppliers_with_quantity: number; outlier_iqr_multiple: number; proven_share_percent: number };
+  /** `exclude_india` (v8, D-032): concentration is measured among India's competitors, not India itself. */
+  openness: { supplier_coverage_min: number; supplier_coverage_max: number; exclude_india: boolean };
+  /** v8 (D-032): India's own sales to the market, averaged over the market-size years, scored on a log scale above `floor_usd`. */
+  india_sales: { floor_usd: number };
   /**
    * `official_minimum_confidence`: the evidence confidence (percent) an official tariff row needs,
    * the deep assessment's own minimum (`country_truth.phase_1h` tariff policy).
@@ -88,18 +95,23 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   // automatically from a retained schedule, scored like an agent's reading because trade remedies and
   // temporary measures are not checked. A new version, not an amendment of v6, because v6 was live on
   // staging from 19 Oct (ledger E-026).
-  policy_version: 'demand-discovery-v5-policy-v7',
+  // v8 (19 Oct 2026, D-032, after the archetype calibration of E-026–E-028): India's own success no
+  // longer counts against a market — openness is measured among India's competitors, and a lower
+  // market price is not counted against a market where India already supplies 10% or more — and a
+  // new metric, India's sales (10 points), scores how much India already sells there; price headroom
+  // 10 → 5 and market size 20 → 15 make room.
+  policy_version: 'demand-discovery-v5-policy-v8',
   model_version: DEMAND_DISCOVERY_V5_MODEL,
   points: {
-    market_size: 20, growth: 10, stability: 5,
-    india_foothold: 10, price_headroom: 10, openness: 5,
+    market_size: 15, growth: 10, stability: 5,
+    india_foothold: 10, india_sales: 10, price_headroom: 5, openness: 5,
     duty: 10, distance_fit: 5, logistics: 5,
     country_risk: 10,
     price_fit: 5, volume_fit: 5,
   },
   parts: {
     demand: ['market_size', 'growth', 'stability'],
-    india_opportunity: ['india_foothold', 'price_headroom', 'openness'],
+    india_opportunity: ['india_foothold', 'india_sales', 'price_headroom', 'openness'],
     access: ['duty', 'distance_fit', 'logistics'],
     risk: ['country_risk'],
     exporter_fit: ['price_fit', 'volume_fit'],
@@ -109,8 +121,9 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   growth: { cagr_weight: 70, momentum_weight: 30, floor_percent: -20, ceiling_percent: 20 },
   stability: { minimum_rates: 4, ceiling_pp: 50 },
   foothold: { share_weight: 70, trend_weight: 30, zero_share_score: 40, full_share_percent: 10, trend_floor_pp_per_year: -5, trend_ceiling_pp_per_year: 5, minimum_trend_points: 3 },
-  prices: { neutral_ratio: 1, full_ratio: 1.5, minimum_suppliers_with_quantity: 3, outlier_iqr_multiple: 1.5 },
-  openness: { supplier_coverage_min: 0.95, supplier_coverage_max: 1.05 },
+  prices: { neutral_ratio: 1, full_ratio: 1.5, minimum_suppliers_with_quantity: 3, outlier_iqr_multiple: 1.5, proven_share_percent: 10 },
+  openness: { supplier_coverage_min: 0.95, supplier_coverage_max: 1.05, exclude_india: true },
+  india_sales: { floor_usd: 100_000 },
   duty: { ceiling_percent: 25, comprehensive_agreement_factor: 0.5, partial_agreement_factor: 0.8, primary_hs_chapters_through: 27, official_minimum_confidence: 50, score_india_preference: true },
   distance: { minimum_weight_covered: 0.8 },
   logistics: { lpi_min: 1, lpi_max: 5, lsci_fallback_minimum_pairs: 30 },
@@ -204,6 +217,9 @@ export function assertPolicy(policy: DemandDiscoveryV5Policy) {
   if (policy.growth.cagr_weight + policy.growth.momentum_weight !== 100) throw new Error('Growth weights must sum to 100.');
   if (policy.foothold.share_weight + policy.foothold.trend_weight !== 100) throw new Error('Foothold weights must sum to 100.');
   if (!(policy.prices.full_ratio > policy.prices.neutral_ratio)) throw new Error('The full price ratio must exceed the neutral ratio.');
+  if (!(policy.prices.proven_share_percent > 0 && policy.prices.proven_share_percent <= 100)) throw new Error('The proven share must be a percentage above 0.');
+  if (typeof policy.openness.exclude_india !== 'boolean') throw new Error('openness.exclude_india must be true or false.');
+  if (!(policy.india_sales.floor_usd > 0)) throw new Error("India's sales floor must be positive.");
   if (!(policy.volume.full_share < policy.volume.zero_share)) throw new Error('Volume full share must be below the zero share.');
   if (!(policy.chain_link.max_change_ratio > 1)) throw new Error('The chain-link change limit must exceed 1.');
   if (!(policy.ranking.minimum_live_points > 0 && policy.ranking.minimum_live_points <= 100)) throw new Error('Minimum live points must be in (0, 100].');

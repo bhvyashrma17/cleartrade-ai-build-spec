@@ -387,7 +387,7 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
       bucket: bucketFor(current),
       subjectId: assessment.id,
       operationalOrder: operationalOrder({ modelRank, current }),
-      // v5 has five parts and twelve measures, not the eight earlier components: `v5` carries them.
+      // v5 has five parts and twelve or thirteen measures (v8 adds India's sales), not the eight earlier components: `v5` carries them.
       components: v5 ? [] : componentViews(assessment),
       v5,
       manualTariff,

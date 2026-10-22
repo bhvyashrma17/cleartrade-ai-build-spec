@@ -49,7 +49,7 @@ export interface MarketReason {
 
 const METRIC_NAMES: Record<MetricKey, string> = {
   market_size: 'market size', growth: 'growth', stability: 'stability',
-  india_foothold: "India's foothold", price_headroom: 'price headroom', openness: 'openness',
+  india_foothold: "India's foothold", india_sales: "India's sales", price_headroom: 'price headroom', openness: 'openness',
   duty: 'duty', distance_fit: 'distance', logistics: 'logistics',
   country_risk: 'country risk', price_fit: 'price fit', volume_fit: 'volume fit',
 };
@@ -145,17 +145,32 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
       if (share === 0) return `India does not supply this market yet${direction}.`;
       return costs && share < 1 ? `India supplies only ${formatPercent(share)} of imports so far${direction}.` : `India supplies ${formatPercent(share)} of imports${direction}.`;
     }
+    case 'india_sales': {
+      const sales = num(inputs.average_india_exports_usd) ?? 0;
+      const largest = num(inputs.largest_india_market_usd);
+      if (sales <= 0) return 'India has not sold this product here in the last three years.';
+      return `India's exports here averaged ${formatUsd(sales)} a year over the last three years${largest != null && largest > sales ? ` (its largest market takes ${formatUsd(largest)})` : ', its largest market for this product'}.`;
+    }
     case 'price_headroom': {
       const ratio = num(inputs.ratio) ?? 1;
       const market = num(inputs.market_usd_per_kg);
       const india = num(inputs.india_usd_per_kg);
       const prices = market != null && india != null ? ` They pay ${formatUsdPerKg(market)}; India usually sells at ${formatUsdPerKg(india)}.` : '';
+      // v8 (D-032): India already supplying a real share here shows the lower price is no bar.
+      const proven = inputs.not_counted_against === 'yes' && num(inputs.india_share_percent) != null
+        ? ` India already supplies ${formatPercent(num(inputs.india_share_percent)!)} of this market at these prices, so this is not counted against it.` : '';
       if (Math.abs(ratio - 1) < 0.005) return `Buyers here pay about the same as India's usual export price.${prices}`;
       return ratio > 1
         ? `Buyers here pay ${costs ? 'only ' : ''}about ${formatPercent((ratio - 1) * 100)} more than India's usual export price.${prices}`
-        : `Buyers here pay about ${formatPercent((1 - ratio) * 100)} less than India's usual export price.${prices}`;
+        : `Buyers here pay about ${formatPercent((1 - ratio) * 100)} less than India's usual export price.${prices}${proven}`;
     }
     case 'openness':
+      // v8 (D-032): measured among India's competitors when the run says so.
+      if (num(inputs.rival_hhi) != null) {
+        const rivals = num(inputs.rivals) ?? 0;
+        if (rivals === 0) return 'India is the only supplier.';
+        return result.score! >= 60 ? `Among India's competitors, supply is spread across ${rivals} countries; none dominates.` : 'A few countries other than India supply most of the imports.';
+      }
       return result.score! >= 60 ? `Supply is spread across ${inputs.suppliers} countries; no one dominates.` : 'A few countries supply most of the imports.';
     case 'duty': {
       const duty = num(inputs.duty_percent) ?? 0;
