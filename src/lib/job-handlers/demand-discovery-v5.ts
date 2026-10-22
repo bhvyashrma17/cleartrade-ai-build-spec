@@ -15,6 +15,7 @@ import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { loadRunInputs, type V5ProductFacts } from '@/lib/demand-discovery-v5/run-inputs';
 import { writeV5Results } from '@/lib/demand-discovery-v5/service';
 import { requestHandOffRegionalDemand } from '@/lib/regional-demand/service';
+import { requestHandOffBuyerDiscovery } from '@/lib/buyer-discovery/service';
 import type { DocumentStorage } from '@/lib/document-storage';
 
 let storageOverride: DocumentStorage | null = null;
@@ -50,9 +51,11 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
       run, result, frozen_inputs: loaded.frozen, evidence_origins: loaded.evidence_origins, notes: loaded.notes, status, as_of: asOf,
       config_version: version, policy_snapshot: config.policy, correlation_id: ctx.correlation_id,
     });
-    // D-019: the top markets go on to regional discovery where an official regional source exists.
+    // D-019: the top markets go on to regional and buyer discovery where an official source exists.
     // Never fails the run: a hand-off that cannot start is recorded in the result.
-    const regional = await requestHandOffRegionalDemand(runId, ctx.correlation_id).catch((error: unknown) => ({ requested: [] as string[], refused: [{ country_code: '*', reason: error instanceof Error ? error.message : String(error) }] }));
+    const handOffFailed = (error: unknown) => ({ requested: [] as string[], refused: [{ country_code: '*', reason: error instanceof Error ? error.message : String(error) }] });
+    const regional = await requestHandOffRegionalDemand(runId, ctx.correlation_id).catch(handOffFailed);
+    const buyers = await requestHandOffBuyerDiscovery(runId, ctx.correlation_id).catch(handOffFailed);
     return {
       status,
       result: {
@@ -61,6 +64,7 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
         ranked: summary.ranked,
         top_markets: summary.handed_off.slice(0, 3).map((item) => ({ country_code: item.market, overall_score: item.overall })),
         regional_demand: regional,
+        buyer_discovery: buyers,
         ...(loaded.notes.length ? { missing: loaded.notes } : {}),
         provenance: { engine: DEMAND_DISCOVERY_V5_MODEL, policy_version: result.policy_version, note: 'Scores are computed from recorded trade data (CEPII BACI, UN Comtrade) and public reference datasets. Duty figures marked "estimated" are not official rates.' },
       } as Prisma.InputJsonValue,

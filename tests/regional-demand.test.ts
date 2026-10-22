@@ -102,7 +102,7 @@ describe('Requesting regional demand', () => {
   });
 
   test('refuses markets without a regional source, older assessments, other tenants and free tenants', async () => {
-    await expect(requestRegionalDemand({ market_assessment_id: ids.de!, actor: paidOwner, trigger: 'requested', correlation_id: randomUUID() })).rejects.toThrow(/Regional figures for DE are not connected yet/);
+    await expect(requestRegionalDemand({ market_assessment_id: ids.de!, actor: paidOwner, trigger: 'requested', correlation_id: randomUUID() })).rejects.toThrow(/Regional figures for DE are not connected yet. They are available for US, GB, CA/);
     await expect(requestRegionalDemand({ market_assessment_id: ids.v4!, actor: paidOwner, trigger: 'requested', correlation_id: randomUUID() })).rejects.toThrow(/Demand Discovery v5 market/);
     await expect(requestRegionalDemand({ market_assessment_id: ids.us!, actor: stranger, trigger: 'requested', correlation_id: randomUUID() })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(requestRegionalDemand({ market_assessment_id: 'missing', actor: paidOwner, trigger: 'requested', correlation_id: randomUUID() })).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -132,7 +132,7 @@ describe('Reading the Census Bureau', () => {
     const run = await freshRun();
     const outcome = await runRegionalDemand(context(run.job_id!, run.id));
     await close(run);
-    expect(outcome).toMatchObject({ status: 'completed', result: { outcome: 'completed', country_code: 'US', hs6_code: '570110', top_state: 'NY', top_port: 'New York, NY', india_value_usd: 700 } });
+    expect(outcome).toMatchObject({ status: 'completed', result: { outcome: 'completed', country_code: 'US', hs6_code: '570110', top_area: 'NY', second_view_top: 'New York, NY', india_value_usd: 700 } });
     const stored = await prisma.regionalDemandRun.findUniqueOrThrow({ where: { id: run.id } });
     expect(stored.status).toBe(RegionalDemandStatus.completed);
     expect(stored.retrieved_at).not.toBeNull();

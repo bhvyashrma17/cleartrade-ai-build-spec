@@ -31,6 +31,7 @@ import { runImportRecordRetention } from '@/lib/job-handlers/import-retention';
 import { runMarketAccessIngest } from '@/lib/job-handlers/market-access';
 import { runNotificationDelivery } from '@/lib/job-handlers/notification-delivery';
 import { runRegionalDemand } from '@/lib/job-handlers/regional-demand';
+import { runBuyerDiscovery } from '@/lib/job-handlers/buyer-discovery';
 
 let registered = false;
 
@@ -51,7 +52,8 @@ export function registerAllJobHandlers() {
   registerJobHandler(JobType.market_access_ingest, runMarketAccessIngest);
   registerJobHandler(JobType.notification_delivery, runNotificationDelivery);
   registerJobHandler(JobType.regional_demand_discovery, runRegionalDemand);
-  // Not yet implemented — buyer_discovery, report_export. Jobs of those types fail fast
-  // with NO_HANDLER instead of hanging.
+  registerJobHandler(JobType.buyer_discovery, runBuyerDiscovery);
+  // Not yet implemented — report_export. Jobs of that type fail fast with NO_HANDLER instead of
+  // hanging.
   registered = true;
 }

@@ -1868,6 +1868,9 @@ model Buyer {
   deprioritized            Boolean            @default(false)
   deprioritization_reasons Json               @default("[]")
   sanctions_blocked        Boolean            @default(false)
+  /// For a buyer found in an official importer list (D-033, docs/38 §2): "<source>:<entity key>",
+  /// so the same importer in later lists updates this row instead of creating another.
+  source_entity_key        String?            @unique
   created_at               DateTime           @default(now())
   updated_at               DateTime           @updatedAt
 
@@ -5542,4 +5545,68 @@ model RegionalDemandRun {
 
   @@index([market_assessment_id, created_at])
   @@index([exporter_org_id, created_at])
+}
+
+/// An official list of importers as published (D-033, docs/38 §2): HMRC's monthly importer details
+/// (UK) and ISED's Canadian Importers Database. One row per imported file set. Several periods can be
+/// active at once (each month is its own list); importing a file for a period that already has an
+/// active release supersedes that release. Entries are the publisher's rows, merged per importer.
+model ImporterListRelease {
+  id              String                        @id @default(cuid())
+  /// uk_hmrc_importers | ca_cid_major_importers
+  source_key      String
+  country_code    String                        @db.VarChar(2)
+  /// The period the list describes: a month for HMRC ("2026-08"), a year for ISED ("2023").
+  period          String
+  /// Each file's name, sha256 and size.
+  file_manifest   Json
+  source_url      String
+  /// sha256 over the file manifest, so a file set has one identity.
+  source_sha256   String
+  source_bytes    Int
+  licence         String
+  parser_version  String
+  row_count       Int
+  validation      Json                          @default("{}")
+  status          ReferenceDatasetReleaseStatus @default(active)
+  retrieved_at    DateTime
+  environment     String
+  evidence_origin EvidenceOrigin
+  imported_by_id  String
+  imported_at     DateTime                      @default(now())
+  superseded_at   DateTime?
+  correlation_id  String?
+
+  entries ImporterListEntry[]
+
+  @@unique([source_key, source_sha256, parser_version, environment], map: "ImporterListRelease_identity_key")
+  @@index([source_key, environment, status, period])
+}
+
+model ImporterListEntry {
+  id            String   @id @default(cuid())
+  release_id    String
+  /// The importer within its source: normalised name and postcode.
+  entity_key    String
+  name          String
+  address_lines String[]
+  town          String?
+  postcode      String?
+  region_code   String?
+  region_name   String?
+  /// Codes as published: eight-digit CN for HMRC, HS6 or HS10 for ISED; a two-digit chapter where the
+  /// publisher suppressed the detail.
+  hs_codes      String[]
+  /// The distinct six-digit headings of the codes above that have six digits or more.
+  hs6_codes     String[]
+  /// ISED's by-country list: "<hs6>:<ISO2>" pairs, e.g. "570110:IN".
+  origin_hs6    String[] @default([])
+  /// What the source says about the entry, e.g. a non-resident importer.
+  notes         Json     @default("[]")
+
+  release ImporterListRelease @relation(fields: [release_id], references: [id], onDelete: Cascade)
+
+  @@unique([release_id, entity_key])
+  @@index([hs6_codes(ops: ArrayOps)], type: Gin)
+  @@index([origin_hs6(ops: ArrayOps)], type: Gin)
 }

@@ -28,6 +28,8 @@ export interface RegionalSource {
 
 export const REGIONAL_SOURCES: Readonly<Record<string, RegionalSource>> = {
   US: { key: US_REGIONAL_SOURCE.key, country_code: 'US', publisher: 'U.S. Census Bureau' },
+  GB: { key: 'uk_hmrc_importers', country_code: 'GB', publisher: 'HMRC' },
+  CA: { key: 'ca_cid_major_importers', country_code: 'CA', publisher: 'Canadian Importers Database' },
 };
 
 export function regionalSourceFor(countryCode: string): RegionalSource | null {

@@ -174,11 +174,33 @@ export interface RegionalArea {
 
 export interface RegionalView {
   kind: 'state' | 'port';
+  measure?: 'value';
   title: string;
   areas: RegionalArea[];
   /** Everything after the top areas, summed, so the table still adds up. */
   others: { count: number; india_value_usd: number; world_value_usd: number | null } | null;
 }
+
+/** A region counted by the importers an official list places there (UK, Canada). */
+export interface ImporterArea {
+  code: string;
+  name: string;
+  importer_count: number;
+  /** Importers listed as buying the product from India; null where the list does not say. */
+  india_importer_count: number | null;
+  /** The most common towns, most first. */
+  towns: string[];
+}
+
+export interface ImporterView {
+  kind: 'region' | 'province';
+  measure: 'importers';
+  title: string;
+  areas: ImporterArea[];
+  others: { count: number; importer_count: number } | null;
+}
+
+export type AnyRegionalView = RegionalView | ImporterView;
 
 export interface RegionalDemandResultV1 {
   version: 1;
@@ -186,8 +208,17 @@ export interface RegionalDemandResultV1 {
   hs6: string;
   source: { key: string; label: string; url: string; attribution: string; retrieved_at: string; requests: string[] };
   period: { from: string; to: string; months: number; label: string };
-  totals: { india_value_usd: number; world_value_usd: number | null; india_share_percent: number | null; container_share_percent: number | null; air_share_percent: number | null };
-  views: RegionalView[];
+  totals: {
+    india_value_usd: number | null;
+    world_value_usd: number | null;
+    india_share_percent: number | null;
+    container_share_percent: number | null;
+    air_share_percent: number | null;
+    /** For a list of importers: how many import the product, and how many of them from India. */
+    importer_count?: number;
+    india_importer_count?: number | null;
+  };
+  views: AnyRegionalView[];
   notes: string[];
 }
 

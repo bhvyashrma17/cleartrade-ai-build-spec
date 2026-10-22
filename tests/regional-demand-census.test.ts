@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   buildUsRegionalResult, CENSUS_ATTRIBUTION, censusFromMonth, censusQueryUrl, CensusKeyError, fetchCensusRows, parseCensusRows,
-  readUsRegionalDemand, windowMonths, withoutKey, type CensusFetch, type CensusRow,
+  readUsRegionalDemand, windowMonths, withoutKey, type CensusFetch, type CensusRow, type RegionalView,
 } from '../src/lib/regional-demand/census';
 
 /**
@@ -100,7 +100,7 @@ describe('States and ports', () => {
     expect(result).not.toBeNull();
     const r = result!;
     expect(r.period).toEqual({ from: '2025-09', to: '2026-08', months: 12, label: 'Sep 2025 – Aug 2026' });
-    const [states, ports] = r.views;
+    const [states, ports] = r.views as RegionalView[];
     expect(states!.kind).toBe('state');
     expect(states!.areas.map((a) => a.code)).toEqual(['NY', 'GA', 'CA', 'TX']);
     expect(states!.areas[0]).toMatchObject({ name: 'New York', india_value_usd: 12_000_000, world_value_usd: 24_000_000, india_share_percent: 50, container_value_usd: 10_800_000, container_weight_kg: 1_200_000, india_months: 12 });
@@ -122,8 +122,9 @@ describe('States and ports', () => {
     const partial = fakeCensus({ 'statehs:-': { status: 400, body: 'error: unknown predicate' } });
     const { result } = await readUsRegionalDemand({ hs6: '570110', key: 'k', now: new Date('2026-10-22T10:00:00Z'), fetchImpl: partial.fetchImpl });
     expect(result!.totals.world_value_usd).toBeNull();
-    expect(result!.views[0]!.areas[0]!.world_value_usd).toBeNull();
-    expect(result!.views[1]!.areas[0]!.world_value_usd).toBe(21_600_000);
+    const [states, ports] = result!.views as RegionalView[];
+    expect(states!.areas[0]!.world_value_usd).toBeNull();
+    expect(ports!.areas[0]!.world_value_usd).toBe(21_600_000);
     const refused = fakeCensus({ 'porths:-': { status: 200, body: 'Invalid Key: the key is not activated' } });
     await expect(readUsRegionalDemand({ hs6: '570110', key: 'k', now: new Date(), fetchImpl: refused.fetchImpl })).rejects.toBeInstanceOf(CensusKeyError);
   });

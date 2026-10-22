@@ -72,7 +72,10 @@ async function main() {
           ...(result ? {
             period: result.period.label, india_value_usd: result.totals.india_value_usd, world_value_usd: result.totals.world_value_usd, india_share_percent: result.totals.india_share_percent,
             container_share_percent: result.totals.container_share_percent,
-            top: Object.fromEntries(result.views.map((view) => [view.kind, view.areas.slice(0, top).map((area) => `${area.name} (${area.code}): India $${Math.round(area.india_value_usd).toLocaleString('en-US')}`)])),
+            importer_count: result.totals.importer_count ?? null,
+            top: Object.fromEntries(result.views.map((view) => [view.kind, view.measure === 'importers'
+              ? view.areas.slice(0, top).map((area) => `${area.name}: ${area.importer_count} importers${area.towns.length ? ` (${area.towns.join(', ')})` : ''}`)
+              : view.areas.slice(0, top).map((area) => `${area.name} (${area.code}): India $${Math.round(area.india_value_usd).toLocaleString('en-US')}`)])),
           } : {}),
         } : null,
       });
