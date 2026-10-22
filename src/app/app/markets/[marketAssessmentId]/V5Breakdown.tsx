@@ -2,7 +2,7 @@
 
 /**
  * EXP-05 for a Demand Discovery v5 assessment (docs/36 §4–§6): where the market stands, then the
- * five parts and twelve measures behind its score. A measure without data says so and why; it is
+ * five parts and the measures behind its score. A measure without data says so and why; it is
  * never shown as a zero. Each live measure states the observed figure in plain words.
  */
 
@@ -19,11 +19,11 @@ const PART_NAMES: Record<string, string> = {
   demand: 'Demand', india_opportunity: "India's opportunity", access: 'Access', risk: 'Risk', exporter_fit: 'Fit with your business',
 };
 const PART_METRICS: Record<string, string[]> = {
-  demand: ['market_size', 'growth', 'stability'], india_opportunity: ['india_foothold', 'price_headroom', 'openness'],
+  demand: ['market_size', 'growth', 'stability'], india_opportunity: ['india_foothold', 'india_sales', 'price_headroom', 'openness'],
   access: ['duty', 'distance_fit', 'logistics'], risk: ['country_risk'], exporter_fit: ['price_fit', 'volume_fit'],
 };
 const METRIC_NAMES: Record<string, string> = {
-  market_size: 'Market size', growth: 'Growth', stability: 'Steadiness', india_foothold: "India's foothold",
+  market_size: 'Market size', growth: 'Growth', stability: 'Steadiness', india_foothold: "India's foothold", india_sales: "India's sales here",
   price_headroom: "Price against India's usual price", openness: 'Open to new suppliers', duty: 'Duty on Indian goods',
   distance_fit: 'Distance', logistics: 'Logistics', country_risk: 'Payment risk (ECGC)', price_fit: 'Your price against this market',
   volume_fit: 'Your capacity against this market',

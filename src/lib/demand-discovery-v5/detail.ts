@@ -1,6 +1,6 @@
 /**
  * One v5 market assessment as the portals show it (docs/36 §6): status, rank, live points, the five
- * parts and twelve measures, labels, reasons and flags — read off the stored row, never recomputed.
+ * parts and their measures, labels, reasons and flags — read off the stored row, never recomputed.
  * The exporter's market page and the agent's control surface both read it from here.
  */
 import type { MarketAssessment } from '@prisma/client';

@@ -1,12 +1,12 @@
 /**
- * The twelve v5 metrics (docs/36 §4). Pure functions: each takes the figures it needs and returns a
+ * The thirteen v5 metrics (docs/36 §4; India's sales from policy v8). Pure functions: each takes the figures it needs and returns a
  * 0–100 score with the inputs behind it, or `score: null` with the reason. A metric without its
  * inputs is unavailable — it is never scored as zero.
  */
 import type { DemandDiscoveryV5Policy, MetricKey } from './policy';
 import type { LogisticsEstimate } from './logistics-fallback';
 import { tooOldReason } from './world-bank';
-import { importsIn, type MarketSeries, type UnitValuePoint } from './series';
+import { importsIn, INDIA, type MarketSeries, type UnitValuePoint } from './series';
 
 export interface MetricResult {
   key: MetricKey;
@@ -88,6 +88,26 @@ export function averageImportsUsd(series: MarketSeries, window: readonly number[
   const values = years.map((year) => importsIn(series, year));
   if (!values.some((value) => value > 0)) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+/**
+ * India's own sales to the market (v8, D-032): India's exports averaged over the same years as market
+ * size. A real zero — India sold nothing there — is a value, not a gap; only a market with no recorded
+ * imports at all has none.
+ */
+export function averageIndiaSalesUsd(series: MarketSeries, window: readonly number[], policy: DemandDiscoveryV5Policy): number | null {
+  const years = window.slice(-policy.size.average_years);
+  if (!years.some((year) => importsIn(series, year) > 0)) return null;
+  return years.reduce((sum, year) => sum + (series.years.get(year)?.india_usd ?? 0), 0) / years.length;
+}
+
+/** Scored like market size, on a log scale from `india_sales.floor_usd` to India's largest market for the product. */
+export function scoreIndiaSales(average: number | null, largest: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+  if (average == null || largest == null) return unavailable('india_sales', 'No recorded imports in the last three years.');
+  const floor = Math.log10(policy.india_sales.floor_usd);
+  const top = Math.log10(Math.max(largest, policy.india_sales.floor_usd * 10));
+  const score = average <= policy.india_sales.floor_usd ? 0 : clamp(((Math.log10(average) - floor) / (top - floor)) * 100);
+  return { key: 'india_sales', score: round(score, 4), quality, reason: null, inputs: { average_india_exports_usd: round(average, 2), largest_india_market_usd: round(largest, 2) } };
 }
 
 export function scoreMarketSize(average: number | null, largest: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
@@ -172,11 +192,17 @@ export function marketMedianUnitValue(points: readonly UnitValuePoint[], policy:
   return kept.length >= policy.prices.minimum_suppliers_with_quantity ? weightedMedian(kept) : null;
 }
 
-export function scorePriceHeadroom(marketUv: number | null, indiaUv: number | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
+export function scorePriceHeadroom(marketUv: number | null, indiaUv: number | null, quality: number, policy: DemandDiscoveryV5Policy, indiaSharePercent: number | null = null): MetricResult {
   if (marketUv == null) return unavailable('price_headroom', `Fewer than ${policy.prices.minimum_suppliers_with_quantity} suppliers report quantities.`);
   if (indiaUv == null) return unavailable('price_headroom', "India's export price for this product cannot be measured.");
   const ratio = marketUv / indiaUv;
-  return { key: 'price_headroom', score: round(priceRatioScore(ratio, policy), 4), quality, reason: null, inputs: { market_usd_per_kg: round(marketUv, 6), india_usd_per_kg: round(indiaUv, 6), ratio: round(ratio, 6) } };
+  const raw = priceRatioScore(ratio, policy);
+  // v8 (D-032): India already selling a real share here at these prices shows the price is no bar.
+  const proven = indiaSharePercent != null && indiaSharePercent >= policy.prices.proven_share_percent && raw < 50;
+  return {
+    key: 'price_headroom', score: round(proven ? 50 : raw, 4), quality, reason: null,
+    inputs: { market_usd_per_kg: round(marketUv, 6), india_usd_per_kg: round(indiaUv, 6), ratio: round(ratio, 6), ...(proven ? { india_share_percent: round(indiaSharePercent, 4), not_counted_against: 'yes' } : {}) },
+  };
 }
 
 export function scoreOpenness(series: MarketSeries, year: number, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
@@ -188,7 +214,16 @@ export function scoreOpenness(series: MarketSeries, year: number, quality: numbe
     return unavailable('openness', `Supplier breakdown covers ${round(coverage * 100, 1)}% of imports.`, { coverage: round(coverage, 4) });
   }
   const hhi = [...latest.suppliers.values()].reduce((sum, supplier) => sum + (supplier.value_usd / supplierSum) ** 2, 0);
-  return { key: 'openness', score: round(100 * (1 - hhi), 4), quality, reason: null, inputs: { hhi: round(hhi, 6), suppliers: latest.suppliers.size } };
+  if (!policy.openness.exclude_india) return { key: 'openness', score: round(100 * (1 - hhi), 4), quality, reason: null, inputs: { hhi: round(hhi, 6), suppliers: latest.suppliers.size } };
+  // v8 (D-032): concentration among India's competitors; India supplying most of a market is not a closed market for India.
+  const rivals = [...latest.suppliers.entries()].filter(([code]) => code !== INDIA).map(([, supplier]) => supplier.value_usd);
+  const rivalSum = rivals.reduce((sum, value) => sum + value, 0);
+  const indiaShare = ((latest.suppliers.get(INDIA)?.value_usd ?? 0) / supplierSum) * 100;
+  const rivalHhi = rivalSum > 0 ? rivals.reduce((sum, value) => sum + (value / rivalSum) ** 2, 0) : 0;
+  return {
+    key: 'openness', score: round(100 * (1 - rivalHhi), 4), quality, reason: null,
+    inputs: { rival_hhi: round(rivalHhi, 6), rivals: rivals.length, india_share_percent: round(indiaShare, 4), all_suppliers_hhi: round(hhi, 6), suppliers: latest.suppliers.size },
+  };
 }
 
 // --- 7–9 access -------------------------------------------------------------------------------
