@@ -21,6 +21,9 @@ import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
+import { FindBuyersForm, type FindBuyersMarket } from '@/components/agent/FindBuyersForm';
+import { activeImporterLists } from '@/lib/buyer-discovery/importer-list-service';
+import { IMPORTER_LIST_SOURCES } from '@/lib/buyer-discovery/importer-lists';
 import { CountryTruthWork } from '@/components/agent/CountryTruthWork';
 import { MarketScanQueue } from '@/components/agent/MarketScanQueue';
 import { buyerControlRows } from '@/lib/buyer-control';
@@ -159,6 +162,18 @@ export default async function ExporterAccountPage({
   // Tenant- and assignment-safe: buyerControlRows asserts org access through the same helper
   // every other org-scoped read uses, so this cannot surface an unassigned exporter's buyers.
   const buyerRows = activeTab === 'buyers' ? await buyerControlRows(principal, exporterOrgId) : [];
+  // D-033: the markets an official importer list covers, and whether one is imported here yet.
+  const canFindBuyers = activeTab === 'buyers' && permits(principal, 'buyer_discovery.run');
+  const buyerMarkets: FindBuyersMarket[] = canFindBuyers
+    ? await Promise.all(Object.values(IMPORTER_LIST_SOURCES).map(async (source) => ({
+        code: source.country_code,
+        name: source.country_code === 'GB' ? 'United Kingdom' : source.country_code === 'CA' ? 'Canada' : source.country_code,
+        unavailable: (await activeImporterLists(source.key)).length ? null : `No ${source.label} list has been imported on this environment yet.`,
+      })))
+    : [];
+  const buyerProducts = org.products
+    .filter((p) => p.hs_classification_status === 'confirmed' && p.hs_code && /^\d{6}$/.test(p.hs_code))
+    .map((p) => ({ id: p.id, name: p.name, hs6: p.hs_code! }));
   const visibleBuyerRows = showAll ? buyerRows : activeOnlyCandidates(buyerRows);
 
   return (
@@ -219,6 +234,11 @@ export default async function ExporterAccountPage({
             Three separate layers: what the model recommends, what ClearTrade is operationally
             doing, and what agents have decided. Agent decisions never change the AI score.
           </p>
+          {canFindBuyers ? (
+            <div className="mt-4">
+              <FindBuyersForm exporterOrgId={org.id} products={buyerProducts} markets={buyerMarkets} />
+            </div>
+          ) : null}
           <div className="mt-4">
             <BuyerDiscoveryControl
               rows={visibleBuyerRows}

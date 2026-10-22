@@ -1319,6 +1319,48 @@ is set is the first real read (R-32).
 **Staging after merge (owner).** Set `CENSUS_API_KEY` on the staging web and worker services, then run
 `scripts/regional-demand.ts request --run=<carpets v5 run> --actor-email=<ops supervisor>` and `status`.
 
+### E-030 · 2026-10-22 · Real buyers from official importer lists (D-033, D-034), PR B
+
+**Objective.** Stage 3 of the product order for the pitch on 24 Oct: named importers of the product in
+the UK (HMRC) and Canada (ISED), and the UK and Canada regional views built from the same lists.
+docs/38 §1.2 and §2.
+
+**Branch.** `dd6/buyers-uk-ca`, stacked on `dd6/regional-demand-us` (PR #13).
+
+**Files.** Schema and migration `20261022120000_official_importer_lists` (`ImporterListRelease`,
+`ImporterListEntry` with GIN indexes on the HS6 headings and origin pairs, `Buyer.source_entity_key`);
+`src/lib/buyer-discovery/{importer-lists,importer-list-service,service,uk-regions}.ts`; the
+`buyer_discovery` handler (registered; it had none, E-001); `src/lib/regional-demand/importer-regions.ts`
+and the GB/CA regional sources; the hand-off of GB/CA top markets in the v5 handler; `POST
+/api/v1/exporters/:id/buyer-discovery`; the agent's Buyers tab form (`FindBuyersForm.tsx`) and the buyer
+control (`buyer-control.ts`, `BuyerDiscoveryControl.tsx`) reading the new model's components, place,
+reason and address; the market page (importer-count regions; the buyer section now says how many
+importers were found and that the agent reviews them — exporters cannot run buyer discovery, docs/11
+§7, so the old "Find buyers" link led to a search that refused them); `scripts/import-importer-list.ts`,
+`scripts/buyer-discovery.ts`; `scripts/demo-account.ts` (a staging exporter login, an assigned agent
+login, a dated 30-day manual membership and the three archetype products with confirmed codes, which
+start v5; the password comes from `DEMO_PASSWORD` in the operator's shell and is never printed); tests
+`importer-lists.test.ts` (5), `buyer-discovery.test.ts` (8), and the regional tests updated; docs/38.
+
+**Real file, local database.** `importers2608.zip` (SHA-256 `68a53b84…f46b`) imported with the real script
+into a fresh local database: NEW in 30 s (release of 106,285 importers, period 2026-08, 167 with only
+chapter codes, none without a region), then UNCHANGED. Buyer discovery for HS 570110 in GB: 86 importers
+found, 86 buyers created in 1.5 s; sanctions not screened (no sanctions lists in that database, so every
+buyer carries the flag). Regions: London 52, South East 11, Scotland 7, South West 5, East of England 4,
+North West 4, Yorkshire and The Humber 2, West Midlands 1.
+
+**Canada.** Not done: ISED's site answered 503 ("urgent maintenance") all day on 22 Oct, so the CID files
+could not be downloaded and their layout is unknown. Importing a Canadian list is refused with that
+reason; Canada's regional view and buyer discovery say no list is imported.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean. ESLint clean on every changed or new code and test
+file. New and updated tests: 56 passed (with `buyer-control.test.ts`). Full suite under the local
+database harness: 2,273 passed, 5 skipped, 3 failed — the same three local-harness-only failures as on
+earlier PRs. The demo-account script was run twice against the local check database (created, then
+reused unchanged), and an assigned agent's request found the 86 UK carpet importers and read them back
+through the agent's buyer control (specialist rug importers score 100; John Lewis, with 9 of its 334
+codes in chapter 57, scores 58). CI runs the canonical suite on the PR.
+
 ## Risk register
 
 

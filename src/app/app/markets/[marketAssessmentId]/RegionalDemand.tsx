@@ -13,7 +13,7 @@ import { Button, StatusChip } from '@/components/ui';
 import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import { formatPercent, formatUsd } from '@/lib/demand-discovery-v5/explain';
-import type { RegionalArea, RegionalDemandResultV1, RegionalView } from '@/lib/regional-demand/census';
+import type { ImporterView, RegionalArea, RegionalDemandResultV1, RegionalView } from '@/lib/regional-demand/census';
 import type { RegionalDemandView } from '@/lib/regional-demand/service';
 import type { SingleResponse } from '@/types';
 
@@ -116,21 +116,37 @@ export function RegionalDemand({
   );
 }
 
-function RegionalResult({ result }: { result: RegionalDemandResultV1 }) {
+function Headline({ result }: { result: RegionalDemandResultV1 }) {
   const rupees = useRupees();
   const { totals, period } = result;
+  if (totals.importer_count != null) {
+    const india = totals.india_importer_count != null ? ` ${totals.india_importer_count} of them are listed as buying it from India.` : '';
+    return (
+      <>
+        {totals.importer_count} {totals.importer_count === 1 ? 'business is' : 'businesses are'} listed as importing this product in {period.label}.{india}
+      </>
+    );
+  }
+  const indiaValue = totals.india_value_usd ?? 0;
   const shareText = totals.india_share_percent != null ? ` That is ${formatPercent(totals.india_share_percent)} of all imports of it.` : '';
-  const containerText = totals.container_share_percent != null && totals.india_value_usd > 0 ? ` ${formatPercent(totals.container_share_percent)} of India's came in containers by sea.` : '';
+  const containerText = totals.container_share_percent != null && indiaValue > 0 ? ` ${formatPercent(totals.container_share_percent)} of India's came in containers by sea.` : '';
+  return (
+    <>
+      {rupees(`${formatUsd(indiaValue)} of this product came from India in ${period.label}.`)}
+      {shareText}
+      {containerText}
+    </>
+  );
+}
+
+function RegionalResult({ result }: { result: RegionalDemandResultV1 }) {
+  const { period } = result;
   return (
     <div className="space-y-4">
       <p className="rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm text-primary">
-        {rupees(`${formatUsd(totals.india_value_usd)} of this product came from India in ${period.label}.`)}
-        {shareText}
-        {containerText}
+        <Headline result={result} />
       </p>
-      {result.views.map((view) => (
-        <AreaTable key={view.kind} view={view} />
-      ))}
+      {result.views.map((view) => (view.measure === 'importers' ? <ImporterTable key={view.kind} view={view} /> : <AreaTable key={view.kind} view={view} />))}
       <div className="space-y-1 text-xs text-[var(--color-text-muted)]">
         <p>
           Source:{' '}
@@ -145,6 +161,52 @@ function RegionalResult({ result }: { result: RegionalDemandResultV1 }) {
         <p>{result.source.attribution}</p>
         <RupeeRateNote />
       </div>
+    </div>
+  );
+}
+
+function ImporterTable({ view }: { view: ImporterView }) {
+  const showIndia = view.areas.some((area) => area.india_importer_count !== null);
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-surface">
+      <h3 className="border-b border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-primary">{view.title}</h3>
+      {view.areas.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-[var(--color-text-secondary)]">No importers listed for this product.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[28rem] text-left text-sm">
+            <thead className="text-xs text-[var(--color-text-secondary)]">
+              <tr>
+                <th className="px-4 py-2 font-normal">#</th>
+                <th className="px-2 py-2 font-normal">{view.kind === 'region' ? 'Region' : 'Province'}</th>
+                <th className="px-2 py-2 text-right font-normal">Importers</th>
+                {showIndia ? <th className="px-2 py-2 text-right font-normal">From India</th> : null}
+                <th className="px-4 py-2 font-normal">Main towns</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.areas.map((area, index) => (
+                <tr key={area.code} className="border-t border-[var(--color-border)]">
+                  <td className="px-4 py-2 text-[var(--color-text-secondary)]">{index + 1}</td>
+                  <td className="px-2 py-2 text-primary">{area.name}</td>
+                  <td className="px-2 py-2 text-right text-primary">{area.importer_count}</td>
+                  {showIndia ? <td className="px-2 py-2 text-right">{area.india_importer_count ?? '—'}</td> : null}
+                  <td className="px-4 py-2 text-[var(--color-text-secondary)]">{area.towns.map((town) => town.toLowerCase().replace(/\b([a-z])/g, (letter) => letter.toUpperCase())).join(', ') || '—'}</td>
+                </tr>
+              ))}
+              {view.others ? (
+                <tr className="border-t border-[var(--color-border)] text-[var(--color-text-secondary)]">
+                  <td className="px-4 py-2" />
+                  <td className="px-2 py-2">{view.others.count} more</td>
+                  <td className="px-2 py-2 text-right">{view.others.importer_count}</td>
+                  {showIndia ? <td className="px-2 py-2" /> : null}
+                  <td className="px-4 py-2" />
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

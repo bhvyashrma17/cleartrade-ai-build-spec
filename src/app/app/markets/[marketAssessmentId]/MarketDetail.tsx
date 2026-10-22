@@ -10,7 +10,6 @@
  */
 
 import Link from 'next/link';
-import { buttonClass } from '@/components/ui/Button';
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { Button, MetricCard, StatusChip, UpgradeNotice } from '@/components/ui';
@@ -56,11 +55,11 @@ const countryName = (code: string) => {
 export function MarketDetail({
   tier,
   assessment,
-  buyerDiscoveryHref,
   productDescription,
   v5 = null,
   regional = null,
   canRequestRegional = false,
+  buyersFound = null,
 }: {
   tier: Tier;
   assessment: AssessmentDetail;
@@ -71,10 +70,11 @@ export function MarketDetail({
   /** D-033: where inside the market the product arrives. Present for v5 markets. */
   regional?: RegionalDemandView | null;
   canRequestRegional?: boolean;
+  /** D-033: how many buyers an official importer list gave for this product here (count only). */
+  buyersFound?: { count: number; source: string } | null;
 }) {
-  const buyersUrl = buyerDiscoveryHref.productId
-    ? `/app/buyers?product_id=${encodeURIComponent(buyerDiscoveryHref.productId)}&country=${buyerDiscoveryHref.countryCode}`
-    : `/app/buyers?country=${buyerDiscoveryHref.countryCode}`;
+  // Buyer discovery is agent-curated (docs/11 §7): exporters cannot run the buyer search, so the
+  // buyer section explains who does instead of linking to a search that would refuse them.
 
   return (
     <div className="mx-auto max-w-3xl py-6">
@@ -148,18 +148,12 @@ export function MarketDetail({
       </section>
 
       <section className="mt-8 rounded-lg border border-[var(--color-action)]/30 bg-surface p-5 shadow-card">
-        <h2 className="text-base font-semibold text-primary">Find buyers in this market</h2>
+        <h2 className="text-base font-semibold text-primary">Buyers in {countryName(assessment.country_code)}</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          {productDescription
-            ? `See importers for "${productDescription}" in ${countryName(assessment.country_code)}.`
-            : `See importers in ${countryName(assessment.country_code)}.`}
+          {buyersFound && buyersFound.count > 0
+            ? `${buyersFound.count} ${buyersFound.count === 1 ? 'importer' : 'importers'} of ${productDescription ? `"${productDescription}"` : 'this product'} ${buyersFound.count === 1 ? 'was' : 'were'} found in the ${buyersFound.source}. Your ClearTrade agent reviews them and contacts the right ones for you.`
+            : `Your ClearTrade agent finds and vets importers of ${productDescription ? `"${productDescription}"` : 'this product'} in ${countryName(assessment.country_code)} for you.`}
         </p>
-        <Link
-          href={buyersUrl}
-          className={buttonClass('primary', 'md', 'mt-4')}
-        >
-          Find buyers in {countryName(assessment.country_code)}
-        </Link>
       </section>
     </div>
   );
