@@ -64,6 +64,12 @@ describe('Demand Discovery v5 operations view', () => {
 
     const html = renderToStaticMarkup(createElement(DemandDiscoveryV5Panel, { overview: view }));
     expect(html).toContain('Demand Discovery v5');
+    // docs/36 §7a: when each input stops being current, on the same page; the Control Tower links to it.
+    expect(view.freshness[0].key).toBe('cepii_baci');
+    expect(view.freshness.find((item) => item.key === 'india:trade-agreements')).toMatchObject({ group: 'reference', current: { version: expect.stringMatching(/^india-trade-agreements-v1/) }, due_at: expect.any(String) });
+    expect(html).toContain('id="data-freshness"');
+    expect(html).toContain('Data freshness');
+    expect(html).toContain('Capital coordinates do not change.');
     expect(html).toContain(`${MARKER} product`);
     expect(html).toContain('What this run could not use (1)');
     expect(html).toContain('Distance is not scored.');

@@ -389,6 +389,30 @@ reads the frozen releases and passes their rows in).
   engines (Country Truth v4 and the warehouse engine) are retired; without a BACI release, or with v5
   switched off, a run is refused with the reason and nothing runs in its place.
 
+### 7a. Data freshness (30 Oct 2026, E-035)
+
+Every input a run reads has a rule for when its current release stops being current
+(`src/lib/demand-discovery-v5/input-freshness.ts`); each rule states its basis.
+
+| Input | Out of date from | Refreshed by |
+|---|---|---|
+| CEPII BACI (HS17, HS22) | due 1 January once its last year is more than two years old, overdue 1 March | operator import (`import-trade-dataset-release.ts`) |
+| World Bank indicators (logistics, connectivity, two tariff averages) | 365 days after they were read | operator import (`import-reference-dataset.ts`) |
+| Comtrade reporting lists (BACI's last year and the next) | 30 days | operator import |
+| India's trade agreements, ECGC country risk | 182 days | curated update, then import |
+| Sanctions programmes | 31 days (R-21) | curated update, then import |
+| Currency pegs | 365 days | curated update, then import |
+| GeoDist capitals and the curated supplement | never | — |
+| Tariff releases | TARIC and CAMEX 45 days; China at year end; EAC on 30 June; Singapore's nightly copy after 7 days while its refresh is on; any other source 365 days | the source's own import |
+| Published duty rules (policy `rule_rates`) | the rule's `review_by` | a new policy version |
+| ECB exchange rates | — (read by runs when missing) | automatic |
+
+A row is *due soon* 14 days before it is out of date (BACI from 1 January). `/ops/discovery` shows
+every row, worst first, under **Data freshness**; the Control Tower counts the overdue and missing ones
+(**Stale data inputs**) and links there; the worker logs them once a day (`input_freshness`). Nothing
+here imports data: refreshing is still an operator step. Whether the worker should import the keyless
+sources itself (World Bank, Comtrade's reporting lists) is an open owner decision (E-035).
+
 ## 8. Verification
 
 - Unit tests for every metric, the score, the chain-link, the HS revision test and each parser, on

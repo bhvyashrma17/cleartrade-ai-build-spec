@@ -9,7 +9,8 @@
  * conditional UPDATE, so two workers cannot take the same row.
  *
  * Loop, per tick:
- *   0. the hourly membership sweep and the nightly authority-window refresh (each self-throttled)
+ *   0. the hourly membership sweep, the nightly authority-window refresh and the daily data
+ *      freshness check (each self-throttled)
  *   1. reclaim jobs abandoned by a crashed worker
  *   2. claim one job and run it
  *   3. if nothing was claimable, sleep for the configured interval
@@ -28,6 +29,7 @@ import {log,reportError} from '../src/lib/observability';
 import {validateRuntimeEnvironment} from '../src/lib/runtime-config';
 import {expireLapsedMemberships} from '../src/lib/billing/subscription-service';
 import {runDueAuthorityRefreshes} from '../src/lib/market-access/providers/singapore-refresh';
+import {loadInputFreshness, needsAttention} from '../src/lib/demand-discovery-v5/input-freshness';
 
 let shuttingDown = false;
 let activeJobId: string | null = null;
@@ -75,6 +77,25 @@ async function sweepAuthorityRefresh(): Promise<void> {
     reportError(error, { event_scope: 'worker_authority_refresh' });
   }
 }
+/**
+ * docs/36 §7a: once a day, log every Demand Discovery input that is overdue or missing, so a stale
+ * dataset shows in the logs as well as on the ops pages (the Control Tower's "Stale data inputs").
+ * It reads only, and a failure is reported, never allowed to stop the job loop.
+ */
+const INPUT_FRESHNESS_SWEEP_INTERVAL_MS = Number(process.env.INPUT_FRESHNESS_SWEEP_INTERVAL_MS ?? 86_400_000);
+let lastInputFreshnessAt = 0;
+
+async function sweepInputFreshness(): Promise<void> {
+  if (Date.now() - lastInputFreshnessAt < INPUT_FRESHNESS_SWEEP_INTERVAL_MS) return;
+  lastInputFreshnessAt = Date.now();
+  try {
+    const stale = (await loadInputFreshness()).filter(needsAttention);
+    for (const row of stale) log('warn', 'input_freshness', { input: row.key, status: row.status, due_at: row.due_at ?? undefined, refresh: row.refresh });
+    log('info', 'input_freshness_checked', { needs_attention: stale.length });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_input_freshness' });
+  }
+}
 const instanceId=process.env.WORKER_INSTANCE_ID??`${hostname()}-${process.pid}`,heartbeatId=`worker:${instanceId}`;
 let consecutiveFailures=0;
 async function heartbeat(status='ready',lastError?:string){await prisma.workerHeartbeat.upsert({where:{id:heartbeatId},create:{id:heartbeatId,instance_id:instanceId,status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():null,consecutive_failures:consecutiveFailures},update:{status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():undefined,consecutive_failures:consecutiveFailures}});}
@@ -86,6 +107,7 @@ async function tick(): Promise<boolean> {
   // busy worker would otherwise never reach the sweep at all.
   await sweepLapsedMemberships();
   await sweepAuthorityRefresh();
+  await sweepInputFreshness();
 
   const reclaimed = await reclaimStaleJobs();
   if (reclaimed.requeued || reclaimed.failed) {

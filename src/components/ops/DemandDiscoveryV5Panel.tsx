@@ -1,11 +1,13 @@
 /**
  * Demand Discovery v5 for operations (docs/36 §7): can a run start here, what it reads, what a
- * missing dataset costs, and which runs are running, partial or failed — with each run's own notes
- * on what it could not use. Read-only.
+ * missing dataset costs, when each input stops being current (§7a), and which runs are running,
+ * partial or failed — with each run's own notes on what it could not use. Read-only.
  */
 import type { JobStatus } from '@prisma/client';
 import { StatusChip } from '@/components/ui';
+import type { FreshnessStatus, InputFreshnessRow } from '@/lib/demand-discovery-v5/input-freshness';
 import type { DemandDiscoveryV5Operations } from '@/lib/demand-discovery-v5/operations';
+import type { StatusIconName, StatusTone } from '@/types';
 
 const fmt = (date: Date | null) => (date ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(date) : '—');
 const day = (date: Date | null) => (date ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(date) : '—');
@@ -13,6 +15,56 @@ const day = (date: Date | null) => (date ? new Intl.DateTimeFormat('en-IN', { da
 const RUN_TONE: Record<JobStatus, 'positive' | 'warning' | 'critical' | 'neutral' | 'info'> = {
   queued: 'neutral', processing: 'info', completed: 'positive', partial: 'warning', failed: 'critical', cancelled: 'neutral',
 };
+
+const FRESHNESS_CHIP: Record<FreshnessStatus, { label: string; tone: StatusTone; icon: StatusIconName }> = {
+  overdue: { label: 'Overdue', tone: 'critical', icon: 'alert' },
+  missing: { label: 'Not imported', tone: 'critical', icon: 'block' },
+  due_soon: { label: 'Due soon', tone: 'warning', icon: 'clock' },
+  fresh: { label: 'Current', tone: 'positive', icon: 'check' },
+  automatic: { label: 'Automatic', tone: 'info', icon: 'dot' },
+  static: { label: 'Does not change', tone: 'neutral', icon: 'dot' },
+};
+const FRESHNESS_ORDER: FreshnessStatus[] = ['overdue', 'missing', 'due_soon', 'fresh', 'automatic', 'static'];
+
+/** §7a: when each input stops being current, worst first; the Control Tower links here. */
+function DataFreshness({ rows }: { rows: InputFreshnessRow[] }) {
+  const attention = rows.filter((row) => row.status === 'overdue' || row.status === 'missing').length;
+  const ordered = [...rows].sort((a, b) => FRESHNESS_ORDER.indexOf(a.status) - FRESHNESS_ORDER.indexOf(b.status));
+  const at = (value: string | null) => (value ? day(new Date(value)) : '—');
+  return (
+    <div id="data-freshness" className="scroll-mt-24 overflow-x-auto">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold text-primary">Data freshness</h3>
+        {attention
+          ? <StatusChip label={`${attention} input${attention === 1 ? ' needs' : 's need'} refreshing`} tone="critical" icon="alert" size="sm" />
+          : <StatusChip label="Every input is current" tone="positive" icon="check" size="sm" />}
+      </div>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">When each input stops being current and how it is refreshed. The worker checks daily and logs anything overdue or missing; nothing here imports data.</p>
+      <table className="mt-2 w-full min-w-[48rem] border-collapse text-sm">
+        <thead>
+          <tr className="text-left text-xs text-[var(--color-text-secondary)]">
+            <th scope="col" className="py-1 font-medium">Input</th>
+            <th scope="col" className="py-1 font-medium">In use</th>
+            <th scope="col" className="py-1 font-medium">Due</th>
+            <th scope="col" className="py-1 font-medium">Status</th>
+            <th scope="col" className="py-1 font-medium">How to refresh</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((row) => (
+            <tr key={row.key} className="border-t border-[var(--color-border)] align-top">
+              <td className="py-1.5 pr-3 text-primary">{row.label}<div className="text-xs text-[var(--color-text-muted)]">{row.rule}</div></td>
+              <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{row.current ? `${row.current.version}${row.current.retrieved_at ? ` · read ${at(row.current.retrieved_at)}` : row.current.dated ? ` · ${at(row.current.dated)}` : ''}` : '—'}</td>
+              <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{at(row.due_at)}</td>
+              <td className="py-1.5 pr-3"><StatusChip label={FRESHNESS_CHIP[row.status].label} tone={FRESHNESS_CHIP[row.status].tone} icon={FRESHNESS_CHIP[row.status].icon} size="sm" /></td>
+              <td className="py-1.5 text-xs text-[var(--color-text-secondary)]">{row.refresh}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /** D-029: the copy of Singapore's tariff runs read, saved by the worker between 03:00 and 07:00 Singapore Time. */
 function SingaporeTariffLine({ status }: { status: DemandDiscoveryV5Operations['singapore_tariff'] }) {
@@ -93,6 +145,8 @@ export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscovery
         </table>
         {missing.length ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">{missing.length} reference dataset{missing.length === 1 ? ' is' : 's are'} not imported; runs still complete and say what they could not score.</p> : null}
       </div>
+
+      <DataFreshness rows={overview.freshness} />
 
       <div>
         <h3 className="text-sm font-semibold text-primary">Recent runs</h3>

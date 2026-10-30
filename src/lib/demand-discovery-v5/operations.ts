@@ -18,6 +18,7 @@ import { SANCTIONS_PROGRAMMES_KEY } from '@/lib/reference-datasets/sanctions-pro
 import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import type { Principal } from '@/types';
+import { loadInputFreshness } from './input-freshness';
 import { DEMAND_DISCOVERY_V5_MODEL } from './policy';
 
 export interface V5DatasetStatus {
@@ -90,6 +91,8 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
 
   // D-029: Singapore's tariff is read from the copy the worker saves in its nightly window.
   const singaporeTariff = await singaporeRefreshStatus();
+  // §7a: when each input stops being current.
+  const freshness = await loadInputFreshness();
 
   const since = new Date(Date.now() - 7 * 86_400_000);
   const [recent, counts] = await Promise.all([
@@ -138,6 +141,7 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
       const release = byKey.get(item.key);
       return { ...item, active: release ? { version: release.version, row_count: release.row_count, retrieved_at: release.retrieved_at, imported_at: release.imported_at, evidence_origin: release.evidence_origin } : null };
     }),
+    freshness,
     last_7_days: { queued: count(JobStatus.queued), processing: count(JobStatus.processing), completed: count(JobStatus.completed), partial: count(JobStatus.partial), failed: count(JobStatus.failed) },
     runs,
   };
