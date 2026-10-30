@@ -1490,6 +1490,44 @@ case; the note itself is the fix. docs/34 §7 now says so.
 `demand-discovery-v5-*` suite, `phase-1-gate` and `manual-tariff-capture` pass (12 files, 126 tests);
 `tsc --noEmit` and ESLint clean. The full suite was run on the parent commit (E-033).
 
+### E-035 · 2026-10-30 · Data freshness for every Demand Discovery input (stage 1, item 4) (in review)
+
+**Branch.** `dd5/input-freshness`, on top of `dd5/fallback-note` (PR #18); its PR targets
+`staging/railway` and is merged after #16.
+
+**Built.** `src/lib/demand-discovery-v5/input-freshness.ts`: a rule per input for when its current
+release stops being current, each with its basis (docs/36 §7a): BACI due from 1 January once its last
+year is more than two years old and overdue from 1 March; World Bank indicators 365 days; Comtrade
+reporting lists 30 days; India's trade agreements and ECGC 182 days; sanctions programmes 31 days
+(R-21); currency pegs 365 days; GeoDist never; tariff releases by family (TARIC and CAMEX 45 days,
+China at year end, EAC on 30 June, Singapore's nightly copy after 7 days while its refresh is on, any
+other source 365 days); each published duty rule at its `review_by` (R-22); ECB rates automatic. Rows
+turn *due soon* 14 days ahead. `/ops/discovery` shows every row, worst first, under **Data freshness**;
+the Control Tower gains **Stale data inputs** (overdue plus missing), linking there; the worker logs
+the same rows once a day (`input_freshness`). Nothing imports data; refreshing stays an operator step.
+
+**Why no notification.** Notifications have a screen only in the exporter portal; ops staff would never
+see one. The ops pages and the worker log are where ops look.
+
+**Open decisions (not built; owner's call).**
+1. *Automatic imports for keyless sources* (World Bank indicators, Comtrade reporting lists).
+   (a) the worker downloads and activates them on schedule when the import's checks pass; (b) it
+   downloads them and holds each for an operator to activate; (c) operators import, as now (built).
+   Recommended: (a). These are versioned public statistics, every import is checksummed and kept, and
+   a run cites the release it used.
+2. *Re-runs when newer data lands* (stage 1, item 5). (a) mark each run a new BACI year or tariff
+   release would change, and re-run them automatically, oldest first, within a daily Comtrade budget;
+   (b) mark them and let the agent or exporter start the re-run; (c) mark only. Recommended: (a) with a
+   budget of 100 runs a day. A run makes two batched Comtrade calls plus its tariff look-ups, and the
+   free key allows 500 calls a day.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean; ESLint clean on the
+changed files. New `demand-discovery-v5-input-freshness` (7 tests: every rule at fixed dates, the
+loader on stored data, the Control Tower card and the worker sweep); `demand-discovery-v5-operations`
+now also renders the table from stored data; `demand-discovery-ui` passes. Full suite: 2,288 passed, 5 skipped, 3 failed: the same three local-harness-only failures as in E-033.
+
+**Not verified.** The table and the Control Tower card in a browser; the worker's daily log on staging.
+
 ## Risk register
 
 
