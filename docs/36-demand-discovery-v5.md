@@ -397,7 +397,9 @@ reads the frozen releases and passes their rows in).
 - Three archetype products on staging (rice `100630`, brassware `741810`, carpets `570110`, D-003).
   Each top 10 is compared with India's own largest export destinations for the product in BACI; a
   top 10 that ignores most of them is a calibration failure, not a pass.
-- The Phase 1 gate (docs/34) gains a v5 policy; its thresholds stay proposed until the owner approves.
+- The Phase 1 gate (docs/34) checks v5 runs only (policy v2, D-036): coverage, ranked markets, this
+  calibration, labelled estimates, official duty and a replay of every score; its thresholds stay
+  proposed until the owner approves.
 
 ## 9. Known limits
 

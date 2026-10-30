@@ -1431,6 +1431,44 @@ endpoint in `manual-tariff-capture`. CI runs the canonical suite on the PR.
 **Not verified.** The pages in a browser; the refusals on staging (after merge, a POST to a retired
 route there must answer 422 with the retired reason).
 
+### E-033 · 2026-10-30 · Phase 1 gate v2: Demand Discovery v5 runs only (D-036) (in review)
+
+**Branch.** `dd5/gate-v5`, stacked on `dd5/v5-only` (PR #16, not merged).
+
+**Gate.** Policy `phase-1-gate-v2` replaces v1, which evaluated Country Truth v4 deep runs; the v1
+loader, evaluator and tests are removed, and so is the v1 gate assertion inside the WP2
+tariff-acquisition test. For each archetype the gate reads one v5 run in a single read-only snapshot
+and checks: the engine (`market-opportunity-v5` only; any other run fails and is not evaluated
+further); a staff confirmation with its audit event, for the archetype's code, that the run scored;
+the run status (`completed`, or `partial` with notes, agreeing with its job); coverage (every market of
+the frozen universe, once); at least 10 ranked markets; calibration (docs/36 §8, from the run's own
+BACI release); no silent zero; every estimate labelled (D-037); no agent-recorded duty and at least one
+official duty in the top 10 (D-037); run age and BACI lag; that the stored policy re-hashes; and a
+replay that re-scores every market from its stored metrics. Every threshold is **proposed**
+(docs/34 §2); R-08 stays open.
+
+**Supporting changes.** `duty-basis.ts` holds `dutyBasisOf` as a pure module (re-exported by
+`archetype-runs.ts`); `compareRunWithIndiaExports` and `readProductFlows` take an optional database
+handle and storage, so the comparison runs inside the gate's snapshot; the archetype scripts cite
+policy v2.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean; ESLint clean on all 13
+changed code and test files. `phase-1-gate` (22 tests, new); `demand-discovery-v5-run` (4, two new: an
+unconfirmed product is refused before any run exists; the gate reads the suite's real end-to-end run
+back and passes it, its replay reproducing all 218 stored markets exactly); `archetype-runs`,
+`country-truth-tariff-acquisition`, `calibration`, `earlier-engines-retired` and
+`manual-tariff-capture` (28) pass. Full suite: 2,280 passed, 5 skipped, 3 failed: the same three local-harness-only failures as in E-032 (the local pg adapter cannot read a raw query's result: `market-scan-requests`, `pilot-e2e`, `staff-provisioning`). Three fewer passes than E-032 because the v1 gate file's 27 tests are replaced by 22 and the v5 run suite gains 2. The command refuses a v1 `job:`
+selector and an unknown archetype (exit 3).
+
+**Expected on staging (not run).** The 19 Oct runs used policy v6 and would fail calibration for rice
+(3/10) and brassware (4/10) (E-026); they also pass 30 days on 18 Nov. Order: merge #16 and this PR,
+re-run the archetypes under v8 (`dd5-archetype-runs.ts start --rerun`), then run the gate (docs/34 §6.2)
+with a probe record (§6.3).
+
+**Finding.** A failed Comtrade market-fallback step marks a run partial without a note (`run-inputs.ts`:
+of the two Comtrade steps, only the newest-year step adds one). The gate fails such a run
+(`partial_run_without_notes`), correctly: the exporter would see a partial run with no reason (R-34).
+
 ## Risk register
 
 
@@ -1443,7 +1481,7 @@ route there must answer 422 with the retired reason).
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
-| R-08 | Gate thresholds unapproved | Open | Owner approval PR |
+| R-08 | Gate thresholds unapproved | Open — policy v2 (v5 runs only) proposed in E-033 | Owner approval PR |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
@@ -1469,3 +1507,4 @@ route there must answer 422 with the retired reason).
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
+| R-34 | A failed Comtrade market-fallback step makes a v5 run partial without a note saying so (`run-inputs.ts`); the exporter sees no reason, and the gate fails the run (`partial_run_without_notes`) | Open (E-033) | One note line with a test, in the next stage 1 PR |

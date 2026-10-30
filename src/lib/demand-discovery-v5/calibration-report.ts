@@ -4,6 +4,8 @@
  * destinations for the product in the BACI release the run used, over the years the market-size
  * metric averages. Read-only: it changes nothing.
  */
+import type { Prisma } from '@prisma/client';
+import type { DocumentStorage } from '@/lib/document-storage';
 import { prisma } from '@/lib/prisma';
 import { baciFlowsToTradeFlows } from '@/lib/demand-discovery-v5/baci-flows';
 import { compareWithIndiaExports, type CalibrationResult } from '@/lib/demand-discovery-v5/calibration';
@@ -12,9 +14,13 @@ import { readProductFlows } from '@/lib/trade-datasets/service';
 
 export type RunCalibrationReport = { run_id: string; run_status: string; baci_release_id: string } & CalibrationResult;
 
-export async function compareRunWithIndiaExports(runId: string, top = 10): Promise<RunCalibrationReport> {
+type CalibrationDb = Pick<Prisma.TransactionClient, 'discoveryRun' | 'marketAssessment' | 'tradeDatasetCountry' | 'tradeDatasetRelease' | 'tradeDatasetPartition'>;
+
+/** `db` reads everything inside the caller's transaction (the Phase 1 gate's read-only snapshot); `storage` is where BACI partitions live. */
+export async function compareRunWithIndiaExports(runId: string, top = 10, options: { db?: CalibrationDb; storage?: DocumentStorage } = {}): Promise<RunCalibrationReport> {
   if (!Number.isInteger(top) || top < 1 || top > 50) throw new Error('--top must be an integer from 1 to 50.');
-  const run = await prisma.discoveryRun.findUnique({ where: { id: runId }, select: { id: true, model_version: true, status: true, input_snapshot: true, frozen_inputs: true, scoring_policy_snapshot: true } });
+  const db = options.db ?? prisma;
+  const run = await db.discoveryRun.findUnique({ where: { id: runId }, select: { id: true, model_version: true, status: true, input_snapshot: true, frozen_inputs: true, scoring_policy_snapshot: true } });
   if (!run) throw new Error(`No discovery run ${runId}.`);
   if (run.model_version !== DEMAND_DISCOVERY_V5_MODEL) throw new Error(`Run ${runId} is not a v5 run.`);
   const hs6 = (run.input_snapshot as { hs_code?: string } | null)?.hs_code;
@@ -26,9 +32,9 @@ export async function compareRunWithIndiaExports(runId: string, top = 10): Promi
   const years = baseYears.slice(-averageYears);
 
   const [read, countries, assessments] = await Promise.all([
-    readProductFlows({ release_id: releaseId, hs6, years }),
-    prisma.tradeDatasetCountry.findMany({ where: { release_id: releaseId }, select: { provider_code: true, iso2: true } }),
-    prisma.marketAssessment.findMany({ where: { run_id: run.id }, select: { country_code: true, market_status: true, rank: true, overall_score: true, reasons: true } }),
+    readProductFlows({ release_id: releaseId, hs6, years, db, storage: options.storage }),
+    db.tradeDatasetCountry.findMany({ where: { release_id: releaseId }, select: { provider_code: true, iso2: true } }),
+    db.marketAssessment.findMany({ where: { run_id: run.id }, select: { country_code: true, market_status: true, rank: true, overall_score: true, reasons: true } }),
   ]);
   const flows = baciFlowsToTradeFlows(read.flows, countries).flows;
   const result = compareWithIndiaExports({

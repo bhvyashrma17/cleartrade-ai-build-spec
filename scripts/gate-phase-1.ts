@@ -1,17 +1,19 @@
 /**
- * Phase 1 acceptance gate (docs/34) — a read-only evaluator over completed staging runs.
+ * Phase 1 acceptance gate (docs/34) — a read-only evaluator over finished Demand Discovery v5 runs on
+ * staging. Policy v2 checks v5 runs only (D-036): a run from an earlier engine fails.
  *
- * Name one completed deep Country Truth run per archetype in the gate policy, either directly by
- * job or by product (the newest completed/partial screen-derived deep run for the product's current
- * confirmed classification). The script reads every record those runs produced inside a single
- * REPEATABLE READ, READ ONLY transaction — PostgreSQL rejects any write — evaluates the gate, and
- * prints the machine-readable report.
+ * Name one finished v5 run per archetype in the gate policy, either directly or by product (the newest
+ * completed/partial v5 run for the product's current confirmed classification).
+ * `scripts/dd5-archetype-runs.ts status` prints both. The script reads every record those runs
+ * produced inside a single REPEATABLE READ, READ ONLY transaction — PostgreSQL rejects any write —
+ * compares each run's top 10 with India's own largest destinations (docs/36 §8), evaluates the gate,
+ * and prints the machine-readable report.
  *
  *   npx tsx --env-file=<staging operator env> scripts/gate-phase-1.ts \
  *     --archetype=rice=product:<productId> \
- *     --archetype=brassware=job:<countryTruthJobId> \
+ *     --archetype=brassware=run:<discoveryRunId> \
  *     --archetype=carpets=product:<productId> \
- *     [--negative-probes=probes.json] [--evaluated-at=2026-10-20T09:00:00Z] [--out=report.json]
+ *     [--negative-probes=probes.json] [--evaluated-at=2026-11-02T09:00:00Z] [--out=report.json]
  *
  * Named `gate-*`, not `verify-*`: `src/lib/prisma.ts` refuses `verify-*` entrypoints against real
  * databases because those are fixture verifiers. This reads real staging evidence and writes
@@ -33,9 +35,9 @@ import {
   type GateNegativeProbe,
 } from '@/lib/phase-1-gate/evaluate';
 import { loadPhase1GateArchetypeEvidence, parseGateSelector, withReadOnlySnapshot, type GateSelector } from '@/lib/phase-1-gate/load';
-import { PHASE_1_GATE_POLICY_V1 } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
 
-const USAGE = 'Usage: gate-phase-1.ts --archetype=<key>=product:<id>|job:<id> [...] [--negative-probes=<file.json>] [--evaluated-at=<ISO>] [--out=<file.json>]';
+const USAGE = 'Usage: gate-phase-1.ts --archetype=<key>=product:<id>|run:<id> [...] [--negative-probes=<file.json>] [--evaluated-at=<ISO>] [--out=<file.json>]';
 
 function args() {
   const archetypes: Array<{ key: string; selector: GateSelector }> = [];
@@ -60,7 +62,7 @@ function args() {
 function readProbes(path: string): GateNegativeProbe[] {
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (!Array.isArray(parsed) || parsed.some((entry) => !entry || typeof entry !== 'object' || Array.isArray(entry))) {
-    throw new Error(`${path} must be a JSON array of negative-probe records (docs/34 §6).`);
+    throw new Error(`${path} must be a JSON array of negative-probe records (docs/34 §6.3).`);
   }
   return parsed as GateNegativeProbe[];
 }
@@ -77,7 +79,7 @@ function gitCommit(): string | null {
 
 async function main() {
   const options = args();
-  const policy = PHASE_1_GATE_POLICY_V1;
+  const policy = PHASE_1_GATE_POLICY_V2;
   const known = policy.archetypes.value.map((archetype) => archetype.key);
   const named = options.archetypes.map((item) => item.key);
   const unknown = named.filter((key) => !known.includes(key));
@@ -94,9 +96,9 @@ async function main() {
   const evidence = await withReadOnlySnapshot(prisma, async (db) => {
     const loaded: GateArchetypeEvidence[] = [];
     // One archetype at a time: queries inside an interactive transaction are serialised anyway.
-    for (const item of options.archetypes) loaded.push(await loadPhase1GateArchetypeEvidence(db, item.key, item.selector));
+    for (const item of options.archetypes) loaded.push(await loadPhase1GateArchetypeEvidence(db, item.key, item.selector, { calibration_top: policy.calibration.value.top }));
     return loaded;
-  });
+  }, { timeout_ms: 600_000 }); // the calibration reads three years of BACI partitions per run
 
   const report = evaluatePhase1Gate({
     policy,
