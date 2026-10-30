@@ -33,7 +33,9 @@ export async function readImporterRegions(args: { source_key: ImporterListSource
     }
     area.importer_count += 1;
     if (originsPublished && entry.origin_hs6.includes(`${args.hs6}:IN`)) area.india_importer_count = (area.india_importer_count ?? 0) + 1;
-    if (entry.town) area.townCounts.set(entry.town, (area.townCounts.get(entry.town) ?? 0) + 1);
+    // Towns are counted case-blind: the same town is published as "ABERDEEN" and "Aberdeen".
+    const town = entry.town?.trim().toUpperCase();
+    if (town) area.townCounts.set(town, (area.townCounts.get(town) ?? 0) + 1);
   }
   const top = args.top ?? 15;
   const areas = [...byRegion.values()]
