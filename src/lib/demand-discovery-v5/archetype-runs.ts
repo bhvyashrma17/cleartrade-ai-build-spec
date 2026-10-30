@@ -14,8 +14,9 @@ import { grantManualMembership } from '@/lib/billing/subscription-service';
 import { getConfig } from '@/lib/config';
 import { compareRunWithIndiaExports } from '@/lib/demand-discovery-v5/calibration-report';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
+import { dutyBasisOf, type DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
 import { demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '@/lib/demand-discovery-v5/service';
-import { PHASE_1_GATE_POLICY_V1 } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
 import { confirmClassification, proposeClassification } from '@/lib/product-classification';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
@@ -90,7 +91,7 @@ export async function startArchetypeRuns(args: { actor: Principal; correlation_i
   }
 
   const items: ArchetypeStartItem[] = [];
-  for (const archetype of PHASE_1_GATE_POLICY_V1.archetypes.value) {
+  for (const archetype of PHASE_1_GATE_POLICY_V2.archetypes.value) {
     const name = archetypeProductName(archetype.label);
     const select = { id: true, hs_code: true, hs_classification_status: true } as const;
     let product = await prisma.product.findFirst({ where: { exporter_org_id: org.id, name }, select });
@@ -110,8 +111,8 @@ export async function startArchetypeRuns(args: { actor: Principal; correlation_i
         product_id: product.id, hs6_code: archetype.hs6, itc_hs_code: null, nomenclature: 'HS', nomenclature_version: '2022',
         method: ProductClassificationMethod.agent_supplied, confidence: 1,
         rationale: `Phase 1 archetype "${archetype.key}": ${archetype.label}, HS 2022 subheading ${archetype.hs6} (docs/34 §2).`,
-        source_references: [{ label: 'Phase 1 gate policy v1, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' }],
-        evidence: { archetype: archetype.key, hs_revision: archetype.hs_revision, source: 'PHASE_1_GATE_POLICY_V1.archetypes' },
+        source_references: [{ label: 'Phase 1 gate policy v2, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' }],
+        evidence: { archetype: archetype.key, hs_revision: archetype.hs_revision, source: 'PHASE_1_GATE_POLICY_V2.archetypes' },
       }, args.actor, args.correlation_id);
       await confirmClassification({ classification_id: candidate.id, product_id: product.id }, args.actor, args.correlation_id);
       // `confirmClassification` records what its auto-start did on the classification's audit trail.
@@ -145,23 +146,7 @@ export async function startArchetypeRuns(args: { actor: Principal; correlation_i
   return { exporter_org_id: org.id, exporter_created: exporterCreated, membership, items };
 }
 
-/** How a market's duty was found, from the duty metric v5 stored with it. */
-export type DutyBasis = 'official' | 'common_tariff' | 'schedule_read' | 'agent_recorded' | 'rule' | 'estimate' | 'none';
-
-export function dutyBasisOf(scoreBreakdown: unknown): { basis: DutyBasis; union: string | null; schedule?: string } {
-  const metrics = (scoreBreakdown as { metrics?: { key?: string; score?: number | null; inputs?: Record<string, unknown> }[] } | null)?.metrics ?? [];
-  const duty = metrics.find((metric) => metric.key === 'duty');
-  if (!duty || duty.score == null) return { basis: 'none', union: null };
-  const inputs = duty.inputs ?? {};
-  if (inputs.basis === 'official') {
-    if (typeof inputs.common_tariff === 'string' && inputs.common_tariff) return { basis: 'common_tariff', union: inputs.common_tariff };
-    if (typeof inputs.schedule_read === 'string' && inputs.schedule_read) return { basis: 'schedule_read', union: null, schedule: inputs.schedule_read };
-    return { basis: inputs.recorded_by_agent === 'yes' ? 'agent_recorded' : 'official', union: null };
-  }
-  if (inputs.basis === 'rule') return { basis: 'rule', union: null };
-  if (inputs.basis === 'estimate') return { basis: 'estimate', union: null };
-  return { basis: 'none', union: null };
-}
+export { dutyBasisOf, type DutyBasis } from './duty-basis';
 
 export interface ArchetypeStatusItem {
   key: string;
@@ -185,7 +170,7 @@ export async function archetypeRunStatus(args: { compare?: boolean; top?: number
   const top = args.top ?? 10;
   const org = await findExporter();
   const items: ArchetypeStatusItem[] = [];
-  for (const archetype of PHASE_1_GATE_POLICY_V1.archetypes.value) {
+  for (const archetype of PHASE_1_GATE_POLICY_V2.archetypes.value) {
     const product = org ? await prisma.product.findFirst({ where: { exporter_org_id: org.id, name: archetypeProductName(archetype.label) }, select: { id: true } }) : null;
     const run = product ? await latestV5Run(product.id) : null;
     const item: ArchetypeStatusItem = { key: archetype.key, hs6: archetype.hs6, product_id: product?.id ?? null, run, markets: null, comparison: null, comparison_error: null };

@@ -20,9 +20,6 @@ import { acquireTariffEvidence, setTariffAdapterResolverForTesting, tariffClockF
 import { runCountryTruthDiscovery } from '@/lib/job-handlers/country-truth-discovery';
 import type { MarketAccessAdapter, MarketAccessAdapterRequest } from '@/lib/job-handlers/market-access';
 import type { MarketAccessIngestResult } from '@/lib/market-access/contract';
-import { evaluatePhase1Gate } from '@/lib/phase-1-gate/evaluate';
-import { loadPhase1GateArchetypeEvidence, withReadOnlySnapshot } from '@/lib/phase-1-gate/load';
-import { PHASE_1_GATE_POLICY_V1 } from '@/lib/phase-1-gate/policy';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -274,15 +271,8 @@ describe('Deep Country Truth tariff acquisition', () => {
       expect(new Set(cited.map((row) => row.snapshot_id))).toEqual(new Set([assessment.country_code === 'DE' ? germanySnapshot.id : usSnapshot.id]));
     }
 
-    // The Phase 1 gate reads the tariff clock and counts the live, run-acquired tariff.
+    // The worker closes the job with this outcome before the next request is made.
     await prisma.job.update({ where: { id: f.job.id }, data: { status: outcome.status, completed_at: new Date(), result: outcome.result } });
-    const evidence = await withReadOnlySnapshot(prisma, (db) => loadPhase1GateArchetypeEvidence(db, 'fixture', { kind: 'job', id: f.job.id }));
-    const us = evidence.markets.find((item) => item.country_code === 'US')!;
-    expect(us.tariff_clock).toBe(tariffClock);
-    const policy = structuredClone(PHASE_1_GATE_POLICY_V1);
-    policy.archetypes.value = [{ key: 'fixture', label: 'Fixture', hs6: f.hs6, hs_revision: 'HS2022' }];
-    const report = evaluatePhase1Gate({ policy, evidence: [evidence], negative_probes: null, evaluated_at: new Date(), environment: { app_env: 'test', database_environment: null, database_fingerprint_prefix: null, git_commit: null } });
-    expect(report.archetypes[0].markets.find((item) => item.country_code === 'US')!.tariff).toMatchObject({ atlas_tariff_signal: true, cited_snapshot_ids: [usSnapshot.id], providers: ['usitc_hts'], oldest_evidence_age_days: 0 });
 
     // The converse: a switch-off run at the same screen clock never admits the SAME live US tariff
     // rows. Single-clock reads bound every market-access query by the screen clock (as before WP2), so

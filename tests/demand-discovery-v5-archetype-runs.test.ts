@@ -5,7 +5,7 @@ import {
   ARCHETYPE_EXPORTER_NAME, ARCHETYPE_MEMBERSHIP_DAYS, archetypeProductName, archetypeRunStatus, dutyBasisOf, startArchetypeRuns,
 } from '@/lib/demand-discovery-v5/archetype-runs';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
-import { PHASE_1_GATE_POLICY_V1 } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
@@ -17,7 +17,7 @@ async function staff(role: UserRole): Promise<Principal> {
 }
 
 const now = new Date('2026-10-19T06:00:00Z');
-const archetypes = PHASE_1_GATE_POLICY_V1.archetypes.value;
+const archetypes = PHASE_1_GATE_POLICY_V2.archetypes.value;
 
 describe('Demand Discovery v5 archetype runs', () => {
   test('dutyBasisOf reads how the duty metric found each market\'s duty', () => {

@@ -270,12 +270,17 @@ export interface ProductFlowRead {
 }
 
 /** Reads every flow of one HS6 product from a ready release, verifying each partition's checksum. */
-export async function readProductFlows(args: { release_id: string; hs6: string; years?: readonly number[]; storage?: DocumentStorage }): Promise<ProductFlowRead> {
+/**
+ * `db` lets a caller read the release and its partitions inside its own transaction — the Phase 1 gate
+ * reads them in its read-only snapshot. The partition bytes themselves are checked against their SHA-256.
+ */
+export async function readProductFlows(args: { release_id: string; hs6: string; years?: readonly number[]; storage?: DocumentStorage; db?: Pick<Prisma.TransactionClient, 'tradeDatasetRelease' | 'tradeDatasetPartition'> }): Promise<ProductFlowRead> {
   if (!/^\d{6}$/.test(args.hs6)) throw validationError([{ field: 'hs6', code: 'invalid', message: 'A six-digit HS code is required.' }], 'A six-digit HS code is required.');
-  const release = await prisma.tradeDatasetRelease.findUnique({ where: { id: args.release_id } });
+  const db = args.db ?? prisma;
+  const release = await db.tradeDatasetRelease.findUnique({ where: { id: args.release_id } });
   if (!release || release.status !== TradeDatasetReleaseStatus.ready) throw notFound('No ready trade dataset release with that id.');
   const years = args.years ? [...new Set(args.years)].sort() : null;
-  const partitions = await prisma.tradeDatasetPartition.findMany({
+  const partitions = await db.tradeDatasetPartition.findMany({
     where: { release_id: release.id, hs_chapter: args.hs6.slice(0, 2), ...(years ? { year: { in: years } } : {}) },
     orderBy: { year: 'asc' },
   });
