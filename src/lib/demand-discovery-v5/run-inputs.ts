@@ -354,6 +354,14 @@ export async function loadRunInputs(args: {
       const candidateYears = range(latest - policy.window_years + 1, latest + 1);
       const step = await runBatchedComtradeQuery({ query: { hs6: args.hs6, flow: 'M', periods: candidateYears, reporters: uncovered.map((entry) => entry.reporter_code), partners: 'all', max_records: config.comtrade_max_records }, access, comtrade_policy: comtradePolicy, reporter_universe: uncovered.map((entry) => entry.reporter_code) });
       record('market_fallback', step);
+      // R-34: the run says why the markets BACI does not cover have no trade figures, as the
+      // newest-year step does; a failed step also makes the run partial (through `record`).
+      if (step.status !== 'used') {
+        const count = `${uncovered.length} market${uncovered.length === 1 ? '' : 's'}`;
+        notes.push(step.status === 'failed'
+          ? `Comtrade figures for the ${count} BACI does not cover could not be fetched (${step.reason}), so those markets are not scored on trade this run.`
+          : `The ${count} BACI does not cover are not scored on trade: ${step.reason}`);
+      }
       if (step.status === 'used') {
         const reportedAll: ReportedYears = new Map(candidateYears.map((year) => [year, reported.get(year) ?? new Set<string>()]));
         for (const market of uncovered) {
