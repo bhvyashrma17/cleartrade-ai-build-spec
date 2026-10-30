@@ -1,3 +1,4 @@
+import { assertEarlierEnginesRetired } from '@/lib/demand-discovery-v5/earlier-engines';
 import { JobStatus, JobType, ProductClassificationStatus, UserRole, type Prisma } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { canonicalHash } from '@/lib/country-evidence/planner';
@@ -178,6 +179,7 @@ export function countryTruthDiscoveryDedupeKey(payload:CountryTruthDiscoveryPayl
 }
 
 export async function requestCountryTruthDiscovery(args:{actor:Principal;exporter_org_id:string;product_id:string;candidate_countries:string[];correlation_id:string;requested_at?:Date}){
+  assertEarlierEnginesRetired('A Country Truth analysis');
   const {actor}=args;
   const allowedRoles:readonly UserRole[]=[UserRole.agent,UserRole.ops_supervisor,UserRole.admin];
   if(!allowedRoles.includes(actor.role))throw forbidden('Only assigned Agents or authorized operations staff can request Country Truth analysis.');

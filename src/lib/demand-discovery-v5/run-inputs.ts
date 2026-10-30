@@ -49,6 +49,9 @@ import { testHsRevision, worldTotals, type HsRevisionTest } from './hs-revision'
 import { splitByAge } from './world-bank';
 import type { TradeFlowInput } from './series';
 
+/** Customs Atlas provider of a duty line an agent recorded by hand (`manual-authoritative.ts`). Runs no longer read it (D-037). */
+const AGENT_RECORDED_PROVIDER = 'authoritative_manual';
+
 // v3 (17 Oct 2026): adds `logistics_estimate` and the LSCI reference (D-025).
 // v4 (18 Oct 2026): each official duty records its `basis` and, for a scored preference, the
 // `standard` rate it replaced (D-026).
@@ -122,11 +125,14 @@ async function availability(year: number) {
  * official duty on Indian goods (`official-duty.ts`) under the deep assessment's admission rules.
  * Reads stored evidence; with `tariff_acquisition` on, the run has just looked the product up in every
  * market with a Customs Atlas source (`tariff-step.ts`), and `as_of` is the tariff clock.
+ *
+ * A line an agent recorded by hand (`authoritative_manual`, D-024) is not read: duty comes only from
+ * official sources the system reads itself, or a labelled estimate (owner, 30 Oct 2026, D-037).
  */
 async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate>; score_india_preference?: boolean }) {
   const origins = allowedEvidenceOrigins();
   const snapshots = await prisma.marketAccessEvidenceSnapshot.findMany({
-    where: { country_code: { in: [...args.markets] }, OR: [{ hs_code_scope: args.hs6 }, { hs6_code: args.hs6 }], retrieved_at: { lte: args.as_of }, evidence_origin: { in: origins } },
+    where: { country_code: { in: [...args.markets] }, OR: [{ hs_code_scope: args.hs6 }, { hs6_code: args.hs6 }], retrieved_at: { lte: args.as_of }, evidence_origin: { in: origins }, provider: { not: AGENT_RECORDED_PROVIDER } },
     select: { id: true, country_code: true, provider: true, source_dataset: true, classification_resolution: true, evidence_origin: true },
     orderBy: { id: 'asc' },
   });
@@ -168,9 +174,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     }
     if (resolution.status !== 'none') {
       for (const snapshot of marketSnapshots) if (resolution.snapshot_ids.includes(snapshot.id)) used.add(snapshot.evidence_origin);
-      // D-024: a line an agent read from the official tariff says so wherever it is shown.
       const snapshotIds = resolution.snapshot_ids;
-      if (marketSnapshots.some((snapshot) => snapshotIds.includes(snapshot.id) && snapshot.provider === 'authoritative_manual')) resolution = { ...resolution, recorded_by_agent: true };
       // D-028: a customs union's common external tariff says so, and scores below a national tariff.
       const union = marketSnapshots.map((snapshot) => (snapshotIds.includes(snapshot.id) ? CUSTOMS_UNION_PROVIDERS.get(snapshot.provider) : undefined)).find(Boolean);
       if (union) resolution = { ...resolution, common_tariff: { union: union.key, label: union.label } };
@@ -350,6 +354,14 @@ export async function loadRunInputs(args: {
       const candidateYears = range(latest - policy.window_years + 1, latest + 1);
       const step = await runBatchedComtradeQuery({ query: { hs6: args.hs6, flow: 'M', periods: candidateYears, reporters: uncovered.map((entry) => entry.reporter_code), partners: 'all', max_records: config.comtrade_max_records }, access, comtrade_policy: comtradePolicy, reporter_universe: uncovered.map((entry) => entry.reporter_code) });
       record('market_fallback', step);
+      // R-34: the run says why the markets BACI does not cover have no trade figures, as the
+      // newest-year step does; a failed step also makes the run partial (through `record`).
+      if (step.status !== 'used') {
+        const count = `${uncovered.length} market${uncovered.length === 1 ? '' : 's'}`;
+        notes.push(step.status === 'failed'
+          ? `Comtrade figures for the ${count} BACI does not cover could not be fetched (${step.reason}), so those markets are not scored on trade this run.`
+          : `The ${count} BACI does not cover are not scored on trade: ${step.reason}`);
+      }
       if (step.status === 'used') {
         const reportedAll: ReportedYears = new Map(candidateYears.map((year) => [year, reported.get(year) ?? new Set<string>()]));
         for (const market of uncovered) {

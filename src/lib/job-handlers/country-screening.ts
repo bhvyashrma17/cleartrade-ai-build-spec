@@ -12,6 +12,7 @@
  * job's work, driven by the reporter set this one produces.
  */
 
+import { assertEarlierEnginesRetired } from '@/lib/demand-discovery-v5/earlier-engines';
 import { JobStatus, JobType, ProductClassificationStatus, TradeSourceMode, UserRole, type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { canonicalHash } from '@/lib/country-evidence/planner';
@@ -130,6 +131,7 @@ export async function buildGlobalCountryScreeningPayload(args: { exporter_org_id
 
 /** Enqueue one screen. The dedupe key is the frozen work identity, so a double submit is a no-op. */
 export async function enqueueGlobalCountryScreening(args: Parameters<typeof buildGlobalCountryScreeningPayload>[0] & { correlation_id?: string }) {
+  assertEarlierEnginesRetired('A global market scan');
   const payload = await buildGlobalCountryScreeningPayload(args);
   // The preferred period and the period policy are part of the work identity: re-screening
 // across a release boundary is a different question, not a duplicate of the previous one.

@@ -10,6 +10,7 @@
  *
  * The pilot surface is untouched and still serves the exporter-facing route.
  */
+import { assertEarlierEnginesRetired } from '@/lib/demand-discovery-v5/earlier-engines';
 import { JobType, type Prisma } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getConfig } from '@/lib/config';
@@ -45,6 +46,7 @@ export interface DeepCountryTruthRequestArgs {
  * the same request while the job is in flight returns that job rather than starting a rival one.
  */
 export async function requestDeepCountryTruthFromScreening(args: DeepCountryTruthRequestArgs) {
+  assertEarlierEnginesRetired('A detailed Country Truth analysis');
   const { actor } = args;
   const allowedRoles: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
   if (!allowedRoles.includes(actor.role)) throw forbidden('Only assigned Agents or authorized operations staff can request Country Truth analysis.');

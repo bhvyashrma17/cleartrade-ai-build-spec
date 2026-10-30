@@ -45,6 +45,10 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-032 | 2026-10-19 | v5 scoring policy v8: India's own success no longer counts against a market — openness is measured among India's competitors, and where India already supplies 10% or more of a market a lower market price is not counted against it — and a new metric, India's sales (10 points), scores how much India already sells there; price headroom 10 → 5 and market size 20 → 15. Owner's choice, "B: fix both + India's sales (Recommended)", after the re-score in E-028. | Owner | Demand Discovery v5 |
 | D-033 | 2026-10-22 | Country expansion (D-030) is on hold. For a pitch on 24 Oct, Regional Demand Discovery and Real Buyer Discovery are built for a smaller set of markets and must work end to end on staging. Owner's words: "hold on country expansion … i want operational demand, regional, buyer. maybe for a shorter area not 218. but operational. full fledged." Owner's choices: the US, the UK and Canada ("US + UK + Canada (Recommended)"); demonstration product carpets 570110; the owner signs up for the free Census Bureau API key; the agent may download HMRC's `importers2608.zip` and ISED's three 2023 importer files to the owner's Mac. | Owner | Regional and buyer discovery (docs/38) |
 | D-034 | 2026-10-22 | Buyers from the official importer lists are shown as published, including sole traders' names — the owner chose "Every published entry" over the recommended "Companies only, no contacts". No contact details are added. | Owner | Real Buyer Discovery (docs/38) |
+| D-035 | 2026-10-30 | Regional demand (stage 2) and real buyers (stage 3) are to cover every market Demand Discovery scores (all 218), each from the best source it has and labelled as such; stages 4 and 5 are the owner's. Owner's words: "why are you counting just UK, Canada for regional and real buyers? We want it for all the countries we are getting in the demand discovery, right? We want all the 200 plus countries on board." and "I have outreach and agent ready." | Owner | Regional and buyer discovery (docs/38), the plan of E-031 |
+| D-036 | 2026-10-30 | The earlier discovery engines are retired: in staging and production nothing starts a Country Truth v4 scan, scan request or detailed analysis, or a warehouse-engine run, and acceptance gates check v5 runs only. Owner's words: "the acceptance gates should not run old v4s." | Owner | Demand Discovery, Phase 1 gate (docs/34) |
+| D-037 | 2026-10-30 | Demand Discovery uses actual data or labelled estimates only; agents neither read nor record tariffs. Owner's words: "we don't want agents reading, either have labeled estimates or actual data in demand discovery." | Owner | Demand Discovery v5, Customs Atlas (docs/36, docs/37) |
+| D-038 | 2026-10-30 | Build order: finish Demand Discovery first, then regional demand for all its markets, then buyers for the same markets, with source research and tariff work alongside; tariff automation for every market (D-030) resumes as part of finishing stage 1. Owner's words: "Ideate well about what to build in demand discovery first to finish it once and for all, then covering the region for all the countries covered in it, and then the buyer discovery for the same countries. It's a simultaneous project, I guess." and "The completion of the demand discovery first, right? If yes, then let's proceed with it." | Owner | Programme |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -1361,6 +1365,131 @@ reused unchanged), and an assigned agent's request found the 86 UK carpet import
 through the agent's buyer control (specialist rug importers score 100; John Lewis, with 9 of its 334
 codes in chapter 57, scores 58). CI runs the canonical suite on the PR.
 
+### E-031 · 2026-10-30 · Plan for stages 1–3 in every market; owner decisions D-035 to D-038
+
+**Verified today (agent workspace, GitHub API).** `staging/railway` = `95e9ac6` (the merge of PR #14);
+`master` = `6d4733cb`, unchanged since the audit; staging is 157 commits ahead and 0 behind
+(`GET /repos/…/compare/master...staging/railway`). CI passed on PRs #9–#14; nothing has merged since 22
+Oct. The UK town-count fix (`0e0a369`) was committed after PR #14 merged and is not on staging: PR #15.
+The demo-setup report (staging steps of 24 Oct) never came back, so the first live Census read (R-32),
+sanctions coverage and the scoring-v8 re-run (R-30) are still unverified.
+
+**APIs already linked.** `COMTRADE_API_KEY` configured on staging; `CENSUS_API_KEY` in the code, its
+staging value unconfirmed; `ANTHROPIC_API_KEY` in the code (rationale writer) but not configured on
+staging (docs/26 §B). The Claude API's web search costs $10 per 1,000 searches plus tokens
+(platform.claude.com, web search tool page, read today); it is the planned engine for buyer web
+discovery (D-035).
+
+**Sources checked for stages 2–3** (pages opened today): Statistics Canada publishes imports by
+province only for the 12 NAPCS sections (open.canada.ca dataset ceca9f02…); HMRC's regional trade
+statistics allocate trade to 12 regions by employee location, at SITC division (gov.uk explanatory
+notes, Q1 2023); French customs' regional and departmental files use CPF4 product groups, NC8 being
+withheld for confidentiality (DGDDI dataset description); Natural Earth's admin-1 layer covers all but
+a few tiny countries and its maintainers say about half its ISO codes are missing; Brazil's SECEX
+register of importing companies ended in 2023 over privacy, last file 2021 (Trase); DGCI&S does not
+disseminate company-wise or IEC-wise data (its data dissemination policy); Volza lists 249 export
+partner countries for India without naming its source.
+
+**Plan.** A claude.ai doc, "ClearTrade stages 1–3: plan for all 218 markets": per-market source tiers
+for regional demand (official regional imports, importer concentration, a labelled regional baseline)
+and buyers (official importer lists, bought shipment records, web discovery for every market); the
+stage 1 finish list (retire v4, no agent-entered tariffs, a v5-only gate, automatic refresh of every
+input, re-runs on new data, calibration on 15–20 products, exporter-fit prompts, a labels check); and
+a timeline with two streams: stage 1 finished 20 Nov, a regional view in every market 4 Dec, buyer
+candidates in every market 8 Jan, all three stages 15 Jan 2027 (late January to mid-February with one
+stream). Estimates, not commitments.
+
+### E-032 · 2026-10-30 · Earlier engines retired; agent-entered tariffs closed (D-036, D-037) (in review)
+
+**Branch.** `dd5/v5-only`, from `staging/railway` at `95e9ac6`.
+
+**Engines (D-036).** `src/lib/demand-discovery-v5/earlier-engines.ts`: `assertEarlierEnginesRetired`
+refuses in staging and production (`PREREQUISITES_NOT_MET`, blocker `RETIRED: …`) before anything is
+written. Called first by `requestMarketScan`, `approveMarketScan`, `startMarketDiscovery`,
+`enqueueGlobalCountryScreening`, `requestDeepCountryTruthFromScreening`, `requestCountryTruthDiscovery`
+and `scripts/verify-warehouse-discovery.ts`. `POST /api/v1/discovery-runs` goes to v5 or is refused
+with v5's reason; the warehouse-engine path (and its `demand_discovery` job) is removed from it. The
+UI starts nothing on the earlier engines: the scan-request queue (`MarketScanQueue.tsx`) is deleted
+from the ops and agent pages; the agent's Demand Discovery panel loses "Request detailed analysis" and
+the v4 stage chips; the exporter's product page points to Markets instead of starting or requesting a
+scan. Stored runs stay readable. Other environments still run the earlier code so its suites keep
+passing (R-33).
+
+**Agent-entered tariffs (D-037).** v5 runs no longer read `authoritative_manual` evidence
+(`run-inputs.ts`); `POST /api/v1/market-access/manual-captures` refuses every request; the agent's
+"Official tariff to check" pointer and "Record the official duty" form are removed (`demand-control.ts`,
+`DemandDiscoveryControl.tsx`, `V5Breakdown.tsx`, `RecordOfficialDuty.tsx` deleted). A breakdown stored
+before still says an agent read its line. docs/36 and docs/37 say so.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean. ESLint
+(`--max-warnings=0`) clean on all 24 changed code and test files. Full suite, run twice: 2,283 passed,
+5 skipped, 3 failed, the same three local-harness-only failures as in E-029 and E-030
+(`market-scan-requests`: the pg adapter cannot read Postgres's `name` type in a raw query;
+`pilot-e2e`; `staff-provisioning`). New tests: `earlier-engines-retired` (9) and the closed capture
+endpoint in `manual-tariff-capture`. CI runs the canonical suite on the PR.
+
+**Not verified.** The pages in a browser; the refusals on staging (after merge, a POST to a retired
+route there must answer 422 with the retired reason).
+
+### E-033 · 2026-10-30 · Phase 1 gate v2: Demand Discovery v5 runs only (D-036) (in review)
+
+**Branch.** `dd5/gate-v5`, stacked on `dd5/v5-only` (PR #16, not merged).
+
+**Gate.** Policy `phase-1-gate-v2` replaces v1, which evaluated Country Truth v4 deep runs; the v1
+loader, evaluator and tests are removed, and so is the v1 gate assertion inside the WP2
+tariff-acquisition test. For each archetype the gate reads one v5 run in a single read-only snapshot
+and checks: the engine (`market-opportunity-v5` only; any other run fails and is not evaluated
+further); a staff confirmation with its audit event, for the archetype's code, that the run scored;
+the run status (`completed`, or `partial` with notes, agreeing with its job); coverage (every market of
+the frozen universe, once); at least 10 ranked markets; calibration (docs/36 §8, from the run's own
+BACI release); no silent zero; every estimate labelled (D-037); no agent-recorded duty and at least one
+official duty in the top 10 (D-037); run age and BACI lag; that the stored policy re-hashes; and a
+replay that re-scores every market from its stored metrics. Every threshold is **proposed**
+(docs/34 §2); R-08 stays open.
+
+**Supporting changes.** `duty-basis.ts` holds `dutyBasisOf` as a pure module (re-exported by
+`archetype-runs.ts`); `compareRunWithIndiaExports` and `readProductFlows` take an optional database
+handle and storage, so the comparison runs inside the gate's snapshot; the archetype scripts cite
+policy v2.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean; ESLint clean on all 13
+changed code and test files. `phase-1-gate` (22 tests, new); `demand-discovery-v5-run` (4, two new: an
+unconfirmed product is refused before any run exists; the gate reads the suite's real end-to-end run
+back and passes it, its replay reproducing all 218 stored markets exactly); `archetype-runs`,
+`country-truth-tariff-acquisition`, `calibration`, `earlier-engines-retired` and
+`manual-tariff-capture` (28) pass. Full suite: 2,280 passed, 5 skipped, 3 failed: the same three local-harness-only failures as in E-032 (the local pg adapter cannot read a raw query's result: `market-scan-requests`, `pilot-e2e`, `staff-provisioning`). Three fewer passes than E-032 because the v1 gate file's 27 tests are replaced by 22 and the v5 run suite gains 2. The command refuses a v1 `job:`
+selector and an unknown archetype (exit 3).
+
+**Expected on staging (not run).** The 19 Oct runs used policy v6 and would fail calibration for rice
+(3/10) and brassware (4/10) (E-026); they also pass 30 days on 18 Nov. Order: merge #16 and this PR,
+re-run the archetypes under v8 (`dd5-archetype-runs.ts start --rerun`), then run the gate (docs/34 §6.2)
+with a probe record (§6.3).
+
+**Finding.** A failed Comtrade market-fallback step marks a run partial without a note (`run-inputs.ts`:
+of the two Comtrade steps, only the newest-year step adds one). The gate fails such a run
+(`partial_run_without_notes`), correctly: the exporter would see a partial run with no reason (R-34).
+
+### E-034 · 2026-10-30 · A failed Comtrade fallback says why (R-34) (in review)
+
+**Branch.** `dd5/fallback-note`, stacked on `dd5/gate-v5` (PR #17).
+
+**Change.** `run-inputs.ts`: when the Comtrade market-fallback step does not deliver, the run's notes
+say so, as the newest-year step's already do — failed: "Comtrade figures for the N markets BACI does
+not cover could not be fetched (reason), so those markets are not scored on trade this run." (the run
+is `partial`, as before); unavailable (no authenticated client): "The N markets BACI does not cover are
+not scored on trade: reason". This is what docs/36 §7 already said ("A failed Comtrade step makes the
+run `partial` with the reason").
+
+**Correction to E-033.** The gate's `partial_run_without_notes` check sees only whether a partial run
+has any note. The new test's run had three unrelated notes, so the gate would not have caught this
+case; the note itself is the fix. docs/34 §7 now says so.
+
+**Checks run (agent workspace, local database harness).** New test in `demand-discovery-v5-run`
+("a Comtrade fallback that fails leaves the run partial and says why"): fails without the change
+(the partial run's three notes do not mention the fallback), passes with it. Every
+`demand-discovery-v5-*` suite, `phase-1-gate` and `manual-tariff-capture` pass (12 files, 126 tests);
+`tsc --noEmit` and ESLint clean. The full suite was run on the parent commit (E-033).
+
 ## Risk register
 
 
@@ -1373,7 +1502,7 @@ codes in chapter 57, scores 58). CI runs the canonical suite on the PR.
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
-| R-08 | Gate thresholds unapproved | Open | Owner approval PR |
+| R-08 | Gate thresholds unapproved | Open — policy v2 (v5 runs only) proposed in E-033 | Owner approval PR |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
@@ -1398,3 +1527,5 @@ codes in chapter 57, scores 58). CI runs the canonical suite on the PR.
 | R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
+| R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
+| R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |

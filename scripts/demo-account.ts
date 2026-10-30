@@ -18,7 +18,7 @@ import { grantManualMembership } from '@/lib/billing/subscription-service';
 import { BUYER_DISCOVERY_MODEL } from '@/lib/buyer-discovery/service';
 import { getConfig } from '@/lib/config';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
-import { PHASE_1_GATE_POLICY_V1 } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
 import { confirmClassification, proposeClassification } from '@/lib/product-classification';
 import { prisma } from '@/lib/prisma';
 import { validateDatabaseEnvironment } from '@/lib/runtime-config';
@@ -43,8 +43,8 @@ async function setup() {
   const exporterEmail = (arg('exporter-email') ?? 'demo-exporter@demo.invalid').toLowerCase();
   const agentEmail = (arg('agent-email') ?? 'demo-agent@demo.invalid').toLowerCase();
   const keys = (arg('products') ?? 'carpets,rice,brassware').split(',').map((key) => key.trim()).filter(Boolean);
-  const archetypes = PHASE_1_GATE_POLICY_V1.archetypes.value.filter((archetype) => keys.includes(archetype.key));
-  if (archetypes.length !== keys.length) throw new Error(`--products must be some of ${PHASE_1_GATE_POLICY_V1.archetypes.value.map((a) => a.key).join(', ')}.`);
+  const archetypes = PHASE_1_GATE_POLICY_V2.archetypes.value.filter((archetype) => keys.includes(archetype.key));
+  if (archetypes.length !== keys.length) throw new Error(`--products must be some of ${PHASE_1_GATE_POLICY_V2.archetypes.value.map((a) => a.key).join(', ')}.`);
   const passwordHash = await hashPassword(password);
 
   let org = await prisma.exporterOrg.findFirst({ where: { display_name: orgName }, select: { id: true, tier: true, paid_until: true } });
@@ -84,7 +84,7 @@ async function setup() {
       const candidate = await proposeClassification({
         product_id: product.id, hs6_code: archetype.hs6, itc_hs_code: null, nomenclature: 'HS', nomenclature_version: '2022', method: ProductClassificationMethod.agent_supplied, confidence: 1,
         rationale: `Demonstration product "${archetype.key}": ${archetype.label}, HS 2022 subheading ${archetype.hs6}.`,
-        source_references: [{ label: 'Phase 1 gate policy v1, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' }], evidence: { archetype: archetype.key, demo: true },
+        source_references: [{ label: 'Phase 1 gate policy v2, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' }], evidence: { archetype: archetype.key, demo: true },
       }, actor, correlationId);
       await confirmClassification({ classification_id: candidate.id, product_id: product.id }, actor, correlationId);
       action = 'confirmed';

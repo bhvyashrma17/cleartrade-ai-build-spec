@@ -1,8 +1,8 @@
 /**
- * Phase 1 acceptance gate — the pure evaluator (docs/34).
+ * Phase 1 acceptance gate — the pure evaluator (docs/34), policy v2: Demand Discovery v5 runs only.
  *
- * Takes evidence that `load.ts` read from a completed staging run (plain JSON — no Prisma types,
- * no clock reads, no IO) and decides, per archetype and overall, whether the gate passes. The same
+ * Takes evidence that `load.ts` read from finished staging runs (plain JSON — no Prisma types, no
+ * clock reads, no IO) and decides, per archetype and overall, whether the gate passes. The same
  * input always yields a byte-identical report: `evaluated_at` is an argument, every collection is
  * ordered, and `stableJson` sorts keys.
  *
@@ -14,8 +14,14 @@
  *      the whole gate INCOMPLETE rather than PASS.
  *   3. **A machine verdict never freezes Phase 1.** `phase_1_frozen` is always false; freezing
  *      needs approved thresholds AND named human sign-off recorded outside this module.
+ *
+ * A run from any engine but v5 fails `engine.v5_only` and is not evaluated further (D-036).
  */
 import { canonicalHash } from '@/lib/country-evidence/planner';
+import { dutyBasisOf, DUTY_BASES, type DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
+import type { MetricResult } from '@/lib/demand-discovery-v5/metrics';
+import { policyHash, type DemandDiscoveryV5Policy, type MetricKey } from '@/lib/demand-discovery-v5/policy';
+import { rankMarkets, scoreMarket, type MarketScoreInput, type ScoredMarket } from '@/lib/demand-discovery-v5/score';
 import {
   normalizeHsRevision,
   phase1GatePolicyApproved,
@@ -26,175 +32,122 @@ import {
   type Phase1GatePolicy,
 } from './policy';
 
-/**
- * Provider key the EU TARIC adapter writes on every snapshot. Mirrors `TARIC_PROVIDER` in
- * `market-access/taric/parser.ts`; it is restated rather than imported so this pure module does not
- * load the TARIC parsing stack, and a test pins the two together.
- */
-export const GATE_TARIC_PROVIDER = 'eu_taric';
-
-export const PHASE_1_GATE_COMPONENTS = [
-  'demand_strength',
-  'growth_momentum',
-  'competitive_opportunity',
-  'market_access',
-  'export_economics',
-  'exporter_market_fit',
-  'logistics_feasibility',
-  'risk_resilience',
-] as const;
-export type GateComponentKey = (typeof PHASE_1_GATE_COMPONENTS)[number];
+/** The four statuses a v5 assessment can carry (docs/36 §5). */
+export const V5_MARKET_STATUSES = ['ranked', 'not_enough_data', 'no_recorded_demand', 'excluded'] as const;
+const SCORED_STATUSES: readonly string[] = ['ranked', 'not_enough_data'];
+/** Metric bases that are estimates (metrics.ts): a duty from tariff averages, logistics from shipping connectivity. */
+export const ESTIMATE_BASES: readonly string[] = ['estimate', 'lsci_estimate'];
+/** The label a market measured only from its partners' figures carries (explain.ts). */
+export const PARTNER_FIGURES_LABEL = 'estimated_from_partners';
 
 // ---------------------------------------------------------------------------
-// Evidence (what the loader reads)
+// Evidence — what load.ts reads from one run
 // ---------------------------------------------------------------------------
 
-export interface GateComponentEvidence {
-  available: boolean;
+export interface GateMetricEvidence {
+  key: string;
   score: number | null;
-  exclusion_reason: string | null;
-}
-
-export interface GateTariffEvidenceRow {
-  evidence_id: string;
-  rule_type: string;
-  evidence_origin: string;
-  retrieved_at: string;
-  tariff_rate_percent: number | null;
-  preference_applicability: string | null;
-  snapshot: {
-    id: string;
-    provider: string;
-    source_authority: string;
-    source_version: string | null;
-    authority_release_id: string | null;
-    evidence_origin: string;
-    retrieved_at: string;
-    source_run_id: string | null;
-  } | null;
+  quality: number;
+  reason: string | null;
+  estimated: boolean;
+  inputs: Record<string, unknown>;
 }
 
 export interface GateMarketEvidence {
   assessment_id: string;
   country_code: string;
-  reporter_code: string | null;
-  assessment_state: string | null;
-  eligibility_status: string;
+  model_version: string;
+  classification_id: string | null;
+  scoring_policy_hash: string | null;
+  market_status: string | null;
+  rank: number | null;
   overall_score: number | null;
+  live_points: number | null;
+  data_year: number | null;
   confidence_score: number;
-  period_lag: number | null;
-  latest_common_year: number | null;
-  classification_current: boolean;
-  assessment_checksum: string | null;
-  assessment_identity: string | null;
-  components: Record<GateComponentKey, GateComponentEvidence | null>;
-  market_access: {
-    tariff_rate_percent: number | null;
-    tariff_basis: string | null;
-    /** Fact ids of the form `market_access_tariff:<MarketAccessEvidence.id>` the calculation used. */
-    used_tariff_fact_ids: string[];
-    excluded_facts: Array<{ fact_id: string; reason: string }>;
+  handed_off: boolean;
+  /** Why the market is excluded, from `eligibility_reasons`; null when it is not. */
+  excluded_reason: string | null;
+  flag_reasons: string[];
+  label_keys: string[];
+  /** `score_breakdown` as stored, read defensively; null when the row has none. */
+  breakdown: {
+    overall_exact: number | null;
+    quality: number | null;
+    confidence: number | null;
+    lag: number | null;
+    has_shortfall: boolean;
+    partner_only: boolean | null;
+    metrics: GateMetricEvidence[];
+  } | null;
+}
+
+/** The docs/36 §8 comparison of the run's top with India's own largest destinations. */
+export interface GateCalibrationEvidence {
+  status: 'computed' | 'error';
+  error: string | null;
+  baci_release_id: string | null;
+  years: number[];
+  top: number;
+  india_top: { market: string; usd: number; status: string | null; rank: number | null }[];
+  run_top: { market: string; rank: number }[];
+  overlap: number;
+  missed: { market: string; status: string | null; rank: number | null }[];
+}
+
+export interface GateRunEvidence {
+  id: string;
+  model_version: string | null;
+  status: string;
+  trigger: string | null;
+  classification_id: string | null;
+  /** The HS6 frozen into the run's input snapshot. */
+  input_hs6: string | null;
+  job_id: string | null;
+  job_status: string | null;
+  as_of_date: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  scoring_policy_hash: string | null;
+  /** The v5 policy the run stored (`scoring_policy_snapshot`), exactly as read. */
+  scoring_policy_snapshot: unknown;
+  frozen: {
+    schema_version: string | null;
+    policy_version: string | null;
+    policy_hash: string | null;
+    universe_version: string | null;
+    universe_size: number | null;
+    baci_release_id: string | null;
+    base_years: number[];
   };
-  /** The clock tariff evidence was admitted against (ISO). */
-  tariff_clock: string | null;
-  /** One row per resolvable used tariff fact. */
-  tariff_evidence: GateTariffEvidenceRow[];
-  /** Market-access evidence rows the fact selection rejected, with the reason. */
-  rejected_tariff_rows: Array<{ row_id: string; reason: string }>;
-  integrity: {
-    country_trade_metrics_id: string | null;
-    metrics_checksum: string | null;
-    assessment_metrics_checksum: string | null;
-    metrics_payload_manifest_checksum: string | null;
-    manifest_checksum: string | null;
-    assessment_manifest_checksum: string | null;
-    fact_snapshot_id: string | null;
-    fact_snapshot_checksum: string | null;
-    fact_snapshot_checksum_recomputed: string | null;
-    assessment_fact_snapshot_checksum: string | null;
-  };
+  /** What the run said is missing or degraded (`summary.notes`). */
+  notes: string[];
+  summary_markets: number | null;
 }
 
 export interface GateArchetypeEvidence {
   archetype_key: string;
-  /** `product:<id>` or `job:<id>`, exactly as requested. */
+  /** `product:<id>` or `run:<id>`. */
   selector: string;
-  /** How a product selector was resolved to one run. */
   selection_note: string;
   load_errors: string[];
-  product: {
-    id: string;
-    exporter_org_id: string;
-    hs_code: string | null;
-    hs_classification_status: string | null;
-    hs_classification_revision: number;
-  } | null;
+  product: { id: string; exporter_org_id: string; hs_code: string | null } | null;
   classification: {
     id: string;
     revision: number;
     hs6_code: string;
     nomenclature_version: string;
     status: string;
-    method: string;
     confirmed_by_id: string | null;
     confirmed_by_role: string | null;
     confirmed_at: string | null;
     superseded_at: string | null;
     confirmation_audit_event_ids: string[];
   } | null;
-  job: {
-    id: string;
-    status: string;
-    attempts: number;
-    created_at: string;
-    started_at: string | null;
-    completed_at: string | null;
-    /** The frozen scoring clock (`payload.requested_at`). */
-    requested_at: string | null;
-    payload_schema_version: string | null;
-    payload_classification_id: string | null;
-    physical_calls: number | null;
-    evidence_status: string | null;
-    error_code: string | null;
-  } | null;
-  screening: {
-    provenance_present: boolean;
-    screening_run_id: string | null;
-    run_key: string | null;
-    status: string | null;
-    as_of_date: string | null;
-    policy_version: string | null;
-    policy_hash: string | null;
-    universe_version: string | null;
-    eligible_count: number | null;
-    shortlist_size: number | null;
-    physical_call_count: number | null;
-    completed_at: string | null;
-    shortlist_reporters: string[];
-  } | null;
-  plan: {
-    id: string;
-    plan_key: string;
-    status: string;
-    screening_run_id: string | null;
-    as_of_date: string;
-    period_set: number[];
-    latest_common_year: number;
-    policy_version: string;
-    policy_hash: string;
-    candidate_reporters: string[];
-  } | null;
-  manifest: { id: string; checksum: string; evaluation_state: string; created_at: string } | null;
-  discovery_run: {
-    id: string;
-    status: string;
-    as_of_date: string | null;
-    started_at: string | null;
-    completed_at: string | null;
-    scoring_policy_version: number | null;
-    scoring_policy_hash: string | null;
-  } | null;
+  run: GateRunEvidence | null;
   markets: GateMarketEvidence[];
+  calibration: GateCalibrationEvidence | null;
 }
 
 /**
@@ -247,31 +200,19 @@ export type GateVerdict = 'PASS' | 'PASS_UNDER_PROPOSED_POLICY' | 'FAIL' | 'INCO
 export interface GateMarketReport {
   country_code: string;
   assessment_id: string;
-  qualifies: boolean;
-  disqualifiers: string[];
-  assessment_state: string | null;
-  eligibility_status: string;
+  market_status: string | null;
+  rank: number | null;
   overall_score: number | null;
-  confidence_score: number;
-  period_lag: number | null;
-  unavailable_components: Array<{ component: GateComponentKey; reason: string | null }>;
-  tariff: {
-    atlas_tariff_signal: boolean;
-    rate_percent: number | null;
-    basis: string | null;
-    cited_evidence_ids: string[];
-    cited_snapshot_ids: string[];
-    providers: string[];
-    authority_versions: string[];
-    oldest_evidence_age_days: number | null;
-    reasons: string[];
-  };
-  checksums: {
-    assessment_checksum: string | null;
-    metrics_checksum: string | null;
-    manifest_checksum: string | null;
-    fact_snapshot_checksum: string | null;
-  };
+  live_points: number | null;
+  data_year: number | null;
+  duty_basis: DutyBasis;
+  /** Metrics scored from an estimate, and `partner_figures` for a market measured from its partners' reports. */
+  estimated: string[];
+  /** Metrics without a score, each with the reason the run gave. */
+  unscored: { metric: string; reason: string | null }[];
+  flag_reasons: string[];
+  /** Every failed-check reason that names this market. */
+  problems: string[];
 }
 
 export interface GateArchetypeReport {
@@ -287,42 +228,47 @@ export interface GateArchetypeReport {
     classification_revision: number | null;
     classification_confirmed_by_role: string | null;
     classification_confirmed_at: string | null;
-    job_id: string | null;
-    screening_run_id: string | null;
-    screening_policy_version: string | null;
-    screening_policy_hash: string | null;
-    country_evidence_plan_id: string | null;
-    country_evidence_plan_key: string | null;
-    country_evidence_manifest_id: string | null;
-    country_evidence_manifest_checksum: string | null;
     discovery_run_id: string | null;
-    scoring_policy_version: number | null;
+    job_id: string | null;
+    model_version: string | null;
+    scoring_policy_version: string | null;
     scoring_policy_hash: string | null;
+    baci_release_id: string | null;
+    universe_version: string | null;
   };
   run: {
-    scoring_clock: string | null;
-    job_status: string | null;
+    status: string | null;
+    trigger: string | null;
+    as_of_date: string | null;
     created_at: string | null;
     completed_at: string | null;
     elapsed_seconds: number | null;
-    attempts: number | null;
-    deep_run_provider_calls: number | null;
-    screening_provider_calls: number | null;
-    evidence_status: string | null;
-    period_set: number[];
+    base_years: number[];
+    notes: string[];
   };
   counts: {
+    universe_markets: number | null;
     assessed_markets: number;
-    rankable_markets: number;
-    qualifying_markets: number;
-    qualifying_markets_with_atlas_tariff_signal: number;
+    ranked: number;
+    not_enough_data: number;
+    no_recorded_demand: number;
+    excluded: number;
+    official_duty_in_top: number;
   };
+  calibration: {
+    top: number;
+    years: number[];
+    india_top: string[];
+    run_top: string[];
+    overlap: number;
+    missed: { market: string; status: string | null; rank: number | null }[];
+  } | null;
   checks: GateCheck[];
   markets: GateMarketReport[];
 }
 
 export interface Phase1GateReport {
-  schema_version: 'phase-1-gate-report-v1';
+  schema_version: 'phase-1-gate-report-v2';
   verdict: GateVerdict;
   /** Always false: a machine verdict never freezes Phase 1 on its own. */
   phase_1_frozen: false;
@@ -352,13 +298,7 @@ export interface Phase1GateReport {
 
 const DAY_MS = 86_400_000;
 
-function check(
-  id: string,
-  dimension: GateCheck['dimension'],
-  status: GateCheckStatus,
-  detail: string,
-  reasons: string[] = [],
-): GateCheck {
+function check(id: string, dimension: GateCheck['dimension'], status: GateCheckStatus, detail: string, reasons: string[] = []): GateCheck {
   return { id, dimension, status, detail, reasons };
 }
 
@@ -380,13 +320,17 @@ function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort();
 }
 
-/** "reason: n" lines, most frequent first, for summarising why markets did not qualify. */
+/** "reason: n" lines, most frequent first, for summarising many markets at once. */
 function tally(values: string[]): string[] {
   const counts = new Map<string, number>();
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
   return [...counts.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
     .map(([value, count]) => `${value}: ${count}`);
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 /** Deterministic, human-readable JSON: keys sorted at every depth, two-space indent, trailing newline. */
@@ -405,113 +349,154 @@ export function stableJson(value: unknown): string {
   return `${JSON.stringify(sort(value), null, 2)}\n`;
 }
 
-// ---------------------------------------------------------------------------
-// Market-level evaluation
-// ---------------------------------------------------------------------------
+const isScored = (market: GateMarketEvidence) => SCORED_STATUSES.includes(market.market_status ?? '');
+const dutyOf = (market: GateMarketEvidence): DutyBasis => dutyBasisOf({ metrics: market.breakdown?.metrics ?? [] }).basis;
+const byRank = (left: GateMarketEvidence, right: GateMarketEvidence) => (left.rank ?? Infinity) - (right.rank ?? Infinity) || left.country_code.localeCompare(right.country_code);
 
-function marketDisqualifiers(market: GateMarketEvidence, policy: Phase1GatePolicy): string[] {
-  const reasons: string[] = [];
-  if (market.assessment_state !== 'rankable') reasons.push(`assessment_state_${market.assessment_state ?? 'missing'}`);
-  if (market.eligibility_status !== 'eligible') reasons.push('ineligible_under_hard_blocker');
-  if (market.confidence_score < policy.confidence.value.minimum_confidence_score) reasons.push('confidence_below_floor');
-  if (market.period_lag == null) reasons.push('period_lag_unknown');
-  else if (market.period_lag > policy.freshness.value.maximum_period_lag_years) reasons.push('period_lag_exceeds_policy');
-  for (const component of policy.evidence_completeness.value.required_components) {
-    if (!market.components[component as GateComponentKey]?.available) reasons.push(`required_component_unavailable:${component}`);
-  }
-  for (const group of policy.evidence_completeness.value.required_any_of) {
-    if (!group.some((component) => market.components[component as GateComponentKey]?.available)) {
-      reasons.push(`required_one_of_unavailable:${group.join('|')}`);
-    }
-  }
-  if (!market.classification_current) reasons.push('classification_no_longer_current');
-  return reasons;
+/** The stored v5 policy, or null when the run stored nothing usable. */
+function storedPolicy(run: GateRunEvidence): DemandDiscoveryV5Policy | null {
+  const snapshot = record(run.scoring_policy_snapshot);
+  return snapshot && record(snapshot.points) && record(snapshot.parts) && record(snapshot.ranking) ? (snapshot as unknown as DemandDiscoveryV5Policy) : null;
 }
 
-function tariffAssessment(market: GateMarketEvidence, policy: Phase1GatePolicy): GateMarketReport['tariff'] {
-  const reasons: string[] = [];
-  const component = market.components.market_access;
-  const signal = Boolean(component?.available) && market.market_access.tariff_rate_percent != null;
-  if (!signal) reasons.push(component?.exclusion_reason ?? 'market_access_component_missing');
+// ---------------------------------------------------------------------------
+// Market-level findings, each reason prefixed with the market's code
+// ---------------------------------------------------------------------------
 
-  const rows = [...market.tariff_evidence].sort((left, right) => left.evidence_id.localeCompare(right.evidence_id));
-  if (signal && rows.length !== market.market_access.used_tariff_fact_ids.length) reasons.push('used_tariff_fact_not_resolvable_to_evidence');
-  if (signal && rows.length === 0) reasons.push('tariff_signal_cites_no_evidence');
-
-  const origins = policy.tariff_evidence.value.atlas_evidence_origins;
-  const nonAtlas = rows.filter(
-    (row) => !row.snapshot || !origins.includes(row.snapshot.evidence_origin) || !origins.includes(row.evidence_origin),
-  );
-  if (signal && nonAtlas.length) reasons.push('tariff_evidence_not_atlas_backed');
-
-  let oldest: number | null = null;
-  let stale = false;
-  for (const row of rows) {
-    const age = ageDays(market.tariff_clock, row.retrieved_at);
-    if (age == null) {
-      stale = true;
-      continue;
-    }
-    oldest = oldest == null ? age : Math.max(oldest, age);
-    const limit = row.snapshot?.provider === GATE_TARIC_PROVIDER
-      ? policy.freshness.value.maximum_taric_evidence_age_days
-      : policy.freshness.value.maximum_tariff_evidence_age_days;
-    if (age > limit) stale = true;
-  }
-  if (signal && stale) reasons.push('tariff_evidence_older_than_policy_or_undated');
-
-  return {
-    atlas_tariff_signal: signal && reasons.length === 0,
-    rate_percent: market.market_access.tariff_rate_percent,
-    basis: market.market_access.tariff_basis,
-    cited_evidence_ids: rows.map((row) => row.evidence_id),
-    cited_snapshot_ids: sortedUnique(rows.flatMap((row) => (row.snapshot ? [row.snapshot.id] : []))),
-    providers: sortedUnique(rows.flatMap((row) => (row.snapshot ? [row.snapshot.provider] : []))),
-    authority_versions: sortedUnique(
-      rows.flatMap((row) => (row.snapshot?.source_version ? [`${row.snapshot.provider}@${row.snapshot.source_version}`] : [])),
-    ),
-    oldest_evidence_age_days: oldest,
-    reasons,
-  };
-}
-
-function integrityProblems(market: GateMarketEvidence): string[] {
-  const i = market.integrity;
+/** No silent zeros: every value either rests on evidence or states why there is none. */
+function silentZeroProblems(market: GateMarketEvidence, expectedMetrics: string[], requireReason: boolean): string[] {
+  const code = market.country_code;
   const problems: string[] = [];
-  const link = (name: string, values: Array<string | null>) => {
-    if (values.some((value) => !value)) problems.push(`${market.country_code}:${name}_missing`);
-    else if (new Set(values).size !== 1) problems.push(`${market.country_code}:${name}_mismatch`);
-  };
-  link('metrics_checksum', [i.metrics_checksum, i.assessment_metrics_checksum]);
-  link('manifest_checksum', [i.manifest_checksum, i.metrics_payload_manifest_checksum, i.assessment_manifest_checksum]);
-  link('fact_snapshot_checksum', [i.fact_snapshot_checksum, i.fact_snapshot_checksum_recomputed, i.assessment_fact_snapshot_checksum]);
+  if (isScored(market)) {
+    if (market.overall_score == null) problems.push(`${code}:scored_market_without_overall`);
+    if (market.live_points == null) problems.push(`${code}:live_points_missing`);
+    if (market.market_status === 'ranked' && market.rank == null) problems.push(`${code}:ranked_without_rank`);
+    if (market.market_status === 'not_enough_data' && market.rank != null) problems.push(`${code}:unranked_market_has_rank`);
+    if (!market.breakdown) return [...problems, `${code}:score_breakdown_missing`];
+    if (market.market_status === 'not_enough_data' && !market.breakdown.has_shortfall) problems.push(`${code}:not_enough_data_without_shortfall`);
+    const seen = new Map<string, number>();
+    for (const metric of market.breakdown.metrics) {
+      seen.set(metric.key, (seen.get(metric.key) ?? 0) + 1);
+      if (expectedMetrics.length && !expectedMetrics.includes(metric.key)) problems.push(`${code}:${metric.key}_not_in_policy`);
+      if (metric.score == null) {
+        if (requireReason && !metric.reason?.trim()) problems.push(`${code}:${metric.key}_unscored_without_reason`);
+      } else if (!(metric.score >= 0 && metric.score <= 100)) problems.push(`${code}:${metric.key}_score_outside_0_100`);
+    }
+    for (const key of expectedMetrics) {
+      const count = seen.get(key) ?? 0;
+      if (count === 0) problems.push(`${code}:${key}_missing`);
+      else if (count > 1) problems.push(`${code}:${key}_appears_${count}_times`);
+    }
+    return problems;
+  }
+  if (market.overall_score != null) problems.push(`${code}:${market.market_status ?? 'unknown'}_market_scored`);
+  if (market.rank != null) problems.push(`${code}:${market.market_status ?? 'unknown'}_market_ranked`);
+  if (market.market_status === 'excluded' && !market.excluded_reason?.trim()) problems.push(`${code}:excluded_without_reason`);
   return problems;
 }
 
-function evaluateMarket(market: GateMarketEvidence, policy: Phase1GatePolicy): GateMarketReport {
-  const disqualifiers = marketDisqualifiers(market, policy);
-  return {
-    country_code: market.country_code,
-    assessment_id: market.assessment_id,
-    qualifies: disqualifiers.length === 0,
-    disqualifiers,
-    assessment_state: market.assessment_state,
-    eligibility_status: market.eligibility_status,
-    overall_score: market.overall_score,
-    confidence_score: market.confidence_score,
-    period_lag: market.period_lag,
-    unavailable_components: PHASE_1_GATE_COMPONENTS.flatMap((component) => {
-      const value = market.components[component];
-      return value?.available ? [] : [{ component, reason: value?.exclusion_reason ?? null }];
-    }),
-    tariff: tariffAssessment(market, policy),
-    checksums: {
-      assessment_checksum: market.assessment_checksum,
-      metrics_checksum: market.integrity.metrics_checksum,
-      manifest_checksum: market.integrity.manifest_checksum,
-      fact_snapshot_checksum: market.integrity.fact_snapshot_checksum,
-    },
-  };
+/** Actual data or a labelled estimate (D-037). */
+function labelProblems(market: GateMarketEvidence): string[] {
+  if (!isScored(market) || !market.breakdown) return [];
+  const problems: string[] = [];
+  for (const metric of market.breakdown.metrics) {
+    if (metric.score == null) continue;
+    const basis = typeof metric.inputs.basis === 'string' ? metric.inputs.basis : null;
+    if (basis && ESTIMATE_BASES.includes(basis) && !metric.estimated) problems.push(`${market.country_code}:${metric.key}_estimate_not_labelled`);
+  }
+  if (market.breakdown.partner_only === true && !market.label_keys.includes(PARTNER_FIGURES_LABEL)) problems.push(`${market.country_code}:partner_figures_not_labelled`);
+  return problems;
+}
+
+function estimatedOf(market: GateMarketEvidence): string[] {
+  const keys = (market.breakdown?.metrics ?? [])
+    .filter((metric) => metric.score != null && (metric.estimated || (typeof metric.inputs.basis === 'string' && ESTIMATE_BASES.includes(metric.inputs.basis))))
+    .map((metric) => metric.key);
+  if (market.breakdown?.partner_only === true) keys.push('partner_figures');
+  return sortedUnique(keys);
+}
+
+// ---------------------------------------------------------------------------
+// Repeatability: the stored policy re-hashes; the stored metrics re-score
+// ---------------------------------------------------------------------------
+
+function policyHashProblems(run: GateRunEvidence, markets: GateMarketEvidence[], policy: DemandDiscoveryV5Policy | null): string[] {
+  if (!policy) return ['stored_policy_snapshot_missing_or_unreadable'];
+  let computed: string;
+  try {
+    computed = policyHash(policy);
+  } catch {
+    return ['stored_policy_snapshot_cannot_be_hashed'];
+  }
+  const problems: string[] = [];
+  if (run.scoring_policy_hash !== computed) problems.push('run_policy_hash_does_not_match_its_stored_policy');
+  if (run.frozen.policy_hash !== computed) problems.push('frozen_inputs_policy_hash_does_not_match_the_stored_policy');
+  if (run.frozen.policy_version !== policy.policy_version) problems.push('frozen_inputs_policy_version_does_not_match_the_stored_policy');
+  const others = markets.filter((market) => market.scoring_policy_hash !== computed).length;
+  if (others) problems.push(`${others}_assessment(s)_carry_another_policy_hash`);
+  return problems;
+}
+
+function replayInput(market: GateMarketEvidence): MarketScoreInput {
+  const gate = { excluded_reason: null as string | null, no_recorded_demand: false, flag_reasons: market.flag_reasons };
+  if (market.market_status === 'excluded') return { market: market.country_code, gate: { ...gate, excluded_reason: market.excluded_reason?.trim() || 'excluded' }, metrics: [], data_year: null };
+  if (market.market_status === 'no_recorded_demand') return { market: market.country_code, gate: { ...gate, no_recorded_demand: true }, metrics: [], data_year: market.data_year };
+  const metrics: MetricResult[] = (market.breakdown?.metrics ?? []).map((metric) => ({
+    key: metric.key as MetricKey,
+    score: metric.score,
+    quality: metric.quality,
+    reason: metric.reason,
+    inputs: metric.inputs as MetricResult['inputs'],
+    ...(metric.estimated ? { estimated: true } : {}),
+  }));
+  return { market: market.country_code, gate, metrics, data_year: market.data_year };
+}
+
+const same = (left: number | null, right: number | null) => (left == null ? right == null : right != null && left === right);
+
+/** Re-scores every market from its stored metrics under the stored policy and names each difference. */
+function replayProblems(markets: GateMarketEvidence[], policy: DemandDiscoveryV5Policy | null): string[] {
+  if (!policy) return ['stored_policy_snapshot_missing_or_unreadable'];
+  const problems: string[] = [];
+  const scored: ScoredMarket[] = [];
+  for (const market of markets) {
+    if (!V5_MARKET_STATUSES.includes(market.market_status as (typeof V5_MARKET_STATUSES)[number])) {
+      problems.push(`${market.country_code}:status_${market.market_status ?? 'missing'}_cannot_be_replayed`);
+      continue;
+    }
+    try {
+      scored.push(scoreMarket(replayInput(market), policy));
+    } catch (error) {
+      problems.push(`${market.country_code}:replay_error:${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (problems.length) return [...problems, 'ranks_not_replayed_because_some_markets_could_not_be_scored'];
+  let ranked: ScoredMarket[];
+  try {
+    ranked = rankMarkets(scored, policy);
+  } catch (error) {
+    return [`rank_replay_error:${error instanceof Error ? error.message : String(error)}`];
+  }
+  const replayed = new Map(ranked.map((market) => [market.market, market]));
+  for (const market of markets) {
+    const again = replayed.get(market.country_code);
+    if (!again) continue;
+    const code = market.country_code;
+    const differ = (field: string, value: unknown, stored: unknown) => problems.push(`${code}:${field}_replays_as_${String(value)}_stored_${String(stored)}`);
+    if (again.status !== market.market_status) differ('status', again.status, market.market_status);
+    if (!same(again.overall, market.overall_score)) differ('overall', again.overall, market.overall_score);
+    if (!same(again.rank, market.rank)) differ('rank', again.rank, market.rank);
+    if (again.handed_off !== market.handed_off) differ('handed_off', again.handed_off, market.handed_off);
+    const confidenceScore = again.confidence == null ? 0 : Math.round(again.confidence * 100);
+    if (confidenceScore !== market.confidence_score) differ('confidence_score', confidenceScore, market.confidence_score);
+    if (isScored(market)) {
+      if (!same(again.live_points, market.live_points)) differ('live_points', again.live_points, market.live_points);
+      if (!same(again.overall_exact, market.breakdown?.overall_exact ?? null)) differ('overall_exact', again.overall_exact, market.breakdown?.overall_exact ?? null);
+      if (!same(again.confidence, market.breakdown?.confidence ?? null)) differ('confidence', again.confidence, market.breakdown?.confidence ?? null);
+      if (!same(again.lag, market.breakdown?.lag ?? null)) differ('lag', again.lag, market.breakdown?.lag ?? null);
+    }
+  }
+  return problems;
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +519,8 @@ function classificationChecks(evidence: GateArchetypeEvidence, archetype: Phase1
   if (normalizeHsRevision(c.nomenclature_version) !== normalizeHsRevision(archetype.hs_revision)) {
     match.push(`classification_revision_${c.nomenclature_version}_is_not_${archetype.hs_revision}`);
   }
-  if (evidence.job && evidence.job.payload_classification_id !== c.id) match.push('run_was_not_produced_for_this_classification');
+  if (evidence.run && evidence.run.classification_id !== c.id) match.push('run_was_not_produced_for_this_classification');
+  if (evidence.run && evidence.run.input_hs6 !== archetype.hs6) match.push(`run_scored_hs6_${evidence.run.input_hs6 ?? 'unknown'}_not_${archetype.hs6}`);
   return [
     passOrFail('classification.confirmed', 'classification', confirmed, `Revision ${c.revision} confirmed at ${c.confirmed_at}.`, 'The classification is not a current human confirmation.'),
     passOrFail('classification.confirmer_role', 'classification', role, `Confirmed by a ${c.confirmed_by_role}.`, 'The confirming user is not a permitted staff role.'),
@@ -543,78 +529,10 @@ function classificationChecks(evidence: GateArchetypeEvidence, archetype: Phase1
   ];
 }
 
-function destinationChecks(evidence: GateArchetypeEvidence, policy: Phase1GatePolicy): GateCheck[] {
-  if (!policy.destination_set.value.require_completed_global_screen) {
-    return [check('destination_set.completed_screen', 'destination_set', 'not_required', 'Policy does not require a global screen.')];
-  }
-  const s = evidence.screening;
-  const screen: string[] = [];
-  if (!s?.provenance_present) screen.push('deep_run_has_no_screening_provenance');
-  else {
-    if (s.status !== 'completed') screen.push(`screening_run_status_${s.status ?? 'missing'}`);
-    if (!evidence.plan || evidence.plan.screening_run_id !== s.screening_run_id) screen.push('evidence_plan_not_bound_to_screening_run');
-  }
-  const assessed = sortedUnique(evidence.markets.flatMap((market) => (market.reporter_code ? [market.reporter_code] : [])));
-  const shortlist = sortedUnique(s?.shortlist_reporters ?? []);
-  const coverage: string[] = [];
-  if (s?.provenance_present) {
-    const missing = shortlist.filter((reporter) => !assessed.includes(reporter));
-    const extra = assessed.filter((reporter) => !shortlist.includes(reporter));
-    if (missing.length) coverage.push(`shortlisted_reporters_not_assessed:${missing.join(',')}`);
-    if (extra.length) coverage.push(`assessed_reporters_not_shortlisted:${extra.join(',')}`);
-    if (evidence.markets.some((market) => !market.reporter_code)) coverage.push('assessment_without_reporter_identity');
-  }
-  return [
-    passOrFail('destination_set.completed_screen', 'destination_set', screen, `Deep run derived from completed screen ${s?.screening_run_id}.`, 'The deep run is not traceable to a completed global screen.'),
-    s?.provenance_present
-      ? passOrFail('destination_set.shortlist_assessed', 'destination_set', coverage, `All ${shortlist.length} shortlisted markets were assessed.`, 'Assessed markets differ from the frozen shortlist.')
-      : check('destination_set.shortlist_assessed', 'destination_set', 'fail', 'No frozen shortlist to compare against.', ['deep_run_has_no_screening_provenance']),
-  ];
-}
-
-function failureSemanticsChecks(evidence: GateArchetypeEvidence, policy: Phase1GatePolicy): GateCheck[] {
-  const accepted = policy.failure_semantics.value.accepted_run_statuses;
-  const status: string[] = [];
-  if (!evidence.job) status.push('job_missing');
-  else if (!accepted.includes(evidence.job.status)) status.push(`job_status_${evidence.job.status}`);
-  if (!evidence.discovery_run) status.push('discovery_run_missing');
-  else {
-    if (!accepted.includes(evidence.discovery_run.status)) status.push(`discovery_run_status_${evidence.discovery_run.status}`);
-    if (evidence.job && evidence.discovery_run.status !== evidence.job.status) status.push('job_and_discovery_run_status_disagree');
-  }
-  if (evidence.job && evidence.job.status === 'partial' && evidence.job.evidence_status === 'metric_ready' && evidence.markets.every((market) => market.assessment_state === 'rankable')) {
-    // A partial run must say what is partial. If evidence is complete and every market ranks,
-    // `partial` is unexplained — exactly the "masquerading" state the gate must not accept.
-    status.push('partial_run_without_recorded_gap');
-  }
-  if (evidence.markets.length === 0) status.push('run_produced_no_assessments');
-
-  const reasons: string[] = [];
-  const zeros: string[] = [];
-  for (const market of evidence.markets) {
-    for (const component of PHASE_1_GATE_COMPONENTS) {
-      const value = market.components[component];
-      if (!value) {
-        reasons.push(`${market.country_code}:${component}_missing_from_provenance`);
-        continue;
-      }
-      if (!value.available && policy.evidence_completeness.value.unavailable_components_require_reason && !value.exclusion_reason?.trim()) {
-        reasons.push(`${market.country_code}:${component}_unavailable_without_reason`);
-      }
-      if (value.available && value.score == null) zeros.push(`${market.country_code}:${component}_available_without_score`);
-      if (!value.available && value.score != null) zeros.push(`${market.country_code}:${component}_unavailable_but_scored`);
-    }
-    const access = market.components.market_access;
-    if (access?.available && (market.market_access.tariff_rate_percent == null || market.market_access.used_tariff_fact_ids.length === 0)) {
-      zeros.push(`${market.country_code}:market_access_scored_without_cited_tariff`);
-    }
-  }
-  return [
-    passOrFail('failure_semantics.run_status', 'failure_semantics', status, `Job ${evidence.job?.status}; run ${evidence.discovery_run?.status}.`, 'The run did not finish in an accepted, explained state.'),
-    passOrFail('evidence_completeness.unavailable_has_reason', 'evidence_completeness', reasons, 'Every unavailable component states why.', 'Some components are unavailable without a stated reason.'),
-    passOrFail('failure_semantics.no_silent_zero', 'failure_semantics', zeros, 'No component is scored without evidence or scored while unavailable.', 'A component score is not backed by its evidence.'),
-  ];
-}
+const emptyIdentities = (): GateArchetypeReport['identities'] => ({
+  product_id: null, classification_id: null, classification_revision: null, classification_confirmed_by_role: null, classification_confirmed_at: null,
+  discovery_run_id: null, job_id: null, model_version: null, scoring_policy_version: null, scoring_policy_hash: null, baci_release_id: null, universe_version: null,
+});
 
 function evaluateArchetype(
   archetype: Phase1GateArchetype,
@@ -622,86 +540,143 @@ function evaluateArchetype(
   policy: Phase1GatePolicy,
   evaluatedAt: string,
 ): GateArchetypeReport {
-  const base = {
-    archetype_key: archetype.key,
-    label: archetype.label,
-    hs6: archetype.hs6,
-  };
+  const base = { archetype_key: archetype.key, label: archetype.label, hs6: archetype.hs6 };
+  const emptyCounts = { universe_markets: null, assessed_markets: 0, ranked: 0, not_enough_data: 0, no_recorded_demand: 0, excluded: 0, official_duty_in_top: 0 };
   if (!evidence) {
     return {
-      ...base,
-      selector: null,
-      selection_note: null,
-      result: 'fail',
-      identities: {
-        product_id: null, classification_id: null, classification_revision: null, classification_confirmed_by_role: null,
-        classification_confirmed_at: null, job_id: null, screening_run_id: null, screening_policy_version: null,
-        screening_policy_hash: null, country_evidence_plan_id: null, country_evidence_plan_key: null,
-        country_evidence_manifest_id: null, country_evidence_manifest_checksum: null, discovery_run_id: null,
-        scoring_policy_version: null, scoring_policy_hash: null,
-      },
-      run: {
-        scoring_clock: null, job_status: null, created_at: null, completed_at: null, elapsed_seconds: null, attempts: null,
-        deep_run_provider_calls: null, screening_provider_calls: null, evidence_status: null, period_set: [],
-      },
-      counts: { assessed_markets: 0, rankable_markets: 0, qualifying_markets: 0, qualifying_markets_with_atlas_tariff_signal: 0 },
+      ...base, selector: null, selection_note: null, result: 'fail', identities: emptyIdentities(),
+      run: { status: null, trigger: null, as_of_date: null, created_at: null, completed_at: null, elapsed_seconds: null, base_years: [], notes: [] },
+      counts: emptyCounts, calibration: null,
       checks: [check('archetype.evidence_supplied', 'archetypes', 'fail', 'No staging run was named for this archetype.', [`archetype_evidence_not_supplied:${archetype.key}`])],
       markets: [],
     };
   }
 
-  const markets = [...evidence.markets]
-    .sort((left, right) => left.country_code.localeCompare(right.country_code) || left.assessment_id.localeCompare(right.assessment_id))
-    .map((market) => evaluateMarket(market, policy));
-  const qualifying = markets.filter((market) => market.qualifies);
-  const withTariff = qualifying.filter((market) => market.tariff.atlas_tariff_signal);
-
+  const run = evidence.run;
+  const snapshot = run ? storedPolicy(run) : null;
+  const markets = [...evidence.markets].sort((left, right) => left.country_code.localeCompare(right.country_code) || left.assessment_id.localeCompare(right.assessment_id));
   const checks: GateCheck[] = [];
   checks.push(passOrFail('evidence_load.complete', 'evidence_load', [...evidence.load_errors].sort(), 'All run evidence was found.', 'Some run evidence could not be found or read.'));
+
+  const model = policy.engine.value.model_version;
+  const engine: string[] = [];
+  if (!run) engine.push('no_run_resolved');
+  else if (run.model_version !== model) engine.push(`run_engine_${run.model_version ?? 'unrecorded'}_is_not_${model}`);
+  const otherEngine = markets.filter((market) => market.model_version !== model).length;
+  if (otherEngine) engine.push(`${otherEngine}_assessment(s)_from_another_engine`);
+  checks.push(passOrFail('engine.v5_only', 'engine', engine, `The run and its assessments are ${model}.`, `Only ${model} runs are gate evidence; an earlier engine’s run is retired (D-036) and is not evaluated further.`));
   checks.push(...classificationChecks(evidence, archetype, policy));
-  checks.push(...destinationChecks(evidence, policy));
-  checks.push(...failureSemanticsChecks(evidence, policy));
 
-  const runAge = ageDays(evaluatedAt, evidence.job?.completed_at ?? null);
-  checks.push(passOrFail(
-    'freshness.run_age',
-    'freshness',
-    runAge == null ? ['run_completion_time_unknown'] : runAge > policy.freshness.value.maximum_run_age_days ? [`run_completed_${runAge}_days_before_evaluation`] : [],
-    `Run completed ${runAge} day(s) before evaluation (limit ${policy.freshness.value.maximum_run_age_days}).`,
-    `The run is older than ${policy.freshness.value.maximum_run_age_days} days.`,
-  ));
-
-  if (policy.repeatability.value.verify_stored_checksums) {
-    const problems = evidence.markets.flatMap(integrityProblems);
-    if (evidence.manifest && evidence.markets.some((market) => market.integrity.manifest_checksum && market.integrity.manifest_checksum !== evidence.manifest!.checksum)) {
-      problems.push('assessment_metrics_belong_to_a_different_manifest');
+  const marketReports = new Map<string, string[]>();
+  const note = (reasons: string[]) => {
+    for (const reason of reasons) {
+      const code = /^([A-Z0-9]{2}):/.exec(reason)?.[1];
+      if (code) marketReports.set(code, [...(marketReports.get(code) ?? []), reason]);
     }
-    checks.push(passOrFail('repeatability.stored_checksums', 'repeatability', problems.sort(), 'Every metrics, manifest and fact-manifest checksum link re-verifies.', 'A stored checksum link does not re-verify.'));
-  } else {
-    checks.push(check('repeatability.stored_checksums', 'repeatability', 'not_required', 'Policy does not require checksum re-verification.'));
+    return reasons;
+  };
+
+  const ranked = markets.filter((market) => market.market_status === 'ranked').sort(byRank);
+  const dutyTop = ranked.slice(0, policy.duty_evidence.value.top);
+  const officialTop = dutyTop.filter((market) => policy.duty_evidence.value.official_bases.includes(dutyOf(market)));
+
+  if (run && !engine.length) {
+    // Run status and its explanation.
+    const rules = policy.failure_semantics.value;
+    const status: string[] = [];
+    if (!rules.accepted_run_statuses.includes(run.status)) status.push(`run_status_${run.status}`);
+    if (run.job_status != null && run.job_status !== run.status) status.push(`job_status_${run.job_status}_disagrees_with_run_status_${run.status}`);
+    if (run.status === 'partial' && rules.partial_requires_notes && !run.notes.some((item) => item.trim())) status.push('partial_run_without_notes');
+    checks.push(passOrFail('failure_semantics.run_status', 'failure_semantics', status, `Run ${run.status}${run.notes.length ? ` with ${run.notes.length} note(s)` : ''}.`, 'The run did not finish in an accepted, explained state.'));
+
+    // Every market of the frozen universe, once, for this classification.
+    if (policy.coverage.value.require_every_universe_market) {
+      const coverage: string[] = [];
+      const size = run.frozen.universe_size;
+      if (size == null || size < 1) coverage.push('frozen_universe_size_unknown');
+      else if (markets.length !== size) coverage.push(`assessed_${markets.length}_of_${size}_universe_markets`);
+      const counts = new Map<string, number>();
+      for (const market of markets) counts.set(market.country_code, (counts.get(market.country_code) ?? 0) + 1);
+      for (const [code, count] of [...counts.entries()].sort()) if (count > 1) coverage.push(`${code}:assessed_${count}_times`);
+      coverage.push(...tally(markets.filter((market) => !V5_MARKET_STATUSES.includes(market.market_status as (typeof V5_MARKET_STATUSES)[number])).map((market) => `market_status_${market.market_status ?? 'missing'}`)));
+      const foreign = markets.filter((market) => market.classification_id !== run.classification_id).length;
+      if (foreign) coverage.push(`${foreign}_assessment(s)_for_another_classification`);
+      if (run.summary_markets != null && run.summary_markets !== markets.length) coverage.push(`run_summary_counts_${run.summary_markets}_markets`);
+      checks.push(passOrFail('coverage.every_market', 'coverage', note(coverage), `All ${markets.length} markets of the frozen universe are assessed once.`, 'The run does not cover its frozen universe exactly once.'));
+    } else {
+      checks.push(check('coverage.every_market', 'coverage', 'not_required', 'Policy does not require every universe market.'));
+    }
+
+    const minimum = policy.market_count.value.minimum_ranked_markets;
+    checks.push(ranked.length >= minimum
+      ? check('market_count.minimum_ranked', 'market_count', 'pass', `${ranked.length} ranked market(s) of ${markets.length} (minimum ${minimum}).`)
+      : check('market_count.minimum_ranked', 'market_count', 'fail', `${ranked.length} ranked market(s) of ${markets.length}; ${minimum} required.`, tally(markets.filter((market) => market.market_status !== 'ranked').map((market) => market.market_status ?? 'missing'))));
+
+    // docs/36 §8: the top 10 against India's own largest destinations.
+    const calibration = evidence.calibration;
+    const top = policy.calibration.value.top;
+    if (!calibration) checks.push(check('calibration.india_top_overlap', 'calibration', 'fail', 'No calibration comparison was made.', ['calibration_not_run']));
+    else if (calibration.status === 'error') checks.push(check('calibration.india_top_overlap', 'calibration', 'fail', 'The calibration comparison could not be made.', [`calibration_unavailable:${calibration.error ?? 'unknown'}`]));
+    else if (calibration.top !== top) checks.push(check('calibration.india_top_overlap', 'calibration', 'fail', `The comparison used a top ${calibration.top}, not the policy’s ${top}.`, ['calibration_top_differs_from_policy']));
+    else if (!calibration.india_top.length) checks.push(check('calibration.india_top_overlap', 'calibration', 'fail', 'India has no recorded exports of the product to compare with.', ['no_india_exports_to_compare']));
+    else {
+      const needed = Math.ceil(calibration.india_top.length * policy.calibration.value.minimum_overlap_share);
+      const summary = `${calibration.overlap} of India’s ${calibration.india_top.length} largest destinations (${calibration.years.join(', ')}) are in the run’s top ${top}`;
+      checks.push(calibration.overlap >= needed
+        ? check('calibration.india_top_overlap', 'calibration', 'pass', `${summary} (at least ${needed} needed).`)
+        : check('calibration.india_top_overlap', 'calibration', 'fail', `${summary}; at least ${needed} needed.`, calibration.missed.map((item) => `missed:${item.market}:${item.rank != null ? `rank_${item.rank}` : item.status ?? 'not_assessed'}`)));
+    }
+
+    // Actual data or labelled estimates; no silent zero (D-037).
+    const expectedMetrics = snapshot ? Object.keys(snapshot.points).sort() : [];
+    const silent = markets.flatMap((market) => silentZeroProblems(market, expectedMetrics, policy.evidence_labels.value.unscored_metric_requires_reason));
+    if (!snapshot) silent.unshift('metric_set_unknown_without_the_stored_policy');
+    checks.push(passOrFail('evidence_labels.no_silent_zero', 'evidence_labels', note(silent), 'Every metric is scored from data or unscored with its reason; unscored markets carry no score.', 'A value is missing its evidence or its reason.'));
+    checks.push(policy.evidence_labels.value.estimates_must_be_labelled
+      ? passOrFail('evidence_labels.estimates_labelled', 'evidence_labels', note(markets.flatMap(labelProblems)), 'Every estimate carries its label.', 'An estimate is shown without its label.')
+      : check('evidence_labels.estimates_labelled', 'evidence_labels', 'not_required', 'Policy does not require estimate labels.'));
+
+    // Duty: never an agent's reading; official duty among the markets that matter.
+    const forbidden = markets
+      .filter((market) => market.market_status !== 'excluded' && policy.duty_evidence.value.forbidden_bases.includes(dutyOf(market)))
+      .map((market) => `${market.country_code}:duty_basis_${dutyOf(market)}`);
+    checks.push(passOrFail('duty_evidence.no_forbidden_basis', 'duty_evidence', note(forbidden), `No market’s duty is ${policy.duty_evidence.value.forbidden_bases.join(' or ')}.`, 'A duty rests on a basis the policy forbids.'));
+    const officialMinimum = policy.duty_evidence.value.minimum_official_in_top;
+    checks.push(officialTop.length >= officialMinimum
+      ? check('duty_evidence.official_in_top', 'duty_evidence', 'pass', `${officialTop.length} of the top ${dutyTop.length} carry an official duty (minimum ${officialMinimum}).`)
+      : check('duty_evidence.official_in_top', 'duty_evidence', 'fail', `${officialTop.length} of the top ${dutyTop.length} carry an official duty; ${officialMinimum} required.`, dutyTop.map((market) => `rank_${market.rank}:${market.country_code}:${dutyOf(market)}`)));
+
+    // Freshness.
+    const runAge = ageDays(evaluatedAt, run.completed_at);
+    const maxAge = policy.freshness.value.maximum_run_age_days;
+    checks.push(passOrFail(
+      'freshness.run_age', 'freshness',
+      runAge == null ? ['run_completion_time_unknown'] : runAge > maxAge ? [`run_completed_${runAge}_days_before_evaluation`] : [],
+      `Run completed ${runAge} day(s) before evaluation (limit ${maxAge}).`, `The run is older than ${maxAge} days.`,
+    ));
+    const newestBase = run.frozen.base_years.length ? Math.max(...run.frozen.base_years) : null;
+    const runYear = validIso(run.as_of_date) ? new Date(run.as_of_date).getUTCFullYear() : null;
+    const lag = newestBase != null && runYear != null ? runYear - newestBase : null;
+    const maxLag = policy.freshness.value.maximum_base_data_lag_years;
+    checks.push(passOrFail(
+      'freshness.base_data_lag', 'freshness',
+      newestBase == null ? ['frozen_base_years_unknown'] : runYear == null ? ['run_date_unknown'] : lag! > maxLag ? [`newest_base_year_${newestBase}_is_${lag}_years_before_the_run`] : [],
+      `Newest base year ${newestBase}, ${lag} year(s) before the run (limit ${maxLag}).`, `The run used trade data more than ${maxLag} years old.`,
+    ));
+
+    // Repeatability.
+    checks.push(policy.repeatability.value.verify_policy_hash
+      ? passOrFail('repeatability.policy_hash', 'repeatability', policyHashProblems(run, markets, snapshot), 'The stored policy re-hashes to the hash the run and every assessment carry.', 'The stored policy does not re-hash to what the run recorded.')
+      : check('repeatability.policy_hash', 'repeatability', 'not_required', 'Policy does not require the policy hash check.'));
+    checks.push(policy.repeatability.value.replay_scoring
+      ? passOrFail('repeatability.scoring_replay', 'repeatability', note(replayProblems(markets, snapshot)), `Every market’s status, score, confidence and rank recompute exactly from its stored metrics (${markets.length} markets).`, 'Recomputing from the stored metrics does not reproduce what the run stored.')
+      : check('repeatability.scoring_replay', 'repeatability', 'not_required', 'Policy does not require the scoring replay.'));
   }
-  checks.push(policy.repeatability.value.require_replay_comparison
-    ? check('repeatability.replay', 'repeatability', 'unverified', 'Replay comparison is required but this evaluator does not re-execute runs; attach a replay record.', ['replay_comparison_not_performed'])
-    : check('repeatability.replay', 'repeatability', 'not_required', 'Policy does not require a replay comparison for this gate version.'));
 
-  const minimum = policy.market_count.value.minimum_qualifying_markets_per_archetype;
-  checks.push(qualifying.length >= minimum
-    ? check('market_count.minimum', 'market_count', 'pass', `${qualifying.length} qualifying market(s) of ${markets.length} assessed (minimum ${minimum}).`)
-    : check('market_count.minimum', 'market_count', 'fail', `${qualifying.length} qualifying market(s) of ${markets.length} assessed; ${minimum} required.`, tally(markets.flatMap((market) => market.disqualifiers))));
-
-  const tariffMinimum = policy.tariff_evidence.value.minimum_qualifying_markets_with_atlas_tariff_signal;
-  checks.push(withTariff.length >= tariffMinimum
-    ? check('tariff_evidence.atlas_signal', 'tariff_evidence', 'pass', `${withTariff.length} qualifying market(s) carry an Atlas-backed tariff signal (minimum ${tariffMinimum}).`)
-    : check('tariff_evidence.atlas_signal', 'tariff_evidence', 'fail', `${withTariff.length} qualifying market(s) carry an Atlas-backed tariff signal; ${tariffMinimum} required.`, tally(qualifying.flatMap((market) => market.tariff.reasons))));
-
-  const result: GateArchetypeReport['result'] = checks.some((item) => item.status === 'fail')
-    ? 'fail'
-    : checks.some((item) => item.status === 'unverified')
-      ? 'unverified'
-      : 'pass';
-  const elapsed = validIso(evidence.job?.created_at) && validIso(evidence.job?.completed_at)
-    ? Math.round((Date.parse(evidence.job!.completed_at!) - Date.parse(evidence.job!.created_at)) / 1000)
-    : null;
+  const result: GateArchetypeReport['result'] = checks.some((item) => item.status === 'fail') ? 'fail' : checks.some((item) => item.status === 'unverified') ? 'unverified' : 'pass';
+  const elapsed = run && validIso(run.created_at) && validIso(run.completed_at) ? Math.round((Date.parse(run.completed_at) - Date.parse(run.created_at)) / 1000) : null;
+  const count = (status: string) => markets.filter((market) => market.market_status === status).length;
+  const calibration = evidence.calibration?.status === 'computed' ? evidence.calibration : null;
 
   return {
     ...base,
@@ -714,38 +689,58 @@ function evaluateArchetype(
       classification_revision: evidence.classification?.revision ?? null,
       classification_confirmed_by_role: evidence.classification?.confirmed_by_role ?? null,
       classification_confirmed_at: evidence.classification?.confirmed_at ?? null,
-      job_id: evidence.job?.id ?? null,
-      screening_run_id: evidence.screening?.screening_run_id ?? null,
-      screening_policy_version: evidence.screening?.policy_version ?? null,
-      screening_policy_hash: evidence.screening?.policy_hash ?? null,
-      country_evidence_plan_id: evidence.plan?.id ?? null,
-      country_evidence_plan_key: evidence.plan?.plan_key ?? null,
-      country_evidence_manifest_id: evidence.manifest?.id ?? null,
-      country_evidence_manifest_checksum: evidence.manifest?.checksum ?? null,
-      discovery_run_id: evidence.discovery_run?.id ?? null,
-      scoring_policy_version: evidence.discovery_run?.scoring_policy_version ?? null,
-      scoring_policy_hash: evidence.discovery_run?.scoring_policy_hash ?? null,
+      discovery_run_id: run?.id ?? null,
+      job_id: run?.job_id ?? null,
+      model_version: run?.model_version ?? null,
+      scoring_policy_version: run?.frozen.policy_version ?? null,
+      scoring_policy_hash: run?.scoring_policy_hash ?? null,
+      baci_release_id: run?.frozen.baci_release_id ?? null,
+      universe_version: run?.frozen.universe_version ?? null,
     },
     run: {
-      scoring_clock: evidence.job?.requested_at ?? null,
-      job_status: evidence.job?.status ?? null,
-      created_at: evidence.job?.created_at ?? null,
-      completed_at: evidence.job?.completed_at ?? null,
+      status: run?.status ?? null,
+      trigger: run?.trigger ?? null,
+      as_of_date: run?.as_of_date ?? null,
+      created_at: run?.created_at ?? null,
+      completed_at: run?.completed_at ?? null,
       elapsed_seconds: elapsed,
-      attempts: evidence.job?.attempts ?? null,
-      deep_run_provider_calls: evidence.job?.physical_calls ?? null,
-      screening_provider_calls: evidence.screening?.physical_call_count ?? null,
-      evidence_status: evidence.job?.evidence_status ?? null,
-      period_set: evidence.plan?.period_set ?? [],
+      base_years: run?.frozen.base_years ?? [],
+      notes: run?.notes ?? [],
     },
     counts: {
+      universe_markets: run?.frozen.universe_size ?? null,
       assessed_markets: markets.length,
-      rankable_markets: markets.filter((market) => market.assessment_state === 'rankable').length,
-      qualifying_markets: qualifying.length,
-      qualifying_markets_with_atlas_tariff_signal: withTariff.length,
+      ranked: count('ranked'),
+      not_enough_data: count('not_enough_data'),
+      no_recorded_demand: count('no_recorded_demand'),
+      excluded: count('excluded'),
+      official_duty_in_top: officialTop.length,
     },
+    calibration: calibration
+      ? {
+          top: calibration.top,
+          years: calibration.years,
+          india_top: calibration.india_top.map((item) => item.market),
+          run_top: calibration.run_top.map((item) => item.market),
+          overlap: calibration.overlap,
+          missed: calibration.missed,
+        }
+      : null,
     checks,
-    markets,
+    markets: markets.map((market) => ({
+      country_code: market.country_code,
+      assessment_id: market.assessment_id,
+      market_status: market.market_status,
+      rank: market.rank,
+      overall_score: market.overall_score,
+      live_points: market.live_points,
+      data_year: market.data_year,
+      duty_basis: dutyOf(market),
+      estimated: estimatedOf(market),
+      unscored: (market.breakdown?.metrics ?? []).filter((metric) => metric.score == null).map((metric) => ({ metric: metric.key, reason: metric.reason })).sort((left, right) => left.metric.localeCompare(right.metric)),
+      flag_reasons: market.flag_reasons,
+      problems: sortedUnique(marketReports.get(market.country_code) ?? []),
+    })),
   };
 }
 
@@ -759,9 +754,7 @@ const PROBE_METHODS: readonly GateNegativeProbe['method'][] = ['staging_observat
 function negativeProbeCheck(policy: Phase1GatePolicy, probes: GateNegativeProbe[] | null): GateCheck {
   const rules = policy.failure_semantics.value;
   if (!rules.require_negative_probe_record) return check('failure_semantics.negative_probes', 'failure_semantics', 'not_required', 'Policy does not require negative probes.');
-  if (!probes) {
-    return check('failure_semantics.negative_probes', 'failure_semantics', 'unverified', 'No negative-probe record was supplied.', ['negative_probe_record_not_supplied']);
-  }
+  if (!probes) return check('failure_semantics.negative_probes', 'failure_semantics', 'unverified', 'No negative-probe record was supplied.', ['negative_probe_record_not_supplied']);
   const missing: string[] = [];
   const invalid: string[] = [];
   for (const id of [...rules.required_negative_probes].sort()) {
@@ -781,21 +774,9 @@ function negativeProbeCheck(policy: Phase1GatePolicy, probes: GateNegativeProbe[
   return check('failure_semantics.negative_probes', 'failure_semantics', 'pass', `${rules.required_negative_probes.length} operator-attested negative probe(s) recorded.`);
 }
 
-/**
- * Reject a policy the evaluator would otherwise misread. A misspelt component name would make every
- * market look as though a required pillar were missing — a FAIL with the wrong explanation.
- */
+/** Reject a policy the evaluator would otherwise misread, rather than report a FAIL with the wrong explanation. */
 export function assertValidPhase1GatePolicy(policy: Phase1GatePolicy): void {
-  const known = new Set<string>(PHASE_1_GATE_COMPONENTS);
-  const named = [
-    ...policy.evidence_completeness.value.required_components,
-    ...policy.evidence_completeness.value.required_any_of.flat(),
-  ];
-  const unknown = named.filter((component) => !known.has(component));
-  if (unknown.length) throw new Error(`Phase 1 gate policy names unknown components: ${sortedUnique(unknown).join(', ')}.`);
-  if (policy.evidence_completeness.value.required_any_of.some((group) => group.length === 0)) {
-    throw new Error('Phase 1 gate policy has an empty required_any_of group.');
-  }
+  if (policy.schema_version !== 'phase-1-gate-policy-v2') throw new Error(`Phase 1 gate policy schema ${String(policy.schema_version)} is not phase-1-gate-policy-v2.`);
   const keys = policy.archetypes.value.map((archetype) => archetype.key);
   if (!keys.length) throw new Error('Phase 1 gate policy defines no archetypes.');
   if (new Set(keys).size !== keys.length) throw new Error('Phase 1 gate policy repeats an archetype key.');
@@ -803,16 +784,18 @@ export function assertValidPhase1GatePolicy(policy: Phase1GatePolicy): void {
   if (policy.archetypes.value.some((archetype) => !/^HS\d{4}$/.test(normalizeHsRevision(archetype.hs_revision)))) {
     throw new Error('Every Phase 1 gate archetype needs an HS revision such as HS2022.');
   }
-  const numbers = [
-    policy.market_count.value.minimum_qualifying_markets_per_archetype,
-    policy.confidence.value.minimum_confidence_score,
-    policy.freshness.value.maximum_period_lag_years,
-    policy.freshness.value.maximum_run_age_days,
-    policy.freshness.value.maximum_tariff_evidence_age_days,
-    policy.freshness.value.maximum_taric_evidence_age_days,
-    policy.tariff_evidence.value.minimum_qualifying_markets_with_atlas_tariff_signal,
-  ];
-  if (numbers.some((value) => !Number.isFinite(value) || value < 0)) throw new Error('Phase 1 gate policy thresholds must be finite and non-negative.');
+  if (!policy.engine.value.model_version.trim()) throw new Error('Phase 1 gate policy names no engine.');
+  const duty = policy.duty_evidence.value;
+  const unknown = [...duty.forbidden_bases, ...duty.official_bases].filter((basis) => !DUTY_BASES.includes(basis));
+  if (unknown.length) throw new Error(`Phase 1 gate policy names unknown duty bases: ${sortedUnique(unknown).join(', ')}.`);
+  if (duty.official_bases.some((basis) => duty.forbidden_bases.includes(basis))) throw new Error('A duty basis cannot be both official and forbidden.');
+  const share = policy.calibration.value.minimum_overlap_share;
+  if (!(share > 0 && share <= 1)) throw new Error('The calibration overlap share must be above 0 and at most 1.');
+  const whole = [policy.market_count.value.minimum_ranked_markets, policy.calibration.value.top, duty.top, duty.minimum_official_in_top, policy.freshness.value.maximum_run_age_days, policy.freshness.value.maximum_base_data_lag_years];
+  if (whole.some((value) => !Number.isInteger(value) || value < 0)) throw new Error('Phase 1 gate policy counts and limits must be whole, non-negative numbers.');
+  if (policy.calibration.value.top < 1 || duty.top < 1) throw new Error('A top-N comparison needs N of at least 1.');
+  if (duty.minimum_official_in_top > duty.top) throw new Error('The official-duty minimum cannot exceed the markets it is counted over.');
+  if (!policy.failure_semantics.value.accepted_run_statuses.length) throw new Error('Phase 1 gate policy accepts no run status.');
 }
 
 /** Evaluate the gate. Pure: the same input yields a byte-identical `stableJson(report)`. */
@@ -854,7 +837,7 @@ export function evaluatePhase1Gate(input: Phase1GateInput): Phase1GateReport {
   const verdict: GateVerdict = failed.length ? 'FAIL' : unverified.length ? 'INCOMPLETE' : approved ? 'PASS' : 'PASS_UNDER_PROPOSED_POLICY';
 
   const report: Omit<Phase1GateReport, 'report_checksum'> = {
-    schema_version: 'phase-1-gate-report-v1',
+    schema_version: 'phase-1-gate-report-v2',
     verdict,
     phase_1_frozen: false,
     evaluated_at: evaluatedAt,

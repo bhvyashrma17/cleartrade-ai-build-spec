@@ -154,8 +154,8 @@ export interface ConfigShape {
  */
 /**
  * Demand Discovery v5 (docs/36). The scoring policy is frozen into every run with its hash; the
- * switches decide when v5 runs and which providers it may call. `enabled: false` returns new runs
- * to the earlier engine without a deploy.
+ * switches decide when v5 runs and which providers it may call. `enabled: false` stops new runs
+ * without a deploy; the earlier engines are retired (D-036), so nothing runs in their place.
  */
 export interface DemandDiscoveryV5Config {
   enabled: boolean;

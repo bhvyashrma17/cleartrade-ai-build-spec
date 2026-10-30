@@ -23,7 +23,6 @@
 import { AgentDecisionAction, type AgentDecision, type MarketAssessment, type Prisma } from '@prisma/client';
 import { effectiveState as decisionState, type AgentDecisionState } from '@/lib/agent-decisions';
 import { isV5Assessment, v5Detail } from '@/lib/demand-discovery-v5/detail';
-import { manualTariffCheckFor } from '@/lib/market-access/tariff-source-directory';
 import { prisma as prismaDefault } from '@/lib/prisma';
 
 type PrismaLike = Prisma.TransactionClient | typeof prismaDefault;
@@ -373,11 +372,6 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
     const current = latest && latest.state === 'active' ? latest : null;
     const v5 = v5Detail(assessment, totalRanked);
     const modelRank = v5 ? assessment.rank : rankOf(assessment, assessments);
-    // D-024: where the agent reads the official tariff when the duty is estimated or missing.
-    const duty = v5?.metrics.find((metric) => metric.key === 'duty');
-    const manualTariff = v5 && (!duty || duty.score == null || duty.estimated)
-      ? manualTariffCheckFor(assessment.country_code, assessment.classification_hs6_code ?? undefined)
-      : null;
     return {
       assessment,
       modelRank,
@@ -390,7 +384,6 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
       // v5 has five parts and twelve or thirteen measures (v8 adds India's sales), not the eight earlier components: `v5` carries them.
       components: v5 ? [] : componentViews(assessment),
       v5,
-      manualTariff,
       provenance: modelProvenance(assessment),
     };
   });

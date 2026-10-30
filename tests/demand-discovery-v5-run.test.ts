@@ -10,10 +10,13 @@ import { setV5ComtradeAccessForTesting } from '../src/lib/demand-discovery-v5/co
 import { setTariffAdapterResolverForTesting } from '../src/lib/country-truth/tariff-acquisition';
 import type { MarketAccessAdapter } from '../src/lib/job-handlers/market-access';
 import type { MarketAccessIngestResult } from '../src/lib/market-access/contract';
-import { autoStartDemandDiscoveryV5, demandDiscoveryV5Availability } from '../src/lib/demand-discovery-v5/service';
+import { autoStartDemandDiscoveryV5, demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '../src/lib/demand-discovery-v5/service';
 import { setDemandDiscoveryV5StorageForTesting } from '../src/lib/job-handlers/demand-discovery-v5';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, runClaimedJob } from '../src/lib/jobs';
+import { evaluatePhase1Gate } from '../src/lib/phase-1-gate/evaluate';
+import { loadPhase1GateArchetypeEvidence, withReadOnlySnapshot, type GateSelector } from '../src/lib/phase-1-gate/load';
+import { PHASE_1_GATE_POLICY_V2 } from '../src/lib/phase-1-gate/policy';
 import { prisma } from '../src/lib/prisma';
 import { confirmClassification, proposeClassification } from '../src/lib/product-classification';
 import { manifestEntryFor, readReferenceManifest } from '../src/lib/reference-datasets/manifest';
@@ -85,6 +88,8 @@ const fakeComtrade = (async (input: RequestInfo | URL) => {
 
 const storage = new MemoryStorage();
 let ops: Principal;
+/** The run the end-to-end test finishes, for the Phase 1 gate to read back. */
+let gateRun: { run_id: string; product_id: string } | null = null;
 
 /** The parts of the stored JSON this suite reads. */
 interface FrozenInputs {
@@ -219,6 +224,13 @@ describe('Demand Discovery v5 runs', () => {
     expect(audit.after_summary).toMatchObject({ started: false, reason: 'No CEPII BACI release is ready in this environment.' });
   });
 
+  test('a product without a confirmed HS6 is refused before any run exists (gate probe unconfirmed_classification_refused)', async () => {
+    const { product, principal } = await paidProduct(OrgTier.paid);
+    await expect(startDemandDiscoveryV5({ product_id: product.id, actor: principal, trigger: 'manual', correlation_id: MARKER }))
+      .rejects.toMatchObject({ code: 'VALIDATION_ERROR', fields: [expect.objectContaining({ code: 'classification_unconfirmed' })] });
+    expect(await prisma.discoveryRun.count({ where: { product_id: product.id } })).toBe(0);
+  });
+
   test('with BACI and reference data imported, confirming a code starts one v5 run for a paid tenant only', async () => {
     expect(await importBaci('HS17', [2019, 2020, 2021, 2022, 2023, 2024])).toMatchObject({ change: 'NEW' });
     expect(await importBaci('HS22', [2022, 2023, 2024])).toMatchObject({ change: 'NEW' });
@@ -328,5 +340,61 @@ describe('Demand Discovery v5 runs', () => {
     await runClaimedJob(retry!);
     expect(await prisma.job.findUniqueOrThrow({ where: { id: run.job_id! } })).toMatchObject({ status: JobStatus.completed, error_message: null });
     expect(await prisma.marketAssessment.count({ where: { run_id: run.id } })).toBe(218);
+    gateRun = { run_id: run.id, product_id: paid.product.id };
+  });
+
+  test('the Phase 1 gate reads the finished run read-only and accepts it: every score and rank replays (docs/34)', async () => {
+    expect(gateRun).not.toBeNull();
+    const load = (selector: GateSelector) => withReadOnlySnapshot(prisma, (db) => loadPhase1GateArchetypeEvidence(db, 'fixture', selector, { calibration_top: 10, storage }));
+    const evidence = await load({ kind: 'run', id: gateRun!.run_id });
+    expect(evidence.load_errors).toEqual([]);
+    expect(evidence.markets).toHaveLength(218);
+    // India sells the fixture product to the four markets that import it, all four in the run's top 10.
+    expect(evidence.calibration).toMatchObject({ status: 'computed', overlap: 4, years: [2022, 2023, 2024] });
+    expect(evidence.calibration!.india_top.map((item) => item.market).sort()).toEqual(['AE', 'DE', 'NP', 'US']);
+    // Named by product, the same run is chosen: the newest finished v5 run for the confirmed code.
+    expect((await load({ kind: 'product', id: gateRun!.product_id })).run?.id).toBe(gateRun!.run_id);
+
+    const policy = structuredClone(PHASE_1_GATE_POLICY_V2);
+    policy.archetypes.value = [{ key: 'fixture', label: 'Cereal grain', hs6: '100890', hs_revision: 'HS2022' }];
+    policy.evidence_environment.value.required_environment = 'test';
+    // Here the exporter confirmed its own code (staff confirm the real archetypes), four markets import
+    // the product, and the fixture's BACI ends in 2024 whatever today's date is.
+    policy.classification.value.allowed_confirmer_roles = [...policy.classification.value.allowed_confirmer_roles, UserRole.exporter_owner];
+    policy.market_count.value.minimum_ranked_markets = 4;
+    policy.freshness.value.maximum_base_data_lag_years = 99;
+    const probes = policy.failure_semantics.value.required_negative_probes.map((id) => ({ id, method: 'ci_test' as const, reference: `tests: ${id}`, observed_at: new Date().toISOString(), outcome: 'refused' as const, recorded_by: 'test' }));
+    const report = evaluatePhase1Gate({ policy, evidence: [evidence], negative_probes: probes, evaluated_at: new Date(), environment: { app_env: 'test', database_environment: null, database_fingerprint_prefix: null, git_commit: null } });
+    expect(report.summary.failed_checks).toEqual([]);
+    expect(report.verdict).toBe('PASS_UNDER_PROPOSED_POLICY');
+    const fixture = report.archetypes[0];
+    expect(fixture.checks.find((item) => item.id === 'repeatability.scoring_replay')).toMatchObject({ status: 'pass', detail: 'Every market’s status, score, confidence and rank recompute exactly from its stored metrics (218 markets).' });
+    expect(fixture.counts).toMatchObject({ universe_markets: 218, assessed_markets: 218, ranked: 4, excluded: 1 });
+    expect(fixture.markets.find((market) => market.country_code === 'DE')).toMatchObject({ duty_basis: 'official', estimated: [] });
+    expect(fixture.markets.find((market) => market.country_code === 'US')).toMatchObject({ rank: 1, duty_basis: 'estimate', estimated: ['duty'] });
+    expect(fixture.markets.find((market) => market.country_code === 'NP')).toMatchObject({ duty_basis: 'official', estimated: ['partner_figures'] });
+  });
+
+  test('a Comtrade fallback that fails leaves the run partial and says why (R-34; gate probe provider_failure_left_partial)', async () => {
+    // The market-fallback query names its reporters; here Comtrade answers it with a server error every time.
+    const failing = (async (input: RequestInfo | URL) => (new URL(String(input)).searchParams.get('reporterCode') ? new Response('upstream error', { status: 500 }) : fakeComtrade(input))) as typeof fetch;
+    setV5ComtradeAccessForTesting({ mode: 'authenticated', api_key: 'test-key', credential_fingerprint: `${MARKER}-key`, source_origin: EvidenceOrigin.fixture, reason: null, fetch: failing, sleep: async () => {} });
+    try {
+      const paid = await paidProduct(OrgTier.paid);
+      await confirmCereal(paid.product.id, paid.principal);
+      const run = await prisma.discoveryRun.findFirstOrThrow({ where: { product_id: paid.product.id } });
+      const job = await claimNextJob([JobType.demand_discovery_v5]);
+      expect(job?.id).toBe(run.job_id);
+      await runClaimedJob(job!);
+      expect(await prisma.job.findUniqueOrThrow({ where: { id: run.job_id! } })).toMatchObject({ status: JobStatus.partial, error_message: null });
+      const closed = await prisma.discoveryRun.findUniqueOrThrow({ where: { id: run.id } });
+      expect(closed.status).toBe(JobStatus.partial);
+      expect((closed.summary as { notes: string[] }).notes).toContainEqual(expect.stringMatching(/^Comtrade figures for the \d+ markets BACI does not cover could not be fetched \(.+\), so those markets are not scored on trade this run\.$/));
+      expect((closed.frozen_inputs as unknown as { comtrade: { market_fallback: { status: string } } }).comtrade.market_fallback.status).toBe('failed');
+      // Still scored on BACI: the four markets it covers are ranked as before.
+      expect(await prisma.marketAssessment.count({ where: { run_id: run.id, market_status: 'ranked' } })).toBe(4);
+    } finally {
+      setV5ComtradeAccessForTesting({ mode: 'authenticated', api_key: 'test-key', credential_fingerprint: `${MARKER}-key`, source_origin: EvidenceOrigin.fixture, reason: null, fetch: fakeComtrade, sleep: async () => {} });
+    }
   });
 });

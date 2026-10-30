@@ -33,8 +33,9 @@ copy, a customs-union member's own exceptions, and the lines a retained tariff s
    labelled and score lower: a customs union's common tariff (D-028, quality 0.8, §4a and §4b), and a
    market's own tariff read from a retained official schedule without its trade remedies (D-031,
    quality 0.9, labelled "read from <the tariff>; trade remedies are not checked", §4b).
-2. **Official tariff line, read by an agent** (authoritative-manual evidence, quality 0.9, labelled
-   "read from the official tariff by a ClearTrade agent") — §3.
+2. ~~**Official tariff line, read by an agent**~~ — retired 30 Oct 2026 (D-037, §3). Runs no longer
+   read agent-recorded lines; a breakdown stored before still shows "read from the official tariff by a
+   ClearTrade agent".
 3. **A published rule** (policy v5 `rule_rates`, quality 1) where the market has no line for the product.
    Each rule names its official source, the goods it leaves out and a review date after which it is
    not used until checked again:
@@ -57,7 +58,14 @@ copy, a customs-union member's own exceptions, and the lines a retained tariff s
 4. **Estimate** (quality 0.5, labelled): the World Bank sector average for the market (or, policy v4,
    its customs union's), adjusted for India's trade agreement with it.
 
-## 3. The agent's part
+## 3. The agent's part (retired 30 Oct 2026, D-037)
+
+**Retired.** The owner decided that Demand Discovery uses actual data or labelled estimates only: agents
+no longer read tariffs. The "Official tariff to check" pointer and the **Record the official duty** form
+are removed, `POST /api/v1/market-access/manual-captures` refuses every request, and runs ignore
+`authoritative_manual` evidence (`run-inputs.ts`). A market without an automatically read tariff keeps
+the labelled estimate (§2, step 4). The directory below remains the research list for automation
+(§5). What follows describes the flow as it was.
 
 On the agent's market table (`/agent/exporters/…/markets/manage`), a market whose duty is estimated or
 missing shows **"Official tariff to check"**: the authority and a link to where its tariff can be read

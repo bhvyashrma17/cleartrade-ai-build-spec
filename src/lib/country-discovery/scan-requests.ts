@@ -16,6 +16,7 @@
  * scoring policy, screening policy, worker options. Every one of those is derived server-side
  * at approval time. There is no field here through which a client could shape metered work.
  */
+import { assertEarlierEnginesRetired } from '@/lib/demand-discovery-v5/earlier-engines';
 import { JobStatus, JobType, MarketScanRequestStatus, UserRole } from '@prisma/client';
 import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { estimateGlobalCountryScreeningQuota } from '@/lib/country-screening/service';
@@ -97,6 +98,7 @@ export async function requestMarketScan(args: {
   product_id: string;
   correlation_id: string;
 }): Promise<RequestOutcome> {
+  assertEarlierEnginesRetired('Requesting a market scan');
   const { actor } = args;
   if (!EXPORTER_ROLES.includes(actor.role) && !SCREENING_PRINCIPALS.includes(actor.role)) {
     throw forbidden('Only the exporter or its ClearTrade agent may request a market scan.');
@@ -307,6 +309,7 @@ export async function marketScanQueue(actor: Principal): Promise<StaffQueueEntry
  * quietly spending ~218 provider calls on a stale question.
  */
 export async function approveMarketScan(args: { actor: Principal; request_id: string; correlation_id: string }) {
+  assertEarlierEnginesRetired('Approving a market scan');
   const { actor } = args;
   if (!SCREENING_PRINCIPALS.includes(actor.role)) throw forbidden('Only ClearTrade staff can approve a market scan.');
   assertCan(actor, 'demand_discovery.run');

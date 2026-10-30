@@ -188,7 +188,9 @@ describe('role-appropriate rendering', () => {
 
   test('ops controls live on the ops route, not inside exporter product pages', () => {
     expect(opsPage).toContain('isOps');
-    expect(opsPage).toContain('MarketScanQueue');
+    expect(opsPage).toContain('DemandDiscoveryV5Panel');
+    // The Country Truth v4 scan-request queue is retired (D-036): no page renders it any more.
+    expect(opsPage).not.toContain('MarketScanQueue');
     expect(exporterResults).not.toContain('MarketScanQueue');
     expect(exporterDetail).not.toContain('MarketScanQueue');
   });

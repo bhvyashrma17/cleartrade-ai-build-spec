@@ -1,21 +1,27 @@
 /**
  * Phase 1 acceptance gate policy (docs/34-phase-1-acceptance-gate.md).
  *
- * The gate answers one question: has Country Demand Discovery demonstrated, on staging and from
- * scratch, the evidence a bounded supervised launch needs? Every threshold below is an OWNER
- * decision, not an engineering default. A value the owner has not approved is recorded as
- * `proposed`, and the evaluator caps its verdict at `PASS_UNDER_PROPOSED_POLICY` while any value
- * is unapproved: a machine pass under thresholds nobody signed for is not a release pass.
+ * The gate answers one question: has Country Demand Discovery shown, on staging and from scratch,
+ * the evidence a supervised launch needs? Since 30 Oct 2026 Demand Discovery means v5 only (D-036):
+ * this policy evaluates `market-opportunity-v5` runs and nothing else. Policy v1, which evaluated
+ * Country Truth v4 deep runs, is retired with that engine; git history keeps it.
+ *
+ * Every threshold below is an OWNER decision, not an engineering default. A value the owner has not
+ * approved is recorded as `proposed`, and the evaluator caps its verdict at
+ * `PASS_UNDER_PROPOSED_POLICY` while any value is unapproved: a machine pass under thresholds nobody
+ * signed for is not a release pass.
  *
  * Changing a value is a versioned decision. Bump `policy_version`, record the decision in docs/34
- * and the programme evidence ledger (docs/35), and never edit an approved version in place — a
- * gate report cites the policy hash it was evaluated under, and that hash must keep meaning the
- * same thresholds.
+ * and the programme evidence ledger (docs/35), and never edit an approved version in place — a gate
+ * report cites the policy hash it was evaluated under, and that hash must keep meaning the same
+ * thresholds.
  *
- * Where a value mirrors an existing repository constant, `basis` names that constant so the gate
- * and the pipeline cannot quietly drift apart.
+ * Where a value mirrors a Demand Discovery v5 setting, `basis` names it so the gate and the engine
+ * cannot quietly drift apart.
  */
 import { canonicalHash } from '@/lib/country-evidence/planner';
+import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
+import type { DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
 
 export type GateDecisionStatus = 'approved' | 'proposed';
 
@@ -47,35 +53,30 @@ export function normalizeHsRevision(value: string): string {
 }
 
 export interface Phase1GatePolicy {
-  schema_version: 'phase-1-gate-policy-v1';
+  schema_version: 'phase-1-gate-policy-v2';
   policy_version: string;
   /** Set only by an owner-approved change. Null means the policy as a whole is unapproved. */
   approval: { approved_by: string; approved_at: string; decision_reference: string } | null;
-  release_posture: GateDecision<'supervised_exporter_facing_agents_run_screens'>;
+  release_posture: GateDecision<'exporter_facing_v5_starts_on_confirmed_hs'>;
   evidence_environment: GateDecision<{ required_environment: string }>;
   archetypes: GateDecision<Phase1GateArchetype[]>;
+  engine: GateDecision<{ model_version: string }>;
   classification: GateDecision<{ require_human_confirmation: boolean; allowed_confirmer_roles: string[] }>;
-  destination_set: GateDecision<{ require_completed_global_screen: boolean }>;
-  market_count: GateDecision<{ minimum_qualifying_markets_per_archetype: number }>;
-  confidence: GateDecision<{ minimum_confidence_score: number }>;
-  freshness: GateDecision<{
-    maximum_period_lag_years: number;
-    maximum_run_age_days: number;
-    maximum_tariff_evidence_age_days: number;
-    maximum_taric_evidence_age_days: number;
+  coverage: GateDecision<{ require_every_universe_market: boolean }>;
+  market_count: GateDecision<{ minimum_ranked_markets: number }>;
+  calibration: GateDecision<{ top: number; minimum_overlap_share: number }>;
+  evidence_labels: GateDecision<{ unscored_metric_requires_reason: boolean; estimates_must_be_labelled: boolean }>;
+  duty_evidence: GateDecision<{
+    forbidden_bases: DutyBasis[];
+    official_bases: DutyBasis[];
+    top: number;
+    minimum_official_in_top: number;
   }>;
-  evidence_completeness: GateDecision<{
-    required_components: string[];
-    required_any_of: string[][];
-    unavailable_components_require_reason: boolean;
-  }>;
-  tariff_evidence: GateDecision<{
-    minimum_qualifying_markets_with_atlas_tariff_signal: number;
-    atlas_evidence_origins: string[];
-  }>;
-  repeatability: GateDecision<{ verify_stored_checksums: boolean; require_replay_comparison: boolean }>;
+  freshness: GateDecision<{ maximum_run_age_days: number; maximum_base_data_lag_years: number }>;
+  repeatability: GateDecision<{ verify_policy_hash: boolean; replay_scoring: boolean }>;
   failure_semantics: GateDecision<{
     accepted_run_statuses: string[];
+    partial_requires_notes: boolean;
     require_negative_probe_record: boolean;
     required_negative_probes: string[];
   }>;
@@ -87,13 +88,14 @@ export const PHASE_1_GATE_DECISION_KEYS = [
   'release_posture',
   'evidence_environment',
   'archetypes',
+  'engine',
   'classification',
-  'destination_set',
+  'coverage',
   'market_count',
-  'confidence',
+  'calibration',
+  'evidence_labels',
+  'duty_evidence',
   'freshness',
-  'evidence_completeness',
-  'tariff_evidence',
   'repeatability',
   'failure_semantics',
   'sign_off',
@@ -102,26 +104,25 @@ export const PHASE_1_GATE_DECISION_KEYS = [
 export type Phase1GateDecisionKey = (typeof PHASE_1_GATE_DECISION_KEYS)[number];
 
 /**
- * Phase 1 gate policy v1 — every value PROPOSED.
+ * Phase 1 gate policy v2 — Demand Discovery v5 runs only (D-036), every value PROPOSED.
  *
- * Archetypes, the five-market minimum, the per-archetype Atlas tariff requirement and the
- * supervised posture come from the 11 October 2026 audit and were accepted on 12 October 2026 as
- * proposals to build against, not as approved release thresholds. Everything else is a proposal
- * made while building the gate, with its reasoning in `basis` and in docs/34.
+ * The archetypes, the staging-only rule, the staff confirmation and the sign-off roles carry over
+ * from v1 (accepted on 12 Oct 2026 as proposals to build against). Everything v5-specific was
+ * proposed on 30 Oct 2026 while building this version, with its reasoning in `basis` and docs/34.
  */
-export const PHASE_1_GATE_POLICY_V1: Phase1GatePolicy = {
-  schema_version: 'phase-1-gate-policy-v1',
-  policy_version: 'phase-1-gate-v1',
+export const PHASE_1_GATE_POLICY_V2: Phase1GatePolicy = {
+  schema_version: 'phase-1-gate-policy-v2',
+  policy_version: 'phase-1-gate-v2',
   approval: null,
   release_posture: {
-    value: 'supervised_exporter_facing_agents_run_screens',
+    value: 'exporter_facing_v5_starts_on_confirmed_hs',
     status: 'proposed',
-    basis: 'Audit default: agents run screens and deep runs; exporters see persisted results. Matches the staff-only deep request in country-truth-deep-request.ts.',
+    basis: 'D-018: confirming a product’s HS code starts v5 for a paid tenant, and the exporter reads the results under Markets. The gate’s own evidence is made by staff (see classification).',
   },
   evidence_environment: {
     value: { required_environment: 'staging' },
     status: 'proposed',
-    basis: 'The gate certifies staging evidence. A report read from a development or test database must not be mistaken for it.',
+    basis: 'Unchanged from v1. The gate certifies staging evidence; a report read from a development or test database must not be mistaken for it.',
   },
   archetypes: {
     value: [
@@ -130,78 +131,73 @@ export const PHASE_1_GATE_POLICY_V1: Phase1GatePolicy = {
       { key: 'carpets', label: 'Hand-knotted carpets of wool or fine animal hair', hs6: '570110', hs_revision: 'HS2022' },
     ],
     status: 'proposed',
-    basis: 'Audit default: rice 100630 plus two non-rice archetypes (brassware and carpets). HS6 codes for the non-rice archetypes were proposed while building the gate; 830629 (base-metal ornaments) is the alternative brassware line.',
+    basis: 'Unchanged from v1 (audit default, D-003): rice 100630 plus brassware 741810 and carpets 570110; 830629 is the alternative brassware line. scripts/dd5-archetype-runs.ts makes the staging products and starts their v5 runs.',
+  },
+  engine: {
+    value: { model_version: DEMAND_DISCOVERY_V5_MODEL },
+    status: 'proposed',
+    basis: 'Owner, 30 Oct 2026 (D-036): the acceptance gates do not run old v4s. A run from any other engine fails and is not evaluated further.',
   },
   classification: {
     value: { require_human_confirmation: true, allowed_confirmer_roles: ['agent', 'ops_supervisor', 'admin'] },
     status: 'proposed',
-    basis: 'requireCountryTruthClassification already refuses an unconfirmed classification; the gate additionally requires a staff confirmer and the confirming AuditEvent.',
+    basis: 'Unchanged from v1. Staff propose and confirm each archetype’s code (scripts/dd5-archetype-runs.ts start), and the confirmation writes the AuditEvent the gate requires. An exporter confirming its own code still starts v5 in the portal, but that run is not gate evidence.',
   },
-  destination_set: {
-    value: { require_completed_global_screen: true },
+  coverage: {
+    value: { require_every_universe_market: true },
     status: 'proposed',
-    basis: 'The destination set is the frozen shortlist of a completed global screen (docs/31); a pilot run over hand-named countries cannot evidence global discovery.',
+    basis: 'docs/36: v5 scores every product in every market of the screening universe (218), and the run freezes the universe it used (frozen_inputs.universe). Fewer assessments than that universe is an incomplete run.',
   },
   market_count: {
-    value: { minimum_qualifying_markets_per_archetype: 5 },
+    value: { minimum_ranked_markets: 10 },
     status: 'proposed',
-    basis: 'Audit default: at least five rankable destination markets per archetype.',
+    basis: 'The top 10 is what v5 hands to regional and buyer discovery (ranking.handoff_count) and what the calibration compares, so a run needs ten ranked markets. Staging runs on 19 Oct ranked 188–214 (ledger E-026).',
   },
-  confidence: {
-    value: { minimum_confidence_score: 40 },
+  calibration: {
+    value: { top: 10, minimum_overlap_share: 0.5 },
     status: 'proposed',
-    basis: 'Computed with scoreCountryTruthV4 under default policies (pinned in tests/phase-1-gate.test.ts): a market with complete trade statistics only scores 48 / 38 / 31 confidence at 0 / 1 / 2 years of period lag, and 54 / 43 / 35 with an available tariff. A floor of 40 admits current trade-only markets and one-year-lagged markets that carry a tariff.',
+    basis: 'docs/36 §8: a top 10 that leaves out more than half of India’s own ten largest destinations for the product (in the BACI release and years the run used) is a calibration failure. On 19 Oct staging rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026); policy v8 (D-032) responds, and has not been re-run (R-30).',
+  },
+  evidence_labels: {
+    value: { unscored_metric_requires_reason: true, estimates_must_be_labelled: true },
+    status: 'proposed',
+    basis: 'Owner, 30 Oct 2026 (D-037): Demand Discovery shows actual data or labelled estimates. A metric without data has no score and says why — never a zero; a duty estimated from tariff averages and a logistics score estimated from shipping connectivity carry the estimate mark; a market measured only from its partners’ figures carries that label.',
+  },
+  duty_evidence: {
+    value: { forbidden_bases: ['agent_recorded'], official_bases: ['official', 'common_tariff', 'schedule_read'], top: 10, minimum_official_in_top: 1 },
+    status: 'proposed',
+    basis: 'D-037: no duty an agent read by hand. At least one of the top 10 must carry an official tariff read automatically (a connected source, a customs union’s common tariff or a retained schedule), so the official path is shown working on the markets that matter. Staging runs had 19–47 official markets each (E-026).',
   },
   freshness: {
-    value: {
-      maximum_period_lag_years: 2,
-      maximum_run_age_days: 30,
-      maximum_tariff_evidence_age_days: 180,
-      maximum_taric_evidence_age_days: 45,
-    },
+    value: { maximum_run_age_days: 30, maximum_base_data_lag_years: 2 },
     status: 'proposed',
-    basis: 'Period lag mirrors discovery.scoring.confidence.accepted_reporting_lag_years (2) and country_period_selection max_fallback_lookback_years (2). Run age, tariff age and TARIC age are new proposals: TARIC is published monthly, so 45 days allows one missed edition plus two weeks.',
-  },
-  evidence_completeness: {
-    value: {
-      required_components: ['demand_strength'],
-      required_any_of: [['growth_momentum', 'competitive_opportunity']],
-      unavailable_components_require_reason: true,
-    },
-    status: 'proposed',
-    basis: 'Mirrors country_truth.scoring_v4 ranking.require_demand and require_growth_or_competition. Every other pillar may be unavailable, but never without a stated reason.',
-  },
-  tariff_evidence: {
-    value: {
-      minimum_qualifying_markets_with_atlas_tariff_signal: 1,
-      atlas_evidence_origins: ['public_real', 'imported_real'],
-    },
-    status: 'proposed',
-    basis: 'Audit default: at least one Atlas-backed destination tariff per archetype. Requiring it for every qualifying market was considered and not proposed: many destinations publish a preference that needs origin proof, which correctly leaves the tariff signal unavailable.',
+    basis: 'Run age as v1. CEPII publishes BACI yearly with data to two years earlier (the 2026 release ends in 2024), so a run whose newest base year is more than two years before the run used an old release. Between New Year and the new release’s import this fails, by design.',
   },
   repeatability: {
-    value: { verify_stored_checksums: true, require_replay_comparison: false },
+    value: { verify_policy_hash: true, replay_scoring: true },
     status: 'proposed',
-    basis: 'The gate re-verifies every stored checksum link (metrics, manifest, fact manifest). A full re-execution replay is not proposed for the first gate; the report keeps every identity a later replay needs.',
+    basis: 'A v5 run freezes its policy and hash (docs/36 §7). The gate re-hashes the stored policy, then recomputes every market’s status, score, confidence and rank from its stored metrics under that policy (score.ts). Recomputing the metrics from the source datasets is not proposed: frozen_inputs pins each release by checksum.',
   },
   failure_semantics: {
     value: {
       accepted_run_statuses: ['completed', 'partial'],
+      partial_requires_notes: true,
       require_negative_probe_record: true,
       required_negative_probes: [
         'unconfirmed_classification_refused',
-        'incomplete_screen_refused',
-        'provider_failure_not_minted_complete',
-        'missing_tariff_reported_unavailable',
+        'earlier_engine_refused',
+        'provider_failure_left_partial',
+        'missing_duty_never_zero',
+        'agent_tariff_refused',
       ],
     },
     status: 'proposed',
-    basis: 'Roadmap §8 failure cases. A partial run is acceptable only with explicit gaps; the negative probes are operator-attested records, each pointing at a staging observation or a CI test.',
+    basis: 'A partial run (a provider step failed) is acceptable only with notes saying what is missing. The five negative probes are operator-attested records, each pointing at a staging observation or a CI test (docs/34 §6.3); two cover the owner’s 30 Oct decisions (D-036, D-037).',
   },
   sign_off: {
     value: { roles: ['product_owner', 'engineering_owner'] },
     status: 'proposed',
-    basis: 'Roadmap WP1 review roles. Sign-off is recorded outside the evaluator; a machine verdict never freezes Phase 1 on its own.',
+    basis: 'Unchanged from v1 (roadmap WP1 review roles). Sign-off is recorded outside the evaluator; a machine verdict never freezes Phase 1 on its own.',
   },
 };
 
