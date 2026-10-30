@@ -217,6 +217,12 @@ ranked leads with why; an excluded or no-demand market gets one status sentence.
 projects earnings. The optional AI rationale (`RATIONALE_WRITER`) may rephrase; it never changes a
 number.
 
+Exporter fit on the results page (30 Oct 2026, E-036). When a run had no usable FOB price or capacity
+for the product, the page says fit with the exporter's business is left out of every score, with the
+points each missing figure's measure carries and the run's own reason for each (from
+`frozen_inputs.exporter`), and links to the product's details; the exporter then runs Demand Discovery
+again. A ranked card whose score used fewer than 100 points says how many.
+
 Code: `src/lib/demand-discovery-v5/` — `policy`, `series`, `metrics`, `chain-link`, `hs-revision`,
 `baci-flows`, `score`, `explain`, and `assess` (all 218 markets for one product, pure: the caller
 reads the frozen releases and passes their rows in).
