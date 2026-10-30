@@ -133,6 +133,38 @@ describe('v5 assessment across every market', () => {
     expect(metricOf(markets.get('DE')!, 'price_headroom').inputs).toMatchObject({ india_usd_per_kg: 1.8, market_usd_per_kg: 2.5, market_valuation: 'fob' });
   });
 
+  test('every live figure records the years it covers; the LPI year, ECGC list and tariff-average year pass through (item 8)', () => {
+    const base = input();
+    const dated = byMarket(assessMarkets({
+      ...base,
+      lpi_years: new Map([['US', 2023]]),
+      ecgc: new Map([...base.ecgc].map(([market, rating]) => [market, { ...rating, list: 'ECGC short-term list w.e.f. 2026-07-01' }])),
+      duty: new Map([...base.duty].map(([market, duty]) => [market, duty.kind === 'estimate' ? { ...duty, sector_average_year: 2022 } : duty])),
+    }).markets);
+    const us = dated.get('US')!;
+    const span = (market: AssessedMarket, key: MetricKey) => [metricOf(market, key).inputs.first_year, metricOf(market, key).inputs.last_year];
+    // The US links 2025 from its own Comtrade report: size and India's sales average the last three
+    // years, the trends run over the whole window, and the structure measures read 2024.
+    expect(span(us, 'market_size')).toEqual([2023, 2025]);
+    expect(span(us, 'growth')).toEqual([2020, 2025]);
+    expect(span(us, 'stability')).toEqual([2020, 2025]);
+    expect(span(us, 'india_foothold')).toEqual([2020, 2025]);
+    expect(span(us, 'india_sales')).toEqual([2023, 2025]);
+    for (const key of ['price_headroom', 'openness', 'distance_fit', 'price_fit', 'volume_fit'] as MetricKey[]) expect(span(us, key), key).toEqual([2024, 2024]);
+    // A market on its own Comtrade reports records its own window.
+    expect(span(dated.get('MV')!, 'market_size')).toEqual([2021, 2023]);
+    expect(span(dated.get('MV')!, 'price_headroom')).toEqual([2023, 2023]);
+    expect(metricOf(us, 'logistics').inputs).toEqual({ lpi: 3.8, lpi_year: 2023 });
+    expect(metricOf(us, 'country_risk').inputs).toEqual({ grade: 'A1', cover: 'open', list: 'ECGC short-term list w.e.f. 2026-07-01' });
+    expect(metricOf(dated.get('DE')!, 'duty').inputs).toMatchObject({ basis: 'estimate', sector_average_percent: 4.2, sector_average_year: 2022 });
+    // No year is invented: without one the figure records none, and a figure without data records nothing.
+    expect(metricOf(dated.get('DE')!, 'logistics').inputs).toEqual({ lpi: 4.1 });
+    expect(metricOf(markets.get('US')!, 'country_risk').inputs).toEqual({ grade: 'A1', cover: 'open' });
+    expect(metricOf(dated.get('BT')!, 'market_size').inputs).toEqual({});
+    // Only the recorded inputs change: every status, score and rank is the same.
+    for (const market of result.markets) expect(dated.get(market.market), market.market).toMatchObject({ status: market.status, overall_exact: market.overall_exact, confidence: market.confidence, rank: market.rank });
+  });
+
   test('the US leads, ranks are dense from 1, and the summary hands the ranked markets on in order', () => {
     const ranked = result.markets.filter((market) => market.rank != null).sort((a, b) => a.rank! - b.rank!);
     expect(ranked[0].market).toBe('US');

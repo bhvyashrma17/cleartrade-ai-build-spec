@@ -67,13 +67,13 @@ export function dutyInputs(args: {
   const result = new Map<string, Exclude<DutyInput, null>>();
   const chapter = Number(args.hs6.slice(0, 2));
   /** The market's own average, else (v4) its customs union's common external tariff where the union covers this chapter. */
-  const averageFor = (market: string): { value: number; union: string | null } | null => {
+  const averageFor = (market: string): { value: number; year: number; union: string | null } | null => {
     const own = averages.get(market);
-    if (own && own.value >= 0) return { value: own.value, union: null };
+    if (own && own.value >= 0) return { value: own.value, year: own.year, union: null };
     const union = args.policy.customs_unions?.[market];
     if (!union || (union.hs_chapters && (chapter < union.hs_chapters[0] || chapter > union.hs_chapters[1]))) return null;
     const reference = averages.get(union.reference_market);
-    return reference && reference.value >= 0 ? { value: reference.value, union: union.union } : null;
+    return reference && reference.value >= 0 ? { value: reference.value, year: reference.year, union: union.union } : null;
   };
   const day = args.as_of.toISOString().slice(0, 10);
   /** v5: a published rule that covers this product on the run's date (not past its review date). */
@@ -87,7 +87,7 @@ export function dutyInputs(args: {
     if (!average) return null;
     const agreement = agreementInForce(args.agreements, market, args.as_of);
     return {
-      kind: 'estimate', sector_average_percent: average.value, agreement_scope: agreement?.scope ?? 'none', agreement_name: agreement?.agreement ?? null,
+      kind: 'estimate', sector_average_percent: average.value, sector_average_year: average.year, agreement_scope: agreement?.scope ?? 'none', agreement_name: agreement?.agreement ?? null,
       ...(average.union ? { customs_union: average.union } : {}), ...(officialNote ? { official_note: officialNote } : {}),
     };
   };

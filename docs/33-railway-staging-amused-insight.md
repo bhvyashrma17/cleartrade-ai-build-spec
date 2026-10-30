@@ -41,6 +41,13 @@ process pointed at production storage or data refuses to start.
   API key is currently shared with production; a staging-only key should replace it.
 - **Scanner:** `DOCUMENT_MALWARE_SCANNER=http`, bearer-authenticated; unauthenticated or wrong-token
   requests get 401.
+- **Storage (since 30 Oct 2026, E-037):** on web and worker, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `STORAGE_BUCKET` and `STORAGE_ENDPOINT` are references to the staging bucket, so a provider credential
+  reset reaches the services. Railway's reset of 21 Oct hit literal copies and stopped storage for nine
+  days (R-35). `STORAGE_REGION` waits on the owner's choice between the reference (renders `sin`) and the
+  literal `auto`. The operator env still holds literal copies; re-copy them after any reset.
+- **Census:** `CENSUS_API_KEY` is on web and, as a reference to web's, on the worker, where the
+  regional-demand job runs.
 
 ## 3. First-time bootstrap of an empty staging database
 

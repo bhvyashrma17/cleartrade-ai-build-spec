@@ -3,7 +3,8 @@
 /**
  * EXP-05 for a Demand Discovery v5 assessment (docs/36 §4–§6): where the market stands, then the
  * five parts and the measures behind its score. A measure without data says so and why; it is
- * never shown as a zero. Each live measure states the observed figure in plain words.
+ * never shown as a zero. Each live measure states the observed figure in plain words, then where
+ * it comes from and for which years, saying "Estimate" when it is one (item 8).
  */
 
 import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
@@ -11,6 +12,7 @@ import { StatusChip } from '@/components/ui';
 import type { V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { metricSentence } from '@/lib/demand-discovery-v5/explain';
 import type { MetricResult } from '@/lib/demand-discovery-v5/metrics';
+import { metricSource } from '@/lib/demand-discovery-v5/sources';
 import { V5Labels, V5Reasons } from '../V5Results';
 
 export type { V5Detail };
@@ -89,6 +91,7 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
                         <span className="shrink-0 text-xs text-[var(--color-text-secondary)]">{metric.score == null ? 'No data' : `${Math.round(metric.score)}/100`}</span>
                       </div>
                       <p className="mt-0.5 text-[var(--color-text-secondary)]">{metric.score == null ? metric.reason : rupees(metricSentence(metric))}</p>
+                      {metric.score != null ? <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Source: {metricSource(metric, detail.data_context)}</p> : null}
                     </li>
                   );
                 })}

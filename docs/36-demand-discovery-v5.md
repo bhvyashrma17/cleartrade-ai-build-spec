@@ -223,6 +223,24 @@ points each missing figure's measure carries and the run's own reason for each (
 `frozen_inputs.exporter`), and links to the product's details; the exporter then runs Demand Discovery
 again. A ranked card whose score used fewer than 100 points says how many.
 
+Source lines (30 Oct 2026, E-037; stage 1, item 8). Under each measure with data, the market page (the
+exporter's, and the agent's, which renders the same component) names where the figure comes from and
+for which years:
+
+| Measure | Line |
+|---|---|
+| Size, growth, steadiness, India's foothold and sales | The dataset and the years the figure covers: "CEPII BACI, 2022–2024". A linked newest year (§5.3) adds "; 2025 from the market's report to UN Comtrade (provisional)". A partner-only market says "(from the market's partners' reports)"; a fallback market names "UN Comtrade (the market's own customs reports)". |
+| Price headroom, openness, distance, price fit, volume fit | What they compare, from the structure year: "CEPII BACI supplier shares, 2024"; distance names CEPII GeoDist; the fit measures name the product form. |
+| Duty | The official tariff and the date it is in force on (the run's date), the common tariff or retained schedule it was read from, or the published rule. An estimate begins "Estimate:" and names the World Bank average's year and India's agreement in force (or none). |
+| Logistics | The World Bank LPI and its year, or "Estimate:" with UNCTAD shipping connectivity and its year. |
+| Payment risk | The ECGC short-term list and the date it is in force from. |
+
+The engine records these with each measure's inputs (`first_year` and `last_year`, `lpi_year`,
+`sector_average_year`, the ECGC `list`); no score, rank or policy hash changes. Runs from before name a
+year only where the stored row says exactly which (the window for growth and steadiness, the structure
+year for the structure measures) and otherwise name the source alone: a size figure averages only the
+window's last years, and India's figures may stop before a linked year. Code: `sources.ts`.
+
 Code: `src/lib/demand-discovery-v5/` — `policy`, `series`, `metrics`, `chain-link`, `hs-revision`,
 `baci-flows`, `score`, `explain`, and `assess` (all 218 markets for one product, pure: the caller
 reads the frozen releases and passes their rows in).

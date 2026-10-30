@@ -53,6 +53,8 @@ export interface AssessMarketsInput {
   /** Capital coordinates by identity (ISO alpha-2, or a provider identity such as `cepii_baci:490`). */
   coordinates: ReadonlyMap<string, { lat: number; lon: number }>;
   lpi: ReadonlyMap<string, number>;
+  /** The year of each market's LPI value (item 8: every figure names its year). */
+  lpi_years?: ReadonlyMap<string, number>;
   /** Markets whose latest logistics score is older than the policy's World Bank age limit, with its year. */
   lpi_too_old?: ReadonlyMap<string, number>;
   /** v5: the LPI shipping connectivity predicts, for markets without one (`logistics-fallback.ts`). */
@@ -91,6 +93,12 @@ export interface AssessmentResult {
 }
 
 const unavailableTrade = (key: MetricResult['key'], reason: string): MetricResult => ({ key, score: null, quality: 0, reason, inputs: {} });
+
+/** Item 8: a live trade figure records the first and last year it was measured over. Inputs only; never the score. */
+function years(result: MetricResult, span: readonly number[]): MetricResult {
+  if (result.score == null || !span.length) return result;
+  return { ...result, inputs: { ...result.inputs, first_year: span[0], last_year: span[span.length - 1] } };
+}
 
 /** A copy of `series` with the linked newest year added. Only total and India values exist for it. */
 function withNewestYear(series: MarketSeries, linked: LinkedNewestYear): MarketSeries {
@@ -227,17 +235,19 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
         const priced = (result: MetricResult): MetricResult => (result.score == null ? result : { ...result, inputs: { ...result.inputs, market_valuation: valuation, year: structureYear } });
         // The exporter-input reasons say exactly which product fact is missing or unusable.
         const because = (result: MetricResult, missing: boolean, reason: string | null | undefined): MetricResult => (result.score == null && missing && reason ? { ...result, reason } : result);
+        const averaged = (span: readonly number[]) => span.slice(-policy.size.average_years);
+        const structure = [structureYear];
         metrics.push(
-          scoreMarketSize(context.average_imports, largest, linkedQuality, policy),
-          scoreGrowth(context.demand_series!, context.demand_window, linkedQuality, policy),
-          scoreStability(context.demand_series!, context.demand_window, linkedQuality, policy),
-          scoreIndiaFoothold(context.foothold_series!, context.foothold_window, indiaQuality, policy),
-          scoreIndiaSales(context.india_sales, largestIndiaSales, indiaQuality, policy),
-          priced(scorePriceHeadroom(marketUv, indiaUv(structureYear), context.quality, policy, indiaShareIn(series, structureYear))),
-          scoreOpenness(series, structureYear, context.quality, policy),
-          scoreDistanceFit(series, structureYear, input.coordinates, context.quality, policy),
-          because(priced(scorePriceFit(marketUv, input.exporter.usd_per_kg, context.quality, policy)), input.exporter.usd_per_kg == null, input.exporter.price_reason),
-          because(scoreVolumeFit(series, structureYear, input.exporter.yearly_kg, context.quality, policy), input.exporter.yearly_kg == null, input.exporter.volume_reason),
+          years(scoreMarketSize(context.average_imports, largest, linkedQuality, policy), averaged(context.demand_window)),
+          years(scoreGrowth(context.demand_series!, context.demand_window, linkedQuality, policy), context.demand_window),
+          years(scoreStability(context.demand_series!, context.demand_window, linkedQuality, policy), context.demand_window),
+          years(scoreIndiaFoothold(context.foothold_series!, context.foothold_window, indiaQuality, policy), context.foothold_window),
+          years(scoreIndiaSales(context.india_sales, largestIndiaSales, indiaQuality, policy), averaged(context.foothold_window)),
+          years(priced(scorePriceHeadroom(marketUv, indiaUv(structureYear), context.quality, policy, indiaShareIn(series, structureYear))), structure),
+          years(scoreOpenness(series, structureYear, context.quality, policy), structure),
+          years(scoreDistanceFit(series, structureYear, input.coordinates, context.quality, policy), structure),
+          years(because(priced(scorePriceFit(marketUv, input.exporter.usd_per_kg, context.quality, policy)), input.exporter.usd_per_kg == null, input.exporter.price_reason), structure),
+          years(because(scoreVolumeFit(series, structureYear, input.exporter.yearly_kg, context.quality, policy), input.exporter.yearly_kg == null, input.exporter.volume_reason), structure),
         );
       } else {
         const reason = 'No trade dataset covers this market.';
@@ -245,7 +255,7 @@ export function assessMarkets(input: AssessMarketsInput): AssessmentResult {
       }
       metrics.push(
         scoreDuty(input.duty.get(context.market) ?? null, policy, { official: quality.official, estimate: quality.duty_estimate, agent_recorded: quality.official_agent_recorded, common_tariff: quality.official_common_tariff, schedule_read: quality.official_schedule_read }, marketUv),
-        scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy, input.lpi_too_old?.get(context.market) ?? null, logisticsEstimate(context.market)),
+        scoreLogistics(input.lpi.get(context.market) ?? null, quality.logistics_lpi, policy, input.lpi_too_old?.get(context.market) ?? null, logisticsEstimate(context.market), input.lpi_years?.get(context.market) ?? null),
         scoreCountryRisk(rating ?? null, quality.official, policy),
       );
     }

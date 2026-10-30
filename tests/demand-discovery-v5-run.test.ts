@@ -12,6 +12,8 @@ import type { MarketAccessAdapter } from '../src/lib/job-handlers/market-access'
 import type { MarketAccessIngestResult } from '../src/lib/market-access/contract';
 import { autoStartDemandDiscoveryV5, demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '../src/lib/demand-discovery-v5/service';
 import { exporterFitView } from '../src/lib/demand-discovery-v5/exporter-inputs';
+import type { MetricResult } from '../src/lib/demand-discovery-v5/metrics';
+import { marketDataContext, metricSource } from '../src/lib/demand-discovery-v5/sources';
 import { setDemandDiscoveryV5StorageForTesting } from '../src/lib/job-handlers/demand-discovery-v5';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, runClaimedJob } from '../src/lib/jobs';
@@ -320,6 +322,19 @@ describe('Demand Discovery v5 runs', () => {
     expect(frozen.reference['ecgc:country-risk:short-term']).toMatchObject({ release_id: expect.any(String) });
     expect(frozen.reference['cepii:geo_cepii']).toMatchObject({ release_id: expect.any(String) });
     expect(frozen.provider_coordinates).toEqual({ placed: [{ identity: 'cepii_baci:490', iso2: 'TW', city: 'Taipei' }], unplaced: [] });
+    // Stage 1, item 8: each figure records its years and source, and the market page's source line
+    // is written from the stored row. The WDI fixture rows are for 2022.
+    expect(metric('US', 'market_size')!.inputs).toMatchObject({ first_year: 2023, last_year: 2025 });
+    expect(metric('US', 'logistics')!.inputs).toEqual({ lpi: 3.8, lpi_year: 2022 });
+    expect(metric('US', 'country_risk')!.inputs.list).toMatch(/^ECGC short-term list w\.e\.f\. \d{4}-\d{2}-\d{2}$/);
+    expect(duty!.inputs).toMatchObject({ sector_average_percent: 4, sector_average_year: 2022 });
+    const line = (market: string, key: string) => metricSource(metric(market, key) as unknown as MetricResult, marketDataContext(by.get(market)!.score_breakdown, by.get(market)!.as_of_date));
+    expect(line('US', 'market_size')).toBe("CEPII BACI, 2023–2024; 2025 from the market's report to UN Comtrade (provisional)");
+    expect(line('US', 'openness')).toBe('CEPII BACI supplier shares, 2024');
+    expect(line('US', 'duty')).toBe('Estimate: World Bank average applied tariff, 2022, with no trade agreement in force');
+    expect(line('US', 'logistics')).toBe('World Bank Logistics Performance Index, 2022');
+    expect(line('US', 'country_risk')).toMatch(/^ECGC country risk classification, short-term list in force from \d{1,2} [A-Z][a-z]{2} \d{4}$/);
+    expect(line('DE', 'duty')).toMatch(/^Official tariff: EU TARIC 1008909000, in force on \d{1,2} [A-Z][a-z]{2} \d{4}$/);
     // Official duty: Germany's EUR 175 per tonne at EUR/USD 1.1 over Germany's median supplier unit
     // value of USD 2.50/kg is 7.7%. Nepal publishes 0% for India beside its 10%: policy v6 (D-026)
     // scores the preference and keeps the standard rate beside it.
