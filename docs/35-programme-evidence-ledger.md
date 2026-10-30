@@ -1637,6 +1637,57 @@ changed files.
 Reporting the HTTP status (403, 404) would have shown the cause on 21 Oct. It is a small change, for the
 owner to schedule.
 
+### E-038 · 2026-10-30 · Calibration on eighteen products: tooling (stage 1, item 6) (in review)
+
+**Branch.** `dd5/calibration-set`, on top of `dd5/source-labels` (#21); merged after #21. CI passed on
+#21 (run 41137168211, finished 22:25 UTC): typecheck, lint, tests, build and image.
+
+**Built.** `calibration-set.ts` lists eighteen products: the three archetypes and fifteen more, one
+HS 2022 subheading each:
+
+| Sector | Products |
+|---|---|
+| Food | rice `100630`, black tea `090240`, cumin `090931`, cashew `080132` |
+| Marine | frozen shrimps and prawns `030617` |
+| Textiles and apparel | carpets `570110`, cotton yarn `520512`, T-shirts `610910`, bed linen `630231` |
+| Gems and jewellery | worked diamonds `710239`, precious-metal jewellery `711319` |
+| Pharmaceuticals | medicaments `300490` |
+| Engineering | motor-vehicle parts `870899`, centrifugal pumps `841370` |
+| Leather | leather footwear `640399` |
+| Building materials | ceramic tiles `690721`, worked granite `680293` |
+| Handicrafts | brassware `741810` |
+
+`scripts/dd5-archetype-runs.ts` takes `--set=archetypes|calibration`; the archetypes stay the
+default, with the same wording and evidence as before. `start --set=calibration` reuses the archetype
+products and runs, and proposes and confirms the fifteen others as staff, marked as calibration
+products. `status --set=calibration` adds a summary across the set: products compared, passes,
+calibration failures, products India does not export, the median overlap with India's top
+destinations, and each failure, worst first. docs/34 §6.1 now shows the `--actor-email` that `start`
+requires.
+
+**Cost.** Eighteen staging runs use two batched Comtrade calls each, 36 of the free key's 500 a day,
+plus their tariff look-ups. Nothing is bought.
+
+**Open decisions (owner's; nothing has run).**
+1. *The list.* Proposed as above, to cover the sectors Indian manufacturers export in and three
+   destination patterns: hubs, neighbours and long-haul buyers. Change it before the staging runs if
+   other products matter more.
+2. *What accepts the scoring.* (a) every product passes; (b) at least 15 of 18 pass, and each failure
+   is explained through its `missed` markets; (c) report only, and the owner judges. Recommended: (b).
+   Hubs such as diamonds through Hong Kong and Belgium are the likeliest honest misses, and one failing
+   product should not block stage 1 if its misses are understood.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean; ESLint clean on the
+changed files. `demand-discovery-v5-archetype-runs` (8 tests, 4 new): the set's codes, sectors and
+archetypes; `start --set=calibration` reusing the archetypes and confirming the rest with their own
+rationale and evidence; `status --set=calibration` with its summary; the summary's counts, median and
+order. Full suite on this branch (which includes #21): 2,306 passed, 5 skipped, 3 failed. That is #21's
+2,302 plus the 4 new tests, and the same three local-harness-only failures as in E-033. It also
+confirms #21's corrected `dutyInputs` tests in a full run.
+
+**Not verified.** The runs on staging. They follow the stage 1 check, which waits on the storage
+region decision (E-037).
+
 ## Risk register
 
 

@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
 import { OrgTier, type Prisma, UserRole } from '@prisma/client';
 import {
-  ARCHETYPE_EXPORTER_NAME, ARCHETYPE_MEMBERSHIP_DAYS, archetypeProductName, archetypeRunStatus, dutyBasisOf, startArchetypeRuns,
+  ARCHETYPE_EXPORTER_NAME, ARCHETYPE_MEMBERSHIP_DAYS, archetypeProductName, archetypeRunStatus, dutyBasisOf, startArchetypeRuns, summarizeCalibration, type ArchetypeStatusItem,
 } from '@/lib/demand-discovery-v5/archetype-runs';
+import { CALIBRATION_PRODUCTS } from '@/lib/demand-discovery-v5/calibration-set';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
 import { prisma } from '@/lib/prisma';
@@ -108,5 +109,62 @@ describe('Demand Discovery v5 archetype runs', () => {
     expect(item.comparison).toBeNull();
     expect(item.comparison_error).toContain('has not finished');
     expect((await archetypeRunStatus({ compare: false })).items.find((entry) => entry.key === archetypes[0]!.key)).toMatchObject({ comparison: null, comparison_error: null });
+  });
+
+  test('the calibration set (stage 1, item 6): eighteen distinct codes across ten sectors, the archetypes among them under their gate labels', () => {
+    expect(CALIBRATION_PRODUCTS).toHaveLength(18);
+    expect(new Set(CALIBRATION_PRODUCTS.map((product) => product.key)).size).toBe(18);
+    expect(new Set(CALIBRATION_PRODUCTS.map((product) => product.hs6)).size).toBe(18);
+    for (const product of CALIBRATION_PRODUCTS) expect(product, product.key).toMatchObject({ hs6: expect.stringMatching(/^\d{6}$/), hs_revision: 'HS2022' });
+    for (const archetype of archetypes) expect(CALIBRATION_PRODUCTS).toContainEqual(expect.objectContaining({ key: archetype.key, label: archetype.label, hs6: archetype.hs6 }));
+    expect(new Set(CALIBRATION_PRODUCTS.map((product) => product.sector))).toEqual(new Set(['food', 'handicrafts', 'textiles', 'marine', 'apparel', 'gems and jewellery', 'pharmaceuticals', 'engineering', 'leather', 'building materials']));
+  });
+
+  test('start --set=calibration reuses the archetype products and confirms the fifteen others as calibration products', async () => {
+    const supervisor = await staff(UserRole.ops_supervisor);
+    const org = await prisma.exporterOrg.findFirstOrThrow({ where: { display_name: ARCHETYPE_EXPORTER_NAME } });
+    const before = await prisma.product.count({ where: { exporter_org_id: org.id } });
+    const result = await startArchetypeRuns({ actor: supervisor, correlation_id: randomUUID(), now: new Date(now.getTime() + 7_200_000), set: 'calibration' });
+    expect(result).toMatchObject({ exporter_org_id: org.id, exporter_created: false, membership: 'active' });
+    expect(result.items.map((item) => item.key)).toEqual(CALIBRATION_PRODUCTS.map((product) => product.key));
+    const archetypeKeys = new Set(archetypes.map((archetype) => archetype.key));
+    for (const item of result.items) {
+      if (archetypeKeys.has(item.key)) {
+        // Already confirmed by the archetype start: never proposed again.
+        expect(item, item.key).toMatchObject({ product_created: false });
+        expect(item.action).not.toBe('confirmed');
+        expect(await prisma.productClassification.count({ where: { product_id: item.product_id } })).toBe(1);
+        continue;
+      }
+      expect(item, item.key).toMatchObject({ product_created: true, action: 'confirmed' });
+      const classification = await prisma.productClassification.findUniqueOrThrow({ where: { id: item.classification_id } });
+      expect(classification).toMatchObject({ status: 'confirmed', hs6_code: item.hs6, nomenclature: 'HS', nomenclature_version: '2022', confirmed_by_id: supervisor.id });
+      expect(classification.rationale).toMatch(/^Calibration product \(stage 1, item 6\) "[a-z_]+": .+, HS 2022 subheading \d{6} \(docs\/36 §8\)\.$/);
+      expect(classification.evidence).toMatchObject({ calibration_product: item.key, hs_revision: 'HS2022', source: 'CALIBRATION_PRODUCTS' });
+    }
+    expect(await prisma.product.count({ where: { exporter_org_id: org.id } })).toBe(before + 15);
+  });
+
+  test('status --set=calibration lists every calibration product and sums up the comparisons', async () => {
+    const status = await archetypeRunStatus({ set: 'calibration', top: 3 });
+    expect(status.set).toBe('calibration');
+    expect(status.items.map((item) => item.key)).toEqual(CALIBRATION_PRODUCTS.map((product) => product.key));
+    // No run here has frozen BACI inputs, so none can be compared; status says so per product.
+    expect(status.calibration).toMatchObject({ products: 18, compared: 0, pass: 0, calibration_failure: 0, no_india_exports: 0, median_overlap: null, failures: [] });
+    expect(status.calibration!.finished).toBe(status.items.filter((item) => item.run && ['completed', 'partial'].includes(item.run.status)).length);
+    expect(await archetypeRunStatus({ set: 'calibration', compare: false })).not.toHaveProperty('calibration');
+  });
+
+  test('the calibration summary counts verdicts, takes the median overlap where India exports, and lists failures worst first', () => {
+    const item = (key: string, verdict: string | null, overlap = 0, runStatus = 'completed'): ArchetypeStatusItem => ({
+      key, hs6: '000000', product_id: 'product', run: { id: key, status: runStatus, created_at: '2026-10-30T00:00:00Z', completed_at: null, classification_id: null }, markets: null,
+      comparison: verdict ? { verdict, overlap, top: 10, india_top: [], run_top: [], missed: [] } : null, comparison_error: null,
+    });
+    expect(summarizeCalibration([item('a', 'pass', 7), item('b', 'calibration_failure', 3), item('c', 'calibration_failure', 2), item('d', 'no_india_exports'), item('e', null, 0, 'processing'), item('f', 'pass', 5)])).toEqual({
+      products: 6, finished: 5, compared: 5, pass: 2, calibration_failure: 2, no_india_exports: 1, median_overlap: 4,
+      failures: [{ key: 'c', hs6: '000000', overlap: 2, top: 10 }, { key: 'b', hs6: '000000', overlap: 3, top: 10 }],
+    });
+    expect(summarizeCalibration([item('a', 'pass', 6), item('b', 'pass', 9), item('c', 'pass', 8)]).median_overlap).toBe(8);
+    expect(summarizeCalibration([])).toMatchObject({ products: 0, finished: 0, compared: 0, median_overlap: null, failures: [] });
   });
 });

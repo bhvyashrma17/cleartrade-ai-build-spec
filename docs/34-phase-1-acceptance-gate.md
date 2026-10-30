@@ -146,12 +146,14 @@ archetype, and proposes and confirms each HS code as staff; the confirmation wri
 the gate requires and starts v5 (D-018).
 
 ```
-npx tsx --env-file=tmp/rw/operator.env scripts/dd5-archetype-runs.ts start [--rerun]
+npx tsx --env-file=tmp/rw/operator.env scripts/dd5-archetype-runs.ts start --actor-email=<agent, ops supervisor or admin> [--rerun]
 npx tsx --env-file=tmp/rw/operator.env scripts/dd5-archetype-runs.ts status
 ```
 
 `--rerun` starts a fresh run for codes that already have one (needed after a policy change, such as
-scoring v8). `status` prints each product id and run id.
+scoring v8). `status` prints each product id and run id. The gate reads only these three; the
+eighteen-product calibration set (`--set=calibration`, stage 1 item 6, docs/36 §10 step 8) is evidence
+for the owner, not a gate check.
 
 ### 6.2 Running the gate
 
