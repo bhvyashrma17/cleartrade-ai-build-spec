@@ -27,7 +27,8 @@ let productId = '';
 
 const list = () => Buffer.from([
   hmrcLine(period, 1, `${MARKER} HANDMADE RUGS LIMITED`, ['THE STUDIO', '12 HIGH STREET', 'LONDON'], 'E1 6HF', ['57011010', '57011090', '57031000']),
-  hmrcLine(period, 1, `${MARKER} DEPARTMENT STORES PLC`, ['171 VICTORIA STREET', 'LONDON'], 'SW1V 2QQ', [...Array.from({ length: 48 }, (_, i) => String(84000000 + i)), '57011090', '57019090']),
+  // HMRC publishes some towns in mixed case ("London" beside "LONDON"); the regional view counts them as one.
+  hmrcLine(period, 1, `${MARKER} DEPARTMENT STORES PLC`, ['171 VICTORIA STREET', 'London'], 'SW1V 2QQ', [...Array.from({ length: 48 }, (_, i) => String(84000000 + i)), '57011090', '57019090']),
   hmrcLine(period, 1, `${MARKER} FREIGHT FORWARDING LTD`, ['DOCK ROAD', 'FELIXSTOWE'], 'IP11 3QW', ['57011090', '94036090']),
   hmrcLine(period, 1, `${MARKER} TILES LTD`, ['MILL LANE', 'LEEDS'], 'LS1 1AA', ['69089000']),
 ].join('\n'), 'latin1');
@@ -125,6 +126,8 @@ describe('Finding buyers in the list', () => {
     if (view.measure !== 'importers') throw new Error('expected importer view');
     const london = view.areas.find((area) => area.code === 'TLI');
     expect(london?.importer_count).toBeGreaterThanOrEqual(2);
+    // A town is listed once whatever its letter case.
+    for (const area of view.areas) expect(new Set(area.towns.map((town) => town.toUpperCase())).size).toBe(area.towns.length);
     expect(result!.source.attribution).toMatch(/Open Government Licence v3\.0/);
     expect(result!.totals.importer_count).toBeGreaterThanOrEqual(4);
   });
