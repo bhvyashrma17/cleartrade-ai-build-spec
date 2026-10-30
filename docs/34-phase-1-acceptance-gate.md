@@ -182,7 +182,7 @@ a reviewer can re-read (a correlation id or AuditEvent id on staging, or a CI te
 |---|---|---|
 | `unconfirmed_classification_refused` | Starting Demand Discovery for a product without a confirmed HS6 is refused before any run exists. | CI: `demand-discovery-v5-run` › "a product without a confirmed HS6 is refused before any run exists" |
 | `earlier_engine_refused` | In staging, a Country Truth v4 scan, scan request or detailed analysis is refused with the retired reason (D-036). | CI: `earlier-engines-retired`; on staging, a POST to a retired route must answer 422 |
-| `provider_failure_left_partial` | A provider step that fails leaves the run `partial` with a note, never `completed`. | CI: `demand-discovery-v5-tariff-step` › "only a failed or timed-out look-up degrades the run"; staging: the rice run of 19 Oct (E-027). A failed Comtrade market-fallback step leaves no note yet (R-34). |
+| `provider_failure_left_partial` | A provider step that fails leaves the run `partial` with a note, never `completed`. | CI: `demand-discovery-v5-tariff-step` › "only a failed or timed-out look-up degrades the run"; `demand-discovery-v5-run` › "a Comtrade fallback that fails leaves the run partial and says why"; staging: the rice run of 19 Oct (E-027) |
 | `missing_duty_never_zero` | A market without an official or estimated duty shows the duty unscored with a reason, never as zero. | CI: `demand-discovery-v5-metrics` duty tests (`scoreDuty(null)` and an unusable duty have no score) |
 | `agent_tariff_refused` | Recording a tariff line as an agent is refused, and a run ignores lines agents recorded before (D-037). | CI: `manual-tariff-capture` › "the capture endpoint refuses every request…" and "a run no longer reads a line an agent recorded" |
 
@@ -204,6 +204,8 @@ the inputs each v5 run itself reads (docs/36 §3, docs/37).
 - Operator-attested probes are checked for completeness and outcome only.
 - The replay recomputes scores and ranks from the stored metrics; it does not recompute the metrics
   from the source releases.
+- The run-status check sees whether a partial run has notes, not that they name the failed step; v5
+  writes a note for every step that degrades a run (R-34).
 - The gate has not yet been run against staging. On the 19 Oct runs (policy v6) calibration would fail
   rice and brassware (E-026): the scoring v8 re-run (R-30) comes first.
 

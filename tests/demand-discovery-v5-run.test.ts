@@ -374,4 +374,27 @@ describe('Demand Discovery v5 runs', () => {
     expect(fixture.markets.find((market) => market.country_code === 'US')).toMatchObject({ rank: 1, duty_basis: 'estimate', estimated: ['duty'] });
     expect(fixture.markets.find((market) => market.country_code === 'NP')).toMatchObject({ duty_basis: 'official', estimated: ['partner_figures'] });
   });
+
+  test('a Comtrade fallback that fails leaves the run partial and says why (R-34; gate probe provider_failure_left_partial)', async () => {
+    // The market-fallback query names its reporters; here Comtrade answers it with a server error every time.
+    const failing = (async (input: RequestInfo | URL) => (new URL(String(input)).searchParams.get('reporterCode') ? new Response('upstream error', { status: 500 }) : fakeComtrade(input))) as typeof fetch;
+    setV5ComtradeAccessForTesting({ mode: 'authenticated', api_key: 'test-key', credential_fingerprint: `${MARKER}-key`, source_origin: EvidenceOrigin.fixture, reason: null, fetch: failing, sleep: async () => {} });
+    try {
+      const paid = await paidProduct(OrgTier.paid);
+      await confirmCereal(paid.product.id, paid.principal);
+      const run = await prisma.discoveryRun.findFirstOrThrow({ where: { product_id: paid.product.id } });
+      const job = await claimNextJob([JobType.demand_discovery_v5]);
+      expect(job?.id).toBe(run.job_id);
+      await runClaimedJob(job!);
+      expect(await prisma.job.findUniqueOrThrow({ where: { id: run.job_id! } })).toMatchObject({ status: JobStatus.partial, error_message: null });
+      const closed = await prisma.discoveryRun.findUniqueOrThrow({ where: { id: run.id } });
+      expect(closed.status).toBe(JobStatus.partial);
+      expect((closed.summary as { notes: string[] }).notes).toContainEqual(expect.stringMatching(/^Comtrade figures for the \d+ markets BACI does not cover could not be fetched \(.+\), so those markets are not scored on trade this run\.$/));
+      expect((closed.frozen_inputs as unknown as { comtrade: { market_fallback: { status: string } } }).comtrade.market_fallback.status).toBe('failed');
+      // Still scored on BACI: the four markets it covers are ranked as before.
+      expect(await prisma.marketAssessment.count({ where: { run_id: run.id, market_status: 'ranked' } })).toBe(4);
+    } finally {
+      setV5ComtradeAccessForTesting({ mode: 'authenticated', api_key: 'test-key', credential_fingerprint: `${MARKER}-key`, source_origin: EvidenceOrigin.fixture, reason: null, fetch: fakeComtrade, sleep: async () => {} });
+    }
+  });
 });

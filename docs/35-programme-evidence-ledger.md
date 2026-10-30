@@ -1469,6 +1469,27 @@ with a probe record (§6.3).
 of the two Comtrade steps, only the newest-year step adds one). The gate fails such a run
 (`partial_run_without_notes`), correctly: the exporter would see a partial run with no reason (R-34).
 
+### E-034 · 2026-10-30 · A failed Comtrade fallback says why (R-34) (in review)
+
+**Branch.** `dd5/fallback-note`, stacked on `dd5/gate-v5` (PR #17).
+
+**Change.** `run-inputs.ts`: when the Comtrade market-fallback step does not deliver, the run's notes
+say so, as the newest-year step's already do — failed: "Comtrade figures for the N markets BACI does
+not cover could not be fetched (reason), so those markets are not scored on trade this run." (the run
+is `partial`, as before); unavailable (no authenticated client): "The N markets BACI does not cover are
+not scored on trade: reason". This is what docs/36 §7 already said ("A failed Comtrade step makes the
+run `partial` with the reason").
+
+**Correction to E-033.** The gate's `partial_run_without_notes` check sees only whether a partial run
+has any note. The new test's run had three unrelated notes, so the gate would not have caught this
+case; the note itself is the fix. docs/34 §7 now says so.
+
+**Checks run (agent workspace, local database harness).** New test in `demand-discovery-v5-run`
+("a Comtrade fallback that fails leaves the run partial and says why"): fails without the change
+(the partial run's three notes do not mention the fallback), passes with it. Every
+`demand-discovery-v5-*` suite, `phase-1-gate` and `manual-tariff-capture` pass (12 files, 126 tests);
+`tsc --noEmit` and ESLint clean. The full suite was run on the parent commit (E-033).
+
 ## Risk register
 
 
@@ -1507,4 +1528,4 @@ of the two Comtrade steps, only the newest-year step adds one). The gate fails s
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
-| R-34 | A failed Comtrade market-fallback step makes a v5 run partial without a note saying so (`run-inputs.ts`); the exporter sees no reason, and the gate fails the run (`partial_run_without_notes`) | Open (E-033) | One note line with a test, in the next stage 1 PR |
+| R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
