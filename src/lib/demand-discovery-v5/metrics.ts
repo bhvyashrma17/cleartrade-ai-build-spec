@@ -241,6 +241,8 @@ type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: S
 export interface EstimatedDuty {
   kind: 'estimate';
   sector_average_percent: number;
+  /** The year of the World Bank average the estimate used (item 8). */
+  sector_average_year?: number | null;
   agreement_scope: 'comprehensive' | 'partial' | 'none';
   agreement_name: string | null;
   official_note?: string | null;
@@ -266,7 +268,7 @@ function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Polic
   return {
     key: 'duty', score: round(100 * (1 - Math.min(estimate, ceiling) / ceiling), 4), quality, reason: null, estimated: true,
     inputs: {
-      duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), agreement_scope: input.agreement_scope, agreement: input.agreement_name,
+      duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), ...(input.sector_average_year != null ? { sector_average_year: input.sector_average_year } : {}), agreement_scope: input.agreement_scope, agreement: input.agreement_name,
       ...(input.customs_union ? { customs_union: input.customs_union } : {}),
       ...(officialNote ? { official_note: officialNote } : {}),
     },
@@ -347,7 +349,7 @@ export function scoreDistanceFit(
  * Logistics from the World Bank LPI; where none is usable (v5), the LPI that shipping connectivity
  * predicts (`logistics-fallback.ts`), labelled as an estimate with its own quality.
  */
-export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy, tooOldYear: number | null = null, estimate: (LogisticsEstimate & { quality: number }) | null = null): MetricResult {
+export function scoreLogistics(lpi: number | null, quality: number, policy: DemandDiscoveryV5Policy, tooOldYear: number | null = null, estimate: (LogisticsEstimate & { quality: number }) | null = null, lpiYear: number | null = null): MetricResult {
   if (lpi == null && estimate) {
     return {
       key: 'logistics', score: round(linearScore(estimate.predicted_lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality: estimate.quality, reason: null, estimated: true,
@@ -358,13 +360,14 @@ export function scoreLogistics(lpi: number | null, quality: number, policy: Dema
     };
   }
   if (lpi == null) return unavailable('logistics', tooOldYear != null ? tooOldReason('logistics score', tooOldYear, policy) : 'No logistics performance score for this market.');
-  return { key: 'logistics', score: round(linearScore(lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality, reason: null, inputs: { lpi } };
+  return { key: 'logistics', score: round(linearScore(lpi, policy.logistics.lpi_min, policy.logistics.lpi_max), 4), quality, reason: null, inputs: { lpi, ...(lpiYear != null ? { lpi_year: lpiYear } : {}) } };
 }
 
 // --- 10 risk ----------------------------------------------------------------------------------
 
 export type EcgcCover = 'open' | 'restricted_group_i' | 'restricted_group_ii' | 'off_cover';
-export interface EcgcRating { grade: string; cover: EcgcCover }
+/** `list` names the ECGC release the grade comes from, e.g. "ECGC short-term list w.e.f. 2026-07-01" (item 8). */
+export interface EcgcRating { grade: string; cover: EcgcCover; list?: string | null }
 
 export function scoreCountryRisk(rating: EcgcRating | null, quality: number, policy: DemandDiscoveryV5Policy): MetricResult {
   if (!rating) return unavailable('country_risk', 'Not on the ECGC country list.');
@@ -374,7 +377,7 @@ export function scoreCountryRisk(rating: EcgcRating | null, quality: number, pol
     : rating.cover === 'restricted_group_ii' ? Math.min(base, policy.risk.restricted_group_ii_cap)
       : rating.cover === 'restricted_group_i' ? Math.min(base, policy.risk.restricted_group_i_cap)
         : base;
-  return { key: 'country_risk', score, quality, reason: null, inputs: { grade: rating.grade, cover: rating.cover } };
+  return { key: 'country_risk', score, quality, reason: null, inputs: { grade: rating.grade, cover: rating.cover, ...(rating.list ? { list: rating.list } : {}) } };
 }
 
 // --- 11–12 exporter fit -----------------------------------------------------------------------

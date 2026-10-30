@@ -368,9 +368,9 @@ describe('v5 duty inputs', () => {
     });
     expect(Object.fromEntries(inputs)).toEqual({
       US: { kind: 'official', duty_percent: 3, source: 'authority-release:us', preference: null },
-      AE: { kind: 'estimate', sector_average_percent: 5, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
-      BD: { kind: 'estimate', sector_average_percent: 12, agreement_scope: 'partial', agreement_name: 'Agreement B', official_note: 'Compound duty.' },
-      GB: { kind: 'official_specific', usd_per_kg: 0.16, expression: '121.00 GBP / 1000 kg', source: 'UK Trade Tariff', preference: null, estimate: { kind: 'estimate', sector_average_percent: 4, agreement_scope: 'none', agreement_name: null } },
+      AE: { kind: 'estimate', sector_average_percent: 5, sector_average_year: 2022, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
+      BD: { kind: 'estimate', sector_average_percent: 12, sector_average_year: 2022, agreement_scope: 'partial', agreement_name: 'Agreement B', official_note: 'Compound duty.' },
+      GB: { kind: 'official_specific', usd_per_kg: 0.16, expression: '121.00 GBP / 1000 kg', source: 'UK Trade Tariff', preference: null, estimate: { kind: 'estimate', sector_average_percent: 4, sector_average_year: 2022, agreement_scope: 'none', agreement_name: null } },
       TV: { kind: 'unusable', reason: 'Per litre.' },
     });
   });
@@ -381,10 +381,11 @@ describe('v5 duty inputs', () => {
       primary_tariffs: new Map([['DE', { value: 4.06, year: 2022 }]]), manufactured_tariffs: new Map([['DE', { value: 1.44, year: 2022 }]]),
       agreements, policy: POLICY,
     }));
+    // The year is the reference market's: it is that average the estimate uses.
     expect(run('741810')).toEqual({
-      LU: { kind: 'estimate', sector_average_percent: 1.44, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
-      AD: { kind: 'estimate', sector_average_percent: 1.44, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
-      SM: { kind: 'estimate', sector_average_percent: 1.44, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
+      LU: { kind: 'estimate', sector_average_percent: 1.44, sector_average_year: 2022, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
+      AD: { kind: 'estimate', sector_average_percent: 1.44, sector_average_year: 2022, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
+      SM: { kind: 'estimate', sector_average_percent: 1.44, sector_average_year: 2022, agreement_scope: 'none', agreement_name: null, customs_union: 'EU' },
     });
     // Rice is chapter 10: outside Andorra's union with the EU (chapters 25–97), so no estimate there.
     expect(Object.keys(run('100630')).sort()).toEqual(['LU', 'SM']);
@@ -433,7 +434,7 @@ describe('v5 duty inputs', () => {
       agreements, policy: POLICY,
     });
     expect(Object.fromEntries(inputs)).toEqual({
-      AE: { kind: 'estimate', sector_average_percent: 5, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
+      AE: { kind: 'estimate', sector_average_percent: 5, sector_average_year: 2022, agreement_scope: 'comprehensive', agreement_name: 'Agreement A' },
       BI: { kind: 'unusable', reason: 'The World Bank tariff average for this market is from 2009, more than 10 years old, so it is not used.' },
       TV: { kind: 'unusable', reason: 'Per litre. The World Bank tariff average for this market is from 2004, more than 10 years old, so it is not used.' },
     });

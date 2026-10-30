@@ -17,8 +17,9 @@ import type { EcgcRating } from './metrics';
  */
 export const BACI_PROVIDER_GEOGRAPHY: Readonly<Record<string, string>> = { '490': 'TW' };
 
-export function ecgcInputs(rows: readonly EcgcRatingRow[]): Map<string, EcgcRating> {
-  return new Map(rows.map((row) => [row.iso2, { grade: row.grade, cover: row.cover }]));
+/** `list` is the ECGC release's version, e.g. "ECGC short-term list w.e.f. 2026-07-01", kept with each grade (item 8). */
+export function ecgcInputs(rows: readonly EcgcRatingRow[], list: string | null = null): Map<string, EcgcRating> {
+  return new Map(rows.map((row) => [row.iso2, { grade: row.grade, cover: row.cover, ...(list ? { list } : {}) }]));
 }
 
 export interface CoordinateInputs {

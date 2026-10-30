@@ -392,10 +392,11 @@ export async function loadRunInputs(args: {
     newest_year: newestYear,
     coordinates: coordinates.map,
     lpi: lpiValues,
+    lpi_years: new Map([...lpiAge.fresh].map(([iso2, row]) => [iso2, row.year])),
     lpi_too_old: lpiAge.too_old,
     logistics_estimates: logistics.estimates,
     sanctions: sanctionsFlagsByMarket(sanctions?.rows ?? []),
-    ecgc: ecgcInputs(ecgc?.rows ?? []),
+    ecgc: ecgcInputs(ecgc?.rows ?? [], ecgc?.version ?? null),
     duty: dutyInputs({ markets, hs6: args.hs6, as_of: args.as_of, official: official.resolutions, primary_tariffs: primaryAge.fresh, manufactured_tariffs: manufacturedAge.fresh, primary_too_old: primaryAge.too_old, manufactured_too_old: manufacturedAge.too_old, agreements: agreements?.rows ?? [], policy }),
     exporter: {
       usd_per_kg: price.value, yearly_kg: volume.value,

@@ -1559,6 +1559,84 @@ fields); `demand-discovery-v5-run` now reads the figures back from its real run;
 
 **Not verified.** The page in a browser.
 
+### E-037 · 2026-10-30 · Every figure names its source and years (stage 1, item 8); staging storage restored (in review)
+
+**Branch.** `dd5/source-labels`, from `staging/railway` at `6c2ea75`.
+
+**Merged (owner, 30 Oct).** #19 at 18:28:44 UTC and #20 at 18:31:09; `staging/railway` is at `6c2ea75`.
+CI passed on #19 (run 41105496831) and #20 (run 41106532672, 18:23:31–18:32:59). #20's run tested its
+head `325e880` merged into `5af655a`, staging's tip when it started. That merge's tree, `7845d16`, is
+`6c2ea75`'s tree (`git merge-tree`), so run 41106532672 is CI evidence for the deployed code. The five
+negative-probe tests of docs/34 §6.3 are all present at `6c2ea75`.
+
+**Staging storage (R-35).** The owner's Claude Code found the cause, read-only:
+- Railway rolled the credentials of every storage bucket after its 21 Oct security incident (21 Oct,
+  22:52:55 UTC).
+- Web and worker held the bucket's variables as literal copies. The access key ID survived the reset
+  and the secret did not.
+- Every storage call has failed since: HeadBucket 403 and ListObjectsV2 403 `SignatureDoesNotMatch`.
+  The readiness check shows `UnknownError` because a HEAD answer has no body for the SDK to name.
+- No v5 run could read BACI in that time, and the gate's calibration could not either.
+
+With the owner's authorization, on 30 Oct it:
+- made the access key ID, secret, bucket, endpoint and region references to the bucket on both
+  services;
+- gave the worker `CENSUS_API_KEY` as a reference to web's, since the regional-demand job runs on the
+  worker (R-32);
+- redeployed `6c2ea75` on both: web SUCCESS and through the health check at 18:41:04, worker SUCCESS
+  at 18:41:14.
+
+`/api/health/ready` answered 200 at 21:52:40, with database, storage and worker ready. The identity pin
+is unchanged and matches the rendered values.
+
+**Open decision (owner's).** The region reference renders `sin`, the bucket's location. Before, the
+services used `auto`, which is also what the bucket's credential API and Railway's docs give. Only
+HeadBucket has been tried with `sin`.
+- (a) Keep `sin`.
+- (b) Set `STORAGE_REGION` back to the literal `auto`. A credential reset cannot change a region, so
+  the literal loses nothing.
+
+Recommended: (b), the value storage used for every kind of call before the reset. Either way, follow
+with `scripts/verify-staging-storage.ts`, a full round trip (upload, metadata, read, SHA-256, delete).
+The prompt sent to the owner makes (b), updates `tmp/rw/operator.env`, runs the probe and the round
+trip, and resumes the stage 1 check with run 41106532672 in the negative-probe record.
+
+**Built (item 8).** Under every measure with data, the market page (exporter's and agent's, one
+component) now names where the figure comes from and for which years; an estimate says "Estimate:".
+docs/36 §6 has the line for each measure. The engine records these years with each measure's inputs:
+- `first_year` and `last_year` for every live trade measure (size and India's sales over the years they
+  average, the trends over their windows, the structure measures their structure year);
+- the LPI's year;
+- the World Bank tariff average's year in an estimated duty;
+- the ECGC list's version with each grade.
+
+These are inputs only: statuses, scores, confidence, ranks and the policy hash are unchanged. The
+assess test checks that market by market, and the gate's replay passes on the end-to-end run. Runs
+from before name a year only where the stored row says exactly which; size and India's figures name
+the source alone.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean; ESLint clean on the
+changed files.
+- New `demand-discovery-v5-sources` (7 tests): the context read from stored rows; a line for every
+  measure, including estimates, linked years, partner-only and fallback markets, and older runs; the
+  market page's rendering.
+- `demand-discovery-v5-assess`: one new test for the recorded years, and that no status, score or rank
+  moves.
+- `demand-discovery-v5-run`: reads the years and lines back from its real run (the 2022 LPI and tariff
+  average, the ECGC list, Germany's official tariff with its date).
+- `demand-discovery-v5-metrics`: three `dutyInputs` tests compare whole objects, so their estimates now
+  carry `sector_average_year`. In the customs-union case it is the reference market's year, the average
+  the estimate uses.
+- Full suite: 2,299 passed, 5 skipped, 6 failed. Three were those `dutyInputs` tests before their
+  correction; with it, the file passes 37 of 37. That leaves 2,302 passed (E-036's 2,294 plus the 8 new
+  tests) and the same three local-harness-only failures as in E-033.
+
+**Not verified.** The lines in a browser, and on staging after the archetype re-runs.
+
+**Recommended, not built.** The readiness check reports `UnknownError` for any failed storage HEAD.
+Reporting the HTTP status (403, 404) would have shown the cause on 21 Oct. It is a small change, for the
+owner to schedule.
+
 ## Risk register
 
 
@@ -1595,7 +1673,8 @@ fields); `demand-discovery-v5-run` now reads the figures back from its real run;
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
 | R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
-| R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
+| R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029). The key was on staging web only, while the job runs on the worker; the worker has it as a reference since 30 Oct (E-037) | The stage 1 check's first live Census read on the worker |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
 | R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
-| R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Open (E-036) — new since 18 Oct; not from #15–#18 | The owner's read-only probe (status code and error code); then the fix it points to and a web redeploy on `5af655a` |
+| R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Mitigated (E-037). Cause: Railway's 21 Oct credential reset against literal copies of the bucket's secret. The bucket variables are now references, and storage has been ready since 18:41 UTC on 30 Oct | The region decision (E-037), then `verify-staging-storage.ts` passing and the archetype runs reading BACI |
+| R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — the owner's decision (E-037); recommended: rotate staging's, starting with the keys shared across environments, and check production | The owner's decision |
