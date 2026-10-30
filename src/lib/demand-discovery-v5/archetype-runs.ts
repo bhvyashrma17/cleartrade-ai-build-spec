@@ -12,16 +12,47 @@
 import { EvidenceOrigin, OrgTier, ProductClassificationMethod, ProductClassificationStatus, SubscriptionPlanCode, UserRole } from '@prisma/client';
 import { grantManualMembership } from '@/lib/billing/subscription-service';
 import { getConfig } from '@/lib/config';
+import { CALIBRATION_PRODUCTS } from '@/lib/demand-discovery-v5/calibration-set';
 import { compareRunWithIndiaExports } from '@/lib/demand-discovery-v5/calibration-report';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { dutyBasisOf, type DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
 import { demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '@/lib/demand-discovery-v5/service';
-import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V2, type Phase1GateArchetype } from '@/lib/phase-1-gate/policy';
 import { confirmClassification, proposeClassification } from '@/lib/product-classification';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
 export const ARCHETYPE_EXPORTER_NAME = '[TEST] DD5 archetypes';
+
+type SetProduct = Pick<Phase1GateArchetype, 'key' | 'label' | 'hs6' | 'hs_revision'>;
+interface ProductSet {
+  products: readonly SetProduct[];
+  /** How each product's classification rationale names it. */
+  purpose: string;
+  /** Where the rationale's set is defined, quoted at the end of the rationale. */
+  cite: string;
+  source_reference: { label: string; reference: string };
+  /** The classification evidence: which list the code came from. */
+  evidence: (product: SetProduct) => Record<string, string>;
+}
+
+/**
+ * The archetypes are the Phase 1 gate's products (docs/34 §2); the calibration set is stage 1, item 6
+ * (`calibration-set.ts`), and includes the archetypes, so their products and runs are shared.
+ */
+export const PRODUCT_SETS = {
+  archetypes: {
+    products: PHASE_1_GATE_POLICY_V2.archetypes.value, purpose: 'Phase 1 archetype', cite: 'docs/34 §2',
+    source_reference: { label: 'Phase 1 gate policy v2, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' },
+    evidence: (product) => ({ archetype: product.key, hs_revision: product.hs_revision, source: 'PHASE_1_GATE_POLICY_V2.archetypes' }),
+  },
+  calibration: {
+    products: CALIBRATION_PRODUCTS, purpose: 'Calibration product (stage 1, item 6)', cite: 'docs/36 §8',
+    source_reference: { label: 'Demand Discovery v5 calibration set', reference: 'src/lib/demand-discovery-v5/calibration-set.ts; docs/36 §8' },
+    evidence: (product) => ({ calibration_product: product.key, hs_revision: product.hs_revision, source: 'CALIBRATION_PRODUCTS' }),
+  },
+} satisfies Record<string, ProductSet>;
+export type ProductSetKey = keyof typeof PRODUCT_SETS;
 /** Dated, because a comp with no end date is how tenants quietly keep free access (subscription-service). */
 export const ARCHETYPE_MEMBERSHIP_DAYS = 90;
 const STAFF: readonly UserRole[] = [UserRole.agent, UserRole.ops_supervisor, UserRole.admin];
@@ -71,9 +102,10 @@ async function latestV5Run(productId: string, classificationId?: string): Promis
  * never proposes a code that is already confirmed, and leaves a product alone once its confirmed code
  * has a v5 run unless `rerun` asks for a fresh one.
  */
-export async function startArchetypeRuns(args: { actor: Principal; correlation_id: string; rerun?: boolean; now?: Date }) {
+export async function startArchetypeRuns(args: { actor: Principal; correlation_id: string; rerun?: boolean; now?: Date; set?: ProductSetKey }) {
   if (!STAFF.includes(args.actor.role)) throw new Error('Archetype runs are set up by an agent, ops supervisor or admin.');
   const now = args.now ?? new Date();
+  const set: ProductSet = PRODUCT_SETS[args.set ?? 'archetypes'];
 
   let org = await findExporter();
   const exporterCreated = !org;
@@ -91,7 +123,7 @@ export async function startArchetypeRuns(args: { actor: Principal; correlation_i
   }
 
   const items: ArchetypeStartItem[] = [];
-  for (const archetype of PHASE_1_GATE_POLICY_V2.archetypes.value) {
+  for (const archetype of set.products) {
     const name = archetypeProductName(archetype.label);
     const select = { id: true, hs_code: true, hs_classification_status: true } as const;
     let product = await prisma.product.findFirst({ where: { exporter_org_id: org.id, name }, select });
@@ -110,9 +142,9 @@ export async function startArchetypeRuns(args: { actor: Principal; correlation_i
       const candidate = await proposeClassification({
         product_id: product.id, hs6_code: archetype.hs6, itc_hs_code: null, nomenclature: 'HS', nomenclature_version: '2022',
         method: ProductClassificationMethod.agent_supplied, confidence: 1,
-        rationale: `Phase 1 archetype "${archetype.key}": ${archetype.label}, HS 2022 subheading ${archetype.hs6} (docs/34 §2).`,
-        source_references: [{ label: 'Phase 1 gate policy v2, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' }],
-        evidence: { archetype: archetype.key, hs_revision: archetype.hs_revision, source: 'PHASE_1_GATE_POLICY_V2.archetypes' },
+        rationale: `${set.purpose} "${archetype.key}": ${archetype.label}, HS 2022 subheading ${archetype.hs6} (${set.cite}).`,
+        source_references: [set.source_reference],
+        evidence: set.evidence(archetype),
       }, args.actor, args.correlation_id);
       await confirmClassification({ classification_id: candidate.id, product_id: product.id }, args.actor, args.correlation_id);
       // `confirmClassification` records what its auto-start did on the classification's audit trail.
@@ -166,11 +198,47 @@ export interface ArchetypeStatusItem {
   comparison_error: string | null;
 }
 
-export async function archetypeRunStatus(args: { compare?: boolean; top?: number } = {}) {
+/** Across a set: how many products' runs were compared with India's exports, and how they came out (item 6). */
+export interface CalibrationSummary {
+  products: number;
+  /** Products whose newest run finished (completed or partial). */
+  finished: number;
+  compared: number;
+  pass: number;
+  calibration_failure: number;
+  no_india_exports: number;
+  /** The median overlap with India's top destinations, over the products with Indian exports. */
+  median_overlap: number | null;
+  /** Each failing product's key and overlap, worst first. */
+  failures: { key: string; hs6: string; overlap: number; top: number }[];
+}
+
+export function summarizeCalibration(items: readonly ArchetypeStatusItem[]): CalibrationSummary {
+  const compared = items.filter((item): item is ArchetypeStatusItem & { comparison: NonNullable<ArchetypeStatusItem['comparison']> } => item.comparison != null);
+  const withExports = compared.filter((item) => item.comparison.verdict !== 'no_india_exports').map((item) => item.comparison.overlap).sort((a, b) => a - b);
+  const middle = Math.floor(withExports.length / 2);
+  const count = (verdict: string) => compared.filter((item) => item.comparison.verdict === verdict).length;
+  return {
+    products: items.length,
+    finished: items.filter((item) => item.run != null && FINISHED.includes(item.run.status)).length,
+    compared: compared.length,
+    pass: count('pass'),
+    calibration_failure: count('calibration_failure'),
+    no_india_exports: count('no_india_exports'),
+    median_overlap: !withExports.length ? null : withExports.length % 2 ? withExports[middle]! : (withExports[middle - 1]! + withExports[middle]!) / 2,
+    failures: compared
+      .filter((item) => item.comparison.verdict === 'calibration_failure')
+      .map((item) => ({ key: item.key, hs6: item.hs6, overlap: item.comparison.overlap, top: item.comparison.top }))
+      .sort((a, b) => a.overlap - b.overlap || a.key.localeCompare(b.key)),
+  };
+}
+
+export async function archetypeRunStatus(args: { compare?: boolean; top?: number; set?: ProductSetKey } = {}) {
   const top = args.top ?? 10;
+  const set: ProductSet = PRODUCT_SETS[args.set ?? 'archetypes'];
   const org = await findExporter();
   const items: ArchetypeStatusItem[] = [];
-  for (const archetype of PHASE_1_GATE_POLICY_V2.archetypes.value) {
+  for (const archetype of set.products) {
     const product = org ? await prisma.product.findFirst({ where: { exporter_org_id: org.id, name: archetypeProductName(archetype.label) }, select: { id: true } }) : null;
     const run = product ? await latestV5Run(product.id) : null;
     const item: ArchetypeStatusItem = { key: archetype.key, hs6: archetype.hs6, product_id: product?.id ?? null, run, markets: null, comparison: null, comparison_error: null };
@@ -206,5 +274,5 @@ export async function archetypeRunStatus(args: { compare?: boolean; top?: number
     }
     items.push(item);
   }
-  return { exporter_org_id: org?.id ?? null, items };
+  return { exporter_org_id: org?.id ?? null, set: args.set ?? 'archetypes', items, ...(args.compare !== false ? { calibration: summarizeCalibration(items) } : {}) };
 }

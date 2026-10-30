@@ -445,6 +445,9 @@ sources itself (World Bank, Comtrade's reporting lists) is an open owner decisio
 - Three archetype products on staging (rice `100630`, brassware `741810`, carpets `570110`, D-003).
   Each top 10 is compared with India's own largest export destinations for the product in BACI; a
   top 10 that ignores most of them is a calibration failure, not a pass.
+- The same comparison on eighteen products (stage 1, item 6; §10 step 8): the archetypes and fifteen
+  more across India's export sectors. A proposed set (E-038); the owner may change it before the
+  staging runs, and decides what share of passes accepts the scoring.
 - The Phase 1 gate (docs/34) checks v5 runs only (policy v2, D-036): coverage, ranked markets, this
   calibration, labelled estimates, official duty and a replay of every score; its thresholds stay
   proposed until the owner approves.
@@ -564,3 +567,9 @@ touches production.
    `npx tsx --env-file=<env> scripts/dd5-compare-top10.ts --run=<run id>`. `verdict: calibration_failure`
    (the top 10 leaves out more than half of India's ten largest destinations) is a finding to
    investigate through `missed`, not a pass.
+8. **Calibration set** (stage 1, item 6): the same commands with `--set=calibration` run eighteen
+   products (`calibration-set.ts`): the three archetypes, sharing their products and runs, and fifteen
+   more across food, marine, textiles and apparel, gems and jewellery, pharmaceuticals, engineering,
+   leather and building materials. `status --set=calibration` adds a summary across the set: products
+   compared, passes, calibration failures, products India does not export, the median overlap with
+   India's top destinations, and each failure, worst first.
