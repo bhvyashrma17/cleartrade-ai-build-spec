@@ -72,3 +72,31 @@ export function exporterYearlyKg(product: { capacity_value: number | null; capac
   if (perYear == null) return { value: null, reason: `Capacity period "${periodText}" is not a day, week, month or year.` };
   return { value: product.capacity_value * kg * perYear, basis: { capacity_value: product.capacity_value, unit: unitPart, period: periodText, periods_per_year: perYear } };
 }
+
+/** The exporter's two figures as a finished run froze them, for the results page (stage 1, item 7). */
+export interface ExporterFitView {
+  /** Points each measure carries in the policy the run used; null when the run stored no policy. */
+  points: { price_fit: number | null; volume_fit: number | null };
+  price: { usd_per_kg: number | null; reason: string | null };
+  capacity: { kg_per_year: number | null; reason: string | null };
+}
+
+/** Reads `frozen_inputs.exporter` and the policy snapshot defensively; null for a run that froze no exporter figures. */
+export function exporterFitView(frozenInputs: unknown, policySnapshot: unknown): ExporterFitView | null {
+  const record = (value: unknown) => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+  const exporter = record(record(frozenInputs)?.exporter);
+  if (!exporter) return null;
+  const figure = (value: unknown) => {
+    const stored = record(value);
+    return { value: typeof stored?.value === 'number' && Number.isFinite(stored.value) ? stored.value : null, reason: typeof stored?.reason === 'string' ? stored.reason : null };
+  };
+  const points = record(record(policySnapshot)?.points);
+  const point = (key: string) => (typeof points?.[key] === 'number' ? (points[key] as number) : null);
+  const price = figure(exporter.usd_per_kg);
+  const capacity = figure(exporter.yearly_kg);
+  return {
+    points: { price_fit: point('price_fit'), volume_fit: point('volume_fit') },
+    price: { usd_per_kg: price.value, reason: price.value == null ? price.reason : null },
+    capacity: { kg_per_year: capacity.value, reason: capacity.value == null ? capacity.reason : null },
+  };
+}

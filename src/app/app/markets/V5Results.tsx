@@ -7,12 +7,17 @@
  * The ranked list leads with the markets handed on to buyer search. Markets that could not be
  * ranked are listed apart with why — "not enough data" is a gap, not a low score, and is never
  * mixed into the ranking. Labels carry text and an icon; colour is never the only cue (docs/10 §4).
+ *
+ * When the exporter's FOB price or capacity is missing, fit with their business is left out of every
+ * score; the page says so, names each missing figure, and links to the product's details. A card whose
+ * score used fewer than 100 points says how many (stage 1, item 7).
  */
 
 import Link from 'next/link';
 import { useState } from 'react';
 import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
-import { StatusChip } from '@/components/ui';
+import { buttonClass, StatusChip } from '@/components/ui';
+import type { ExporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
 import type { StatusIconName, StatusTone } from '@/types';
 
 export interface V5Label { key: string; text: string; tone: 'positive' | 'caution' | 'info'; estimated?: boolean }
@@ -96,6 +101,7 @@ function RankedCard({ row }: { row: V5Row }) {
             <span className="text-xs font-normal text-[var(--color-text-secondary)]">/100</span>
           </span>
           <p className="text-xs text-[var(--color-text-secondary)]">Confidence {row.confidence_score}%</p>
+          {row.live_points != null && row.live_points < 100 ? <p className="text-xs text-[var(--color-text-muted)]">on {row.live_points} of 100 points</p> : null}
         </div>
       </div>
       {row.flag_reasons.length ? (
@@ -109,9 +115,38 @@ function RankedCard({ row }: { row: V5Row }) {
   );
 }
 
+/** Which of the exporter's figures are missing, why, and the points their measures carry. */
+function ExporterFitPrompt({ fit, productId }: { fit: ExporterFitView; productId: string | null }) {
+  const missing = [
+    fit.price.usd_per_kg == null ? { reason: fit.price.reason ?? 'Your FOB price per kg is not on file.', points: fit.points.price_fit } : null,
+    fit.capacity.kg_per_year == null ? { reason: fit.capacity.reason ?? 'Your capacity is not on file.', points: fit.points.volume_fit } : null,
+  ].filter((item): item is { reason: string; points: number | null } => item != null);
+  if (!missing.length) return null;
+  const points = missing.every((item) => item.points != null) ? missing.reduce((sum, item) => sum + item.points!, 0) : null;
+  return (
+    <div className="mt-3 rounded border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-3 text-sm" role="note">
+      <p className="font-medium text-primary">
+        {missing.length === 2 ? 'Fit with your business is left out of these scores' : 'Part of the fit with your business is left out of these scores'}
+        {points != null ? ` (${points} of 100 points)` : ''}.
+      </p>
+      <ul className="mt-1 list-inside list-disc text-[var(--color-text-secondary)]">
+        {missing.map((item) => <li key={item.reason}>{item.reason}</li>)}
+      </ul>
+      <p className="mt-1 text-[var(--color-text-secondary)]">
+        Each score shares those points among the measures that have data. Add the missing figures to the product, then run Demand Discovery again to use all 100.
+      </p>
+      {productId ? (
+        <Link href={`/app/products/${productId}/facts`} className={`${buttonClass('secondary', 'sm')} mt-2 inline-flex`}>
+          Add product details
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 const HANDED_OFF_FIRST = 10;
 
-export function V5Results({ rows, notes, provenanceNote }: { rows: V5Row[]; notes: string[]; provenanceNote: string | null }) {
+export function V5Results({ rows, notes, provenanceNote, exporterFit = null, productId = null }: { rows: V5Row[]; notes: string[]; provenanceNote: string | null; exporterFit?: ExporterFitView | null; productId?: string | null }) {
   const [showAll, setShowAll] = useState(false);
   const ranked = rows.filter((row) => row.market_status === 'ranked').sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   const notEnough = rows.filter((row) => row.market_status === 'not_enough_data');
@@ -127,6 +162,7 @@ export function V5Results({ rows, notes, provenanceNote }: { rows: V5Row[]; note
         {handedOff.length ? `The top ${handedOff.length} go on to buyer search.` : null}
       </p>
       <div className="mt-1"><RupeeRateNote /></div>
+      {exporterFit ? <ExporterFitPrompt fit={exporterFit} productId={productId} /> : null}
 
       {ranked.length ? (
         <ol className="mt-4 space-y-3">

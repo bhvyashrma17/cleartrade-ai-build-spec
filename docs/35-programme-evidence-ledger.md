@@ -1528,6 +1528,37 @@ now also renders the table from stored data; `demand-discovery-ui` passes. Full 
 
 **Not verified.** The table and the Control Tower card in a browser; the worker's daily log on staging.
 
+### E-036 · 2026-10-30 · Exporter fit: ask for the FOB price and capacity (stage 1, item 7) (in review)
+
+**Branch.** `dd5/exporter-fit`, on top of `dd5/input-freshness` (PR #19); merged after #19.
+
+**Merged and staging (owner, 30 Oct, 17:57–17:59 UTC).** PRs #15, #18, #17 and #16, in that order.
+`staging/railway` is at `5af655a`; CI passed on #16–#18 together (run 41102882368, with the build).
+The owner's Claude Code ran the stage 1 staging check and stopped at its step 2: the worker deployed
+`5af655a`, but the web service failed Railway's health check twice (#15's and #16's deploys) and the
+19 Oct build is still live. `/api/health/ready` returns 503 with the database ready and the storage
+check failing, on the live build too. That check returned ready on 13 and 18 Oct, so the failure is
+new and not from these PRs. The error text, `UnknownError`, is what this SDK version reports for an
+HTTP error on a request with no response body (S3 HEAD): storage answered with an error status
+(denied, missing bucket, or server errors) that the check does not show. No runs were started and
+nothing was changed. A read-only diagnostic was sent to the owner; v5 runs read BACI from the same
+storage, so the archetype re-runs wait for it (R-35).
+
+**Built.** The results API returns the product and the exporter's two figures as the run froze them
+(`exporterFitView`: each value, or its reason when missing, and the points its measure carries in the
+run's policy). `/app/markets` then says when fit with the exporter's business is left out of the
+scores, names each missing figure with the run's reason, and links to the product's details, after
+which the exporter runs Demand Discovery again; a ranked card whose score used fewer than 100 points
+says how many.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean; ESLint clean on the
+changed files. New `demand-discovery-v5-exporter-fit` (6 tests: the figures from frozen inputs, the
+prompt with both, one or neither figure missing and without a product, the points line, the API
+fields); `demand-discovery-v5-run` now reads the figures back from its real run; full suite:
+2,294 passed, 5 skipped, 3 failed: the same three local-harness-only failures as in E-033.
+
+**Not verified.** The page in a browser.
+
 ## Risk register
 
 
@@ -1567,3 +1598,4 @@ now also renders the table from stored data; `demand-discovery-ui` passes. Full 
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
 | R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
+| R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Open (E-036) — new since 18 Oct; not from #15–#18 | The owner's read-only probe (status code and error code); then the fix it points to and a web redeploy on `5af655a` |

@@ -14,6 +14,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { errorResponse, list, newCorrelationId, notFound, pageMeta } from '@/lib/errors';
 import { assertCan, tenantScope } from '@/lib/permissions';
+import { exporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
 import { prisma } from '@/lib/prisma';
 import { allowedEvidenceOrigins, appEnvironment, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
 
@@ -29,7 +30,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
 
     const run = await prisma.discoveryRun.findFirst({
       where: { id: runId, ...scope },
-      select: { id: true, status: true, input_snapshot: true, completed_at: true, job_id: true, model_version: true, summary: true },
+      select: { id: true, status: true, input_snapshot: true, completed_at: true, job_id: true, model_version: true, summary: true, product_id: true, frozen_inputs: true, scoring_policy_snapshot: true },
     });
     // Out-of-tenant reads look identical to missing ones (docs/09 §4).
     if (!run) throw notFound('That search is not available.');
@@ -90,6 +91,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
           job_id: run.job_id,
           model_version: run.model_version,
           summary: run.summary,
+          // Stage 1, item 7: the exporter's own figures as the run used them, so the page can ask for missing ones.
+          product_id: run.product_id,
+          exporter_figures: exporterFitView(run.frozen_inputs, run.scoring_policy_snapshot),
           evidence_environment:appEnvironment(),
         },
       ),

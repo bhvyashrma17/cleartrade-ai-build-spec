@@ -11,6 +11,7 @@ import { setTariffAdapterResolverForTesting } from '../src/lib/country-truth/tar
 import type { MarketAccessAdapter } from '../src/lib/job-handlers/market-access';
 import type { MarketAccessIngestResult } from '../src/lib/market-access/contract';
 import { autoStartDemandDiscoveryV5, demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '../src/lib/demand-discovery-v5/service';
+import { exporterFitView } from '../src/lib/demand-discovery-v5/exporter-inputs';
 import { setDemandDiscoveryV5StorageForTesting } from '../src/lib/job-handlers/demand-discovery-v5';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, runClaimedJob } from '../src/lib/jobs';
@@ -282,6 +283,8 @@ describe('Demand Discovery v5 runs', () => {
     expect(frozen.comtrade.market_fallback).toMatchObject({ status: 'used' });
     expect(frozen.exporter.usd_per_kg).toMatchObject({ value: 2 });
     expect(frozen.exporter.yearly_kg).toMatchObject({ value: 48_000 });
+    // Stage 1, item 7: what the results page reads back about the exporter's own figures.
+    expect(exporterFitView(closed.frozen_inputs, closed.scoring_policy_snapshot)).toMatchObject({ price: { usd_per_kg: 2, reason: null }, capacity: { kg_per_year: 48_000, reason: null }, points: { price_fit: expect.any(Number), volume_fit: expect.any(Number) } });
     expect(comtradeCalls.map((url) => url.searchParams.get('period'))).toEqual(['2024,2025', '2019,2020,2021,2022,2023,2024,2025']);
     expect(await prisma.sourceEvidence.count({ where: { id: { in: frozen.comtrade.newest_year.evidence_ids } } })).toBe(1);
 
