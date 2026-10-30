@@ -359,7 +359,9 @@ reads the frozen releases and passes their rows in).
   directory entry naming where its tariff can be read; the agent's market table links it and lets an
   assigned agent record the product's declarable line (`POST /api/v1/market-access/manual-captures`),
   which the next run scores at quality 0.9 and labels "read from the official tariff by a ClearTrade
-  agent".
+  agent". **Retired 30 Oct 2026 (D-037):** agents no longer record lines, the endpoint refuses, and runs
+  ignore lines recorded before; a market without an automatically read tariff keeps the labelled
+  estimate.
 - **Pegged currencies (D-025).** `curated:currency-pegs`: 14 currencies the ECB does not publish (AED,
   BAM, BHD, BND, BTN, KMF, NPR, OMR, QAR, SAR, XAF, XCD, XOF, XPF) convert through their anchor's ECB
   rate on the run date; the frozen rate names the parity and its source. A stored ECB rate always
@@ -383,7 +385,9 @@ reads the frozen releases and passes their rows in).
 - **Owner decisions of 14 Oct 2026 (E-018).** Tariff look-up inside runs: built, behind a switch
   (D-020). World Bank age limit: 10 years (D-021). The release-level Comtrade fallback of §3.3: not
   built (D-022) — an environment with no BACI release keeps the earlier engine, and the BACI import
-  is part of each environment's bootstrap (§10).
+  is part of each environment's bootstrap (§10). **Superseded 30 Oct 2026 (D-036):** the earlier
+  engines (Country Truth v4 and the warehouse engine) are retired; without a BACI release, or with v5
+  switched off, a run is refused with the reason and nothing runs in its place.
 
 ## 8. Verification
 
@@ -422,8 +426,8 @@ reads the frozen releases and passes their rows in).
 - A published rule (policy v5) covers ordinary goods only; the goods it leaves out fall back to the
   estimate, and Saint-Barthélemy's and Timor-Leste's rates are levies on all goods rather than a tariff
   schedule. Rules stop applying after their review date until checked again.
-- An agent-read line is as good as the reading: the record keeps the reader, the source address and
-  the date, and v5 gives it quality 0.9, not 1.
+- (Before D-037) An agent-read line was as good as the reading: the record keeps the reader, the
+  source address and the date, and v5 gave it quality 0.9, not 1. Runs no longer read such lines.
 - A customs union's common external tariff (D-028; docs/37 §4a) is the member's rate except where the
   member applies a line its own way. Lines the release records as applied differently (EAC stays, EAEU
   tariff notes) are not scored automatically; national exception lists that are not in the release

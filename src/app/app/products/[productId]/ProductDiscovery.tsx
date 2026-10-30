@@ -1,18 +1,18 @@
 'use client';
 
 /**
- * Product readiness + "Find best export markets".
+ * Product readiness, and where this product's markets come from.
  *
- * Progress is described in stages that are actually true of the backend
- * ("Scanning global trade markets", "Building shortlist") and never as a percentage: the
- * screening job publishes a status, not a completion fraction, and inventing `63%` would be a
- * number the system does not have.
+ * Demand Discovery v5 scores the product in every market and starts by itself when the HS code is
+ * confirmed; its results live under Markets. The Country Truth v4 market scan this page used to
+ * start, or request, is retired (D-036): a product with an earlier scan still shows where that scan
+ * stands, described in stages that are true of the backend and never as a percentage.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button, buttonClass, Card, SectionHeading, StatusChip } from '@/components/ui';
-import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
+import { buttonClass, Card, SectionHeading, StatusChip } from '@/components/ui';
+import { apiGet } from '@/lib/api-client';
 import type { ProductDiscoveryState } from '@/lib/country-discovery/service';
 import type { RequirementLevel } from '@/lib/country-discovery/readiness';
 
@@ -33,8 +33,6 @@ const SCREENING_COPY: Record<ProductDiscoveryState['screening']['state'], string
 
 export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: string; initial: ProductDiscoveryState }) {
   const [state, setState] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const base = `/api/v1/exporters/${exporterOrgId}/products/${initial.product.id}`;
 
   const refresh = useCallback(async () => {
@@ -53,32 +51,6 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
     const timer = setInterval(() => void refresh(), 4000);
     return () => clearInterval(timer);
   }, [inFlight, refresh]);
-
-  async function start() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiPost(`${base}/market-discovery`, {});
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof ApiClientError ? caught.message : 'Could not start the market scan.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function requestScan() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiPost(`${base}/scan-request`, {});
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof ApiClientError ? caught.message : 'Could not submit your request.');
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const { readiness } = state;
   const groups: RequirementLevel[] = ['blocking', 'improves_now', 'later'];
@@ -102,8 +74,8 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
         <p className="mt-3 text-sm text-slate">
           {readiness.can_discover
             ? readiness.missing_now > 0
-              ? 'You can find markets now. Adding the missing details later will unlock more of each market’s analysis.'
-              : 'You can find markets now.'
+              ? 'Demand Discovery can score this product now. Adding the missing details later will unlock more of each market’s analysis.'
+              : 'Demand Discovery can score this product now.'
             : readiness.blocked_because}
         </p>
 
@@ -132,33 +104,17 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
           <div className="mt-5 space-y-3">
             <StatusChip label="Scan did not finish" tone="critical" icon="alert" />
             <p className="text-sm text-slate">{state.screening.failure_reason}</p>
-            <Button onClick={start} disabled={busy}>Try again</Button>
+            <MarketsLink />
           </div>
         ) : (
-          <div className="mt-5">
-            {state.viewer_can_start_screening ? (
-              <>
-                <Button onClick={start} disabled={busy || !readiness.can_discover}>
-                  {busy ? 'Starting…' : 'Find best export markets'}
-                </Button>
-                {!readiness.can_discover ? (
-                  <p className="mt-2 text-xs text-muted">{readiness.blocked_because}</p>
-                ) : null}
-              </>
-            ) : (
-              /* A global scan reads every reporting market and is metered, so the exporter's
-                 action is a REQUEST and a ClearTrade reviewer releases the work. */
-              <ScanRequest
-                request={state.scan_request}
-                canRequest={readiness.can_discover}
-                blockedBecause={readiness.blocked_because}
-                busy={busy}
-                onRequest={requestScan}
-              />
-            )}
+          <div className="mt-5 space-y-3">
+            <p className="text-sm text-slate">
+              Demand Discovery scores this product in every market. It starts by itself when the HS
+              code is confirmed, and the results appear under Markets.
+            </p>
+            <MarketsLink />
           </div>
         )}
-        {error ? <p className="mt-3 text-sm text-[var(--crit)]" role="alert">{error}</p> : null}
       </Card>
 
       {state.deep_analysis.state !== 'not_started' ? (
@@ -218,79 +174,11 @@ export function ProductDiscovery({ exporterOrgId, initial }: { exporterOrgId: st
 }
 
 
-/**
- * The exporter's side of the request/approval flow.
- *
- * Deliberately says nothing about provider quotas, call counts or which markets will be read:
- * those are ClearTrade's operational concerns and mean nothing to a manufacturer. What the
- * exporter needs is where their request stands and whether anything is required of them.
- */
-function ScanRequest({
-  request,
-  canRequest,
-  blockedBecause,
-  busy,
-  onRequest,
-}: {
-  request: ProductDiscoveryState['scan_request'];
-  canRequest: boolean;
-  blockedBecause: string | null;
-  busy: boolean;
-  onRequest: () => void;
-}) {
-  if (!request || request.status === 'rejected' || request.status === 'failed') {
-    return (
-      <div className="space-y-2">
-        {request?.status === 'rejected' ? (
-          <>
-            <StatusChip label="Request not approved" tone="warning" icon="alert" />
-            <p className="text-sm text-slate">{request.rejection_reason}</p>
-          </>
-        ) : request?.status === 'failed' ? (
-          <>
-            <StatusChip label="Scan did not finish" tone="critical" icon="alert" />
-            <p className="text-sm text-slate">ClearTrade has been notified. You can ask for it to be run again.</p>
-          </>
-        ) : null}
-        <Button onClick={onRequest} disabled={busy || !canRequest}>
-          {busy ? 'Submitting…' : request ? 'Request another scan' : 'Find best export markets'}
-        </Button>
-        {!canRequest ? <p className="text-xs text-muted">{blockedBecause}</p> : null}
-      </div>
-    );
-  }
-
-  if (request.status === 'pending') {
-    return (
-      <div role="status" aria-live="polite" className="space-y-2">
-        <StatusChip label="Request submitted" tone="info" icon="clock" />
-        <p className="text-sm text-bone">ClearTrade is preparing your global market analysis.</p>
-        <p className="text-xs text-muted">
-          A ClearTrade specialist reviews every scan before it runs. You will see your recommended
-          markets here as soon as it is complete — there is nothing further for you to do.
-        </p>
-      </div>
-    );
-  }
-
-  if (request.status === 'completed') {
-    return (
-      <div className="space-y-2">
-        <StatusChip label="Market scan complete" tone="positive" icon="check" />
-        {request.resolution_note ? <p className="text-sm text-slate">{request.resolution_note}</p> : null}
-      </div>
-    );
-  }
-
+/** Demand Discovery v5's results for every product live under Markets. */
+function MarketsLink() {
   return (
-    <div role="status" aria-live="polite" className="space-y-2">
-      <StatusChip label={request.status === 'running' ? 'Scanning markets' : 'Approved — queued'} tone="info" icon="clock" />
-      <p className="text-sm text-bone">
-        {request.status === 'running'
-          ? 'ClearTrade is scanning global trade markets for this product.'
-          : 'Your request has been approved and is waiting to start.'}
-      </p>
-      <p className="text-xs text-muted">You can leave this page — the scan keeps running.</p>
-    </div>
+    <Link href="/app/markets" className={buttonClass('primary', 'md')}>
+      Go to Markets
+    </Link>
   );
 }

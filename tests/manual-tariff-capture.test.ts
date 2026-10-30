@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { OrgTier, UserRole } from '@prisma/client';
 import { recordManualTariffCapture } from '@/lib/market-access/manual-capture-service';
@@ -10,7 +11,12 @@ import { DEMAND_DISCOVERY_V5_DEFAULT_POLICY as POLICY } from '@/lib/demand-disco
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 
-/** D-024: an agent records the official duty for a market whose duty is only estimated; v5 then uses it, saying an agent read it. */
+/**
+ * D-024 let an agent record the official duty for a market whose duty was only estimated. D-037
+ * (30 Oct 2026) retired that: the capture endpoint refuses and runs no longer read such lines. The
+ * recording service is kept for lines already stored, and a breakdown stored before still says an
+ * agent read its line.
+ */
 async function fixture() {
   const s = randomUUID().slice(0, 8);
   const org = await prisma.exporterOrg.create({ data: { display_name: `Capture ${s}`, tier: OrgTier.paid }, select: { id: true } });
@@ -57,16 +63,27 @@ describe('recording an official duty by hand', () => {
     await expect(recordManualTariffCapture({ actor: f.agent, input: line(f.assessmentId, { effective_from: 'April' }), correlation_id: randomUUID() })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
 
-  test('the next run reads the recorded line as the official duty and says an agent read it', async () => {
+  test('the capture endpoint refuses every request and the agent form is gone (D-037)', () => {
+    const route = readFileSync('src/app/api/v1/market-access/manual-captures/route.ts', 'utf8');
+    expect(route).toContain('prerequisitesNotMet');
+    expect(route).not.toContain('recordManualTariffCapture');
+    expect(existsSync('src/components/agent/RecordOfficialDuty.tsx')).toBe(false);
+  });
+
+  test('a run no longer reads a line an agent recorded (D-037)', async () => {
     const f = await fixture();
     await recordManualTariffCapture({ actor: f.agent, input: line(f.assessmentId, { effective_from: '2025-01-01' }), correlation_id: randomUUID(), now: new Date('2026-10-17T08:00:00Z') });
     const official = await runInputs.officialDuties({
       markets: ['MM'], hs6: '741810', as_of: new Date('2026-10-18T00:00:00Z'), exporter_org_id: f.orgId, hs_revision: 'HS2022',
       minimum_confidence: POLICY.duty.official_minimum_confidence, usd: async () => ({ rate: 1, frozen: null }),
     });
-    const resolution = official.resolutions.get('MM');
-    expect(resolution).toMatchObject({ status: 'percent', duty_percent: 10, recorded_by_agent: true });
-    const duty = dutyInputs({ markets: ['MM'], hs6: '741810', as_of: new Date('2026-10-18T00:00:00Z'), official: official.resolutions, primary_tariffs: new Map(), manufactured_tariffs: new Map(), agreements: [], policy: POLICY }).get('MM')!;
+    expect(official.resolutions.get('MM')?.status ?? 'none').toBe('none');
+    expect(official.official_count).toBe(0);
+    expect(JSON.stringify(official.frozen)).not.toContain('recorded_by_agent');
+  });
+
+  test('a breakdown stored before D-037 still says an agent read its line', () => {
+    const duty = dutyInputs({ markets: ['MM'], hs6: '741810', as_of: new Date('2026-10-18T00:00:00Z'), official: new Map([['MM', { status: 'percent', duty_percent: 10, source: 'Myanmar customs tariff', national_line: '7418.10.00', fact_ids: [], snapshot_ids: [], preference: null, basis: 'mfn', recorded_by_agent: true }]]) as never, primary_tariffs: new Map(), manufactured_tariffs: new Map(), agreements: [], policy: POLICY }).get('MM')!;
     const scored = scoreDuty(duty, POLICY, { official: 1, estimate: 0.5, agent_recorded: POLICY.quality.official_agent_recorded });
     expect(scored).toMatchObject({ quality: 0.9, inputs: { basis: 'official', recorded_by_agent: 'yes', duty_percent: 10 } });
     expect(metricSentence(scored)).toBe('Duty on Indian goods is 10% (read from the official tariff by a ClearTrade agent).');

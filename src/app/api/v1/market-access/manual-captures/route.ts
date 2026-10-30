@@ -1,35 +1,20 @@
-import { NextResponse } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
-import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
-import { recordManualTariffCapture, type ManualTariffCaptureInput } from '@/lib/market-access/manual-capture-service';
+import { errorResponse, newCorrelationId, prerequisitesNotMet } from '@/lib/errors';
 
 /**
- * D-024: an agent records the official duty read from a market's own tariff for one market of an
- * exporter's analysis. Role, assignment and the market/HS6 are all decided server-side.
+ * Closed (owner, 30 Oct 2026, D-037). Agents used to record the official duty read from a market's
+ * own tariff here (D-024). Demand Discovery now takes duty only from official sources the system
+ * reads itself, or from a labelled estimate, so this refuses every request. Lines recorded before
+ * stay in the evidence store but are no longer read by runs.
  */
-export async function POST(request: Request) {
+export async function POST() {
   const correlationId = newCorrelationId();
   try {
-    const actor = await requirePrincipal();
-    let body: Partial<Record<keyof ManualTariffCaptureInput, unknown>>;
-    try { body = await request.json(); } catch { throw validationError([{ field: 'body', code: 'invalid', message: 'The request body must be JSON.' }]); }
-    const text = (value: unknown) => (typeof value === 'string' ? value : '');
-    if (!text(body.market_assessment_id)) throw validationError([{ field: 'market_assessment_id', code: 'required', message: 'Say which market this duty is for.' }]);
-    const recorded = await recordManualTariffCapture({
-      actor,
-      correlation_id: correlationId,
-      input: {
-        market_assessment_id: text(body.market_assessment_id),
-        national_tariff_code: text(body.national_tariff_code),
-        description: text(body.description),
-        duty_expression: text(body.duty_expression),
-        effective_from: text(body.effective_from),
-        source_reference: text(body.source_reference),
-        source_authority: text(body.source_authority) || null,
-        notes: text(body.notes) || null,
-      },
-    });
-    return NextResponse.json(single(recorded), { status: 201, headers: { 'x-correlation-id': correlationId } });
+    await requirePrincipal();
+    throw prerequisitesNotMet(
+      [{ object_type: 'market_access_manual_capture', object_id: 'agent_recorded_duty', reason: 'RETIRED: agents no longer record tariff lines (D-037).' }],
+      'Agents no longer record tariff lines. A market without an automatically read official tariff shows a labelled estimate.',
+    );
   } catch (error) {
     return errorResponse(error, correlationId);
   }

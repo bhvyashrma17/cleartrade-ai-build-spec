@@ -29,6 +29,7 @@ import { claimNextJob, enqueueJob, runClaimedJob } from '../src/lib/jobs';
 import { prisma } from '../src/lib/prisma';
 import { setDiscoveryEngine, WarehouseDiscoveryEngine } from '../src/lib/discovery';
 import { setRationaleWriter, TemplateRationaleWriter } from '../src/lib/discovery/rationale';
+import { assertEarlierEnginesRetired } from '../src/lib/demand-discovery-v5/earlier-engines';
 
 type Status = 'PASS' | 'FAIL';
 const results: { id: string; name: string; status: Status; detail: string }[] = [];
@@ -296,6 +297,8 @@ const ISO_TO_AREA: Record<string, string> = { US: '842', DE: '276', AE: '784', G
 // ---------------------------------------------------------------------------
 
 async function main() {
+  // The warehouse engine is retired in staging and production (D-036); this check runs only elsewhere.
+  assertEarlierEnginesRetired('The warehouse engine verification');
   registerAllJobHandlers();
   // Pin both swappable pieces so the run is deterministic and offline: the warehouse engine
   // (rather than whatever DISCOVERY_ENGINE happens to be set to) and the template rationale

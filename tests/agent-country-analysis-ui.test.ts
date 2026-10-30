@@ -29,12 +29,13 @@ describe('Agent Country Truth surface', () => {
     expect(component).not.toMatch(/countries\s*:\s*\[/);
   });
 
-  test('deep analysis is requested by naming a completed screening run, never a country set', () => {
-    expect(component).toContain('/deep-country-truth');
-    expect(component).toContain('screening_run_id: view.screening.screening_run_id');
-    expect(component).toContain('product_id: view.product.id');
-    // The request carries a product and a run, and nothing describing which markets to analyse.
-    expect(component).toContain('no country list');
+  test('the agent surface starts no Country Truth v4 work', () => {
+    // Detailed analysis and market scans are retired (D-036); Demand Discovery v5 starts by itself
+    // when a product's HS code is confirmed, so the surface only reads.
+    expect(component).not.toContain('/deep-country-truth');
+    expect(component).not.toContain('Request detailed analysis');
+    expect(component).not.toContain('apiPost');
+    expect(page).not.toContain('MarketScanQueue');
   });
 
   test('only ClearTrade-owned work reaches the agent queue', () => {

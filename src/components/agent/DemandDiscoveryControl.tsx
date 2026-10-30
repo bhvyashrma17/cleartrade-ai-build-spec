@@ -18,7 +18,6 @@
 import type { MarketControlRow } from '@/lib/demand-control';
 import { StatusChip } from '@/components/ui';
 import { MarketDecisionControls } from '@/components/agent/MarketDecisionControls';
-import { RecordOfficialDuty } from '@/components/agent/RecordOfficialDuty';
 import { V5Breakdown } from '@/app/app/markets/[marketAssessmentId]/V5Breakdown';
 
 const pct = (n: number | null) => (n === null ? '—' : `${(n * 100).toFixed(1)}%`);
@@ -314,8 +313,7 @@ export function DemandDiscoveryControl({
                   AI score {num(row.assessment.overall_score)} · AI rank {num(row.modelRank)}
                 </span>
               </h4>
-              <div className="mt-2">{row.v5 ? <V5Breakdown detail={row.v5} manualTariff={row.manualTariff} /> : <ComponentBreakdown row={row} />}</div>
-              {row.manualTariff ? <RecordOfficialDuty assessmentId={row.assessment.id} countryCode={row.assessment.country_code} sourceUrl={row.manualTariff.source_url} authority={row.manualTariff.authority} /> : null}
+              <div className="mt-2">{row.v5 ? <V5Breakdown detail={row.v5} /> : <ComponentBreakdown row={row} />}</div>
               <div className="mt-2"><Provenance row={row} /></div>
               <div className="mt-3">
                 <h5 className="text-xs font-semibold text-primary">Decision history</h5>

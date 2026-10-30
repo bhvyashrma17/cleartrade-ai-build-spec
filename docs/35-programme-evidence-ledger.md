@@ -45,6 +45,10 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-032 | 2026-10-19 | v5 scoring policy v8: India's own success no longer counts against a market — openness is measured among India's competitors, and where India already supplies 10% or more of a market a lower market price is not counted against it — and a new metric, India's sales (10 points), scores how much India already sells there; price headroom 10 → 5 and market size 20 → 15. Owner's choice, "B: fix both + India's sales (Recommended)", after the re-score in E-028. | Owner | Demand Discovery v5 |
 | D-033 | 2026-10-22 | Country expansion (D-030) is on hold. For a pitch on 24 Oct, Regional Demand Discovery and Real Buyer Discovery are built for a smaller set of markets and must work end to end on staging. Owner's words: "hold on country expansion … i want operational demand, regional, buyer. maybe for a shorter area not 218. but operational. full fledged." Owner's choices: the US, the UK and Canada ("US + UK + Canada (Recommended)"); demonstration product carpets 570110; the owner signs up for the free Census Bureau API key; the agent may download HMRC's `importers2608.zip` and ISED's three 2023 importer files to the owner's Mac. | Owner | Regional and buyer discovery (docs/38) |
 | D-034 | 2026-10-22 | Buyers from the official importer lists are shown as published, including sole traders' names — the owner chose "Every published entry" over the recommended "Companies only, no contacts". No contact details are added. | Owner | Real Buyer Discovery (docs/38) |
+| D-035 | 2026-10-30 | Regional demand (stage 2) and real buyers (stage 3) are to cover every market Demand Discovery scores (all 218), each from the best source it has and labelled as such; stages 4 and 5 are the owner's. Owner's words: "why are you counting just UK, Canada for regional and real buyers? We want it for all the countries we are getting in the demand discovery, right? We want all the 200 plus countries on board." and "I have outreach and agent ready." | Owner | Regional and buyer discovery (docs/38), the plan of E-031 |
+| D-036 | 2026-10-30 | The earlier discovery engines are retired: in staging and production nothing starts a Country Truth v4 scan, scan request or detailed analysis, or a warehouse-engine run, and acceptance gates check v5 runs only. Owner's words: "the acceptance gates should not run old v4s." | Owner | Demand Discovery, Phase 1 gate (docs/34) |
+| D-037 | 2026-10-30 | Demand Discovery uses actual data or labelled estimates only; agents neither read nor record tariffs. Owner's words: "we don't want agents reading, either have labeled estimates or actual data in demand discovery." | Owner | Demand Discovery v5, Customs Atlas (docs/36, docs/37) |
+| D-038 | 2026-10-30 | Build order: finish Demand Discovery first, then regional demand for all its markets, then buyers for the same markets, with source research and tariff work alongside; tariff automation for every market (D-030) resumes as part of finishing stage 1. Owner's words: "Ideate well about what to build in demand discovery first to finish it once and for all, then covering the region for all the countries covered in it, and then the buyer discovery for the same countries. It's a simultaneous project, I guess." and "The completion of the demand discovery first, right? If yes, then let's proceed with it." | Owner | Programme |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -1361,6 +1365,72 @@ reused unchanged), and an assigned agent's request found the 86 UK carpet import
 through the agent's buyer control (specialist rug importers score 100; John Lewis, with 9 of its 334
 codes in chapter 57, scores 58). CI runs the canonical suite on the PR.
 
+### E-031 · 2026-10-30 · Plan for stages 1–3 in every market; owner decisions D-035 to D-038
+
+**Verified today (agent workspace, GitHub API).** `staging/railway` = `95e9ac6` (the merge of PR #14);
+`master` = `6d4733cb`, unchanged since the audit; staging is 157 commits ahead and 0 behind
+(`GET /repos/…/compare/master...staging/railway`). CI passed on PRs #9–#14; nothing has merged since 22
+Oct. The UK town-count fix (`0e0a369`) was committed after PR #14 merged and is not on staging: PR #15.
+The demo-setup report (staging steps of 24 Oct) never came back, so the first live Census read (R-32),
+sanctions coverage and the scoring-v8 re-run (R-30) are still unverified.
+
+**APIs already linked.** `COMTRADE_API_KEY` configured on staging; `CENSUS_API_KEY` in the code, its
+staging value unconfirmed; `ANTHROPIC_API_KEY` in the code (rationale writer) but not configured on
+staging (docs/26 §B). The Claude API's web search costs $10 per 1,000 searches plus tokens
+(platform.claude.com, web search tool page, read today); it is the planned engine for buyer web
+discovery (D-035).
+
+**Sources checked for stages 2–3** (pages opened today): Statistics Canada publishes imports by
+province only for the 12 NAPCS sections (open.canada.ca dataset ceca9f02…); HMRC's regional trade
+statistics allocate trade to 12 regions by employee location, at SITC division (gov.uk explanatory
+notes, Q1 2023); French customs' regional and departmental files use CPF4 product groups, NC8 being
+withheld for confidentiality (DGDDI dataset description); Natural Earth's admin-1 layer covers all but
+a few tiny countries and its maintainers say about half its ISO codes are missing; Brazil's SECEX
+register of importing companies ended in 2023 over privacy, last file 2021 (Trase); DGCI&S does not
+disseminate company-wise or IEC-wise data (its data dissemination policy); Volza lists 249 export
+partner countries for India without naming its source.
+
+**Plan.** A claude.ai doc, "ClearTrade stages 1–3: plan for all 218 markets": per-market source tiers
+for regional demand (official regional imports, importer concentration, a labelled regional baseline)
+and buyers (official importer lists, bought shipment records, web discovery for every market); the
+stage 1 finish list (retire v4, no agent-entered tariffs, a v5-only gate, automatic refresh of every
+input, re-runs on new data, calibration on 15–20 products, exporter-fit prompts, a labels check); and
+a timeline with two streams: stage 1 finished 20 Nov, a regional view in every market 4 Dec, buyer
+candidates in every market 8 Jan, all three stages 15 Jan 2027 (late January to mid-February with one
+stream). Estimates, not commitments.
+
+### E-032 · 2026-10-30 · Earlier engines retired; agent-entered tariffs closed (D-036, D-037) (in review)
+
+**Branch.** `dd5/v5-only`, from `staging/railway` at `95e9ac6`.
+
+**Engines (D-036).** `src/lib/demand-discovery-v5/earlier-engines.ts`: `assertEarlierEnginesRetired`
+refuses in staging and production (`PREREQUISITES_NOT_MET`, blocker `RETIRED: …`) before anything is
+written. Called first by `requestMarketScan`, `approveMarketScan`, `startMarketDiscovery`,
+`enqueueGlobalCountryScreening`, `requestDeepCountryTruthFromScreening`, `requestCountryTruthDiscovery`
+and `scripts/verify-warehouse-discovery.ts`. `POST /api/v1/discovery-runs` goes to v5 or is refused
+with v5's reason; the warehouse-engine path (and its `demand_discovery` job) is removed from it. The
+UI starts nothing on the earlier engines: the scan-request queue (`MarketScanQueue.tsx`) is deleted
+from the ops and agent pages; the agent's Demand Discovery panel loses "Request detailed analysis" and
+the v4 stage chips; the exporter's product page points to Markets instead of starting or requesting a
+scan. Stored runs stay readable. Other environments still run the earlier code so its suites keep
+passing (R-33).
+
+**Agent-entered tariffs (D-037).** v5 runs no longer read `authoritative_manual` evidence
+(`run-inputs.ts`); `POST /api/v1/market-access/manual-captures` refuses every request; the agent's
+"Official tariff to check" pointer and "Record the official duty" form are removed (`demand-control.ts`,
+`DemandDiscoveryControl.tsx`, `V5Breakdown.tsx`, `RecordOfficialDuty.tsx` deleted). A breakdown stored
+before still says an agent read its line. docs/36 and docs/37 say so.
+
+**Checks run (agent workspace, local database harness).** `tsc --noEmit` clean. ESLint
+(`--max-warnings=0`) clean on all 24 changed code and test files. Full suite, run twice: 2,283 passed,
+5 skipped, 3 failed, the same three local-harness-only failures as in E-029 and E-030
+(`market-scan-requests`: the pg adapter cannot read Postgres's `name` type in a raw query;
+`pilot-e2e`; `staff-provisioning`). New tests: `earlier-engines-retired` (9) and the closed capture
+endpoint in `manual-tariff-capture`. CI runs the canonical suite on the PR.
+
+**Not verified.** The pages in a browser; the refusals on staging (after merge, a POST to a retired
+route there must answer 422 with the retired reason).
+
 ## Risk register
 
 
@@ -1398,3 +1468,4 @@ codes in chapter 57, scores 58). CI runs the canonical suite on the PR.
 | R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029) | First staging run after `CENSUS_API_KEY` is set |
+| R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |

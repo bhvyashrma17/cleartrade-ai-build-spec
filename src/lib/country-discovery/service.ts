@@ -9,6 +9,7 @@
  * Nothing in this module scores, ranks by a new formula, or recomputes a metric. It reads
  * frozen rows and projects them (see `market-view.ts`).
  */
+import { assertEarlierEnginesRetired } from '@/lib/demand-discovery-v5/earlier-engines';
 import { JobStatus, JobType, TradeSourceMode, UserRole } from '@prisma/client';
 import { enqueueGlobalCountryScreening } from '@/lib/job-handlers/country-screening';
 import { globalCountryScreeningShortlist } from '@/lib/country-screening/service';
@@ -264,6 +265,7 @@ export async function productDiscoveryState(actor: Principal, exporterOrgId: str
  * selection bias screening exists to remove.
  */
 export async function startMarketDiscovery(actor: Principal, exporterOrgId: string, productId: string, correlationId: string) {
+  assertEarlierEnginesRetired('A global market scan');
   assertCan(actor, 'demand_discovery.run');
   // A global screen acquires one authoritative observation per reporting market — ~218 metered
   // provider calls per run. Phase 1F made that a staff-initiated operation deliberately, and

@@ -17,13 +17,16 @@
  *
  * Nothing about the intelligence changed. This is the same data, ordered by what an operator
  * should do next instead of by what happens to exist in the database.
+ *
+ * It starts no analysis: Country Truth v4 scans and detailed analysis are retired (D-036), and
+ * Demand Discovery v5 starts by itself when a product's HS code is confirmed.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Button, buttonClass, Card, EmptyState, SectionHeading, StatusChip } from '@/components/ui';
 import { MarketTable, SummaryHeader, WorkSummaryPanel, type MarketRow } from '@/components/discovery';
-import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
+import { ApiClientError, apiGet } from '@/lib/api-client';
 import type { AgentProductView } from '@/lib/country-discovery/service';
 import { CATEGORY_LABELS, PRIORITY_LABELS, type WorkCategory, type WorkPriority, type WorkTask } from '@/lib/country-discovery/work-queue';
 
@@ -37,9 +40,7 @@ const PRIORITY_TONE: Record<WorkPriority, { tone: 'positive' | 'info' | 'neutral
 export function CountryTruthWork({ exporterOrgId }: { exporterOrgId: string }) {
   const basePath = `/agent/exporters/${exporterOrgId}/products`;
   const [views, setViews] = useState<AgentProductView[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -52,42 +53,24 @@ export function CountryTruthWork({ exporterOrgId }: { exporterOrgId: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function requestDeep(view: AgentProductView) {
-    if (!view.screening.screening_run_id) return;
-    setBusy(view.product.id); setError(null); setNotice(null);
-    try {
-      // The canonical Phase 1H path: a product and a completed screening run, no country list.
-      await apiPost(`/api/v1/exporters/${exporterOrgId}/deep-country-truth`, {
-        product_id: view.product.id, screening_run_id: view.screening.screening_run_id,
-      });
-      setNotice(`Detailed analysis requested for ${view.product.name}.`);
-      await load();
-    } catch (caught) {
-      setError(caught instanceof ApiClientError ? caught.message : 'Could not request detailed analysis.');
-    } finally { setBusy(null); }
-  }
-
   if (!views) return <p className="text-sm text-slate">Loading Demand Discovery…</p>;
   if (!views.length) return <EmptyState title="No products" description="This exporter has no products to analyse yet." bordered />;
 
   return (
     <div className="space-y-6">
-      {notice ? <StatusChip label={notice} tone="positive" icon="check" size="sm" /> : null}
       {error ? <p className="text-sm text-[var(--crit)]" role="alert">{error}</p> : null}
       {views.map((view) => (
         <ProductPanel
           key={view.product.id}
           view={view}
           basePath={basePath}
-          busy={busy === view.product.id}
-          onRequestDeep={() => requestDeep(view)}
         />
       ))}
     </div>
   );
 }
 
-function ProductPanel({ view, basePath, busy, onRequestDeep }: { view: AgentProductView; basePath: string; busy: boolean; onRequestDeep: () => void }) {
+function ProductPanel({ view, basePath }: { view: AgentProductView; basePath: string }) {
   const [showQueue, setShowQueue] = useState(false);
   const { summary, queue_summary: work } = view;
 
@@ -109,8 +92,6 @@ function ProductPanel({ view, basePath, busy, onRequestDeep }: { view: AgentProd
         title={view.product.name}
         subtitle={view.product.hs6 ? `Customs code ${view.product.hs6}` : 'No confirmed HS classification'}
         stats={[
-          { label: 'Market scan', value: <StageValue state={view.screening.state} /> },
-          { label: 'Deep analysis', value: <StageValue state={view.deep_analysis.state} /> },
           { label: 'Markets analysed', value: summary.markets_analysed || '—' },
           summary.top_market
             ? {
@@ -120,13 +101,6 @@ function ProductPanel({ view, basePath, busy, onRequestDeep }: { view: AgentProd
               }
             : { label: 'Top market', value: '—' },
         ]}
-        actions={
-          view.deep_request_ready && view.deep_analysis.state === 'not_started' ? (
-            <Button size="sm" onClick={onRequestDeep} disabled={busy}>
-              {busy ? 'Requesting…' : 'Request detailed analysis'}
-            </Button>
-          ) : null
-        }
       />
 
       {summary.selected_market ? (
@@ -193,13 +167,6 @@ function ProductPanel({ view, basePath, busy, onRequestDeep }: { view: AgentProd
       {showQueue ? <WorkQueue tasks={view.queue} productId={view.product.id} basePath={basePath} /> : null}
     </div>
   );
-}
-
-function StageValue({ state }: { state: string }) {
-  const label = state.replaceAll('_', ' ');
-  const tone = state === 'completed' ? 'positive' : state === 'failed' ? 'critical' : state === 'not_started' ? 'neutral' : 'info';
-  const icon = state === 'completed' ? 'check' : state === 'failed' ? 'alert' : state === 'not_started' ? 'dot' : 'clock';
-  return <StatusChip label={label.charAt(0).toUpperCase() + label.slice(1)} tone={tone} icon={icon} size="sm" />;
 }
 
 /**

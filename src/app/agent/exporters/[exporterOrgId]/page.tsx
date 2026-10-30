@@ -25,7 +25,6 @@ import { FindBuyersForm, type FindBuyersMarket } from '@/components/agent/FindBu
 import { activeImporterLists } from '@/lib/buyer-discovery/importer-list-service';
 import { IMPORTER_LIST_SOURCES } from '@/lib/buyer-discovery/importer-lists';
 import { CountryTruthWork } from '@/components/agent/CountryTruthWork';
-import { MarketScanQueue } from '@/components/agent/MarketScanQueue';
 import { buyerControlRows } from '@/lib/buyer-control';
 import { activeOnly as activeOnlyCandidates } from '@/lib/demand-control';
 import { requirePrincipal } from '@/lib/auth';
@@ -220,7 +219,6 @@ export default async function ExporterAccountPage({
 
       {activeTab === 'demand' ? (
         <div className="space-y-4">
-        <MarketScanQueue />
         {/* The full AI-vs-decision table for all markets moved behind "Manage market decisions"
             on each product — it is also now scoped to THAT product's own run rather than the
             org's most recently run product, which is what `latestDiscoveryRun` gave every

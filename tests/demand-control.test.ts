@@ -445,9 +445,8 @@ describe('marketControlRows on a Demand Discovery v5 run', () => {
     const ordered = sortByOperationalOrder(rows).map((r) => r.assessment.country_code);
     expect(ordered.slice(0, 2)).toEqual(['US', 'DE']);
     expect(ordered.slice(2).sort()).toEqual(['KP', 'TV']);
-    // D-024: with no official duty, the agent is shown where to read the tariff by hand; a connected market needs no hand check.
-    expect(rows.find((r) => r.assessment.id === f.us)!.manualTariff).toBeNull();
-    expect(tv.manualTariff).toMatchObject({ authority: 'Tuvalu Customs', source_url: null });
+    // D-037: agents no longer read tariffs by hand, so no row points them at one.
+    expect(rows.every((r) => !('manualTariff' in r))).toBe(true);
   });
 
   test('an agent may still promote an unranked market; the decision freezes the stored rank, not a count of scores', async () => {

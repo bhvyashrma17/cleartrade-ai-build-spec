@@ -11,13 +11,12 @@ import type { ClassificationQuestionView } from '@/lib/country-discovery/service
  * authorization at the service layer, all reused unchanged) or tests/demand-discovery-ui.test.ts
  * (the by_category / by_category_all split). This file pins the remaining UI-surface claims:
  * no duplicated 20-market table on the parent page, a per-product "manage decisions" drill-down,
- * the compact empty scan-request state, real classification-question counts, the
+ * the retired scan-request queue, real classification-question counts, the
  * tariff-treatment-available banner, and the evidence-coverage tooltip.
  */
 
 const orgPage = readFileSync('src/app/agent/exporters/[exporterOrgId]/page.tsx', 'utf8');
 const countryTruthWork = readFileSync('src/components/agent/CountryTruthWork.tsx', 'utf8');
-const scanQueue = readFileSync('src/components/agent/MarketScanQueue.tsx', 'utf8');
 const marketResults = readFileSync('src/app/app/products/[productId]/markets/MarketResults.tsx', 'utf8');
 const countryTruth = readFileSync('src/app/app/products/[productId]/markets/[country]/CountryTruth.tsx', 'utf8');
 const discoveryComponents = readFileSync('src/components/discovery/index.tsx', 'utf8');
@@ -107,16 +106,10 @@ describe('an agent records exporter facts through the exact existing Phase 1H en
   });
 });
 
-describe('the parent page compresses an empty scan-request queue to one line', () => {
-  test('zero pending requests renders a one-line row, not a full card', () => {
-    expect(scanQueue).toMatch(/entries\.length === 0/);
-    expect(scanQueue).toContain('None pending');
-  });
-
-  test('a non-empty queue still renders the full approval card unchanged', () => {
-    expect(scanQueue).toContain('Market scan requests');
-    expect(scanQueue).toContain('Approve');
-    expect(scanQueue).toContain('Decline');
+describe('the Country Truth v4 scan-request queue is retired (D-036)', () => {
+  test('the queue component is gone and the parent page no longer renders it', () => {
+    expect(existsSync('src/components/agent/MarketScanQueue.tsx')).toBe(false);
+    expect(orgPage).not.toContain('MarketScanQueue');
   });
 });
 
