@@ -67,3 +67,56 @@ export function compareWithIndiaExports(args: { hs6: string; flows: readonly Tra
     verdict: !indiaTop.length ? 'no_india_exports' : overlap * 2 >= indiaTop.length ? 'pass' : 'calibration_failure',
   };
 }
+
+/**
+ * What every run stores about itself (owner-approved idea 2, E-042): the same comparison as above, made
+ * at the end of each real run from the BACI flows it already read, so calibration grows with every
+ * product users run instead of stopping at a test set. Kept small: market codes, not the figures.
+ */
+export interface RunCalibrationSummary {
+  top: number;
+  years: number[];
+  overlap: number;
+  verdict: CalibrationResult['verdict'];
+  india_top: string[];
+  missed: { market: string; status: string | null; rank: number | null }[];
+}
+
+export function summarizeRunCalibration(result: CalibrationResult): RunCalibrationSummary {
+  return {
+    top: result.top, years: result.years, overlap: result.overlap, verdict: result.verdict,
+    india_top: result.india_top.map((entry) => entry.market),
+    missed: result.missed.map((entry) => ({ market: entry.market, status: entry.status, rank: entry.rank })),
+  };
+}
+
+/** A stored run summary's calibration, read defensively; null for runs from before E-042. */
+export function readRunCalibration(summary: unknown): RunCalibrationSummary | null {
+  const value = (summary as { calibration?: unknown } | null)?.calibration as Partial<RunCalibrationSummary> | undefined;
+  if (!value || typeof value.overlap !== 'number' || typeof value.top !== 'number' || typeof value.verdict !== 'string') return null;
+  return {
+    top: value.top, years: Array.isArray(value.years) ? value.years : [], overlap: value.overlap, verdict: value.verdict as RunCalibrationSummary['verdict'],
+    india_top: Array.isArray(value.india_top) ? value.india_top : [], missed: Array.isArray(value.missed) ? value.missed : [],
+  };
+}
+
+export interface CalibrationAggregate {
+  compared: number;
+  pass: number;
+  calibration_failure: number;
+  no_india_exports: number;
+  /** Over the runs whose product India exports; null when there are none. */
+  median_overlap: number | null;
+}
+
+export function aggregateRunCalibration(items: readonly RunCalibrationSummary[]): CalibrationAggregate {
+  const overlaps = items.filter((item) => item.verdict !== 'no_india_exports').map((item) => item.overlap).sort((a, b) => a - b);
+  const middle = Math.floor(overlaps.length / 2);
+  return {
+    compared: items.length,
+    pass: items.filter((item) => item.verdict === 'pass').length,
+    calibration_failure: items.filter((item) => item.verdict === 'calibration_failure').length,
+    no_india_exports: items.filter((item) => item.verdict === 'no_india_exports').length,
+    median_overlap: !overlaps.length ? null : overlaps.length % 2 ? overlaps[middle]! : (overlaps[middle - 1]! + overlaps[middle]!) / 2,
+  };
+}

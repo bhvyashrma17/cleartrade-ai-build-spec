@@ -150,6 +150,12 @@ export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscovery
 
       <div>
         <h3 className="text-sm font-semibold text-primary">Recent runs</h3>
+        {overview.calibration_30_days.compared ? (
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+            Last 30 days: {overview.calibration_30_days.compared} runs compared with India&apos;s own top destinations · {overview.calibration_30_days.pass} pass · {overview.calibration_30_days.calibration_failure} calibration failure{overview.calibration_30_days.calibration_failure === 1 ? '' : 's'}
+            {overview.calibration_30_days.median_overlap != null ? ` · median overlap ${overview.calibration_30_days.median_overlap} of 10` : ''}
+          </p>
+        ) : null}
         {overview.runs.length ? (
           <ul className="mt-2 divide-y divide-[var(--color-border)]">
             {overview.runs.map((run) => (
@@ -161,6 +167,12 @@ export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscovery
                   <span className="text-xs text-[var(--color-text-muted)]">{run.trigger?.replaceAll('_', ' ') ?? 'manual'} · started {fmt(run.created_at)}{run.completed_at ? ` · finished ${fmt(run.completed_at)}` : ''}</span>
                 </div>
                 {run.ranked != null ? <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{run.ranked} markets ranked{run.top_markets.length ? ` · top: ${run.top_markets.join(', ')}` : ''}</p> : null}
+                {run.calibration && run.calibration.verdict !== 'no_india_exports' ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <StatusChip label={run.calibration.verdict === 'pass' ? 'Calibration pass' : 'Calibration failure'} tone={run.calibration.verdict === 'pass' ? 'positive' : 'warning'} icon={run.calibration.verdict === 'pass' ? 'check' : 'alert'} size="sm" />
+                    <span>{run.calibration.overlap} of India&apos;s top {run.calibration.india_top.length} destinations are in this top {run.calibration.top}{run.calibration.missed.length ? ` · missed: ${run.calibration.missed.map((item) => `${item.market}${item.rank != null ? ` (#${item.rank})` : ''}`).join(', ')}` : ''}</span>
+                  </div>
+                ) : null}
                 {run.notes.length ? (
                   <details className="mt-1">
                     <summary className="cursor-pointer text-xs text-[var(--color-text-secondary)]">What this run could not use ({run.notes.length})</summary>

@@ -1774,6 +1774,29 @@ auto-import loop imported nothing: no import account is set yet.
 estimate from flows (order, price band, exclusions, framing) and the fallback when BACI is missing or
 unreadable.
 
+### E-042 · 2026-10-31 · Calibration on every run; a health check across sectors (owner-approved ideas 2 and 3) (in review)
+
+**Branch.** `dd5/run-calibration`, on top of `dd5/estimate-from-baci` (#25); merged after #25.
+
+**Built.**
+- *Every run* records how its top 10 compares with India's own top destinations (`summary.calibration`):
+  overlap, verdict, India's top and the markets missed. It is computed from the BACI flows the run already
+  read, by the docs/36 §8 rule. `/ops/discovery` shows it on each recent run, and a 30-day line gives
+  runs compared, passes, failures and the median overlap. Calibration now grows with every product run.
+- *Health check* (`scripts/dd5-health-check.ts`, `health-check.ts`). India's top export products in the
+  newest BACI HS22 year (default 100, read from every chapter partition), or `--codes`, are scored as a
+  run would score them, from stored data only, without exporter figures, and each is compared.
+  - Comtrade, tariff look-ups and FX fetches are off, and the rows a run could write are counted
+    before and after.
+  - The report gives passes, the median overlap, results by chapter, and the markets missed most often.
+  - It refuses production and has not run yet.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files.
+- New `demand-discovery-v5-run-calibration` (2 tests) and `demand-discovery-v5-health-check` (3 tests).
+- `demand-discovery-v5-run` checks its stored calibration against its own top 10.
+- Full suite (with #25): 2,325 passed, 5 skipped, and the same three local-harness-only failures as in
+  E-033.
+
 ## Risk register
 
 

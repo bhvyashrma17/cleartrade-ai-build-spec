@@ -313,6 +313,13 @@ describe('Demand Discovery v5 runs', () => {
     const ranks = assessments.filter((row) => row.rank != null).map((row) => row.rank!).sort((a, b) => a - b);
     expect(ranks).toEqual(Array.from({ length: ranks.length }, (_, index) => index + 1));
     expect(closed.summary).toMatchObject({ markets: 218, excluded: 1, ranked: ranks.length, handed_off: expect.arrayContaining([expect.objectContaining({ market: 'US', rank: 1 })]) });
+    // E-042: the run stored how its top 10 compares with India's own top destinations.
+    const calibration = (closed.summary as { calibration?: { top: number; overlap: number; verdict: string; india_top: string[]; missed: { market: string }[] } }).calibration!;
+    const top10 = new Set(assessments.filter((row) => row.rank != null && row.rank <= 10).map((row) => row.country_code));
+    expect(calibration).toMatchObject({ top: 10, verdict: expect.stringMatching(/^(pass|calibration_failure)$/) });
+    expect(calibration.india_top.length).toBeGreaterThan(0);
+    expect(calibration.overlap).toBe(calibration.india_top.filter((market) => top10.has(market)).length);
+    expect(calibration.missed.map((item) => item.market)).toEqual(calibration.india_top.filter((market) => !top10.has(market)));
     expect((closed.summary as { notes: string[] }).notes.filter((note) => /ECGC|coordinates/.test(note))).toEqual([]);
     const metric = (market: string, key: string) => (by.get(market)!.score_breakdown as unknown as Breakdown).metrics.find((item) => item.key === key);
     expect(metric('US', 'country_risk')).toMatchObject({ score: 100, inputs: { grade: 'A1', cover: 'open' } });

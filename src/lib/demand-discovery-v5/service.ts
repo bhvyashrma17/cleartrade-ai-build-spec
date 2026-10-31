@@ -22,6 +22,7 @@ import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import type { Principal } from '@/types';
 import type { AssessedMarket, AssessmentResult } from './assess';
+import type { RunCalibrationSummary } from './calibration';
 import { DEMAND_DISCOVERY_V5_MODEL, type MetricKey, type PartKey } from './policy';
 import type { V5ProductFacts } from './run-inputs';
 
@@ -194,6 +195,8 @@ export async function writeV5Results(args: {
   config_version: number;
   policy_snapshot: unknown;
   correlation_id: string;
+  /** E-042: how the run's top 10 compares with India's own top destinations. */
+  calibration?: RunCalibrationSummary | null;
 }) {
   const snapshot = (args.run.input_snapshot ?? {}) as Record<string, unknown>;
   const text = (key: string) => (typeof snapshot[key] === 'string' ? (snapshot[key] as string) : null);
@@ -201,7 +204,10 @@ export async function writeV5Results(args: {
     as_of: args.as_of, policy_hash: args.result.policy_hash, policy_version: args.result.policy_version, config_version: args.config_version, evidence_origins: args.evidence_origins,
     classification: { id: text('classification_id'), hs6: text('hs_code'), itc: text('itc_hs_code'), nomenclature: text('classification_nomenclature'), version: text('classification_version') },
   };
-  const summary = { ...args.result.summary, notes: args.notes, base_years: args.result.base_years, short_history: args.result.short_history, india_unit_values: args.result.india_unit_values };
+  const summary = {
+    ...args.result.summary, notes: args.notes, base_years: args.result.base_years, short_history: args.result.short_history, india_unit_values: args.result.india_unit_values,
+    ...(args.calibration ? { calibration: args.calibration } : {}),
+  };
   await prisma.$transaction(async (tx) => {
     // A retry replaces the run's one result set; attempt history lives on JobAttempt rows.
     await tx.marketAssessment.deleteMany({ where: { run_id: args.run.id } });
