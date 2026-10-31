@@ -1797,6 +1797,34 @@ unreadable.
 - Full suite (with #25): 2,325 passed, 5 skipped, and the same three local-harness-only failures as in
   E-033.
 
+### E-043 · 2026-10-31 · Product code finder without AI (owner's choice: option B) (in review)
+
+**Decision (owner, 31 Oct).** The finder uses no AI, so it works whatever outside service is down.
+
+**Built.**
+- `cepii:product-codes:HS22`: every HS 2022 code with its description, from the BACI archive's product
+  list, under the same Etalab 2.0 licence. Operator import, docs/36 §10 step 9.
+- `src/lib/hs-finder/` searches the official descriptions, rarer words counting more. A one-letter slip
+  still matches, and curated everyday names ("jeera", "pooja thali", "agarbatti") lift the codes they
+  may fall under.
+- It reads details from the exporter's own words: "brass" as copper or brass, "steel" as stainless,
+  "powder" as ground.
+- It asks about the detail that separates the closest codes, with the answers the descriptions offer
+  plus "Other / not sure". The details are material, fresh or frozen, whole or ground, roasted, shelled,
+  kind of rice, knitted, printed, who it is for and pack size. It shows at most three codes with their
+  official descriptions.
+- A code's own exclusions ("other than cotton", "(not printed, knitted or crocheted)") never count as
+  its own.
+- `POST /api/v1/hs-finder` needs no session, reads only the code list and writes nothing. It never
+  decides a code: a picked code still goes to an agent to confirm.
+
+**Not built yet.** The screens: the product form and the guest estimate form.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files. New
+`hs-finder` (6 tests) and `hs-finder-route` (2 tests). Full suite on `staging/railway` plus this change,
+before it was stacked on #26: 2,326 passed, 5 skipped, and the same three local-harness-only failures
+as in E-033. Stacked, it is left to CI.
+
 ## Risk register
 
 

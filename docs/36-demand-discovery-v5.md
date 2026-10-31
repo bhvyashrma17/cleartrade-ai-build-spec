@@ -585,3 +585,7 @@ touches production.
    leather and building materials. `status --set=calibration` adds a summary across the set: products
    compared, passes, calibration failures, products India does not export, the median overlap with
    India's top destinations, and each failure, worst first.
+9. **Product code list** (E-043): import `product_codes_HS22_V202601.csv` from the BACI HS22 archive as
+   `cepii:product-codes:HS22` with `scripts/import-reference-dataset.ts` (`--source-url` the archive's
+   URL). The product code finder (`POST /api/v1/hs-finder`) reads it; until then it says the list is not
+   loaded.
