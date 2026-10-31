@@ -437,6 +437,14 @@ every row, worst first, under **Data freshness**; the Control Tower counts the o
 here imports data: refreshing is still an operator step. Whether the worker should import the keyless
 sources itself (World Bank, Comtrade's reporting lists) is an open owner decision (E-035).
 
+### 7b. Automatic imports and re-runs (31 Oct 2026, E-040)
+
+- The worker imports the keyless World Bank indicators and Comtrade reporting lists each day when they
+  are due, as the staff account in `reference_auto_import_actor_email` (`reference-auto-import.ts`).
+- Every hour it re-runs, oldest first and at most 100 a day (`refresh_daily_budget`), each product's
+  newest finished run that newer data would change: a newer BACI release, a newer release of a reference
+  dataset the run froze, or an official tariff release activated since its date (`refresh.ts`).
+
 ## 8. Verification
 
 - Unit tests for every metric, the score, the chain-link, the HS revision test and each parser, on

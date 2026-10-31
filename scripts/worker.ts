@@ -24,6 +24,8 @@ import { getConfig } from '../src/lib/config';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, closeOrphanedAttempts, reclaimStaleJobs, runClaimedJob } from '../src/lib/jobs';
 import { reconcileV5Runs } from '../src/lib/job-handlers/demand-discovery-v5';
+import { sweepV5Refresh } from '../src/lib/demand-discovery-v5/refresh';
+import { autoImportReferenceData } from '../src/lib/demand-discovery-v5/reference-auto-import';
 import { prisma } from '../src/lib/prisma';
 import {hostname} from 'node:os';
 import {log,reportError} from '../src/lib/observability';
@@ -115,6 +117,44 @@ async function sweepOrphanedWork(): Promise<void> {
     reportError(error, { event_scope: 'worker_orphan_sweep' });
   }
 }
+/**
+ * E-040 (stage 1, item 5): hourly, out-of-date v5 runs are re-run, oldest first, within the daily
+ * budget (`refresh.ts`). A failure is reported and never stops the job loop.
+ */
+const V5_REFRESH_SWEEP_INTERVAL_MS = Number(process.env.V5_REFRESH_SWEEP_INTERVAL_MS ?? 3_600_000);
+let lastV5RefreshAt = 0;
+
+async function sweepDemandDiscoveryRefresh(): Promise<void> {
+  if (Date.now() - lastV5RefreshAt < V5_REFRESH_SWEEP_INTERVAL_MS) return;
+  lastV5RefreshAt = Date.now();
+  try {
+    const result = await sweepV5Refresh();
+    if (result && (result.started.length || result.skipped.length)) {
+      log('info', 'v5_refresh', { checked: result.checked, out_of_date: result.out_of_date, started: result.started.length, skipped: result.skipped.length, budget_left: result.budget_left });
+    }
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_v5_refresh' });
+  }
+}
+/**
+ * E-040 (stage 1, item 4): daily, the keyless World Bank and Comtrade inputs that are due are
+ * downloaded and imported (`reference-auto-import.ts`), before the refresh sweep reads them.
+ */
+const REFERENCE_AUTO_IMPORT_SWEEP_INTERVAL_MS = Number(process.env.REFERENCE_AUTO_IMPORT_SWEEP_INTERVAL_MS ?? 86_400_000);
+let lastReferenceAutoImportAt = 0;
+
+async function sweepReferenceAutoImport(): Promise<void> {
+  if (Date.now() - lastReferenceAutoImportAt < REFERENCE_AUTO_IMPORT_SWEEP_INTERVAL_MS) return;
+  lastReferenceAutoImportAt = Date.now();
+  try {
+    const result = await autoImportReferenceData();
+    if (!result || !result.due.length) return;
+    for (const item of result.imported) log('info', 'reference_auto_import', { dataset: item.key, change: item.change, release_id: item.release_id });
+    for (const item of result.failed) log('warn', 'reference_auto_import_failed', { dataset: item.key, reason: item.reason });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_reference_auto_import' });
+  }
+}
 const instanceId=process.env.WORKER_INSTANCE_ID??`${hostname()}-${process.pid}`,heartbeatId=`worker:${instanceId}`;
 let consecutiveFailures=0;
 async function heartbeat(status='ready',lastError?:string){await prisma.workerHeartbeat.upsert({where:{id:heartbeatId},create:{id:heartbeatId,instance_id:instanceId,status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():null,consecutive_failures:consecutiveFailures},update:{status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():undefined,consecutive_failures:consecutiveFailures}});}
@@ -128,6 +168,8 @@ async function tick(): Promise<boolean> {
   await sweepAuthorityRefresh();
   await sweepInputFreshness();
   await sweepOrphanedWork();
+  await sweepReferenceAutoImport();
+  await sweepDemandDiscoveryRefresh();
 
   const reclaimed = await reclaimStaleJobs();
   if (reclaimed.requeued || reclaimed.failed) {

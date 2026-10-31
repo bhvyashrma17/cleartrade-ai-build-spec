@@ -1719,6 +1719,37 @@ calibration waits on the reasons for its six misses (`dd5-compare-top10.ts`, rea
 `job-recovery` (6 tests); full suite: 2,312 passed, 5 skipped, and the same three local-harness-only
 failures as in E-033.
 
+### E-040 · 2026-10-31 · Automatic imports and re-runs on new data (stage 1, items 4 and 5) (in review)
+
+**Branch.** `dd5/v5-refresh`, on top of `dd5/run-write-recovery` (#23); merged after #23. It builds the
+recommended defaults of E-035's two open decisions; the owner can still say no before merging.
+
+**Built.**
+- *Automatic imports* (`reference-auto-import.ts`, worker, daily). The four World Bank indicators and
+  the Comtrade reporting lists are downloaded from the runbook URLs when their freshness row is
+  missing, due soon or overdue, and imported through `importReferenceDataset`. Its checks apply,
+  changed bytes become the active release and unchanged bytes change nothing. The imports run as the
+  staff account in `reference_auto_import_actor_email` (config `demand_discovery.v5`); with none, nothing
+  is downloaded and each due input says why. A publisher failure is reported, and the other inputs
+  still import.
+- *Re-runs on new data* (`refresh.ts`, worker, hourly). A product's newest finished run, under its
+  confirmed code, is re-run (trigger `refresh`) when one of three things has happened since:
+  - a newer BACI release is ready;
+  - a reference dataset it froze has a newer, or a first, active release;
+  - an official tariff release was activated after its date.
+
+  Runs go oldest first, at most `refresh_daily_budget` (100) a day. The paid-tier rule and the
+  in-flight dedupe apply, and a refused start costs no budget.
+- `refresh_on_new_data` and `reference_auto_import` switch each off.
+
+**Owner action.** Set `reference_auto_import_actor_email` on staging to an ops supervisor or admin account.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files. New
+`demand-discovery-v5-refresh` (3 tests) and `demand-discovery-v5-reference-auto-import` (3). Full suite:
+2,318 passed, 5 skipped, and the same three local-harness-only failures as in E-033.
+
+**Not verified.** Live downloads from the World Bank and Comtrade on staging.
+
 ## Risk register
 
 
