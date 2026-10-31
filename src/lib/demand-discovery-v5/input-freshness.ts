@@ -60,6 +60,8 @@ export interface FreshnessState {
 // ---------------------------------------------------------------------------
 
 const REFERENCE_IMPORT = 'Download it and import it with scripts/import-reference-dataset.ts (operator machine, docs/36 §10).';
+/** E-040: the keyless inputs import themselves once a staff account is set to import as. */
+const AUTO_IMPORT = `The worker imports it daily when due, as the account in reference_auto_import_actor_email (E-040); without one: ${REFERENCE_IMPORT.charAt(0).toLowerCase()}${REFERENCE_IMPORT.slice(1)}`;
 
 interface ReferenceRule {
   key: string;
@@ -72,7 +74,7 @@ interface ReferenceRule {
 
 function referenceRules(latestBaciYear: number | null): ReferenceRule[] {
   const wdi = (key: string, label: string): ReferenceRule => ({
-    key, label, max_age_days: 365, refresh: `World Bank API (keyless). ${REFERENCE_IMPORT}`,
+    key, label, max_age_days: 365, refresh: `World Bank API (keyless). ${AUTO_IMPORT}`,
     basis: 'The World Bank revises its indicators through the year: re-read yearly. Values more than 10 years old are already not used (D-021).',
   });
   return [
@@ -81,7 +83,7 @@ function referenceRules(latestBaciYear: number | null): ReferenceRule[] {
     wdi('wdi:TM.TAX.TCOM.SM.AR.ZS', 'World Bank tariff average, primary products'),
     wdi('wdi:TM.TAX.MANF.SM.AR.ZS', 'World Bank tariff average, manufactured products'),
     ...(latestBaciYear == null ? [] : [latestBaciYear, latestBaciYear + 1].map((year): ReferenceRule => ({
-      key: `comtrade:availability:${year}`, label: `Comtrade reporting list ${year}`, max_age_days: 30, refresh: `Comtrade getDa (keyless). ${REFERENCE_IMPORT}`,
+      key: `comtrade:availability:${year}`, label: `Comtrade reporting list ${year}`, max_age_days: 30, refresh: `Comtrade getDa (keyless). ${AUTO_IMPORT}`,
       basis: "Markets keep reporting recent years to Comtrade, and the list decides which markets are labelled as estimated from partners' figures: re-read monthly.",
     }))),
     { key: 'india:trade-agreements', label: "India's trade agreements", max_age_days: 182, refresh: 'Check the Department of Commerce list, update data/reference/india-trade-agreements-*.json, then import it.', basis: 'Agreements change rarely; the curated list is re-checked twice a year.' },

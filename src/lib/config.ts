@@ -159,6 +159,14 @@ export interface ConfigShape {
  */
 export interface DemandDiscoveryV5Config {
   enabled: boolean;
+  /** E-040 (stage 1, item 5): re-run a product's newest finished run when newer data would change it (`refresh.ts`). */
+  refresh_on_new_data: boolean;
+  /** Refresh runs started per UTC day at most, oldest first: each makes two batched Comtrade calls (the free key allows 500 a day). */
+  refresh_daily_budget: number;
+  /** E-040 (stage 1, item 4): import the keyless World Bank and Comtrade inputs daily when due (`reference-auto-import.ts`). */
+  reference_auto_import: boolean;
+  /** The ops supervisor or admin account those imports run as; with none, nothing is imported. */
+  reference_auto_import_actor_email: string | null;
   /** D-018: confirming a product's classification starts a run (paid tier only). */
   auto_start_on_classification: boolean;
   /** D-010/R-14: use Comtrade for the newest year (§5.3). */
@@ -1063,6 +1071,10 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     fx_treasury_max_lookback_days: 120,
     tariff_acquisition: true,
     tariff_live_fetch_timeout_ms: 60_000,
+    refresh_on_new_data: true,
+    refresh_daily_budget: 100,
+    reference_auto_import: true,
+    reference_auto_import_actor_email: null,
     policy: DEMAND_DISCOVERY_V5_DEFAULT_POLICY,
   },
   'market_access.authority_refresh': {
