@@ -35,7 +35,7 @@ import {
   type GateNegativeProbe,
 } from '@/lib/phase-1-gate/evaluate';
 import { loadPhase1GateArchetypeEvidence, parseGateSelector, withReadOnlySnapshot, type GateSelector } from '@/lib/phase-1-gate/load';
-import { PHASE_1_GATE_POLICY_V2 } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V3 } from '@/lib/phase-1-gate/policy';
 
 const USAGE = 'Usage: gate-phase-1.ts --archetype=<key>=product:<id>|run:<id> [...] [--negative-probes=<file.json>] [--evaluated-at=<ISO>] [--out=<file.json>]';
 
@@ -79,7 +79,7 @@ function gitCommit(): string | null {
 
 async function main() {
   const options = args();
-  const policy = PHASE_1_GATE_POLICY_V2;
+  const policy = PHASE_1_GATE_POLICY_V3;
   const known = policy.archetypes.value.map((archetype) => archetype.key);
   const named = options.archetypes.map((item) => item.key);
   const unknown = named.filter((key) => !known.includes(key));

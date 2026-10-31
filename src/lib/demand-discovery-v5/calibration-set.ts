@@ -12,7 +12,7 @@
  *
  * A proposed set (E-038): the owner may change it before the staging runs.
  */
-import { PHASE_1_GATE_POLICY_V2, type Phase1GateArchetype } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V3, type Phase1GateArchetype } from '@/lib/phase-1-gate/policy';
 
 export type CalibrationProduct = Pick<Phase1GateArchetype, 'key' | 'label' | 'hs6' | 'hs_revision'> & { sector: string };
 
@@ -20,7 +20,7 @@ const ARCHETYPE_SECTORS: Readonly<Record<string, string>> = { rice: 'food', bras
 
 export const CALIBRATION_PRODUCTS: readonly CalibrationProduct[] = [
   // The archetypes keep their gate labels, so their test products and runs are shared.
-  ...PHASE_1_GATE_POLICY_V2.archetypes.value.map((archetype) => ({ key: archetype.key, label: archetype.label, hs6: archetype.hs6, hs_revision: archetype.hs_revision, sector: ARCHETYPE_SECTORS[archetype.key] ?? 'other' })),
+  ...PHASE_1_GATE_POLICY_V3.archetypes.value.map((archetype) => ({ key: archetype.key, label: archetype.label, hs6: archetype.hs6, hs_revision: archetype.hs_revision, sector: ARCHETYPE_SECTORS[archetype.key] ?? 'other' })),
   { key: 'black_tea', label: 'Black tea in packages over 3 kg', hs6: '090240', hs_revision: 'HS2022', sector: 'food' },
   { key: 'cumin', label: 'Cumin seeds, neither crushed nor ground', hs6: '090931', hs_revision: 'HS2022', sector: 'food' },
   { key: 'cashew', label: 'Cashew nuts, shelled', hs6: '080132', hs_revision: 'HS2022', sector: 'food' },

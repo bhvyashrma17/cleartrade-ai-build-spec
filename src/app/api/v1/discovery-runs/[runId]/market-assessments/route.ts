@@ -14,6 +14,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
 import { errorResponse, list, newCorrelationId, notFound, pageMeta } from '@/lib/errors';
 import { assertCan, tenantScope } from '@/lib/permissions';
+import { indiaMarkets } from '@/lib/demand-discovery-v5/india-markets';
 import { exporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
 import { prisma } from '@/lib/prisma';
 import { allowedEvidenceOrigins, appEnvironment, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
@@ -94,6 +95,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ru
           // Stage 1, item 7: the exporter's own figures as the run used them, so the page can ask for missing ones.
           product_id: run.product_id,
           exporter_figures: exporterFitView(run.frozen_inputs, run.scoring_policy_snapshot),
+          // E-045: India's own largest destinations for the product, with the run's rank and reason for each.
+          india_markets: indiaMarkets(run.summary, assessments),
           evidence_environment:appEnvironment(),
         },
       ),

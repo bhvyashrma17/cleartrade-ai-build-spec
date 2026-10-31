@@ -1865,6 +1865,51 @@ change on top of the stored row, so the policy keeps following the code. No admi
 **Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files;
 `demand-discovery-v5-reference-auto-import` 4 tests (1 new), restoring the shared config afterwards.
 
+### E-045 · 2026-10-31 · Rice calibration: the owner keeps the score and shows India's markets (gate policy v3) (in review)
+
+**Evidence first.** Sector health check on staging (owner's Claude Code, 31 Oct, stored data only, no
+writes): 88 of India's top 100 export products pass; median overlap 7 of 10. Across all 100 products,
+the markets missed most often are Brazil (24 products), Italy (22), Bangladesh (16) and Canada (16):
+open-cover markets, so payment risk is not what most misses have in common.
+
+**Owner decision (31 Oct, option 1 of E-044, as recommended).**
+- The score is unchanged (policy v8): risky markets still rank lower for a first-time exporter.
+- Every results page lists "Where India already sells most": each of India's top destinations with the
+  run's rank, India's share and, below the top 10, why it ranks lower.
+- The calibration check counts a miss as explained when ECGC offers no cover, the cover is restricted,
+  or a UN/US/EU/UK sanctions programme is flagged. Any other miss still counts against the run.
+
+**Built.**
+- `calibration.ts`: `riskExplanation` reads the payment-risk measure's ECGC cover, then the sanctions
+  flags; `compareWithIndiaExports` passes on (overlap + explained) × 2 ≥ India's top N, and every stored
+  `summary.calibration` keeps `explained` and each miss's `explained_by`. The job handler, the
+  calibration report and the health check pass the explanation through.
+- Gate policy `phase-1-gate-v3` (thresholds still unapproved): `calibration.explained_misses` lists the
+  accepted reasons. The check names the explained misses in its detail and fails with only the
+  unexplained ones.
+- Rice under v3. The repository's ECGC parser on the 1 Jul 2026 list shows restricted cover for four
+  of the misses: Iraq and Guinea (Group I), Iran and Yemen (Group II). Togo and Côte d'Ivoire are open.
+  So 4 + 4 = 8 counted, with 5 needed. E-044 counted 6 because it took Guinea and Iran as open.
+  Sanctions play no part in rice's result.
+- Correction to the option as offered: a sanctions flag never changes a score (docs/36 §5.2), so no
+  miss is *caused* by sanctions. The rule as built accepts a flagged market outside the top 10 as one
+  not to steer a first-time exporter to. The results page shows the run's own reason as the cause, and
+  the ECGC cover or the flag only as a note.
+- `india-markets.ts` and the results route's `meta.india_markets`; `V5Results.tsx` shows the list
+  below the ranking.
+- docs/34 and AGENTS.md name policy v3; docs/36 §8 records both rules.
+
+**Open for the owner (at gate approval).** Whether sanctions stay among the accepted reasons. Most
+flagged programmes are targeted: Iraq's UN 1518 covers the former regime's assets, and Yemen's UN 2140
+covers the Houthis. Counting every flag is generous. Recommended: ECGC reasons only. They are what the
+score itself uses, and rice passes on them alone. The change is one line of policy.
+
+**Checks run (agent workspace).** See the PR; listed there with the CI run.
+
+**Not yet verified.** The gate has not been re-run on staging under v3. The loader recomputes the
+comparison from each run's stored rows (`compareRunWithIndiaExports` reads each market's ECGC cover and
+flags), so the three 31 Oct runs can be re-read as they are with `run:` selectors.
+
 ## Risk register
 
 

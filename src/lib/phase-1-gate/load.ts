@@ -266,7 +266,7 @@ export async function loadPhase1GateArchetypeEvidence(db: GateDb, archetypeKey: 
           india_top: report.india_top.map((item) => ({ market: item.market, usd: item.usd, status: item.status, rank: item.rank })),
           run_top: report.run_top.map((item) => ({ market: item.market, rank: item.rank })),
           overlap: report.overlap,
-          missed: report.missed.map((item) => ({ market: item.market, status: item.status, rank: item.rank })),
+          missed: report.missed.map((item) => ({ market: item.market, status: item.status, rank: item.rank, explained_by: item.explained_by })),
         };
       } catch (error) {
         calibration = { status: 'error', error: error instanceof Error ? error.message : String(error), baci_release_id: null, years: [], top: options.calibration_top, india_top: [], run_top: [], overlap: 0, missed: [] };

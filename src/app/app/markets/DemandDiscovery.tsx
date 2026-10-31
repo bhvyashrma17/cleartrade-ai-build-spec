@@ -16,6 +16,7 @@ import { useJobPoll } from '@/hooks';
 import type { ListResponse } from '@/types';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import type { ExporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
+import type { IndiaMarket } from '@/lib/demand-discovery-v5/india-markets';
 import { V5Results, type V5Row } from './V5Results';
 
 type Tier = 'guest' | 'free' | 'paid';
@@ -335,7 +336,7 @@ function RunProgress({
 }) {
   const error = pollError;
   const [rows, setRows] = useState<AssessmentRow[] | null>(null);
-  const [runMeta, setRunMeta] = useState<{ product_id: string | null; exporter_figures: ExporterFitView | null } | null>(null);
+  const [runMeta, setRunMeta] = useState<{ product_id: string | null; exporter_figures: ExporterFitView | null; india_markets: IndiaMarket[] } | null>(null);
   const [loadingRows, setLoadingRows] = useState(false);
 
   const status = job?.status ?? 'queued';
@@ -349,8 +350,8 @@ function RunProgress({
     apiGet<ListResponse<AssessmentRow>>(`/api/v1/discovery-runs/${runId}/market-assessments`)
       .then((res) => {
         setRows(res.data);
-        const meta = res.meta as { product_id?: string | null; exporter_figures?: ExporterFitView | null };
-        setRunMeta({ product_id: meta.product_id ?? null, exporter_figures: meta.exporter_figures ?? null });
+        const meta = res.meta as { product_id?: string | null; exporter_figures?: ExporterFitView | null; india_markets?: IndiaMarket[] };
+        setRunMeta({ product_id: meta.product_id ?? null, exporter_figures: meta.exporter_figures ?? null, india_markets: meta.india_markets ?? [] });
       })
       .catch(() => setRows([]))
       .finally(() => setLoadingRows(false));
@@ -443,6 +444,7 @@ function RunProgress({
               provenanceNote={result?.provenance?.note ?? null}
               exporterFit={runMeta?.exporter_figures ?? null}
               productId={runMeta?.product_id ?? null}
+              indiaMarkets={runMeta?.india_markets ?? []}
             />
           ) : rows && rows.length > 0 ? (
             <>
