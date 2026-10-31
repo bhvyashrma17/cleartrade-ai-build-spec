@@ -20,7 +20,7 @@ import {
 import { loadPhase1GateArchetypeEvidence, parseGateSelector, withReadOnlySnapshot } from '@/lib/phase-1-gate/load';
 import {
   PHASE_1_GATE_DECISION_KEYS,
-  PHASE_1_GATE_POLICY_V2,
+  PHASE_1_GATE_POLICY_V3,
   phase1GatePolicyApproved,
   phase1GatePolicyHash,
   unapprovedPhase1GateDecisions,
@@ -43,7 +43,7 @@ const KEYS = Object.keys(V5.points) as MetricKey[];
 const CODES = Array.from({ length: 218 }, (_, index) => String.fromCharCode(65 + Math.floor(index / 26)) + String.fromCharCode(65 + (index % 26)));
 const EVALUATED_AT = new Date('2026-11-02T09:00:00Z');
 const STAGING: GateEnvironment = { app_env: 'staging', database_environment: 'staging', database_fingerprint_prefix: '62587019d354', git_commit: 'abc1234' };
-const PROBES: GateNegativeProbe[] = PHASE_1_GATE_POLICY_V2.failure_semantics.value.required_negative_probes.map((id) => ({
+const PROBES: GateNegativeProbe[] = PHASE_1_GATE_POLICY_V3.failure_semantics.value.required_negative_probes.map((id) => ({
   id, method: 'ci_test', reference: `CI run 123: ${id}`, observed_at: '2026-10-30T10:00:00Z', outcome: 'refused', recorded_by: 'engineering_owner',
 }));
 
@@ -143,9 +143,9 @@ function archetypeEvidence(key: string, hs6: string): GateArchetypeEvidence {
   };
 }
 
-const fullEvidence = () => PHASE_1_GATE_POLICY_V2.archetypes.value.map((archetype) => archetypeEvidence(archetype.key, archetype.hs6));
+const fullEvidence = () => PHASE_1_GATE_POLICY_V3.archetypes.value.map((archetype) => archetypeEvidence(archetype.key, archetype.hs6));
 const evaluate = (overrides: Partial<Phase1GateInput> = {}) =>
-  evaluatePhase1Gate({ policy: PHASE_1_GATE_POLICY_V2, evidence: fullEvidence(), negative_probes: PROBES, evaluated_at: EVALUATED_AT, environment: STAGING, ...overrides });
+  evaluatePhase1Gate({ policy: PHASE_1_GATE_POLICY_V3, evidence: fullEvidence(), negative_probes: PROBES, evaluated_at: EVALUATED_AT, environment: STAGING, ...overrides });
 /** Evaluate with the rice run changed by `change`; the other two archetypes stay as they were. */
 function evaluateRice(change: (rice: GateArchetypeEvidence) => void) {
   const evidence = fullEvidence();
@@ -156,7 +156,7 @@ const checkOf = (report: Phase1GateReport, id: string, archetype = 'rice') => re
 const marketAt = (rice: GateArchetypeEvidence, rank: number) => rice.markets.find((market) => market.rank === rank)!;
 
 function approvedPolicy(): Phase1GatePolicy {
-  const policy = structuredClone(PHASE_1_GATE_POLICY_V2);
+  const policy = structuredClone(PHASE_1_GATE_POLICY_V3);
   policy.approval = { approved_by: 'owner@test', approved_at: '2026-11-01T00:00:00Z', decision_reference: 'docs/35 D-0xx' };
   for (const key of PHASE_1_GATE_DECISION_KEYS) (policy[key] as GateDecision<unknown>).status = 'approved';
   return policy;
@@ -164,29 +164,29 @@ function approvedPolicy(): Phase1GatePolicy {
 
 describe('policy v2', () => {
   test('every decision is proposed, the engine is v5, and the archetypes are unchanged', () => {
-    expect(PHASE_1_GATE_POLICY_V2.policy_version).toBe('phase-1-gate-v2');
-    expect(PHASE_1_GATE_POLICY_V2.approval).toBeNull();
-    expect(unapprovedPhase1GateDecisions(PHASE_1_GATE_POLICY_V2)).toEqual([...PHASE_1_GATE_DECISION_KEYS]);
-    expect(phase1GatePolicyApproved(PHASE_1_GATE_POLICY_V2)).toBe(false);
-    expect(PHASE_1_GATE_POLICY_V2.engine.value.model_version).toBe(DEMAND_DISCOVERY_V5_MODEL);
-    expect(PHASE_1_GATE_POLICY_V2.archetypes.value.map((archetype) => [archetype.key, archetype.hs6, archetype.hs_revision])).toEqual([['rice', '100630', 'HS2022'], ['brassware', '741810', 'HS2022'], ['carpets', '570110', 'HS2022']]);
-    expect(PHASE_1_GATE_POLICY_V2.calibration.value.top).toBe(V5.ranking.handoff_count);
-    expect(phase1GatePolicyHash(PHASE_1_GATE_POLICY_V2)).toMatch(/^[a-f0-9]{64}$/);
-    expect(phase1GatePolicyHash(approvedPolicy())).not.toBe(phase1GatePolicyHash(PHASE_1_GATE_POLICY_V2));
-    expect(() => assertValidPhase1GatePolicy(PHASE_1_GATE_POLICY_V2)).not.toThrow();
+    expect(PHASE_1_GATE_POLICY_V3.policy_version).toBe('phase-1-gate-v3');
+    expect(PHASE_1_GATE_POLICY_V3.approval).toBeNull();
+    expect(unapprovedPhase1GateDecisions(PHASE_1_GATE_POLICY_V3)).toEqual([...PHASE_1_GATE_DECISION_KEYS]);
+    expect(phase1GatePolicyApproved(PHASE_1_GATE_POLICY_V3)).toBe(false);
+    expect(PHASE_1_GATE_POLICY_V3.engine.value.model_version).toBe(DEMAND_DISCOVERY_V5_MODEL);
+    expect(PHASE_1_GATE_POLICY_V3.archetypes.value.map((archetype) => [archetype.key, archetype.hs6, archetype.hs_revision])).toEqual([['rice', '100630', 'HS2022'], ['brassware', '741810', 'HS2022'], ['carpets', '570110', 'HS2022']]);
+    expect(PHASE_1_GATE_POLICY_V3.calibration.value.top).toBe(V5.ranking.handoff_count);
+    expect(phase1GatePolicyHash(PHASE_1_GATE_POLICY_V3)).toMatch(/^[a-f0-9]{64}$/);
+    expect(phase1GatePolicyHash(approvedPolicy())).not.toBe(phase1GatePolicyHash(PHASE_1_GATE_POLICY_V3));
+    expect(() => assertValidPhase1GatePolicy(PHASE_1_GATE_POLICY_V3)).not.toThrow();
   });
 
   test('a policy the evaluator would misread is refused', () => {
-    const share = structuredClone(PHASE_1_GATE_POLICY_V2);
+    const share = structuredClone(PHASE_1_GATE_POLICY_V3);
     share.calibration.value.minimum_overlap_share = 1.5;
     expect(() => assertValidPhase1GatePolicy(share)).toThrow(/overlap share/);
-    const both = structuredClone(PHASE_1_GATE_POLICY_V2);
+    const both = structuredClone(PHASE_1_GATE_POLICY_V3);
     both.duty_evidence.value.forbidden_bases = ['agent_recorded', 'official'];
     expect(() => assertValidPhase1GatePolicy(both)).toThrow(/both official and forbidden/);
-    const unknown = structuredClone(PHASE_1_GATE_POLICY_V2);
+    const unknown = structuredClone(PHASE_1_GATE_POLICY_V3);
     (unknown.duty_evidence.value.official_bases as string[]).push('typed_by_hand');
     expect(() => assertValidPhase1GatePolicy(unknown)).toThrow(/unknown duty bases: typed_by_hand/);
-    const v1 = structuredClone(PHASE_1_GATE_POLICY_V2) as unknown as { schema_version: string };
+    const v1 = structuredClone(PHASE_1_GATE_POLICY_V3) as unknown as { schema_version: string };
     v1.schema_version = 'phase-1-gate-policy-v1';
     expect(() => assertValidPhase1GatePolicy(v1 as unknown as Phase1GatePolicy)).toThrow(/is not phase-1-gate-policy-v2/);
   });
@@ -309,7 +309,7 @@ describe('evaluating v5 runs', () => {
   });
 
   test('fewer ranked markets than the policy needs fails, tallying why the rest are not ranked', () => {
-    const policy = structuredClone(PHASE_1_GATE_POLICY_V2);
+    const policy = structuredClone(PHASE_1_GATE_POLICY_V3);
     policy.market_count.value.minimum_ranked_markets = 209;
     expect(checkOf(evaluate({ policy }), 'market_count.minimum_ranked')).toMatchObject({
       status: 'fail', detail: '208 ranked market(s) of 218; 209 required.', reasons: ['no_recorded_demand: 5', 'not_enough_data: 4', 'excluded: 1'],
@@ -330,6 +330,29 @@ describe('evaluating v5 runs', () => {
     // With fewer than ten destinations, half of them, rounded up.
     const few = evaluateRice((rice) => { Object.assign(rice.calibration!, { india_top: rice.calibration!.india_top.slice(0, 3), overlap: 2, missed: [] }); });
     expect(checkOf(few, 'calibration.india_top_overlap')).toMatchObject({ status: 'pass', detail: expect.stringContaining('(at least 2 needed)') });
+  });
+
+  test('calibration: a miss the policy accepts — no or restricted ECGC cover, sanctions — counts as explained (E-045)', () => {
+    // The 31 Oct rice run: 4 in the top 10; Iran, Iraq, Guinea and Yemen have restricted ECGC cover.
+    const rice = (calibration: Partial<GateCalibrationEvidence>, policy = PHASE_1_GATE_POLICY_V3) => {
+      const evidence = fullEvidence();
+      Object.assign(evidence[0].calibration!, calibration);
+      return checkOf(evaluate({ policy, evidence }), 'calibration.india_top_overlap');
+    };
+    const restricted = (market: string, rank: number) => ({ market, status: 'ranked', rank, explained_by: 'ecgc_restricted' as const });
+    const missed = [restricted('IR', 91), restricted('IQ', 35), restricted('GN', 27), restricted('YE', 36), { market: 'TG', status: 'ranked', rank: 20, explained_by: null }, { market: 'CI', status: 'ranked', rank: 11 }];
+    expect(rice({ overlap: 4, missed })).toMatchObject({
+      status: 'pass',
+      detail: '4 of India’s 10 largest destinations (2022, 2023, 2024) are in the run’s top 10, and 4 more outside it carry a reason the policy accepts (IR, IQ, GN, YE: ECGC cover is restricted): 8 counted (at least 5 needed).',
+    });
+    // Too few even with the explained misses: only the unexplained ones are named.
+    expect(rice({ overlap: 0, missed })).toMatchObject({ status: 'fail', reasons: ['missed:TG:rank_20', 'missed:CI:rank_11'] });
+    // The policy decides which reasons count: without sanctions, a flagged miss counts against the run.
+    const flagged = [{ market: 'RU', status: 'ranked', rank: 40, explained_by: 'sanctions' as const }, { market: 'TG', status: 'ranked', rank: 20, explained_by: null }];
+    expect(rice({ overlap: 4, missed: flagged })).toMatchObject({ status: 'pass', detail: expect.stringContaining('(RU: a sanctions programme is flagged): 5 counted') });
+    const ecgcOnly = structuredClone(PHASE_1_GATE_POLICY_V3);
+    ecgcOnly.calibration.value.explained_misses = ['ecgc_off_cover', 'ecgc_restricted'];
+    expect(rice({ overlap: 4, missed: flagged }, ecgcOnly)).toMatchObject({ status: 'fail', reasons: ['missed:RU:rank_40', 'missed:TG:rank_20'] });
   });
 
   test('no silent zeros: every value rests on evidence or says why there is none', () => {
@@ -506,7 +529,7 @@ describe('the loader, on database rows', () => {
     const f = await fixture();
     const evidence = await withReadOnlySnapshot(prisma, (db) => loadPhase1GateArchetypeEvidence(db, 'fixture', { kind: 'run', id: f.earlier.id }, { calibration_top: 10 }));
     expect(evidence).toMatchObject({ selector: `run:${f.earlier.id}`, selection_note: 'run named explicitly', markets: [], calibration: null, run: { model_version: null } });
-    const policy = structuredClone(PHASE_1_GATE_POLICY_V2);
+    const policy = structuredClone(PHASE_1_GATE_POLICY_V3);
     policy.archetypes.value = [{ key: 'fixture', label: 'Fixture', hs6: f.hs6, hs_revision: 'HS2022' }];
     const report = evaluatePhase1Gate({ policy, evidence: [evidence], negative_probes: PROBES, evaluated_at: new Date(), environment: { ...STAGING, app_env: 'staging' } });
     expect(report.summary.failed_checks).toEqual(['fixture:engine.v5_only']);

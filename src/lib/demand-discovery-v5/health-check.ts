@@ -14,7 +14,7 @@ import { BACI_PROVIDER, type BaciFlow } from '@/lib/trade-datasets/baci';
 import { readPartitionFlows } from '@/lib/trade-datasets/partitions';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import { assessMarkets } from './assess';
-import { compareWithIndiaExports } from './calibration';
+import { compareWithIndiaExports, riskExplanation } from './calibration';
 import { loadRunInputs, type V5ProductFacts } from './run-inputs';
 
 /** India's export value by HS6 in the flows given, largest first. Pure; values in USD. */
@@ -79,7 +79,7 @@ export async function scoreProductOffline(product: { hs6: string; india_usd: num
     if (!base) return { ...product, status: 'failed', error: 'No BACI flows for this code.' };
     const comparison = compareWithIndiaExports({
       hs6: product.hs6, flows: base.flows, years: base.years.slice(-config.policy.size.average_years),
-      markets: result.markets.map((market) => ({ market: market.market, status: market.status, rank: market.rank, overall: market.overall, reasons: market.reasons.map((reason) => reason.text) })),
+      markets: result.markets.map((market) => ({ market: market.market, status: market.status, rank: market.rank, overall: market.overall, reasons: market.reasons.map((reason) => reason.text), explained_by: riskExplanation({ metrics: market.metrics, flag_reasons: market.flag_reasons }) })),
     });
     return {
       ...product, status: 'compared', verdict: comparison.verdict, overlap: comparison.overlap, top: comparison.top,

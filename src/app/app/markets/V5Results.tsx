@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
 import { buttonClass, StatusChip } from '@/components/ui';
 import type { ExporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
+import type { IndiaMarket } from '@/lib/demand-discovery-v5/india-markets';
 import type { StatusIconName, StatusTone } from '@/types';
 
 export interface V5Label { key: string; text: string; tone: 'positive' | 'caution' | 'info'; estimated?: boolean }
@@ -146,7 +147,36 @@ function ExporterFitPrompt({ fit, productId }: { fit: ExporterFitView; productId
 
 const HANDED_OFF_FIRST = 10;
 
-export function V5Results({ rows, notes, provenanceNote, exporterFit = null, productId = null }: { rows: V5Row[]; notes: string[]; provenanceNote: string | null; exporterFit?: ExporterFitView | null; productId?: string | null }) {
+/**
+ * E-045: India's own largest destinations for the product. Markets outside the top say why they rank
+ * lower, in the run's own words; restricted or no ECGC cover, or a sanctions flag, is a separate note.
+ */
+export function IndiaMarkets({ markets }: { markets: IndiaMarket[] }) {
+  if (!markets.length) return null;
+  return (
+    <section aria-labelledby="india-markets" className="mt-6 rounded-lg border border-[var(--color-border)] bg-surface p-4">
+      <h3 id="india-markets" className="text-sm font-semibold text-primary">Where India already sells most</h3>
+      <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">The markets that buy the most of this product from India. Markets ranked lower carry more risk or less opportunity for a new exporter; the reason is shown.</p>
+      <ol className="mt-3 space-y-2">
+        {markets.map((market, index) => (
+          <li key={market.country_code} className="text-sm">
+            <span className="font-medium text-primary">{index + 1}. {countryName(market.country_code)}</span>
+            <span className="text-[var(--color-text-secondary)]">
+              {market.rank != null ? ` · ranked #${market.rank}` : market.market_status === 'excluded' ? ' · excluded' : ' · not ranked'}
+              {market.india_share_percent != null ? ` · India supplies ${market.india_share_percent.toFixed(1)}%` : ''}
+            </span>
+            {!market.in_top && market.reason ? <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">Ranked lower: {market.reason}</p> : null}
+            {!market.in_top && market.explained_text ? (
+              <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">Note: {market.explained_text.charAt(0).toUpperCase()}{market.explained_text.slice(1)}.</p>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+export function V5Results({ rows, notes, provenanceNote, exporterFit = null, productId = null, indiaMarkets = [] }: { rows: V5Row[]; notes: string[]; provenanceNote: string | null; exporterFit?: ExporterFitView | null; productId?: string | null; indiaMarkets?: IndiaMarket[] }) {
   const [showAll, setShowAll] = useState(false);
   const ranked = rows.filter((row) => row.market_status === 'ranked').sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   const notEnough = rows.filter((row) => row.market_status === 'not_enough_data');
@@ -182,6 +212,8 @@ export function V5Results({ rows, notes, provenanceNote, exporterFit = null, pro
           Show all {ranked.length} ranked markets
         </button>
       ) : null}
+
+      <IndiaMarkets markets={indiaMarkets} />
 
       {notEnough.length || noDemand.length || excluded.length ? (
         <details className="mt-6 rounded-lg border border-[var(--color-border)] bg-surface p-4">

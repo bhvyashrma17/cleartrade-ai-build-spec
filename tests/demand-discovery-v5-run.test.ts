@@ -19,7 +19,7 @@ import { registerAllJobHandlers } from '../src/lib/job-handlers';
 import { claimNextJob, runClaimedJob } from '../src/lib/jobs';
 import { evaluatePhase1Gate } from '../src/lib/phase-1-gate/evaluate';
 import { loadPhase1GateArchetypeEvidence, withReadOnlySnapshot, type GateSelector } from '../src/lib/phase-1-gate/load';
-import { PHASE_1_GATE_POLICY_V2 } from '../src/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V3 } from '../src/lib/phase-1-gate/policy';
 import { prisma } from '../src/lib/prisma';
 import { confirmClassification, proposeClassification } from '../src/lib/product-classification';
 import { manifestEntryFor, readReferenceManifest } from '../src/lib/reference-datasets/manifest';
@@ -380,7 +380,7 @@ describe('Demand Discovery v5 runs', () => {
     // Named by product, the same run is chosen: the newest finished v5 run for the confirmed code.
     expect((await load({ kind: 'product', id: gateRun!.product_id })).run?.id).toBe(gateRun!.run_id);
 
-    const policy = structuredClone(PHASE_1_GATE_POLICY_V2);
+    const policy = structuredClone(PHASE_1_GATE_POLICY_V3);
     policy.archetypes.value = [{ key: 'fixture', label: 'Cereal grain', hs6: '100890', hs_revision: 'HS2022' }];
     policy.evidence_environment.value.required_environment = 'test';
     // Here the exporter confirmed its own code (staff confirm the real archetypes), four markets import

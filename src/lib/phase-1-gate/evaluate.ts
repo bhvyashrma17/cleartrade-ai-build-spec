@@ -20,6 +20,7 @@
 import { canonicalHash } from '@/lib/country-evidence/planner';
 import { dutyBasisOf, DUTY_BASES, type DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
 import type { MetricResult } from '@/lib/demand-discovery-v5/metrics';
+import { MISS_EXPLANATION_TEXT, type MissExplanation } from '@/lib/demand-discovery-v5/calibration';
 import { policyHash, type DemandDiscoveryV5Policy, type MetricKey } from '@/lib/demand-discovery-v5/policy';
 import { rankMarkets, scoreMarket, type MarketScoreInput, type ScoredMarket } from '@/lib/demand-discovery-v5/score';
 import {
@@ -92,7 +93,8 @@ export interface GateCalibrationEvidence {
   india_top: { market: string; usd: number; status: string | null; rank: number | null }[];
   run_top: { market: string; rank: number }[];
   overlap: number;
-  missed: { market: string; status: string | null; rank: number | null }[];
+  /** E-045: each miss carries why the run may rightly rank it low, when it may. */
+  missed: { market: string; status: string | null; rank: number | null; explained_by?: MissExplanation | null }[];
 }
 
 export interface GateRunEvidence {
@@ -261,7 +263,7 @@ export interface GateArchetypeReport {
     india_top: string[];
     run_top: string[];
     overlap: number;
-    missed: { market: string; status: string | null; rank: number | null }[];
+    missed: { market: string; status: string | null; rank: number | null; explained_by?: MissExplanation | null }[];
   } | null;
   checks: GateCheck[];
   markets: GateMarketReport[];
@@ -621,10 +623,18 @@ function evaluateArchetype(
     else if (!calibration.india_top.length) checks.push(check('calibration.india_top_overlap', 'calibration', 'fail', 'India has no recorded exports of the product to compare with.', ['no_india_exports_to_compare']));
     else {
       const needed = Math.ceil(calibration.india_top.length * policy.calibration.value.minimum_overlap_share);
-      const summary = `${calibration.overlap} of India’s ${calibration.india_top.length} largest destinations (${calibration.years.join(', ')}) are in the run’s top ${top}`;
-      checks.push(calibration.overlap >= needed
+      // E-045: a miss outside the top that carries a reason the policy accepts (restricted or no ECGC cover, sanctions) counts.
+      const accepted = new Set<string>(policy.calibration.value.explained_misses ?? []);
+      const explained = calibration.missed.filter((item) => item.explained_by != null && accepted.has(item.explained_by));
+      const counted = calibration.overlap + explained.length;
+      const byReason = new Map<MissExplanation, string[]>();
+      for (const item of explained) byReason.set(item.explained_by!, [...(byReason.get(item.explained_by!) ?? []), item.market]);
+      const reasons = [...byReason].map(([reason, markets]) => `${markets.join(', ')}: ${MISS_EXPLANATION_TEXT[reason]}`).join('; ');
+      const summary = `${calibration.overlap} of India’s ${calibration.india_top.length} largest destinations (${calibration.years.join(', ')}) are in the run’s top ${top}`
+        + (explained.length ? `, and ${explained.length} more outside it carry a reason the policy accepts (${reasons}): ${counted} counted` : '');
+      checks.push(counted >= needed
         ? check('calibration.india_top_overlap', 'calibration', 'pass', `${summary} (at least ${needed} needed).`)
-        : check('calibration.india_top_overlap', 'calibration', 'fail', `${summary}; at least ${needed} needed.`, calibration.missed.map((item) => `missed:${item.market}:${item.rank != null ? `rank_${item.rank}` : item.status ?? 'not_assessed'}`)));
+        : check('calibration.india_top_overlap', 'calibration', 'fail', `${summary}; at least ${needed} needed.`, calibration.missed.filter((item) => !explained.includes(item)).map((item) => `missed:${item.market}:${item.rank != null ? `rank_${item.rank}` : item.status ?? 'not_assessed'}`)));
     }
 
     // Actual data or labelled estimates; no silent zero (D-037).
