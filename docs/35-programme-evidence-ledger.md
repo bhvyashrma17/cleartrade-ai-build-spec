@@ -1750,6 +1750,30 @@ recommended defaults of E-035's two open decisions; the owner can still say no b
 
 **Not verified.** Live downloads from the World Bank and Comtrade on staging.
 
+### E-041 · 2026-10-31 · The free estimate answers for every product (owner-approved idea 1) (in review)
+
+**Staging (owner's Claude Code, 31 Oct).** #23 deployed at 06:27–06:28 UTC. The worker's sweep settled
+the two stuck runs and their attempts as failed at 06:28:59. #24 was merged at 06:26:45, before its CI
+finished; that CI run, 41176496446, passed at 06:35:37 on the tree now deployed (`276713c`). The first
+auto-import loop imported nothing: no import account is set yet.
+
+**Built.**
+- `POST /api/v1/market-estimates`, the free and guest estimate, now reads CEPII BACI, which covers
+  every HS6 product. It uses the newest ready release holding the code (HS 2022 first, else HS 2017),
+  over its latest three years.
+- Each market shows its imports by year, ordered by its latest year. Prices are per kg, across its
+  suppliers, from the 10th to the 90th percentile by value. India itself, provider aggregates and
+  markets under the volume floor are left out.
+- The Comtrade warehouse, which holds only the products someone has ingested, answers only where BACI
+  is missing or cannot be read.
+- The result names its source (`source`, `source_label`), and the page shows it.
+- The framing rules are unchanged: observed history only, the disclaimer verbatim, no projections.
+- AGENTS.md and docs/14 §3 now describe the new data source.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; new `market-estimate-baci` (2 tests): the
+estimate from flows (order, price band, exclusions, framing) and the fallback when BACI is missing or
+unreadable.
+
 ## Risk register
 
 
