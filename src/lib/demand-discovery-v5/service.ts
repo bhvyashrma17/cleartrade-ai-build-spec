@@ -176,6 +176,13 @@ function rowFor(market: AssessedMarket, run: { id: string; product_id: string | 
   };
 }
 
+/**
+ * How long the results write may hold its transaction. Prisma's default is 5 s; 218 rows of breakdown
+ * JSON took 5.2 s on staging from a worker in Amsterdam to the database in Singapore (E-039), so the
+ * write timed out on every attempt. Two minutes leaves room for distance without hiding a stuck write.
+ */
+export const V5_RESULTS_WRITE_TIMEOUT_MS = 120_000;
+
 export async function writeV5Results(args: {
   run: { id: string; product_id: string | null; exporter_org_id: string; input_snapshot: Prisma.JsonValue };
   result: AssessmentResult;
@@ -212,6 +219,6 @@ export async function writeV5Results(args: {
       after_summary: { status: args.status, model_version: DEMAND_DISCOVERY_V5_MODEL, ranked: args.result.summary.ranked, handed_off: args.result.summary.handed_off.map((item) => item.market) },
       correlation_id: args.correlation_id, source: AuditSource.job,
     });
-  });
+  }, { timeout: V5_RESULTS_WRITE_TIMEOUT_MS, maxWait: 10_000 });
   return summary;
 }

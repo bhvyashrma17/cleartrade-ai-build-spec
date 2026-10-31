@@ -240,7 +240,7 @@ export async function reclaimStaleJobs(): Promise<{ requeued: number; failed: nu
 
   const stale = await prisma.job.findMany({
     where: { status: JobStatus.processing, started_at: { lt: cutoff } },
-    select: { id: true, attempts: true, max_attempts: true },
+    select: { id: true, type: true, target_id: true, attempts: true, max_attempts: true },
   });
   if (stale.length === 0) return { requeued: 0, failed: 0 };
 
@@ -248,6 +248,11 @@ export async function reclaimStaleJobs(): Promise<{ requeued: number; failed: nu
   const exhausted = stale.filter((j) => j.attempts >= j.max_attempts).map((j) => j.id);
 
   const [requeued, failed] = await prisma.$transaction([
+    // The attempt that was running ends with it, or it stays `processing` forever (E-039).
+    prisma.jobAttempt.updateMany({
+      where: { job_id: { in: stale.map((j) => j.id) }, status: JobStatus.processing },
+      data: { status: JobStatus.failed, error_code: 'WORKER_TIMEOUT', error_message: STOPPED_ATTEMPT_MESSAGE, finished_at: new Date() },
+    }),
     prisma.job.updateMany({
       where: { id: { in: retryable }, status: JobStatus.processing },
       data: {
@@ -267,9 +272,51 @@ export async function reclaimStaleJobs(): Promise<{ requeued: number; failed: nu
         dedupe_key: null,
       },
     }),
-  ]);
+  ]).then(([, requeuedJobs, failedJobs]) => [requeuedJobs, failedJobs] as const);
 
+  for (const job of stale) await runEndHook(job, job.attempts >= job.max_attempts ? 'failed' : 'requeued');
   return { requeued: requeued.count, failed: failed.count };
+}
+
+const STOPPED_ATTEMPT_MESSAGE = 'The worker stopped before this attempt finished.';
+
+/**
+ * Attempts left `processing` under a job that is no longer running: the stale reclaim did not close
+ * them before E-039. Closed as stopped; returns how many. The worker sweeps for these.
+ */
+export async function closeOrphanedAttempts(): Promise<number> {
+  const closed = await prisma.jobAttempt.updateMany({
+    where: { status: JobStatus.processing, job: { status: { not: JobStatus.processing } } },
+    data: { status: JobStatus.failed, error_code: 'WORKER_TIMEOUT', error_message: STOPPED_ATTEMPT_MESSAGE, finished_at: new Date() },
+  });
+  return closed.count;
+}
+
+// ---------------------------------------------------------------------------
+// End hooks
+// ---------------------------------------------------------------------------
+
+/**
+ * What a job type does when the queue, not its handler, ends an attempt: a stale reclaim (the worker
+ * stopped mid-attempt) or a failure. A v5 run, for one, must follow its job instead of staying
+ * `processing` (E-039). A hook's own failure is logged and never stops the queue's bookkeeping.
+ */
+export type JobEndHook = (job: { id: string; type: JobType; target_id: string | null }, outcome: 'requeued' | 'failed') => Promise<void>;
+
+const END_HOOKS = new Map<JobType, JobEndHook>();
+
+export function registerJobEndHook(type: JobType, hook: JobEndHook) {
+  END_HOOKS.set(type, hook);
+}
+
+async function runEndHook(job: { id: string; type: JobType; target_id: string | null }, outcome: 'requeued' | 'failed') {
+  const hook = END_HOOKS.get(job.type);
+  if (!hook) return;
+  try {
+    await hook(job, outcome);
+  } catch (error) {
+    console.error(`[job ${job.id}] end hook (${outcome}) failed:`, error);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +392,7 @@ export async function failJobAttempt(
   // Exponential backoff on the attempt number, so a flapping dependency is not hammered.
   const delayMs = policy.retry_backoff_seconds * 1000 * 2 ** (job.attempts - 1);
 
-  return prisma.job.update({
+  const updated = await prisma.job.update({
     where: { id: jobId },
     data: exhausted
       ? {
@@ -363,6 +410,8 @@ export async function failJobAttempt(
           error_message: errorMessage,
         },
   });
+  await runEndHook(updated, exhausted ? 'failed' : 'requeued');
+  return updated;
 }
 
 export async function updateJobProgress(jobId: string, progress: number) {
