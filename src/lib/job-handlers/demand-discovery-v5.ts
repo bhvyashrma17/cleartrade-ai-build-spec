@@ -75,3 +75,38 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
     throw error;
   }
 }
+
+/**
+ * The job's end hook (jobs.ts): when the queue ends an attempt (the worker stopped mid-run, or an
+ * attempt failed), the run follows its job: `queued` while a retry is due, `failed` or `cancelled` once
+ * none is. Idempotent, and never moves a finished run (E-039). True when the run moved.
+ */
+export async function settleV5Run(job: { id: string; target_id: string | null }): Promise<boolean> {
+  if (!job.target_id) return false;
+  const current = await prisma.job.findUnique({ where: { id: job.id }, select: { status: true } });
+  const next = current?.status === JobStatus.queued || current?.status === JobStatus.failed || current?.status === JobStatus.cancelled ? current.status : null;
+  if (!next) return false;
+  // A retry may follow a failure the handler recorded; a final failure only closes a run still open.
+  const from = next === JobStatus.queued ? [JobStatus.processing, JobStatus.failed] : [JobStatus.queued, JobStatus.processing];
+  const moved = await prisma.discoveryRun.updateMany({
+    where: { id: job.target_id, job_id: job.id, model_version: DEMAND_DISCOVERY_V5_MODEL, status: { in: from } },
+    data: { status: next },
+  });
+  return moved.count > 0;
+}
+
+/** v5 runs still `queued` or `processing` under a job that failed or was cancelled before E-039, settled. Returns how many moved. */
+export async function reconcileV5Runs(): Promise<number> {
+  const open = await prisma.discoveryRun.findMany({
+    where: { model_version: DEMAND_DISCOVERY_V5_MODEL, status: { in: [JobStatus.queued, JobStatus.processing] }, job_id: { not: null } },
+    select: { id: true, job_id: true },
+  });
+  if (!open.length) return 0;
+  const ended = await prisma.job.findMany({ where: { id: { in: open.map((run) => run.job_id!) }, status: { in: [JobStatus.failed, JobStatus.cancelled] } }, select: { id: true } });
+  let moved = 0;
+  for (const job of ended) {
+    const run = open.find((candidate) => candidate.job_id === job.id)!;
+    if (await settleV5Run({ id: job.id, target_id: run.id })) moved += 1;
+  }
+  return moved;
+}

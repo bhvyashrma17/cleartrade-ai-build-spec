@@ -22,7 +22,8 @@
 
 import { getConfig } from '../src/lib/config';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
-import { claimNextJob, reclaimStaleJobs, runClaimedJob } from '../src/lib/jobs';
+import { claimNextJob, closeOrphanedAttempts, reclaimStaleJobs, runClaimedJob } from '../src/lib/jobs';
+import { reconcileV5Runs } from '../src/lib/job-handlers/demand-discovery-v5';
 import { prisma } from '../src/lib/prisma';
 import {hostname} from 'node:os';
 import {log,reportError} from '../src/lib/observability';
@@ -96,6 +97,24 @@ async function sweepInputFreshness(): Promise<void> {
     reportError(error, { event_scope: 'worker_input_freshness' });
   }
 }
+/**
+ * E-039: attempts and v5 runs left `processing` under a job that had already ended, from before the
+ * stale reclaim closed them, are settled here. New cases no longer arise, so every 10 minutes is ample.
+ */
+const ORPHAN_SWEEP_INTERVAL_MS = Number(process.env.ORPHAN_SWEEP_INTERVAL_MS ?? 600_000);
+let lastOrphanSweepAt = 0;
+
+async function sweepOrphanedWork(): Promise<void> {
+  if (Date.now() - lastOrphanSweepAt < ORPHAN_SWEEP_INTERVAL_MS) return;
+  lastOrphanSweepAt = Date.now();
+  try {
+    const attempts = await closeOrphanedAttempts();
+    const runs = await reconcileV5Runs();
+    if (attempts || runs) log('warn', 'orphaned_work_settled', { attempts, runs });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_orphan_sweep' });
+  }
+}
 const instanceId=process.env.WORKER_INSTANCE_ID??`${hostname()}-${process.pid}`,heartbeatId=`worker:${instanceId}`;
 let consecutiveFailures=0;
 async function heartbeat(status='ready',lastError?:string){await prisma.workerHeartbeat.upsert({where:{id:heartbeatId},create:{id:heartbeatId,instance_id:instanceId,status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():null,consecutive_failures:consecutiveFailures},update:{status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():undefined,consecutive_failures:consecutiveFailures}});}
@@ -108,6 +127,7 @@ async function tick(): Promise<boolean> {
   await sweepLapsedMemberships();
   await sweepAuthorityRefresh();
   await sweepInputFreshness();
+  await sweepOrphanedWork();
 
   const reclaimed = await reclaimStaleJobs();
   if (reclaimed.requeued || reclaimed.failed) {

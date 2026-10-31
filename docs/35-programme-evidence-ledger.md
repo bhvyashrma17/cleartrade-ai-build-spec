@@ -1688,6 +1688,37 @@ confirms #21's corrected `dutyInputs` tests in a full run.
 **Not verified.** The runs on staging. They follow the stage 1 check, which waits on the storage
 region decision (E-037).
 
+### E-039 · 2026-10-31 · Stage 1 staging check stopped; v5 writes and stuck runs fixed (in review)
+
+**Staging (owner's Claude Code, 30 Oct 22:24 – 31 Oct).**
+- Storage: `STORAGE_REGION` is the literal `auto` on web and worker, and the other bucket variables are
+  references. `verify-staging-storage.ts` passed 9 of 9. R-35 is closed.
+- Census: the worker's first live read completed (US, 22:42). R-32 is closed.
+- Rice (run `cmvvjlsel0001ueze8m0k8gts`, policy v8): completed with 214 ranked, but calibration failed
+  with an overlap of 4 of 10. Missed: Iran (ranked 91), Iraq (35), Guinea (27), Yemen (36), Togo (20)
+  and Côte d'Ivoire (11). R-30 stays open.
+- Brassware and carpets never finished:
+  - Attempts 1 and 2 timed out in `writeV5Results`, whose transaction took 5.2 s against Prisma's 5 s
+    limit. The worker runs in Amsterdam and the database in Singapore.
+  - Merging #21 and #22 redeployed the worker during both third attempts.
+  - The stale reclaim then failed both jobs, but left their attempts and runs `processing`.
+- The gate was not run; the negative-probe record is prepared.
+
+**Built.**
+- `writeV5Results` holds its transaction for up to 120 s (`V5_RESULTS_WRITE_TIMEOUT_MS`).
+- The stale reclaim closes the stopped attempt (`WORKER_TIMEOUT`). A job type can register an end hook,
+  which runs on a reclaim and after `failJobAttempt`. v5 registers `settleV5Run`: the run follows its job,
+  `queued` while a retry is due and `failed` or `cancelled` once none is, and a finished run never moves.
+- The worker sweeps every 10 minutes (`closeOrphanedAttempts`, `reconcileV5Runs`). On deploy it settles
+  the two stuck staging runs and attempts as failed; that is a staging data change, made by code.
+
+**Decisions (owner's).** Move the worker to Singapore with the database (recommended; R-37). Rice
+calibration waits on the reasons for its six misses (`dd5-compare-top10.ts`, read-only).
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files; new
+`job-recovery` (6 tests); full suite: 2,312 passed, 5 skipped, and the same three local-harness-only
+failures as in E-033.
+
 ## Risk register
 
 
@@ -1724,8 +1755,9 @@ region decision (E-037).
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
 | R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
-| R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Open (E-029). The key was on staging web only, while the job runs on the worker; the worker has it as a reference since 30 Oct (E-037) | The stage 1 check's first live Census read on the worker |
+| R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Closed (E-039): the worker read the US live on 30 Oct | — |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
 | R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
-| R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Mitigated (E-037). Cause: Railway's 21 Oct credential reset against literal copies of the bucket's secret. The bucket variables are now references, and storage has been ready since 18:41 UTC on 30 Oct | The region decision (E-037), then `verify-staging-storage.ts` passing and the archetype runs reading BACI |
+| R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Closed (E-039): the bucket variables are references, the region is the literal `auto`, and the round trip passed 9 of 9 | — |
 | R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — the owner's decision (E-037); recommended: rotate staging's, starting with the keys shared across environments, and check production | The owner's decision |
+| R-37 | The staging worker runs in Amsterdam and the database in Singapore: every query crosses continents, and a v5 results write took 5.2 s | Mitigated (E-039): a 120 s write timeout | The owner moves the worker to Singapore |

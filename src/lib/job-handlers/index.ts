@@ -15,12 +15,12 @@
  */
 
 import { JobType } from '@prisma/client';
-import { registerJobHandler } from '@/lib/jobs';
+import { registerJobEndHook, registerJobHandler } from '@/lib/jobs';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { runCbpManifestIngest } from '@/lib/job-handlers/cbp-manifest';
 import { runBuyerIntelligenceJob } from '@/lib/job-handlers/buyer-intelligence';
 import { runDemandDiscovery } from '@/lib/job-handlers/discovery';
-import { runDemandDiscoveryV5 } from '@/lib/job-handlers/demand-discovery-v5';
+import { runDemandDiscoveryV5, settleV5Run } from '@/lib/job-handlers/demand-discovery-v5';
 import { runCountryTruthDiscovery } from '@/lib/job-handlers/country-truth-discovery';
 import { runGlobalCountryScreening } from '@/lib/job-handlers/country-screening';
 import { runDocumentGeneration } from '@/lib/job-handlers/documents';
@@ -39,6 +39,8 @@ export function registerAllJobHandlers() {
   if (registered) return;
   registerJobHandler(JobType.demand_discovery, runDemandDiscovery);
   registerJobHandler(JobType.demand_discovery_v5, runDemandDiscoveryV5);
+  // E-039: when the queue ends an attempt, the run follows its job rather than staying `processing`.
+  registerJobEndHook(JobType.demand_discovery_v5, async (job) => { await settleV5Run(job); });
   registerJobHandler(JobType.country_truth_discovery, runCountryTruthDiscovery);
   registerJobHandler(JobType.country_screening, runGlobalCountryScreening);
   registerJobHandler(JobType.readiness_assessment, runReadinessAssessment);
