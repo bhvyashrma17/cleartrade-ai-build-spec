@@ -18,6 +18,7 @@ import { SANCTIONS_PROGRAMMES_KEY } from '@/lib/reference-datasets/sanctions-pro
 import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
 import { latestReadyTradeDatasetRelease } from '@/lib/trade-datasets/service';
 import type { Principal } from '@/types';
+import { aggregateRunCalibration, readRunCalibration, type RunCalibrationSummary } from './calibration';
 import { loadInputFreshness } from './input-freshness';
 import { DEMAND_DISCOVERY_V5_MODEL } from './policy';
 
@@ -40,6 +41,8 @@ export interface V5RunRow {
   ranked: number | null;
   top_markets: string[];
   notes: string[];
+  /** E-042: how the run's top 10 compares with India's own top destinations; null before E-042. */
+  calibration: RunCalibrationSummary | null;
 }
 
 function referenceDatasets(latestYear: number | null): Omit<V5DatasetStatus, 'active'>[] {
@@ -117,8 +120,15 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
       ranked: typeof summary.ranked === 'number' ? summary.ranked : null,
       top_markets: (summary.handed_off ?? []).slice(0, 5).map((item) => item.market),
       notes: summary.notes ?? [],
+      calibration: readRunCalibration(run.summary),
     };
   });
+  // E-042: calibration across the last 30 days of finished runs, whatever the product.
+  const finished30 = await prisma.discoveryRun.findMany({
+    where: { model_version: DEMAND_DISCOVERY_V5_MODEL, status: { in: [JobStatus.completed, JobStatus.partial] }, completed_at: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    orderBy: { completed_at: 'desc' }, take: 1000, select: { summary: true },
+  });
+  const calibration30 = aggregateRunCalibration(finished30.map((run) => readRunCalibration(run.summary)).filter((item): item is RunCalibrationSummary => item != null));
   const count = (status: JobStatus) => counts.find((row) => row.status === status)?._count._all ?? 0;
 
   return {
@@ -144,6 +154,7 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
     freshness,
     last_7_days: { queued: count(JobStatus.queued), processing: count(JobStatus.processing), completed: count(JobStatus.completed), partial: count(JobStatus.partial), failed: count(JobStatus.failed) },
     runs,
+    calibration_30_days: calibration30,
   };
 }
 

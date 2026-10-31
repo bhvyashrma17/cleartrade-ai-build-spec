@@ -460,6 +460,10 @@ sources itself (World Bank, Comtrade's reporting lists) is an open owner decisio
   calibration, labelled estimates, official duty and a replay of every score; its thresholds stay
   proposed until the owner approves.
 
+- Every run stores its own comparison with India's top destinations (`summary.calibration`, E-042),
+  shown on `/ops/discovery` with a 30-day summary. `scripts/dd5-health-check.ts` scores India's top
+  export products from stored data alone and reports where the scoring misses India's own markets.
+
 ## 9. Known limits
 
 - BACI ends in 2024; the newest-year chain-link covers only markets Comtrade has for 2025.

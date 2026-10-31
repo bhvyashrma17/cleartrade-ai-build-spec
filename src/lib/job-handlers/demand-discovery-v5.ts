@@ -11,6 +11,7 @@ import { getConfigWithVersion } from '@/lib/config';
 import type { JobContext, JobOutcome } from '@/lib/jobs';
 import { prisma } from '@/lib/prisma';
 import { assessMarkets } from '@/lib/demand-discovery-v5/assess';
+import { compareWithIndiaExports, summarizeRunCalibration } from '@/lib/demand-discovery-v5/calibration';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { loadRunInputs, type V5ProductFacts } from '@/lib/demand-discovery-v5/run-inputs';
 import { writeV5Results } from '@/lib/demand-discovery-v5/service';
@@ -47,9 +48,18 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
     const result = assessMarkets(loaded.input);
     await ctx.reportProgress(85);
     const status = loaded.degraded ? JobStatus.partial : JobStatus.completed;
+    // E-042: every run records how its top 10 compares with where India already sells (docs/36 §8),
+    // from the BACI flows it read, over the years the size measure averages.
+    const base = loaded.input.base;
+    const calibration = base
+      ? summarizeRunCalibration(compareWithIndiaExports({
+        hs6: snapshot.hs_code, flows: base.flows, years: base.years.slice(-config.policy.size.average_years),
+        markets: result.markets.map((market) => ({ market: market.market, status: market.status, rank: market.rank, overall: market.overall, reasons: market.reasons.map((reason) => reason.text) })),
+      }))
+      : null;
     const summary = await writeV5Results({
       run, result, frozen_inputs: loaded.frozen, evidence_origins: loaded.evidence_origins, notes: loaded.notes, status, as_of: asOf,
-      config_version: version, policy_snapshot: config.policy, correlation_id: ctx.correlation_id,
+      config_version: version, policy_snapshot: config.policy, correlation_id: ctx.correlation_id, calibration,
     });
     // D-019: the top markets go on to regional and buyer discovery where an official source exists.
     // Never fails the run: a hand-off that cannot start is recorded in the result.
@@ -62,6 +72,7 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
         model_version: DEMAND_DISCOVERY_V5_MODEL,
         assessment_count: result.markets.length,
         ranked: summary.ranked,
+        ...(calibration ? { calibration: { overlap: calibration.overlap, top: calibration.top, verdict: calibration.verdict } } : {}),
         top_markets: summary.handed_off.slice(0, 3).map((item) => ({ country_code: item.market, overall_score: item.overall })),
         regional_demand: regional,
         buyer_discovery: buyers,
