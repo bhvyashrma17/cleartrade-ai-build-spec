@@ -4,6 +4,7 @@
  * what form its bytes take.
  */
 import { z } from 'zod';
+import { BACI_PRODUCT_CODES_KEY, BACI_PRODUCT_CODES_PARSER_VERSION, hsCodeRowSchema, parseBaciProductCodes } from './baci-products';
 import { CAPITALS_SUPPLEMENT_KEY, CAPITALS_SUPPLEMENT_PARSER_VERSION, capitalSupplementRowSchema, parseCapitalsSupplement } from './capitals-supplement';
 import { CURRENCY_PEGS_KEY, CURRENCY_PEGS_PARSER_VERSION, currencyPegRowSchema, parseCurrencyPegs } from './currency-pegs';
 import { SANCTIONS_PROGRAMMES_KEY, SANCTIONS_PROGRAMMES_PARSER_VERSION, parseSanctionsProgrammes, sanctionsProgrammeRowSchema } from './sanctions-programmes';
@@ -197,7 +198,25 @@ const SANCTIONS_PROGRAMMES: ReferenceDatasetDefinition = {
   },
 };
 
-const FIXED: readonly ReferenceDatasetDefinition[] = [INDIA_TRADE_AGREEMENTS, ECGC_COUNTRY_RISK, GEO_CEPII, CAPITALS_SUPPLEMENT, CURRENCY_PEGS, SANCTIONS_PROGRAMMES];
+/** E-043: every HS 2022 code with its description, from the BACI archive, for the product code finder. */
+const BACI_PRODUCT_CODES: ReferenceDatasetDefinition = {
+  key: BACI_PRODUCT_CODES_KEY,
+  description: 'CEPII BACI product list, HS 2022: every six-digit code with its description',
+  licence: 'etalab-2.0',
+  parser_version: BACI_PRODUCT_CODES_PARSER_VERSION,
+  source_form: 'publisher_file',
+  row_schema: hsCodeRowSchema,
+  parse(bytes) {
+    const parsed = parseBaciProductCodes(bytes);
+    return {
+      version: `CEPII BACI product codes HS22 (${parsed.rows.length} codes)`,
+      rows: parsed.rows,
+      validation: { codes: parsed.rows.length, chapters: new Set(parsed.rows.map((row) => row.hs6.slice(0, 2))).size },
+    };
+  },
+};
+
+const FIXED: readonly ReferenceDatasetDefinition[] = [INDIA_TRADE_AGREEMENTS, ECGC_COUNTRY_RISK, GEO_CEPII, CAPITALS_SUPPLEMENT, CURRENCY_PEGS, SANCTIONS_PROGRAMMES, BACI_PRODUCT_CODES];
 
 export function referenceDatasetDefinition(key: string): ReferenceDatasetDefinition {
   const fixed = FIXED.find((definition) => definition.key === key);
