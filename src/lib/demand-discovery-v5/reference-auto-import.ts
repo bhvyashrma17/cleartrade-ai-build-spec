@@ -10,7 +10,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import { OrgTier } from '@prisma/client';
+import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { getConfig } from '@/lib/config';
+import { can } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { importReferenceDataset, REFERENCE_DATASET_IMPORT_PRINCIPALS } from '@/lib/reference-datasets/service';
 import type { Principal } from '@/types';
@@ -75,4 +77,31 @@ export async function autoImportReferenceData(options: { now?: Date; fetchImpl?:
     }
   }
   return result;
+}
+
+/**
+ * Switches the automatic imports on or off (E-044), the way the audited config API does: a new active
+ * version of `demand_discovery.v5`, the history kept, and a `config_change` audit event by an admin.
+ * Only these two fields change on top of the stored row. A row without a policy keeps following the
+ * code's policy; writing the whole merged config would freeze today's policy into it.
+ */
+export async function writeAutoImportSwitch(args: { enabled: boolean; actor_email?: string | null; changed_by: Principal; reason: string }) {
+  if (!can(args.changed_by, 'config.edit')) throw new Error(`${args.changed_by.email} may not change configuration (config.edit is admin-only).`);
+  if (!args.reason.trim()) throw new Error('Say why the switch changes (--reason).');
+  const KEY = 'demand_discovery.v5' as const;
+  const active = await prisma.configSetting.findFirst({ where: { key: KEY, is_active: true }, orderBy: { version: 'desc' } });
+  const stored = (active?.value ?? {}) as Record<string, unknown>;
+  const email = args.enabled ? (args.actor_email ?? (stored.reference_auto_import_actor_email as string | null | undefined) ?? null) : (stored.reference_auto_import_actor_email as string | null | undefined) ?? null;
+  if (args.enabled && !(await importActor(email))) throw new Error(`No active ops supervisor or admin account ${email ? `matches ${email}` : 'was named (--actor-email)'}: the imports need one to run as.`);
+  const value = { ...stored, reference_auto_import: args.enabled, reference_auto_import_actor_email: email?.trim().toLowerCase() ?? null };
+  return prisma.$transaction(async (tx) => {
+    if (active) await tx.configSetting.update({ where: { id: active.id }, data: { is_active: false } });
+    const created = await tx.configSetting.create({ data: { key: KEY, version: (active?.version ?? 0) + 1, value, description: args.reason.trim(), is_active: true } });
+    await writeAuditEvent({
+      db: tx, actor: args.changed_by, action: AUDIT_ACTIONS.config_change, object_type: 'config_setting', object_id: created.id,
+      before_summary: active ? { key: KEY, version: active.version } : null,
+      after_summary: { key: KEY, version: created.version, change_reason: args.reason.trim(), reference_auto_import: args.enabled }, correlation_id: randomUUID(),
+    });
+    return { key: KEY, version: created.version, value };
+  });
 }

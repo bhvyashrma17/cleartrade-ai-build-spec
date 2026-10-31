@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
 import { ReferenceDatasetReleaseStatus, UserRole } from '@prisma/client';
-import { autoImportReferenceData, autoImportSource } from '@/lib/demand-discovery-v5/reference-auto-import';
+import { OrgTier } from '@prisma/client';
+import { getConfig } from '@/lib/config';
+import { autoImportReferenceData, autoImportSource, writeAutoImportSwitch } from '@/lib/demand-discovery-v5/reference-auto-import';
 import { prisma } from '@/lib/prisma';
 
 /** Stage 1, item 4 (E-040): the keyless World Bank and Comtrade inputs import themselves when due. */
@@ -72,5 +74,32 @@ describe('automatic imports of the keyless inputs', () => {
     // A year on it is due again, and the same bytes change nothing.
     const yearOn = await autoImportReferenceData({ now: new Date('2031-02-01T00:00:00Z'), fetchImpl: publisher().fetchImpl, actor_email: ops.email });
     expect(yearOn!.imported.find((item) => item.key === 'wdi:LP.LPI.OVRL.XQ')).toMatchObject({ change: 'UNCHANGED', release_id: lpi.release_id });
+  });
+
+  test('the switch writes only its two fields, by an admin, audited; the policy keeps following the code', async () => {
+    const make = async (role: UserRole) => {
+      const user = await prisma.user.create({ data: { email: `switch-${role}-${MARKER.slice(0, 8)}@t.test`, name: role, role }, select: { id: true, email: true, name: true } });
+      return { id: user.id, email: user.email, name: user.name ?? '', role, exporter_org_id: null, tier: OrgTier.paid };
+    };
+    const admin = await make(UserRole.admin);
+    const supervisor = await make(UserRole.ops_supervisor);
+    const before = await prisma.configSetting.findFirst({ where: { key: 'demand_discovery.v5', is_active: true }, orderBy: { version: 'desc' } });
+    try {
+      await expect(writeAutoImportSwitch({ enabled: true, actor_email: supervisor.email, changed_by: supervisor, reason: 'Try' })).rejects.toThrow(/config.edit is admin-only/);
+      await expect(writeAutoImportSwitch({ enabled: true, actor_email: 'nobody@t.test', changed_by: admin, reason: 'Try' })).rejects.toThrow(/No active ops supervisor or admin account matches/);
+      const on = await writeAutoImportSwitch({ enabled: true, actor_email: supervisor.email.toUpperCase(), changed_by: admin, reason: 'Import the keyless inputs on staging (E-044)' });
+      expect(on.value).toEqual({ ...((before?.value ?? {}) as object), reference_auto_import: true, reference_auto_import_actor_email: supervisor.email });
+      expect(on.value).not.toHaveProperty('policy');
+      const config = await getConfig('demand_discovery.v5');
+      expect(config).toMatchObject({ reference_auto_import: true, reference_auto_import_actor_email: supervisor.email });
+      expect(await prisma.auditEvent.count({ where: { action: 'config_change', actor_user_id: admin.id } })).toBe(1);
+      const off = await writeAutoImportSwitch({ enabled: false, changed_by: admin, reason: 'Pause during a gate check' });
+      expect(off.value).toMatchObject({ reference_auto_import: false, reference_auto_import_actor_email: supervisor.email });
+      expect(await prisma.configSetting.count({ where: { key: 'demand_discovery.v5', is_active: true } })).toBe(1);
+    } finally {
+      // Leave the shared test schema as it was for later files.
+      await prisma.configSetting.updateMany({ where: { key: 'demand_discovery.v5', is_active: true }, data: { is_active: false } });
+      if (before) await prisma.configSetting.update({ where: { id: before.id }, data: { is_active: true } });
+    }
   });
 });

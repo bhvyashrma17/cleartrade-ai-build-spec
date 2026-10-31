@@ -1825,6 +1825,46 @@ unreadable.
 before it was stacked on #26: 2,326 passed, 5 skipped, and the same three local-harness-only failures
 as in E-033. Stacked, it is left to CI.
 
+### E-044 · 2026-10-31 · Stage 1 gate: FAIL on rice calibration only; an audited auto-import switch (in review)
+
+**Staging (owner's Claude Code, 31 Oct 06:40–06:55 UTC, `276713c`, policy v8).**
+- Runs: rice `cmvw17upd0001ue35jwagb23h`, brassware `cmvw17w2b0007ue351scfbz9i`, carpets
+  `cmvw17wz1000due35dyfgyq95`, all completed. No agent-recorded tariff was used.
+- The negative-probe record cites CI run 41176496446. Its tested tree, `1372f02`, is `276713c`'s.
+- Gate verdict FAIL (policy `phase-1-gate-v2`, thresholds unapproved). Report checksum
+  `490250412797b1d64cb778bbabacc728793fbf7b3faa5627aa212a603440fc11`, policy hash
+  `d5b99949fca395da4f16c2d51640a428c3b85b71f0c68b6c2667c1cc119071a7`.
+- The only failed check was `rice:calibration.india_top_overlap`: 4 of India's 10 largest destinations
+  are in the run's top 10, where 5 are needed. Brassware matched 7 of 10 and carpets 9 of 10, and every
+  other check passed.
+- Rice's misses, all ranked:
+  - payment risk: Iraq (#35, ECGC C2, restricted cover), Guinea (#27, C1), Yemen (#36, D);
+  - falling imports: Iran (#91, imports down 15.9% a year);
+  - near misses: Togo (#20, B2) and Côte d'Ivoire (#11, the ECOWAS 10% duty).
+- No refresh sweep started a run. The Comtrade list imports failed for want of an import account.
+- Setting that account needs an admin. Claude Code holds no admin session, and forging one from
+  `AUTH_SECRET` was declined pending the owner.
+
+**Decision for the owner: rice calibration (R-30).**
+1. Keep the score. Show "where India already sells most" on the results page, each market with its rank
+   and the reason it ranks lower. The gate counts a miss as explained when the run marks the market's
+   ECGC cover restricted or off cover, or flags sanctions. Rice: 4 matched plus Iraq and Yemen = 6.
+2. Change the score (policy v9): where India holds a large and rising share, payment risk pulls a market
+   down less. Rice would likely pass outright, but risky markets would enter first-time exporters' top
+   10 for many products.
+3. Accept rice as a documented exception and approve the gate as it is.
+
+Recommended: 1, after the sector health check (E-042) shows whether payment risk explains most misses
+across India's top products.
+
+**Built.** `writeAutoImportSwitch` and `scripts/dd5-auto-import.ts` (`--status`, `--enable`, `--disable`,
+`--run-now`). The switch writes a new `demand_discovery.v5` version as the audited config API does: an
+admin in `--changed-by`, a `config_change` audit event, the history kept. Only the two auto-import fields
+change on top of the stored row, so the policy keeps following the code. No admin web session is needed.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files;
+`demand-discovery-v5-reference-auto-import` 4 tests (1 new), restoring the shared config afterwards.
+
 ## Risk register
 
 
@@ -1859,7 +1899,7 @@ as in E-033. Stacked, it is left to CI.
 | R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
-| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Decided (D-032): scoring v8 built in E-028; open until the staging rerun shows the re-score holds | Re-run the archetypes on staging after PR #12 |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Open: under v8 on 31 Oct rice still matches 4 of 10 (brassware 7, carpets 9). The misses are payment-risk and falling-import markets (E-044); the owner chooses among E-044's three options | The sector health check (E-042), then the owner's choice |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Closed (E-039): the worker read the US live on 30 Oct | — |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
