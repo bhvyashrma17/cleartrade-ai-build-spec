@@ -32,6 +32,8 @@ interface EstimateResult {
   hs_scope_widened: boolean;
   markets: EstimateMarket[];
   disclaimer: string;
+  /** Where the figures come from, e.g. "CEPII BACI 202501 (HS22), 2022–2024" (E-041). */
+  source_label?: string | null;
 }
 
 type Phase =
@@ -247,6 +249,7 @@ function EstimateResults({ result }: { result: EstimateResult }) {
         ))}
       </ol>
 
+      {result.source_label ? <p className="mt-3 text-xs text-[var(--color-text-muted)]">Source: {result.source_label}</p> : null}
       {/* Verbatim from the API — never rewritten by this component. */}
       <p className="mt-4 rounded border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
         {result.disclaimer}

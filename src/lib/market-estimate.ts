@@ -27,6 +27,10 @@
  * is what "cacheable" buys in practice — this deliberately does NOT bypass the caller's
  * guest quota; the cache saves compute, not eligibility.
  *
+ * Data (E-041): CEPII BACI, which covers every HS6 product, from the newest ready release (HS 2022
+ * first, else HS 2017), over its latest three years. The Comtrade warehouse, which holds only the
+ * products someone has ingested, is the fallback where no BACI release is loaded or it cannot be read.
+ *
  * Note: THIS module has nothing to do with minting a guest tenant — that happens in the
  * route (`src/app/api/v1/market-estimates/route.ts`), not here. This function is a pure
  * read of the warehouse; it neither knows nor cares whether the caller has a session.
@@ -37,6 +41,10 @@ import { appEnvironment,tradeFlowEvidenceWhere } from '@/lib/evidence-environmen
 import { toIso2, WORLD_PARTNER } from '@/lib/comtrade/areas';
 import type { MarketEstimatePolicy } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
+import { baciFlowsToTradeFlows } from '@/lib/demand-discovery-v5/baci-flows';
+import type { TradeFlowInput } from '@/lib/demand-discovery-v5/series';
+import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
+import { latestReadyTradeDatasetRelease, readProductFlows } from '@/lib/trade-datasets/service';
 
 export const DISCLAIMER =
   'These figures are past trade data recorded by customs authorities. They describe what has already happened in these markets — they are not a forecast and do not guarantee any outcome for your business.';
@@ -53,7 +61,8 @@ export interface EstimateMarket {
   /** Sum of observed import value across the covered years, in USD. A historical total, not a rate. */
   observed_import_value_usd: number;
   data_years: number[];
-  unit_price_band: { min: number; max: number; currency: 'USD' } | null;
+  /** Prices per kg from BACI (by supplier, weighted by value), per unit from the warehouse. */
+  unit_price_band: { min: number; max: number; currency: 'USD'; per: 'kg' | 'unit' } | null;
   /** The required literal framing: "buyers in these markets imported X at Y–Z per unit." */
   headline: string;
 }
@@ -64,6 +73,10 @@ export interface MarketEstimateResult {
   hs_scope_widened: boolean;
   markets: EstimateMarket[];
   disclaimer: string;
+  /** Where the figures come from (E-041): CEPII BACI for any product, else the Comtrade warehouse. */
+  source: 'cepii_baci' | 'comtrade_warehouse' | 'none';
+  /** The release and years, e.g. "CEPII BACI 202501 (HS22), 2022–2024"; null without data. */
+  source_label: string | null;
   /** Present only when computed fresh; a cache hit omits it (nothing was queried this call). */
   data_years_covered?: number[];
 }
@@ -121,7 +134,117 @@ export function clearMarketEstimateCache(): void {
   cache.clear();
 }
 
+// ---------------------------------------------------------------------------
+// CEPII BACI: every product (E-041)
+// ---------------------------------------------------------------------------
+
+export interface BaciEstimateRead { flows: TradeFlowInput[]; label: string }
+type BaciEstimateReader = (hs6: string) => Promise<BaciEstimateRead | null>;
+let baciReaderOverride: BaciEstimateReader | null = null;
+
+/** Test seam: BACI flows from memory instead of a release in storage. */
+export function setBaciEstimateReaderForTesting(reader: BaciEstimateReader | null): void {
+  baciReaderOverride = reader;
+}
+
+const BACI_ESTIMATE_YEARS = 3;
+
+/** The newest ready BACI release holding the product (HS 2022 first, else HS 2017), over its latest three years. */
+async function readBaciEstimate(hs6: string): Promise<BaciEstimateRead | null> {
+  for (const revision of ['HS22', 'HS17'] as const) {
+    const release = await latestReadyTradeDatasetRelease(BACI_PROVIDER, revision);
+    if (!release) continue;
+    const years: number[] = [];
+    for (let year = Math.max(release.first_year, release.last_year - BACI_ESTIMATE_YEARS + 1); year <= release.last_year; year += 1) years.push(year);
+    const [read, countries] = await Promise.all([
+      readProductFlows({ release_id: release.id, hs6, years }),
+      prisma.tradeDatasetCountry.findMany({ where: { release_id: release.id }, select: { provider_code: true, iso2: true } }),
+    ]);
+    const flows = baciFlowsToTradeFlows(read.flows, countries).flows;
+    if (flows.length) return { flows, label: `CEPII BACI ${release.dataset_version} (${revision}), ${years[0]}–${years[years.length - 1]}` };
+  }
+  return null;
+}
+
+/** The price at a share of the traded value, over prices sorted ascending. */
+function weightedPercentile(prices: readonly { price: number; value: number }[], share: number): number {
+  const total = prices.reduce((sum, item) => sum + item.value, 0);
+  let seen = 0;
+  for (const item of prices) {
+    seen += item.value;
+    if (seen >= total * share) return item.price;
+  }
+  return prices[prices.length - 1]!.price;
+}
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+/**
+ * The estimate from BACI flows. Pure. Each importer's imports from every supplier by year, ordered
+ * by its latest year, with its suppliers' prices per kg in that year (10th to 90th percentile by
+ * value). India itself, provider aggregates (not a market) and markets under the volume floor are
+ * left out. Observed history only, as the module comment requires.
+ */
+export function estimateFromBaciFlows(flows: readonly TradeFlowInput[], hs6: string, policy: MarketEstimatePolicy, sourceLabel: string): MarketEstimateResult {
+  const byImporter = new Map<string, TradeFlowInput[]>();
+  for (const flow of flows) {
+    if (!/^[A-Z]{2}$/.test(flow.importer) || flow.importer === 'IN') continue;
+    const list = byImporter.get(flow.importer);
+    if (list) list.push(flow);
+    else byImporter.set(flow.importer, [flow]);
+  }
+  const markets: (EstimateMarket & { _latestValue: number })[] = [];
+  for (const [importer, rows] of byImporter) {
+    const years = [...new Set(rows.map((row) => row.year))].sort((a, b) => a - b);
+    const latestYear = years[years.length - 1]!;
+    const latest = rows.filter((row) => row.year === latestYear);
+    const latestValue = latest.reduce((sum, row) => sum + row.value_usd, 0);
+    if (latestValue < policy.volume_floor_usd) continue;
+    const prices = latest
+      .filter((row) => row.quantity_kg != null && row.quantity_kg > 0 && row.value_usd > 0)
+      .map((row) => ({ price: row.value_usd / row.quantity_kg!, value: row.value_usd }))
+      .sort((a, b) => a.price - b.price);
+    const band = prices.length ? { min: round2(weightedPercentile(prices, 0.1)), max: round2(weightedPercentile(prices, 0.9)), currency: 'USD' as const, per: 'kg' as const } : null;
+    markets.push({
+      country_code: importer,
+      observed_import_value_usd: Math.round(rows.reduce((sum, row) => sum + row.value_usd, 0)),
+      data_years: years,
+      unit_price_band: band,
+      headline: buildHeadline(importer, hs6, latestValue, latestYear, band),
+      _latestValue: latestValue,
+    });
+  }
+  markets.sort((a, b) => b._latestValue - a._latestValue || a.country_code.localeCompare(b.country_code));
+  return {
+    hs_scope: hs6,
+    hs_scope_requested: hs6,
+    hs_scope_widened: false,
+    markets: markets.slice(0, policy.top_n_markets).map(({ _latestValue: _drop, ...market }) => market),
+    disclaimer: DISCLAIMER,
+    source: 'cepii_baci',
+    source_label: sourceLabel,
+    data_years_covered: [...new Set(flows.map((flow) => flow.year))].sort((a, b) => a - b),
+  };
+}
+
 async function computeFresh(requestedHs: string, policy: MarketEstimatePolicy): Promise<MarketEstimateResult> {
+  if (/^\d{6}$/.test(requestedHs)) {
+    try {
+      const read = await (baciReaderOverride ?? readBaciEstimate)(requestedHs);
+      if (read) return estimateFromBaciFlows(read.flows, requestedHs, policy, read.label);
+    } catch (error) {
+      // The warehouse still answers when BACI cannot be read (storage down, a partition missing).
+      console.error('[market-estimate] BACI read failed; answering from the warehouse:', error instanceof Error ? error.message : error);
+    }
+  }
+  return fromWarehouse(requestedHs, policy);
+}
+
+// ---------------------------------------------------------------------------
+// The Comtrade warehouse: the fallback (products someone has ingested)
+// ---------------------------------------------------------------------------
+
+async function fromWarehouse(requestedHs: string, policy: MarketEstimatePolicy): Promise<MarketEstimateResult> {
   if (!requestedHs) {
     return {
       hs_scope: '',
@@ -129,6 +252,8 @@ async function computeFresh(requestedHs: string, policy: MarketEstimatePolicy): 
       hs_scope_widened: false,
       markets: [],
       disclaimer: DISCLAIMER,
+      source: 'none',
+      source_label: null,
       data_years_covered: [],
     };
   }
@@ -169,6 +294,8 @@ async function computeFresh(requestedHs: string, policy: MarketEstimatePolicy): 
       hs_scope_widened: false,
       markets: [],
       disclaimer: DISCLAIMER,
+      source: 'none',
+      source_label: null,
       data_years_covered: [],
     };
   }
@@ -203,6 +330,7 @@ async function computeFresh(requestedHs: string, policy: MarketEstimatePolicy): 
           min: unitValues[Math.floor(unitValues.length * 0.1)],
           max: unitValues[Math.min(unitValues.length - 1, Math.floor(unitValues.length * 0.9))],
           currency: 'USD' as const,
+          per: 'unit' as const,
         }
       : null;
 
@@ -225,6 +353,8 @@ async function computeFresh(requestedHs: string, policy: MarketEstimatePolicy): 
     hs_scope_widened: effectiveScope !== requestedHs,
     markets: top,
     disclaimer: DISCLAIMER,
+    source: 'comtrade_warehouse',
+    source_label: `UN Comtrade, ClearTrade warehouse, ${[...new Set(rows.map((r) => r.year))].sort().join(', ')}`,
     data_years_covered: [...new Set(rows.map((r) => r.year))].sort(),
   };
 }
@@ -239,10 +369,10 @@ function buildHeadline(
   hsScope: string,
   latestValue: number,
   latestYear: number,
-  priceBand: { min: number; max: number; currency: string } | null,
+  priceBand: { min: number; max: number; currency: string; per?: 'kg' | 'unit' } | null,
 ): string {
   const valueText = latestValue.toLocaleString('en-IN', { maximumFractionDigits: 0 });
   const base = `Buyers in ${countryCode} imported HS ${hsScope} worth ${valueText} USD in ${latestYear}`;
   if (!priceBand) return `${base}.`;
-  return `${base}, at ${priceBand.min.toFixed(2)}–${priceBand.max.toFixed(2)} ${priceBand.currency} per unit.`;
+  return `${base}, at ${priceBand.min.toFixed(2)}–${priceBand.max.toFixed(2)} ${priceBand.currency} per ${priceBand.per ?? 'unit'}.`;
 }

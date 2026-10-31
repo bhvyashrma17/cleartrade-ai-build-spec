@@ -305,7 +305,8 @@ and permission check works on them unchanged.
 is not a new membership concept — it's the SAME commitment fee (`not_due`/`due`/`paid`/
 `waived`/`refunded`) docs/01 always specified, now doing the work of gating `paid` tier.
 Guest/free tier get `POST /api/v1/market-estimates` instead: a synchronous, no-LLM read of
-the `TradeFlow` warehouse returning observed historical import value + unit-price bands
+CEPII BACI, which covers every HS6 product (the `TradeFlow` warehouse is only the fallback
+where BACI is not loaded, E-041), returning observed historical import value + unit-price bands
 only. **Framing is a product requirement, not copy preference**: never project earnings or
 promised revenue, only "buyers in these markets imported X at Y–Z per unit" plus an
 explicit not-a-forecast disclaimer — enforced by `src/lib/market-estimate.ts` never
