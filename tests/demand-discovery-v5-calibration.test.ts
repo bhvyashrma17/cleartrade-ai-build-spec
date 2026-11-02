@@ -22,7 +22,7 @@ describe("calibration against India's export destinations", () => {
     expect(result.india_total_usd).toBe(820);
     expect(result.run_top.map((item) => [item.market, item.india_rank])).toEqual([['US', 3], ['DE', null], ['AE', 2]]);
     expect(result.overlap).toBe(2);
-    expect(result.missed).toEqual([{ market: 'KP', usd: 500, status: 'excluded', rank: null, reasons: ['Excluded: sanctions.'] }]);
+    expect(result.missed).toEqual([{ market: 'KP', usd: 500, status: 'excluded', rank: null, reasons: ['Excluded: sanctions.'], explained_by: null }]);
     expect(result.verdict).toBe('pass');
   });
 

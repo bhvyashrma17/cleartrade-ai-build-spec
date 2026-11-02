@@ -8,7 +8,7 @@ import type { Prisma } from '@prisma/client';
 import type { DocumentStorage } from '@/lib/document-storage';
 import { prisma } from '@/lib/prisma';
 import { baciFlowsToTradeFlows } from '@/lib/demand-discovery-v5/baci-flows';
-import { compareWithIndiaExports, type CalibrationResult } from '@/lib/demand-discovery-v5/calibration';
+import { compareWithIndiaExports, riskExplanation, type CalibrationResult } from '@/lib/demand-discovery-v5/calibration';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { readProductFlows } from '@/lib/trade-datasets/service';
 
@@ -34,7 +34,7 @@ export async function compareRunWithIndiaExports(runId: string, top = 10, option
   const [read, countries, assessments] = await Promise.all([
     readProductFlows({ release_id: releaseId, hs6, years, db, storage: options.storage }),
     db.tradeDatasetCountry.findMany({ where: { release_id: releaseId }, select: { provider_code: true, iso2: true } }),
-    db.marketAssessment.findMany({ where: { run_id: run.id }, select: { country_code: true, market_status: true, rank: true, overall_score: true, reasons: true } }),
+    db.marketAssessment.findMany({ where: { run_id: run.id }, select: { country_code: true, market_status: true, rank: true, overall_score: true, reasons: true, score_breakdown: true, flag_reasons: true } }),
   ]);
   const flows = baciFlowsToTradeFlows(read.flows, countries).flows;
   const result = compareWithIndiaExports({
@@ -42,6 +42,7 @@ export async function compareRunWithIndiaExports(runId: string, top = 10, option
     markets: assessments.map((row) => ({
       market: row.country_code, status: row.market_status ?? 'unknown', rank: row.rank, overall: row.overall_score,
       reasons: ((row.reasons ?? []) as { text?: string }[]).map((reason) => reason.text ?? '').filter(Boolean),
+      explained_by: riskExplanation({ metrics: (row.score_breakdown as { metrics?: { key: string; inputs?: Record<string, unknown> }[] } | null)?.metrics, flag_reasons: (row.flag_reasons ?? []) as string[] }),
     })),
   });
   return { run_id: run.id, run_status: run.status, baci_release_id: releaseId, ...result };

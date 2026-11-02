@@ -7,7 +7,7 @@ reviewers have signed the resulting report.
 
 | | |
 |---|---|
-| Policy | `phase-1-gate-v2` — `src/lib/phase-1-gate/policy.ts` |
+| Policy | `phase-1-gate-v3` — `src/lib/phase-1-gate/policy.ts` (v3, 31 Oct 2026, E-045: calibration also counts a miss outside the top 10 with restricted or no ECGC cover, or a sanctions flag) |
 | Engine | **Demand Discovery v5 only** (`market-opportunity-v5`, D-036). A run from an earlier engine fails. |
 | Status | **Every decision PROPOSED** (30 Oct 2026). Built against; not yet approved. |
 | Evaluator | `scripts/gate-phase-1.ts` → `src/lib/phase-1-gate/{load,evaluate}.ts` |
@@ -38,7 +38,7 @@ staging product ──► staff-confirmed HS6 ──► v5 run starts by itself 
 in §2, recorded in docs/35 against the report's `report_checksum`. No machine verdict freezes Phase 1
 on its own.
 
-## 2. Decisions (policy v2 — all proposed)
+## 2. Decisions (policy v3 — all proposed)
 
 Rows marked *v1* carry over unchanged from policy v1 (accepted on 12 Oct 2026 as proposals to build
 against). The rest were proposed on 30 Oct 2026 while building v2. Each is restated with its
@@ -53,7 +53,7 @@ reasoning in `policy.ts` (`basis`).
 | Classification *v1* | Human confirmation by an `agent`, `ops_supervisor` or `admin`, with its confirming `AuditEvent` | `scripts/dd5-archetype-runs.ts start` proposes and confirms each code as staff. An exporter confirming its own code still starts v5, but that run is not gate evidence. |
 | Coverage | Every market of the run's frozen universe, assessed once | docs/36: v5 scores every product in all 218 screening markets; the run freezes the universe it used. |
 | Market count | ≥ 10 **ranked** markets per archetype | The top 10 is what v5 hands on (`ranking.handoff_count`) and what calibration compares. Staging runs ranked 188–214 (E-026). |
-| Calibration | The top 10 holds at least half of India's own ten largest destinations | docs/36 §8. On 19 Oct, rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026); scoring v8 (D-032) is the response, not yet re-run (R-30). |
+| Calibration | The top 10 holds at least half of India's own ten largest destinations; a miss with a reason the policy accepts (`explained_misses`: no or restricted ECGC cover, a sanctions flag) counts towards the half | docs/36 §8. On 19 Oct, rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026). On 31 Oct under scoring v8, rice 4/10, brassware 7/10, carpets 9/10 (E-044). Owner, 31 Oct (E-045): accepted reasons count; rice then reads 4 + 4 restricted-cover markets = 8. |
 | Evidence labels | Every unscored metric states its reason; every estimate carries its label | Owner, 30 Oct (D-037): actual data or labelled estimates. |
 | Duty evidence | No duty an agent read by hand; ≥ 1 of the top 10 with an official duty read automatically | D-037. Staging runs had 19–47 official markets each (E-026). |
 | Freshness | Run ≤ 30 days old at evaluation · newest BACI base year ≤ 2 years before the run | Run age as v1. BACI is published yearly with data to two years earlier; between New Year and the new release's import this fails, by design. |
@@ -87,7 +87,10 @@ says why.
 
 **Calibration** (docs/36 §8) — India's exports of the product by destination, from the BACI release
 the run froze, summed over the years the market-size metric averages, against the run's top 10. Only
-screening markets count.
+screening markets count. A destination outside the top 10 counts as explained when the policy accepts
+its reason: its ECGC cover (read from the stored payment-risk measure) is restricted or absent, or a
+sanctions programme is flagged on it. A flag never changes a score, so it is accepted as a market not
+to steer a first-time exporter to, not as the cause of the rank.
 
 **Scoring replay** — the stored policy snapshot must hash to the hash the run, its frozen inputs and
 every assessment carry. Then every market is scored again from its stored metrics under that
@@ -106,7 +109,7 @@ the source releases; `frozen_inputs` pins each release by checksum.
 | Failure semantics | `failure_semantics.run_status`, `.negative_probes` | `DiscoveryRun.status`, `Job.status`, `summary.notes`; probe record | status not accepted; job disagrees; `partial` without notes; probe missing (→ INCOMPLETE) or not fail-closed |
 | Coverage | `coverage.every_market` | `frozen_inputs.universe.size`; `MarketAssessment` rows; `summary.markets` | a market missing or repeated; a status that is not v5's; a row for another classification |
 | Market count | `market_count.minimum_ranked` | `market_status` | fewer than 10 ranked (statuses tallied) |
-| Calibration | `calibration.india_top_overlap` | `frozen_inputs.baci.chosen_release_id`, `base_years`; the release's partitions (SHA-256 checked); `rank` | under half of India's top 10 in the run's top 10 (missed markets named); comparison impossible |
+| Calibration | `calibration.india_top_overlap` | `frozen_inputs.baci.chosen_release_id`, `base_years`; the release's partitions (SHA-256 checked); `rank` | under half of India's top 10 in the run's top 10, counting accepted explained misses (unexplained misses named); comparison impossible |
 | Evidence labels | `evidence_labels.no_silent_zero`, `.estimates_labelled` | `score_breakdown.metrics` (`score`, `reason`, `estimated`, `inputs.basis`), `shortfall`, `facts.partner_only`; `labels`; `eligibility_reasons` | §3 |
 | Duty evidence | `duty_evidence.no_forbidden_basis`, `.official_in_top` | the duty metric's `inputs` | an agent-recorded duty; no official duty in the top 10 |
 | Freshness | `freshness.run_age`, `.base_data_lag` | `completed_at`; `as_of_date`; `frozen_inputs.baci.base_years` | run older than 30 days; newest base year more than 2 years before the run |
@@ -208,11 +211,15 @@ the inputs each v5 run itself reads (docs/36 §3, docs/37).
   from the source releases.
 - The run-status check sees whether a partial run has notes, not that they name the failed step; v5
   writes a note for every step that degrades a run (R-34).
-- The gate has not yet been run against staging. On the 19 Oct runs (policy v6) calibration would fail
-  rice and brassware (E-026): the scoring v8 re-run (R-30) comes first.
+- The gate ran on staging on 31 Oct under policy v2 and failed on rice calibration only, 4/10 (E-044).
+  It has not yet been re-run under v3 (E-045).
 
 ## 8. History
 
 Policy v1 (12 Oct 2026) evaluated screen-derived Country Truth v4 deep runs: qualifying markets above
 a confidence floor, an Atlas tariff signal, and stored checksum links. It was never run against
 staging, and it was retired with the engine on 30 Oct 2026 (D-036); git history keeps it.
+
+Policy v2 (30 Oct 2026, D-036) checks v5 runs only. Its one staging run, on 31 Oct, failed on rice
+calibration alone (E-044). Policy v3 (31 Oct 2026, E-045) keeps every v2 threshold and adds the
+calibration's accepted explanations (`explained_misses`).

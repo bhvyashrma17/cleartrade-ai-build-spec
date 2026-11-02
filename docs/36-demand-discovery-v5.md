@@ -456,13 +456,22 @@ sources itself (World Bank, Comtrade's reporting lists) is an open owner decisio
 - The same comparison on eighteen products (stage 1, item 6; §10 step 8): the archetypes and fifteen
   more across India's export sectors. A proposed set (E-038); the owner may change it before the
   staging runs, and decides what share of passes accepts the scoring.
-- The Phase 1 gate (docs/34) checks v5 runs only (policy v2, D-036): coverage, ranked markets, this
+- The Phase 1 gate (docs/34) checks v5 runs only (policy v3, D-036): coverage, ranked markets, this
   calibration, labelled estimates, official duty and a replay of every score; its thresholds stay
   proposed until the owner approves.
+- Explained misses (owner, 31 Oct 2026, E-045): one of India's top destinations outside the top 10
+  counts towards the pass when ECGC offers no cover there, its cover is restricted, or a UN/US/EU/UK
+  sanctions programme is flagged (the gate policy lists which of these it accepts). No or restricted
+  cover caps the payment-risk measure, so those markets rank lower by design. A flag never changes a
+  score: a flagged market is accepted because it is not one to steer a first-time exporter to. Any
+  other miss still counts against the run.
 
 - Every run stores its own comparison with India's top destinations (`summary.calibration`, E-042),
   shown on `/ops/discovery` with a 30-day summary. `scripts/dd5-health-check.ts` scores India's top
   export products from stored data alone and reports where the scoring misses India's own markets.
+- Every results page lists "Where India already sells most" (E-045, `india-markets.ts`): each of
+  India's top destinations with the run's rank, India's share, and, below the top 10, the run's own
+  costliest reason, with no or restricted ECGC cover or a sanctions flag as a separate note.
 
 ## 9. Known limits
 

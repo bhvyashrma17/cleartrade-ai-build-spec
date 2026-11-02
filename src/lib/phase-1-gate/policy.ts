@@ -22,6 +22,7 @@
 import { canonicalHash } from '@/lib/country-evidence/planner';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import type { DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
+import type { MissExplanation } from '@/lib/demand-discovery-v5/calibration';
 
 export type GateDecisionStatus = 'approved' | 'proposed';
 
@@ -64,7 +65,7 @@ export interface Phase1GatePolicy {
   classification: GateDecision<{ require_human_confirmation: boolean; allowed_confirmer_roles: string[] }>;
   coverage: GateDecision<{ require_every_universe_market: boolean }>;
   market_count: GateDecision<{ minimum_ranked_markets: number }>;
-  calibration: GateDecision<{ top: number; minimum_overlap_share: number }>;
+  calibration: GateDecision<{ top: number; minimum_overlap_share: number; explained_misses: MissExplanation[] }>;
   evidence_labels: GateDecision<{ unscored_metric_requires_reason: boolean; estimates_must_be_labelled: boolean }>;
   duty_evidence: GateDecision<{
     forbidden_bases: DutyBasis[];
@@ -110,9 +111,9 @@ export type Phase1GateDecisionKey = (typeof PHASE_1_GATE_DECISION_KEYS)[number];
  * from v1 (accepted on 12 Oct 2026 as proposals to build against). Everything v5-specific was
  * proposed on 30 Oct 2026 while building this version, with its reasoning in `basis` and docs/34.
  */
-export const PHASE_1_GATE_POLICY_V2: Phase1GatePolicy = {
+export const PHASE_1_GATE_POLICY_V3: Phase1GatePolicy = {
   schema_version: 'phase-1-gate-policy-v2',
-  policy_version: 'phase-1-gate-v2',
+  policy_version: 'phase-1-gate-v3',
   approval: null,
   release_posture: {
     value: 'exporter_facing_v5_starts_on_confirmed_hs',
@@ -154,9 +155,9 @@ export const PHASE_1_GATE_POLICY_V2: Phase1GatePolicy = {
     basis: 'The top 10 is what v5 hands to regional and buyer discovery (ranking.handoff_count) and what the calibration compares, so a run needs ten ranked markets. Staging runs on 19 Oct ranked 188–214 (ledger E-026).',
   },
   calibration: {
-    value: { top: 10, minimum_overlap_share: 0.5 },
+    value: { top: 10, minimum_overlap_share: 0.5, explained_misses: ['ecgc_off_cover', 'ecgc_restricted', 'sanctions'] },
     status: 'proposed',
-    basis: 'docs/36 §8: a top 10 that leaves out more than half of India’s own ten largest destinations for the product (in the BACI release and years the run used) is a calibration failure. On 19 Oct staging rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026); policy v8 (D-032) responds, and has not been re-run (R-30).',
+    basis: 'docs/36 §8: a top 10 that leaves out more than half of India’s own ten largest destinations for the product (in the BACI release and years the run used) is a calibration failure. On 19 Oct staging rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026); on 31 Oct under v8 rice 4/10, brassware 7/10, carpets 9/10 (E-044). Owner, 31 Oct 2026 (E-045): a miss outside the top 10 with restricted or no ECGC cover, or a sanctions flag, counts towards the share. Restricted or no cover caps the payment-risk measure, so those markets rank lower by design; a flag never changes a score, and a flagged market is accepted as one not to steer a first-time exporter to. The results page lists India’s own markets with the run’s reason for each. Across India’s top 100 exports, 88 passed before this rule (E-044).',
   },
   evidence_labels: {
     value: { unscored_metric_requires_reason: true, estimates_must_be_labelled: true },

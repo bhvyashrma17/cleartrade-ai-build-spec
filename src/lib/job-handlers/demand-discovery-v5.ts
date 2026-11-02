@@ -11,7 +11,7 @@ import { getConfigWithVersion } from '@/lib/config';
 import type { JobContext, JobOutcome } from '@/lib/jobs';
 import { prisma } from '@/lib/prisma';
 import { assessMarkets } from '@/lib/demand-discovery-v5/assess';
-import { compareWithIndiaExports, summarizeRunCalibration } from '@/lib/demand-discovery-v5/calibration';
+import { compareWithIndiaExports, riskExplanation, summarizeRunCalibration } from '@/lib/demand-discovery-v5/calibration';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { loadRunInputs, type V5ProductFacts } from '@/lib/demand-discovery-v5/run-inputs';
 import { writeV5Results } from '@/lib/demand-discovery-v5/service';
@@ -54,7 +54,7 @@ export async function runDemandDiscoveryV5(ctx: JobContext): Promise<JobOutcome>
     const calibration = base
       ? summarizeRunCalibration(compareWithIndiaExports({
         hs6: snapshot.hs_code, flows: base.flows, years: base.years.slice(-config.policy.size.average_years),
-        markets: result.markets.map((market) => ({ market: market.market, status: market.status, rank: market.rank, overall: market.overall, reasons: market.reasons.map((reason) => reason.text) })),
+        markets: result.markets.map((market) => ({ market: market.market, status: market.status, rank: market.rank, overall: market.overall, reasons: market.reasons.map((reason) => reason.text), explained_by: riskExplanation({ metrics: market.metrics, flag_reasons: market.flag_reasons }) })),
       }))
       : null;
     const summary = await writeV5Results({

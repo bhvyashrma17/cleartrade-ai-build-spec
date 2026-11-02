@@ -17,7 +17,7 @@ import { compareRunWithIndiaExports } from '@/lib/demand-discovery-v5/calibratio
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { dutyBasisOf, type DutyBasis } from '@/lib/demand-discovery-v5/duty-basis';
 import { demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '@/lib/demand-discovery-v5/service';
-import { PHASE_1_GATE_POLICY_V2, type Phase1GateArchetype } from '@/lib/phase-1-gate/policy';
+import { PHASE_1_GATE_POLICY_V3, type Phase1GateArchetype } from '@/lib/phase-1-gate/policy';
 import { confirmClassification, proposeClassification } from '@/lib/product-classification';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
@@ -42,9 +42,9 @@ interface ProductSet {
  */
 export const PRODUCT_SETS = {
   archetypes: {
-    products: PHASE_1_GATE_POLICY_V2.archetypes.value, purpose: 'Phase 1 archetype', cite: 'docs/34 §2',
+    products: PHASE_1_GATE_POLICY_V3.archetypes.value, purpose: 'Phase 1 archetype', cite: 'docs/34 §2',
     source_reference: { label: 'Phase 1 gate policy v2, archetypes', reference: 'docs/34-phase-1-acceptance-gate.md §2' },
-    evidence: (product) => ({ archetype: product.key, hs_revision: product.hs_revision, source: 'PHASE_1_GATE_POLICY_V2.archetypes' }),
+    evidence: (product) => ({ archetype: product.key, hs_revision: product.hs_revision, source: 'PHASE_1_GATE_POLICY_V3.archetypes' }),
   },
   calibration: {
     products: CALIBRATION_PRODUCTS, purpose: 'Calibration product (stage 1, item 6)', cite: 'docs/36 §8',
