@@ -187,10 +187,20 @@ function valuesOf(description: string): Map<string, Set<string>> {
   return result;
 }
 
+/**
+ * HS chapters run from 01 to 97, with 77 reserved. CEPII's list also carries `999999` ("Commodities not
+ * specified according to kind"), a statistical placeholder no product can be classified under.
+ */
+export function isHsChapterCode(hs6: string): boolean {
+  const chapter = Number(hs6.slice(0, 2));
+  return chapter >= 1 && chapter <= 97 && chapter !== 77;
+}
+
 export function buildHsIndex(rows: readonly HsCodeRow[], names: readonly EverydayName[] = EVERYDAY_NAMES): HsIndex {
   const codes = new Map<string, IndexedCode>();
   const postings = new Map<string, string[]>();
   for (const row of rows) {
+    if (!isHsChapterCode(row.hs6)) continue;
     codes.set(row.hs6, { hs6: row.hs6, description: row.description, values: valuesOf(row.description) });
     for (const token of new Set(tokenize(row.description))) {
       const list = postings.get(token);

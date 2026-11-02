@@ -13,6 +13,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { HsFinder } from '@/components/hs-finder/HsFinder';
 import { Button, Input, UpgradeNotice } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
 
@@ -59,6 +60,9 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
   const [monthlyQuantity, setMonthlyQuantity] = useState('');
   const [location, setLocation] = useState('');
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  // The product code finder (E-046): open under the HS field; a pick fills it and shows what it means.
+  const [finding, setFinding] = useState(false);
+  const [picked, setPicked] = useState<{ hs6: string; description: string } | null>(null);
 
   const fieldErrors = phase.kind === 'error' ? phase.fields : {};
   const submitting = phase.kind === 'running';
@@ -152,9 +156,35 @@ export function MarketEstimate({ tier, guestRunLimit }: { tier: Tier; guestRunLi
               inputMode="numeric"
               error={fieldErrors.hs_code}
             />
-            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-              Required — this is the customs classification the trade data is indexed by.
-            </p>
+            {picked && picked.hs6 === hsCode.trim() ? (
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                <span className="record">{picked.hs6}</span>: {picked.description}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                Required — this is the customs classification the trade data is indexed by.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setFinding((open) => !open)}
+              aria-expanded={finding}
+              className="mt-1.5 text-xs font-semibold text-primary underline underline-offset-2"
+            >
+              {finding ? 'Close the code finder' : 'Don’t know the code? Find it from your description'}
+            </button>
+            {finding ? (
+              <HsFinder
+                idPrefix="est"
+                description={description}
+                pickNote="Codes come from the official HS 2022 list; check the description matches your product."
+                onPick={(pick) => {
+                  setHsCode(pick.hs6);
+                  setPicked({ hs6: pick.hs6, description: pick.description });
+                  setFinding(false);
+                }}
+              />
+            ) : null}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -224,7 +254,7 @@ function EstimateResults({ result }: { result: EstimateResult }) {
   return (
     <section className="mt-5 rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
       {result.hs_scope_widened ? (
-        <p className="mb-3 rounded border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/5 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+        <p className="mb-3 rounded border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_6%,transparent)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
           No recorded history at HS {result.hs_scope_requested} specifically — shown for the broader
           HS <span className="record">{result.hs_scope}</span> group.
         </p>

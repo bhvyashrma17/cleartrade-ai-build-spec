@@ -597,4 +597,8 @@ touches production.
 9. **Product code list** (E-043): import `product_codes_HS22_V202601.csv` from the BACI HS22 archive as
    `cepii:product-codes:HS22` with `scripts/import-reference-dataset.ts` (`--source-url` the archive's
    URL). The product code finder (`POST /api/v1/hs-finder`) reads it; until then it says the list is not
-   loaded.
+   loaded. Staging has it since 31 Oct (E-046). The finder opens under every HS code field: the
+   guest/free estimate, the paid ad-hoc search and the product's classification form. A pick fills the
+   field. In the classification form it also fills an empty rationale and records the finder's query,
+   answers and code list in `evidence.product_code_finder`. It offers HS chapters 01–97 only, never
+   CEPII's `999999` placeholder.
