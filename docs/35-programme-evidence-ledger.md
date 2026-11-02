@@ -2000,6 +2000,50 @@ and an unapproved copy to `PASS_UNDER_PROPOSED_POLICY`.
 **Not yet verified.** The gate under v4 on staging. Deadline: 30 Nov 2026, while the 31 Oct runs are
 within freshness.
 
+### E-048 · 2026-11-03 · Phase 1 gate: `PASS` on staging under policy v4; signed off; Phase 1 frozen (in review)
+
+**Staging: the gate under the approved policy v4 (owner's Claude Code, 3 Nov IST).**
+- The first attempt stopped at the runbook's tree check, as it should. #32 merged 15 s before #31, so
+  #31's head `bff2172` (tree `c1a79c29…`) differed from HEAD `d8ead01` (tree `2843495b…`), in
+  `src/app/page.tsx` only. Nothing was written.
+- #33 then merged as `7e673e0`. HEAD and #33's head `1923c49` share tree
+  `2b63eec1308b7739a35c43de23a824e12a159deb`.
+  - CI run 41510308802 (pull_request) checked out `8a04deb`, "Merge 1923c49 into d8ead01", whose tree is
+    `2b63eec…`. Its regression job passed at 2026-11-02T19:35:43Z (agent session, GitHub API).
+  - Claude Code could no longer fetch `8a04deb`. It confirmed that `d8ead01` is an ancestor of `1923c49`
+    and that merging the two gives `2b63eec…`.
+- Probe record `.artifacts/phase-1-gate/2026-11-03/probes.json`, in the owner's checkout and not
+  committed: the 2 Nov record's five probes, now citing run 41510308802 with `observed_at`
+  2026-11-02T19:35:43Z. Every cited test still exists.
+- Verdict **`PASS`, exit 0**. 3/3 archetypes pass, 18 of 18 checks each. The evidence-environment
+  check and the five probes pass. Nothing failed or was unverified, apart from the manual
+  `sign_off.recorded_outside_evaluator` (below).
+  - Policy `phase-1-gate-v4`, approved by Bhavya Sharma (product owner) on 2026-11-02 (E-047). Hash
+    `2eaff06ce2c23393692e9d3583a5e1d0fd907ec2793dddee82b2974f0b877d57`.
+  - Report schema v2, checksum `1482ca49855ce633433cb88038b22a50cf7e62fd74c030eada190ee670d2eef7`. It
+    is kept at `tmp/rw/gate-v4-report.json` on the owner's machine.
+  - Commit `7e673e089962080c002a9328fb91a013445a3d8c`, against the staging app and database (fingerprint
+    prefix `62587019d354`).
+- The three 31 Oct runs were read as they are (scoring policy v8). They counted as E-047 expected, and
+  five were needed:
+  - rice `cmvw17upd0001ue35jwagb23h`: 4 + 4 accepted (IR, IQ, GN, YE: ECGC cover restricted) = 8;
+  - brassware `cmvw17w2b0007ue351scfbz9i`: 7 + 1 (ET) = 8;
+  - carpets `cmvw17wz1000due35dyfgyq95`: 9.
+
+**Sign-off (docs/34 §1).** Bhavya Sharma signs off the report with checksum
+`1482ca49855ce633433cb88038b22a50cf7e62fd74c030eada190ee670d2eef7` on 3 Nov 2026, as product owner and as
+engineering owner (the owner's choice on 2 Nov, E-047). The owner sent the report in chat to be
+recorded, and merging this entry is the signature.
+
+**Phase 1 (Country Demand Discovery) is frozen when this entry merges** (docs/34 §1): a `PASS` and both
+sign-offs are recorded against one report.
+- Frozen with it: scoring policy v8, gate policy v4 and the three archetypes. Changing the score or the
+  gate needs a new version, a new `PASS` on staging and a new sign-off.
+- Not part of the freeze: production. Production still runs `master` from 24 Aug. The supervised
+  launch (roadmap WP5 and WP6) is separate and needs the owner's decisions (R-04, R-13 to R-15, R-36).
+
+**Checks run.** Docs only: `git diff --check` clean.
+
 ## Risk register
 
 
@@ -2012,7 +2056,7 @@ within freshness.
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
-| R-08 | Gate thresholds unapproved | Approved by the owner on 2 Nov (E-047): policy v4, pending merge. The three archetypes passed under v3 on staging (E-046) | The gate under v4 on staging (PASS expected, by 30 Nov), then the owner's sign-off against its report |
+| R-08 | Gate thresholds unapproved | Closed (E-048): approved as policy v4 (E-047); `PASS` on staging on 3 Nov and signed off against report `1482ca49…` | — |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
@@ -2034,10 +2078,10 @@ within freshness.
 | R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
-| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Mitigated (E-045, E-046): the score is kept (owner, option 1). Restricted or no ECGC cover counts as an accepted miss, and the results page lists India's own markets. Under gate v3 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed | The gate under v4 (R-08) |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Mitigated (E-045, E-046): the score is kept (owner, option 1). Restricted or no ECGC cover counts as an accepted miss, and the results page lists India's own markets. Under the approved gate v4 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed: `PASS` (E-048) | Each new run's own stored calibration (E-042) |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Closed (E-039): the worker read the US live on 30 Oct | — |
-| R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |
+| R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032); v5's gate has passed and is signed off (E-048) | Delete the earlier engines once no stored v4 run needs their code to be read |
 | R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
 | R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Closed (E-039): the bucket variables are references, the region is the literal `auto`, and the round trip passed 9 of 9 | — |
 | R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — the owner's decision (E-037); recommended: rotate staging's, starting with the keys shared across environments, and check production | The owner's decision |
