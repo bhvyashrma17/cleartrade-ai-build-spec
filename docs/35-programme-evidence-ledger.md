@@ -1970,6 +1970,36 @@ buttons are full width on a phone. The live form in a browser against a running 
 - Freshness allows a run at most 30 days old, so the 31 Oct runs must be re-read by 30 Nov 2026. After
   that date, the archetypes need fresh runs.
 
+### E-047 · 2026-11-02 · The owner approves the Phase 1 gate: policy v4 (in review)
+
+**Owner decision (2 Nov 2026, in chat, answering the options with the recommended default).**
+- Approve all fourteen gate decisions (docs/34 §2), with sanctions dropped from the calibration's
+  accepted misses. Only restricted or no ECGC cover counts: it is what the score itself uses.
+- This is one changed value, so the version moves to `phase-1-gate-v4`. `approval`: Bhavya Sharma
+  (product owner), 2026-11-02, this entry.
+- Sign-off (docs/34 §1): Bhavya Sharma signs as both product owner and engineering owner. It is
+  recorded here against the checksum of the first `PASS` report under v4, once that report exists.
+
+**Built.**
+- `policy.ts`: v4, every decision `approved`, `approval` filled, `explained_misses` =
+  `['ecgc_off_cover', 'ecgc_restricted']`.
+- `calibration.ts`: `ACCEPTED_MISS_EXPLANATIONS` holds the same pair. A run's own verdict (the stored
+  `summary.calibration`, the ops panel and the health check) counts only these. A sanctions flag stays
+  on the miss as `explained_by: 'sanctions'` and shows as a note on the results page; it no longer
+  counts. A test holds the gate policy and the constant equal.
+- No change to the score (policy v8) or to stored runs.
+- Expected on staging: under v4 the three 31 Oct runs count as under v3 (rice 8, brassware 8, carpets
+  9), because none of their accepted misses was a sanctions flag (E-046). The verdict should be `PASS`,
+  exit 0.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean. `phase-1-gate` 23,
+`demand-discovery-v5-run-calibration` 5, `-calibration` 2, `-run` 5, `-archetype-runs` 8,
+`-health-check` 3 and `-operations` 2: all pass. The gate tests evaluate the approved policy to `PASS`,
+and an unapproved copy to `PASS_UNDER_PROPOSED_POLICY`.
+
+**Not yet verified.** The gate under v4 on staging. Deadline: 30 Nov 2026, while the 31 Oct runs are
+within freshness.
+
 ## Risk register
 
 
@@ -1982,7 +2012,7 @@ buttons are full width on a phone. The live form in a browser against a running 
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
-| R-08 | Gate thresholds unapproved | Open — policy v3 proposed (E-045); the three archetypes pass under it on staging (E-046) | Owner approval PR, then a gate re-run |
+| R-08 | Gate thresholds unapproved | Approved by the owner on 2 Nov (E-047): policy v4, pending merge. The three archetypes passed under v3 on staging (E-046) | The gate under v4 on staging (PASS expected, by 30 Nov), then the owner's sign-off against its report |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
@@ -2004,7 +2034,7 @@ buttons are full width on a phone. The live form in a browser against a running 
 | R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
-| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Mitigated (E-045, E-046): the score is kept (owner, option 1). Restricted or no ECGC cover counts as an accepted miss, and the results page lists India's own markets. Under gate v3 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed | Approval of the gate (R-08) |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Mitigated (E-045, E-046): the score is kept (owner, option 1). Restricted or no ECGC cover counts as an accepted miss, and the results page lists India's own markets. Under gate v3 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed | The gate under v4 (R-08) |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Closed (E-039): the worker read the US live on 30 Oct | — |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |

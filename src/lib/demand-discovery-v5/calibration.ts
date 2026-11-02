@@ -9,16 +9,18 @@
 import type { TradeFlowInput } from './series';
 
 /**
- * A reason the calibration accepts a market India sells to outside the top (owner, 31 Oct 2026, E-045).
- * No or restricted ECGC cover caps the payment-risk measure, so such markets rank lower by design. A
- * sanctions flag never changes a score (docs/36 §5.2): a flagged market is accepted outside the top because it is
- * not one to steer a first-time exporter to, not because the score ranked it lower. The policy lists
- * which reasons it accepts (`explained_misses`); the results page shows them as notes, never as causes.
+ * Why a market India sells to may sit outside the top (owner, 31 Oct 2026, E-045). No or restricted
+ * ECGC cover caps the payment-risk measure, so such markets rank lower by design. A sanctions flag never
+ * changes a score (docs/36 §5.2): it is recorded on the miss and shown as a note, but since 2 Nov 2026
+ * (owner, E-047) it does not count towards the pass. The results page shows these as notes, never as
+ * causes.
  */
 export type MissExplanation = 'ecgc_off_cover' | 'ecgc_restricted' | 'sanctions';
 export const MISS_EXPLANATION_TEXT: Readonly<Record<MissExplanation, string>> = {
   ecgc_off_cover: 'ECGC offers no cover', ecgc_restricted: 'ECGC cover is restricted', sanctions: 'a sanctions programme is flagged',
 };
+/** The reasons that count towards the pass: the score's own (owner, 2 Nov 2026, E-047). Gate policy v4 mirrors it. */
+export const ACCEPTED_MISS_EXPLANATIONS: readonly MissExplanation[] = ['ecgc_off_cover', 'ecgc_restricted'];
 const SANCTIONS_FLAG = /^(UN|US|EU|UK): /;
 
 /** From a market's measures and flags, stored or in memory: its ECGC cover, then any sanctions flag. */
@@ -35,7 +37,7 @@ export interface CalibrationMarket {
   rank: number | null;
   overall: number | null;
   reasons: string[];
-  /** E-045: why the market may rightly rank low, when it may. */
+  /** E-045: its ECGC cover or sanctions flag, when it has one (only ECGC cover counts, E-047). */
   explained_by?: MissExplanation | null;
 }
 
@@ -50,7 +52,7 @@ export interface CalibrationResult {
   overlap: number;
   /** India's top destinations the run's top leaves out, with what the run said about each. */
   missed: { market: string; usd: number; status: string | null; rank: number | null; reasons: string[]; explained_by: MissExplanation | null }[];
-  /** E-045: misses explained by restricted or no ECGC cover, or sanctions; they count towards the pass. */
+  /** Misses with an accepted reason (`ACCEPTED_MISS_EXPLANATIONS`, E-047); they count towards the pass. */
   explained: number;
   verdict: 'pass' | 'calibration_failure' | 'no_india_exports';
 }
@@ -79,7 +81,7 @@ export function compareWithIndiaExports(args: { hs6: string; flows: readonly Tra
   const runTopSet = new Set(runTop.map((market) => market.market));
   const overlap = indiaTop.filter((item) => runTopSet.has(item.market)).length;
   const missed = indiaTop.filter((item) => !runTopSet.has(item.market)).map((item) => ({ market: item.market, usd: item.usd, status: item.status, rank: item.rank, reasons: byMarket.get(item.market)?.reasons ?? [], explained_by: byMarket.get(item.market)?.explained_by ?? null }));
-  const explained = missed.filter((item) => item.explained_by != null).length;
+  const explained = missed.filter((item) => item.explained_by != null && ACCEPTED_MISS_EXPLANATIONS.includes(item.explained_by)).length;
   return {
     hs6: args.hs6,
     years: [...years].sort((a, b) => a - b),
@@ -105,7 +107,7 @@ export interface RunCalibrationSummary {
   top: number;
   years: number[];
   overlap: number;
-  /** E-045: misses explained by restricted or no ECGC cover, or sanctions. */
+  /** Misses with an accepted reason (ECGC cover only since E-047). */
   explained: number;
   verdict: CalibrationResult['verdict'];
   india_top: string[];

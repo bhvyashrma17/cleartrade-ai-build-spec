@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { aggregateRunCalibration, compareWithIndiaExports, readRunCalibration, riskExplanation, summarizeRunCalibration, type RunCalibrationSummary } from '@/lib/demand-discovery-v5/calibration';
+import { ACCEPTED_MISS_EXPLANATIONS, aggregateRunCalibration, compareWithIndiaExports, readRunCalibration, riskExplanation, summarizeRunCalibration, type RunCalibrationSummary } from '@/lib/demand-discovery-v5/calibration';
 import { indiaMarkets } from '@/lib/demand-discovery-v5/india-markets';
 
 /** Owner-approved idea 2 (E-042): every real run records how its top 10 compares with where India already sells. */
@@ -30,7 +30,7 @@ describe('calibration stored with every run', () => {
     expect(aggregateRunCalibration([])).toEqual({ compared: 0, pass: 0, calibration_failure: 0, no_india_exports: 0, median_overlap: null });
   });
 
-  test('E-045: a miss explained by restricted or no ECGC cover, or sanctions, counts towards the pass; any other miss does not', () => {
+  test('E-045, E-047: a miss with restricted or no ECGC cover counts towards the pass; a sanctions flag or any other miss does not', () => {
     // The 31 Oct rice run: 4 of India's top 10 in the run's top 10. On ECGC's 1 Jul 2026 list Iraq and
     // Guinea are in restricted cover Group I, Iran and Yemen in Group II; Togo and Côte d'Ivoire are open.
     const india = ['SA', 'IR', 'IQ', 'BJ', 'AE', 'GN', 'YE', 'US', 'TG', 'CI'];
@@ -47,9 +47,14 @@ describe('calibration stored with every run', () => {
     expect(result.missed.filter((item) => !item.explained_by).map((item) => item.market)).toEqual(['TG', 'CI']);
     // Without the explanations, the same run fails, as it did on 31 Oct.
     expect(compareWithIndiaExports({ hs6: '100630', flows, years: [2024], markets: markets.map((market) => ({ ...market, explained_by: null })) }).verdict).toBe('calibration_failure');
-    // A sanctions flag counts as well, and so does any mix: 4 + 1 is enough.
-    const one = markets.map((market) => ({ ...market, explained_by: market.market === 'TG' ? 'sanctions' as const : null }));
+    // A sanctions flag is kept on the miss but does not count (owner, 2 Nov 2026): 4 + 0 fails; one restricted market passes.
+    const flagged = markets.map((market) => ({ ...market, explained_by: market.market === 'TG' ? 'sanctions' as const : null }));
+    const result2 = compareWithIndiaExports({ hs6: '100630', flows, years: [2024], markets: flagged });
+    expect(result2).toMatchObject({ explained: 0, verdict: 'calibration_failure' });
+    expect(result2.missed.find((item) => item.market === 'TG')!.explained_by).toBe('sanctions');
+    const one = markets.map((market) => ({ ...market, explained_by: market.market === 'TG' ? 'ecgc_off_cover' as const : null }));
     expect(compareWithIndiaExports({ hs6: '100630', flows, years: [2024], markets: one })).toMatchObject({ explained: 1, verdict: 'pass' });
+    expect(ACCEPTED_MISS_EXPLANATIONS).toEqual(['ecgc_off_cover', 'ecgc_restricted']);
   });
 
   test('the explanation is read from the payment-risk measure\'s ECGC cover, then from a sanctions flag', () => {

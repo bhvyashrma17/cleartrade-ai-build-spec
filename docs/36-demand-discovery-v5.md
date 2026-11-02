@@ -456,15 +456,15 @@ sources itself (World Bank, Comtrade's reporting lists) is an open owner decisio
 - The same comparison on eighteen products (stage 1, item 6; §10 step 8): the archetypes and fifteen
   more across India's export sectors. A proposed set (E-038); the owner may change it before the
   staging runs, and decides what share of passes accepts the scoring.
-- The Phase 1 gate (docs/34) checks v5 runs only (policy v3, D-036): coverage, ranked markets, this
-  calibration, labelled estimates, official duty and a replay of every score; its thresholds stay
-  proposed until the owner approves.
-- Explained misses (owner, 31 Oct 2026, E-045): one of India's top destinations outside the top 10
-  counts towards the pass when ECGC offers no cover there, its cover is restricted, or a UN/US/EU/UK
-  sanctions programme is flagged (the gate policy lists which of these it accepts). No or restricted
-  cover caps the payment-risk measure, so those markets rank lower by design. A flag never changes a
-  score: a flagged market is accepted because it is not one to steer a first-time exporter to. Any
-  other miss still counts against the run.
+- The Phase 1 gate (docs/34) checks v5 runs only (policy v4, D-036): coverage, ranked markets, this
+  calibration, labelled estimates, official duty and a replay of every score. The owner approved its
+  thresholds on 2 Nov 2026 (E-047).
+- Explained misses (owner, 31 Oct and 2 Nov 2026, E-045, E-047): one of India's top destinations
+  outside the top 10 counts towards the pass when ECGC offers no cover there or its cover is restricted
+  (`ACCEPTED_MISS_EXPLANATIONS`; gate policy v4 lists the same). No or restricted cover caps the
+  payment-risk measure, so those markets rank lower by design. A UN/US/EU/UK sanctions flag is recorded
+  on the miss and shown as a note, but it never changes a score and does not count. Any other miss
+  still counts against the run.
 
 - Every run stores its own comparison with India's top destinations (`summary.calibration`, E-042),
   shown on `/ops/discovery` with a 30-day summary. `scripts/dd5-health-check.ts` scores India's top
