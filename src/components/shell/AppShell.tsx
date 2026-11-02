@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { UserRole } from '@prisma/client';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { Wordmark } from '@/components/brand/Wordmark';
 import { buttonClass } from '@/components/ui/Button';
 import { CommandPalette } from './CommandPalette';
@@ -326,6 +327,11 @@ export function AppShell({
         )}
       >
         {children}
+        {/* Every portal page carries the company line (owner, 3 Nov 2026). Inside <main>, so the
+            exporter's phone navigation bar, which <main>'s bottom padding clears, never covers it. */}
+        <footer className="mt-16 border-t border-line py-6">
+          <LegalLine />
+        </footer>
       </main>
 
       {portal === 'exporter' && mobileNav.length > 0 ? (

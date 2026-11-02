@@ -10,6 +10,7 @@
 
 import Link from 'next/link';
 import { BrandMark } from '@/components/brand/BrandMark';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { buttonClass } from '@/components/ui/Button';
 import { getPrincipal, homeRouteForRole } from '@/lib/auth';
 
@@ -18,7 +19,7 @@ export default async function NotFound() {
   const safeHref = principal ? homeRouteForRole(principal.role) : '/login';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-ground p-6">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-ground p-6">
       <section className="w-full max-w-md rounded-xl border border-line bg-surface p-8 text-center">
         <BrandMark size={30} className="mx-auto text-muted" />
         <h1 className="display mt-5 text-title-page text-bone">Not found</h1>
@@ -32,6 +33,9 @@ export default async function NotFound() {
           {principal ? 'Back to your workspace' : 'Go to sign in'}
         </Link>
       </section>
+      <footer>
+        <LegalLine className="text-center" />
+      </footer>
     </main>
   );
 }
