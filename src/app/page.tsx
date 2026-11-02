@@ -16,6 +16,7 @@
 import Link from 'next/link';
 import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { Wordmark } from '@/components/brand/Wordmark';
 import { JourneyFrame } from '@/components/ui/JourneyFrame';
 import { buttonClass } from '@/components/ui/Button';
@@ -164,15 +165,7 @@ function LandingPage() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-shell flex-wrap items-center justify-between gap-6 px-5 py-10 sm:px-8">
           <Wordmark size="sm" tagline />
-          {/* The legal entity behind ClearTrade, and a mailbox on its own domain (owner, 2 Nov 2026). */}
-          <div className="text-xs text-muted sm:text-right">
-            <p>© {new Date().getFullYear()} Trade Flux AI Solutions LLP · ClearTrade</p>
-            <p className="mt-1">
-              <a href="mailto:hello@cleartrade.in" className="underline underline-offset-2 hover:text-bone">
-                hello@cleartrade.in
-              </a>
-            </p>
-          </div>
+          <LegalLine className="sm:text-right" />
         </div>
       </footer>
     </div>

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BrandMark } from '@/components/brand/BrandMark';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { Wordmark } from '@/components/brand/Wordmark';
 
 /**
@@ -24,6 +25,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </Link>
         {children}
         <p className="mt-8 text-center text-xs text-muted">Structured exports. Zero chaos.</p>
+        <footer className="mt-3">
+          <LegalLine className="text-center" />
+        </footer>
       </div>
     </main>
   );

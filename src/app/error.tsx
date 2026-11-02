@@ -28,6 +28,7 @@
 
 import { useEffect } from 'react';
 import { BrandMark } from '@/components/brand/BrandMark';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { Button } from '@/components/ui';
 
 export default function GlobalError({
@@ -42,7 +43,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-ground p-6">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-ground p-6">
       <section className="w-full max-w-lg rounded-xl border border-line bg-surface p-8 text-center">
         <BrandMark size={30} className="mx-auto text-muted" />
         <h1 className="display mt-5 text-title-page text-bone">Something went wrong</h1>
@@ -65,6 +66,9 @@ export default function GlobalError({
           </Button>
         </div>
       </section>
+      <footer>
+        <LegalLine className="text-center" />
+      </footer>
     </main>
   );
 }
