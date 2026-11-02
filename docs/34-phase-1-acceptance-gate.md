@@ -7,7 +7,7 @@ reviewers have signed the resulting report.
 
 | | |
 |---|---|
-| Policy | `phase-1-gate-v3` — `src/lib/phase-1-gate/policy.ts` (v3, 31 Oct 2026, E-045: calibration also counts a miss outside the top 10 with restricted or no ECGC cover, or a sanctions flag) |
+| Policy | `phase-1-gate-v4` — `src/lib/phase-1-gate/policy.ts`, **approved by the owner on 2 Nov 2026** (E-047). Calibration also counts a miss outside the top 10 with restricted or no ECGC cover |
 | Engine | **Demand Discovery v5 only** (`market-opportunity-v5`, D-036). A run from an earlier engine fails. |
 | Status | **Every decision PROPOSED** (30 Oct 2026). Built against; not yet approved. |
 | Evaluator | `scripts/gate-phase-1.ts` → `src/lib/phase-1-gate/{load,evaluate}.ts` |
@@ -38,13 +38,14 @@ staging product ──► staff-confirmed HS6 ──► v5 run starts by itself 
 in §2, recorded in docs/35 against the report's `report_checksum`. No machine verdict freezes Phase 1
 on its own.
 
-## 2. Decisions (policy v3 — all proposed)
+## 2. Decisions (policy v4 — all approved, 2 Nov 2026)
 
 Rows marked *v1* carry over unchanged from policy v1 (accepted on 12 Oct 2026 as proposals to build
-against). The rest were proposed on 30 Oct 2026 while building v2. Each is restated with its
-reasoning in `policy.ts` (`basis`).
+against). The rest were proposed on 30 Oct 2026 while building v2, the accepted misses on 31 Oct (v3).
+The owner approved all fourteen on 2 Nov 2026 (E-047), with sanctions dropped from the accepted misses
+(v4). Each is restated with its reasoning in `policy.ts` (`basis`).
 
-| Decision | Proposed value | Why |
+| Decision | Approved value | Why |
 |---|---|---|
 | Release posture | Exporter-facing; v5 starts when a product's HS code is confirmed | D-018. The gate's own evidence is made by staff (see Classification). |
 | Evidence environment *v1* | Staging only | A report read from a development or test database must not pass for staging evidence. |
@@ -53,7 +54,7 @@ reasoning in `policy.ts` (`basis`).
 | Classification *v1* | Human confirmation by an `agent`, `ops_supervisor` or `admin`, with its confirming `AuditEvent` | `scripts/dd5-archetype-runs.ts start` proposes and confirms each code as staff. An exporter confirming its own code still starts v5, but that run is not gate evidence. |
 | Coverage | Every market of the run's frozen universe, assessed once | docs/36: v5 scores every product in all 218 screening markets; the run freezes the universe it used. |
 | Market count | ≥ 10 **ranked** markets per archetype | The top 10 is what v5 hands on (`ranking.handoff_count`) and what calibration compares. Staging runs ranked 188–214 (E-026). |
-| Calibration | The top 10 holds at least half of India's own ten largest destinations; a miss with a reason the policy accepts (`explained_misses`: no or restricted ECGC cover, a sanctions flag) counts towards the half | docs/36 §8. On 19 Oct, rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026). On 31 Oct under scoring v8, rice 4/10, brassware 7/10, carpets 9/10 (E-044). Owner, 31 Oct (E-045): accepted reasons count; rice then reads 4 + 4 restricted-cover markets = 8. |
+| Calibration | The top 10 holds at least half of India's own ten largest destinations; a miss with a reason the policy accepts (`explained_misses`: no or restricted ECGC cover) counts towards the half | docs/36 §8. On 19 Oct, rice (3/10) and brassware (4/10) failed and carpets (8/10) passed (E-026). On 31 Oct under scoring v8, rice 4/10, brassware 7/10, carpets 9/10 (E-044). Owner, 31 Oct (E-045): accepted reasons count; rice then reads 4 + 4 restricted-cover markets = 8 (E-046). Owner, 2 Nov (E-047): ECGC cover only, not a sanctions flag. |
 | Evidence labels | Every unscored metric states its reason; every estimate carries its label | Owner, 30 Oct (D-037): actual data or labelled estimates. |
 | Duty evidence | No duty an agent read by hand; ≥ 1 of the top 10 with an official duty read automatically | D-037. Staging runs had 19–47 official markets each (E-026). |
 | Freshness | Run ≤ 30 days old at evaluation · newest BACI base year ≤ 2 years before the run | Run age as v1. BACI is published yearly with data to two years earlier; between New Year and the new release's import this fails, by design. |
@@ -88,9 +89,8 @@ says why.
 **Calibration** (docs/36 §8) — India's exports of the product by destination, from the BACI release
 the run froze, summed over the years the market-size metric averages, against the run's top 10. Only
 screening markets count. A destination outside the top 10 counts as explained when the policy accepts
-its reason: its ECGC cover (read from the stored payment-risk measure) is restricted or absent, or a
-sanctions programme is flagged on it. A flag never changes a score, so it is accepted as a market not
-to steer a first-time exporter to, not as the cause of the rank.
+its reason: its ECGC cover (read from the stored payment-risk measure) is restricted or absent. A
+sanctions flag is recorded on the miss, but it never changes a score and does not count (E-047).
 
 **Scoring replay** — the stored policy snapshot must hash to the hash the run, its frozen inputs and
 every assessment carry. Then every market is scored again from its stored metrics under that
@@ -212,7 +212,8 @@ the inputs each v5 run itself reads (docs/36 §3, docs/37).
 - The run-status check sees whether a partial run has notes, not that they name the failed step; v5
   writes a note for every step that degrades a run (R-34).
 - The gate ran on staging on 31 Oct under policy v2 and failed on rice calibration only, 4/10 (E-044).
-  It has not yet been re-run under v3 (E-045).
+  On 2 Nov the same runs passed under v3, `PASS_UNDER_PROPOSED_POLICY` (E-046). It has not yet been run
+  under the approved v4, and those runs must be re-read by 30 Nov (freshness).
 
 ## 8. History
 
@@ -222,4 +223,6 @@ staging, and it was retired with the engine on 30 Oct 2026 (D-036); git history 
 
 Policy v2 (30 Oct 2026, D-036) checks v5 runs only. Its one staging run, on 31 Oct, failed on rice
 calibration alone (E-044). Policy v3 (31 Oct 2026, E-045) keeps every v2 threshold and adds the
-calibration's accepted explanations (`explained_misses`).
+calibration's accepted explanations (`explained_misses`). Its one staging run passed under proposed
+thresholds (E-046). Policy v4 (2 Nov 2026, E-047) is v3 with sanctions dropped from the accepted
+explanations, every decision approved by the owner.
