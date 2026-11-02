@@ -9,7 +9,7 @@ reviewers have signed the resulting report.
 |---|---|
 | Policy | `phase-1-gate-v4` — `src/lib/phase-1-gate/policy.ts`, **approved by the owner on 2 Nov 2026** (E-047). Calibration also counts a miss outside the top 10 with restricted or no ECGC cover |
 | Engine | **Demand Discovery v5 only** (`market-opportunity-v5`, D-036). A run from an earlier engine fails. |
-| Status | **Every decision PROPOSED** (30 Oct 2026). Built against; not yet approved. |
+| Status | **Passed and signed off: Phase 1 frozen.** `PASS` on staging under v4, 3 Nov 2026, report checksum `1482ca49…`, signed off by the product owner and the engineering owner (E-048) |
 | Evaluator | `scripts/gate-phase-1.ts` → `src/lib/phase-1-gate/{load,evaluate}.ts` |
 | Tests | `tests/phase-1-gate.test.ts`; the from-scratch case (a real run through the job handler, read back through the gate) in `tests/demand-discovery-v5-run.test.ts` |
 | Evidence ledger | `docs/35-programme-evidence-ledger.md` |
@@ -212,8 +212,9 @@ the inputs each v5 run itself reads (docs/36 §3, docs/37).
 - The run-status check sees whether a partial run has notes, not that they name the failed step; v5
   writes a note for every step that degrades a run (R-34).
 - The gate ran on staging on 31 Oct under policy v2 and failed on rice calibration only, 4/10 (E-044).
-  On 2 Nov the same runs passed under v3, `PASS_UNDER_PROPOSED_POLICY` (E-046). It has not yet been run
-  under the approved v4, and those runs must be re-read by 30 Nov (freshness).
+  On 2 Nov the same runs passed under v3, `PASS_UNDER_PROPOSED_POLICY` (E-046). On 3 Nov they passed
+  under the approved v4, `PASS`, and the report was signed off (E-048). A later gate run needs fresh
+  runs: these are older than 30 days from 1 Dec.
 
 ## 8. History
 
@@ -225,4 +226,5 @@ Policy v2 (30 Oct 2026, D-036) checks v5 runs only. Its one staging run, on 31 O
 calibration alone (E-044). Policy v3 (31 Oct 2026, E-045) keeps every v2 threshold and adds the
 calibration's accepted explanations (`explained_misses`). Its one staging run passed under proposed
 thresholds (E-046). Policy v4 (2 Nov 2026, E-047) is v3 with sanctions dropped from the accepted
-explanations, every decision approved by the owner.
+explanations, every decision approved by the owner. Its staging run on 3 Nov passed, `PASS`, and its
+report was signed off (E-048): Phase 1 is frozen.
