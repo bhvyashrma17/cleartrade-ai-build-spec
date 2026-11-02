@@ -147,7 +147,7 @@ export function MarketDetail({
         <LogisticsSection assessment={assessment} />
       </section>
 
-      <section className="mt-8 rounded-lg border border-[var(--color-action)]/30 bg-surface p-5 shadow-card">
+      <section className="mt-8 rounded-lg border border-[color-mix(in_srgb,var(--color-action)_30%,transparent)] bg-surface p-5 shadow-card">
         <h2 className="text-base font-semibold text-primary">Buyers in {countryName(assessment.country_code)}</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
           {buyersFound && buyersFound.count > 0
@@ -271,7 +271,7 @@ function SaveSelectActions({ tier, assessment }: { tier: Tier; assessment: Asses
         </Button>
       </div>
       {confirming ? (
-        <div className="max-w-xs rounded border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-right text-xs">
+        <div className="max-w-xs rounded border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] p-3 text-right text-xs">
           <p className="text-primary">{confirming}</p>
           <div className="mt-2 flex justify-end gap-2">
             <button type="button" onClick={() => setConfirming(null)} className="text-[var(--color-text-secondary)] underline">

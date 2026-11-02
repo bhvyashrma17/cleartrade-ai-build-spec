@@ -15,6 +15,7 @@ import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import { useJobPoll } from '@/hooks';
 import type { ListResponse } from '@/types';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
+import { HsFinder } from '@/components/hs-finder/HsFinder';
 import type { ExporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
 import type { IndiaMarket } from '@/lib/demand-discovery-v5/india-markets';
 import { V5Results, type V5Row } from './V5Results';
@@ -73,6 +74,9 @@ export function DemandDiscovery({
   const [productId, setProductId] = useState('');
   const [description, setDescription] = useState('');
   const [hsCode, setHsCode] = useState('');
+  // The product code finder (E-046): open under the HS field; a pick fills it and shows what it means.
+  const [finding, setFinding] = useState(false);
+  const [picked, setPicked] = useState<{ hs6: string; description: string } | null>(null);
   // Seeded from the server so a returning user picks up whatever was last running or
   // finished, instead of an empty page that silently discards their search.
   const [phase, setPhase] = useState<Phase>(
@@ -183,10 +187,36 @@ export function DemandDiscovery({
                 inputMode="numeric"
                 error={fieldErrors.hs_code}
               />
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                The tariff classification for your product. Add it if you know it — it sharpens the
-                tariff and duty figures.
-              </p>
+              {picked && picked.hs6 === hsCode.trim() ? (
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  <span className="record">{picked.hs6}</span>: {picked.description}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  The tariff classification for your product. Add it if you know it — it sharpens the
+                  tariff and duty figures.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setFinding((open) => !open)}
+                aria-expanded={finding}
+                className="mt-1.5 text-xs font-semibold text-primary underline underline-offset-2"
+              >
+                {finding ? 'Close the code finder' : 'Don’t know the code? Find it from your description'}
+              </button>
+              {finding ? (
+                <HsFinder
+                  idPrefix="dd"
+                  description={description}
+                  pickNote="Codes come from the official HS 2022 list; check the description matches your product."
+                  onPick={(pick) => {
+                    setHsCode(pick.hs6);
+                    setPicked({ hs6: pick.hs6, description: pick.description });
+                    setFinding(false);
+                  }}
+                />
+              ) : null}
             </div>
           </div>
         ) : (
@@ -208,7 +238,7 @@ export function DemandDiscovery({
                 </option>
               ))}
             </select>
-            {productId?<ProductClassificationForm productId={productId} status={products.find(product=>product.id===productId)?.hs_classification_status??null} method="exporter_supplied"/>:null}
+            {productId?<ProductClassificationForm key={productId} productId={productId} productName={products.find(product=>product.id===productId)?.name??''} status={products.find(product=>product.id===productId)?.hs_classification_status??null} method="exporter_supplied"/>:null}
           </div>
         )}
 
@@ -453,7 +483,7 @@ function RunProgress({
                   <li key={row.id}>
                     <Link
                       href={`/app/markets/${row.id}`}
-                      className="focus-visible-ring block rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 transition duration-fast hover:border-[var(--color-action)]/50"
+                      className="focus-visible-ring block rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 transition duration-fast hover:border-[color-mix(in_srgb,var(--color-action)_50%,transparent)]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>

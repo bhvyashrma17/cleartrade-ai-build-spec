@@ -1910,6 +1910,66 @@ score itself uses, and rice passes on them alone. The change is one line of poli
 comparison from each run's stored rows (`compareRunWithIndiaExports` reads each market's ECGC cover and
 flags), so the three 31 Oct runs can be re-read as they are with `run:` selectors.
 
+### E-046 · 2026-11-02 · Gate v3 passes on staging (proposed policy); product codes on staging; finder screens (in review)
+
+**Staging: the product code list (owner's Claude Code, 31 Oct, about 07:30 UTC).**
+- File: `product_codes_HS22_V202601.csv`, extracted from the BACI archive staging already imported. It
+  is 630,077 bytes, SHA-256 `1d7dfab3d0c790e111663832b1d101d6ffafe396fb6dbed7035b7283f6614efd`.
+  `--retrieved-at=2026-10-13`, the archive's recorded retrieval date: same SHA-256 and source URL.
+- Imported as `atlas-ops@staging-atlas.invalid` and stored as active: NEW, release
+  `cmvw30sd00001ueyalw7bptfh`, "CEPII BACI product codes HS22 (5609 codes)". The script's repeat
+  import was UNCHANGED.
+- 5,609 unique codes with 97 two-digit prefixes: chapters 01–97 without the reserved 77, plus CEPII's
+  placeholder `999999` ("Commodities not specified according to kind").
+- `/api/v1/hs-finder` on staging, both HTTP 200:
+  - "brass pooja thali" → one code, 741810, material read as copper or brass, no question;
+  - "jeera" → 090931 and 090932, asking whether it is whole, or crushed or ground.
+
+**Staging: the Phase 1 gate under policy v3 (owner's Claude Code, 2 Nov, after #29 merged as `f3fd90f`).**
+- Verdict `PASS_UNDER_PROPOSED_POLICY`, exit code 10: 3/3 archetypes pass, 18 of 18 checks each, none
+  failed or unverified. Report checksum `fd5139eee9f50780db34fb6644b7afc1c04494bf6178bab441acd994be60b33d`,
+  policy `phase-1-gate-v3` (unapproved), hash `ff13f25dbae63a5c44ce9ff531014e61bc1840b2db50df44cdedfe450f654733`.
+- Runs are the three from 31 Oct, read as they are under scoring policy v8. Nothing was started or
+  changed. India's top 10 is averaged over 2022–2024.
+  - rice `cmvw17upd0001ue35jwagb23h`: 4 + 4 accepted = 8 (5 needed). Accepted: IR #91, IQ #35, GN #27
+    and YE #36 (ECGC cover restricted). Not accepted: TG #20, CI #11.
+  - brassware `cmvw17w2b0007ue351scfbz9i`: 7 + 1 accepted = 8. Accepted: ET #170 (restricted). Not
+    accepted: SA #41, MU #23.
+  - carpets `cmvw17wz1000due35dyfgyq95`: 9. Not accepted: SE #12.
+- No miss was accepted for sanctions: every accepted one is restricted ECGC cover.
+- The probe record cites CI run 41182272355, which passed on #29's final head `ed251dc`. Its tree
+  `30dc0d46…` equals `f3fd90f`'s. The record sits in the owner's `.artifacts/phase-1-gate/2026-11-02/`.
+
+**Built: finder screens.**
+- `src/components/hs-finder/HsFinder.tsx` opens under every HS code field: the guest/free estimate,
+  the paid ad-hoc search and the product's classification form (exporter and agent).
+  - It shows what it read from the words and asks the separating question as buttons. It lists at most
+    three codes with their official descriptions, plus "Use this code".
+  - A pick fills the field and shows the code's description under it.
+  - In the classification form a pick also fills an empty rationale. The saved candidate's `evidence`
+    records `product_code_finder` (query, answers, code list) when its HS6 is the pick.
+  - The finder still decides nothing: the exporter or agent confirms as before.
+- The index leaves out codes outside HS chapters 01–97 (the reserved 77 and CEPII's `999999`).
+- Four Tailwind classes on the Demand Discovery screens compiled to nothing: an opacity modifier on a
+  bare `var()` colour, the AGENTS.md trap, confirmed by compiling the CSS. They were the estimate's
+  widened-scope notice, a recent-run hover border and two boxes on the market detail page. Each now uses
+  `color-mix()`.
+
+**Checks run (agent workspace).** `tsc --noEmit` and ESLint clean. `hs-finder` 7 tests (1 new) and the
+new `hs-finder-screen` 4. `hs-finder-route`, `market-estimate-baci`, `demand-discovery-v5-exporter-fit`,
+`country-discovery-genericity`, `-projection` and `agent-ux-polish`: 81 in all, all pass. The finder
+panel was rendered with the app's compiled CSS at 900 px and 390 px: no horizontal scroll, and the
+buttons are full width on a phone. The live form in a browser against a running server is not yet seen.
+
+**Open for the owner.** Approve the gate thresholds (R-08).
+- The approval is one reviewed PR (docs/34 §2). It sets each decision `approved` and fills `approval`.
+  The version is bumped only if a value changes.
+- The gate is then re-read and should return PASS.
+- After that, the product owner and the engineering owner sign off here against that report's checksum
+  (docs/34 §1).
+- Freshness allows a run at most 30 days old, so the 31 Oct runs must be re-read by 30 Nov 2026. After
+  that date, the archetypes need fresh runs.
+
 ## Risk register
 
 
@@ -1922,7 +1982,7 @@ flags), so the three 31 Oct runs can be re-read as they are with `run:` selector
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
-| R-08 | Gate thresholds unapproved | Open — policy v2 (v5 runs only) proposed in E-033 | Owner approval PR |
+| R-08 | Gate thresholds unapproved | Open — policy v3 proposed (E-045); the three archetypes pass under it on staging (E-046) | Owner approval PR, then a gate re-run |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
 | R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
@@ -1944,7 +2004,7 @@ flags), so the three 31 Oct runs can be re-read as they are with `run:` selector
 | R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
-| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Open: under v8 on 31 Oct rice still matches 4 of 10 (brassware 7, carpets 9). The misses are payment-risk and falling-import markets (E-044); the owner chooses among E-044's three options | The sector health check (E-042), then the owner's choice |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Mitigated (E-045, E-046): the score is kept (owner, option 1). Restricted or no ECGC cover counts as an accepted miss, and the results page lists India's own markets. Under gate v3 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed | Approval of the gate (R-08) |
 | R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Closed (E-039): the worker read the US live on 30 Oct | — |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032) | Delete the earlier engines once v5's gate passes and no stored v4 run needs its code to be read |

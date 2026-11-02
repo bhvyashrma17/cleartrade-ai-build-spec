@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildHsIndex, findHsCodes, OTHER, tokenize } from '@/lib/hs-finder/finder';
+import { buildHsIndex, findHsCodes, isHsChapterCode, OTHER, tokenize } from '@/lib/hs-finder/finder';
 import { parseBaciProductCodes } from '@/lib/reference-datasets/baci-products';
 import { referenceDatasetDefinition } from '@/lib/reference-datasets/registry';
 
@@ -41,6 +41,14 @@ describe('the product list from the BACI archive', () => {
 });
 
 describe('finding a product code', () => {
+  test('only HS chapters 01–97 are offered: never CEPII\'s 999999 placeholder or the reserved chapter 77 (E-046)', () => {
+    expect(['010121', '970600', '741810'].every(isHsChapterCode)).toBe(true);
+    expect(['999999', '770000', '980100', '000000'].some(isHsChapterCode)).toBe(false);
+    const withPlaceholder = buildHsIndex([...ROWS, { hs6: '999999', description: 'Commodities not specified according to kind' }]);
+    expect(withPlaceholder.codes.has('999999')).toBe(false);
+    expect(codes(findHsCodes(withPlaceholder, { description: 'commodities not specified according to kind' }))).toEqual([]);
+  });
+
   test('an everyday name and a material word in the description find the one code, without asking', () => {
     const result = findHsCodes(index, { description: 'Brass pooja thali' });
     expect(codes(result)).toEqual(['741810']);
