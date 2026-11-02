@@ -164,7 +164,15 @@ function LandingPage() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-shell flex-wrap items-center justify-between gap-6 px-5 py-10 sm:px-8">
           <Wordmark size="sm" tagline />
-          <p className="text-xs text-muted">© {new Date().getFullYear()} ClearTrade</p>
+          {/* The legal entity behind ClearTrade, and a mailbox on its own domain (owner, 2 Nov 2026). */}
+          <div className="text-xs text-muted sm:text-right">
+            <p>© {new Date().getFullYear()} Trade Flux AI Solutions LLP · ClearTrade</p>
+            <p className="mt-1">
+              <a href="mailto:hello@cleartrade.in" className="underline underline-offset-2 hover:text-bone">
+                hello@cleartrade.in
+              </a>
+            </p>
+          </div>
         </div>
       </footer>
     </div>
