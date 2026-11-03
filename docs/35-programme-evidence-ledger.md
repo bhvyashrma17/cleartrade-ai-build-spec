@@ -2133,6 +2133,42 @@ run yet.
 `password-reset` 4 tests (new), `bug-reports` 8 (1 new), `social-auth` 21, `legal-line` 2: all pass.
 The migration was applied by the local harness with the other 85.
 
+### E-051 · 2026-11-03 · Production launched: the release is live; what is left (in review)
+
+**Switch-over (docs/39, owner with Claude Code and the agent, 3 Nov IST).**
+- Part 1 (§2): Neon branch `before-launch-2026-11-03` (agent, in the browser; endpoint `ep-solitary-resonance`
+  checked first); variables saved; production's own bucket by reference; scanner source `master` with a
+  public domain on port 3000, `PORT=3000`; worker `cleartrade-worker-production` created with its settings
+  entered by hand (a new service cannot use a config file, below); five fresh secrets; separate Resend keys
+  for production and staging; the Neon password reset and both URLs set from the clipboard without being
+  printed; identity pins set. Preflights: `runtime validation (web)` and `(worker)` pass. Fingerprint
+  prefix `6317e339e3e2`.
+- Owner decisions: one shared UN Comtrade key and one shared Census key across environments (exception to
+  R-36); Razorpay keys unchanged.
+- Release: PR #37 (CI run 41666261464 passed) merged; master at `eb22a065`. The worker's pre-deploy applied
+  the six migrations (all 86 recorded); web's found none pending. The scanner deployed separately with the
+  owner's OK (15:59Z). Readiness 200 `ready` (database, storage, worker), also after
+  `REQUIRE_WORKER_READY=true`. Scanner check 6/6, 401 without or with a wrong token; storage 9/9.
+- Data (§4): 13 reference datasets NEW then UNCHANGED with staging's pins (Comtrade lists from the 14 Oct
+  files); BACI HS17 89,207,221 and HS22 33,900,195 rows, as staging; 221 active official tariff releases
+  against staging's 223 (21 families equal, 9 loaded live as newer editions); HMRC August 2026 list,
+  106,285 importers.
+
+**Not done, being closed (this PR and the next session).**
+- Test data: `reset` stopped at an immutability trigger (`ExchangeRateQuote is immutable evidence`) and
+  rolled back. The pilot organisations hold immutable evidence, so they cannot be deleted by design. Added:
+  `staging-pilot.ts retire`, which switches off the pilot logins (and the reserved-domain account) and
+  keeps the labelled rows, with an audit event. Waiting for the owner's choice.
+- Tariffs: Iceland and Sri Lanka loaded only through staging-only canaries, now allowed on production with
+  `--confirm-production`. Canada's newer edition needs `--country-treatments-url`; the official URL is in
+  `docs/customs-atlas/p1-cc4-wave1-implementation.md`, and staging's active release records both URLs.
+- Settings without a screen: `dd5-auto-import.ts` now runs on production with `--confirm-production`
+  (reference auto-import actor); Singapore's nightly refresh is `authority-refresh.ts --enable`.
+- **Railway config-as-code ends on 1 Dec 2026** (Railway's notice on every service): after that web and the
+  scanner fall back to their own service settings. Their build, start, pre-deploy, health check and restart
+  settings must be entered by hand before then (R-41).
+- Delete `tmp/rw/production.env` on the owner's machine when Part 3 is done.
+
 ## Risk register
 
 
@@ -2178,3 +2214,4 @@ The migration was applied by the local harness with the other 85.
 | R-38 | `PATCH /api/v1/exporter-org/commitment-fee` accepted the staff sources (`manual_ops`, `bank_partner`, `AA`) from the exporter itself, even with Razorpay configured: any exporter could unlock paid tier without paying | Closed (E-049): `exporterFeeConfirmationProblem`; with the gateway configured every source is refused, without it only `exporter_update` | — |
 | R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Closed (E-050): reset by a one-time emailed link | — |
 | R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |
+| R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Open (E-051) | Every service's settings entered by hand before 1 Dec, on staging and production |

@@ -16,6 +16,11 @@
  * `reset` run, and `reset` only with `--confirm-production=<database fingerprint prefix>` and
  * `--actor-email=<admin>`: pilot rows reached production's database in August 2026, while an old
  * staging service pointed at it (docs/39, E-049). A production reset records one audit event.
+ * `retire` (staging or production; production with the same confirmation and admin actor) is for
+ * an environment where the pilot rows hold immutable evidence (exchange-rate quotes, issued
+ * invoice numbers, document artifacts) and so cannot be deleted: it switches off the pilot logins
+ * (and, with `--include-reserved-test-domains`, those accounts too), keeps the labelled rows, and
+ * records `pilot_accounts_retired`. Inactive accounts cannot sign in (auth.ts).
  * `reset --include-reserved-test-domains` also removes accounts on domains nobody can receive
  * mail at (`.test`, `.example`, `.invalid`, `.localhost`, `example.com/.net/.org`), with any
  * organisation all of whose members are removed.
@@ -668,6 +673,33 @@ async function confirmProductionReset() {
   return actor;
 }
 
+/** Switch off the pilot logins without deleting rows that are immutable by design (see the header). */
+async function retire() {
+  const env = assertSafeEnvironment('reset');
+  const productionActor = env === 'production' ? await confirmProductionReset() : null;
+  const includeReserved = process.argv.includes('--include-reserved-test-domains');
+  const candidates = await prisma.user.findMany({
+    where: { OR: [{ email: isPilotEmail }, ...(includeReserved ? [...RESERVED_TEST_TLDS, ...RESERVED_TEST_DOMAINS.map((domain) => `@${domain}`)].map((suffix) => ({ email: { endsWith: suffix, mode: 'insensitive' as const } })) : [])] },
+    select: { id: true, email: true, is_active: true },
+  });
+  const targets = candidates.filter((user) => user.email.endsWith(`@${DOMAIN}`) || (includeReserved && isReservedTestEmail(user.email)));
+  const retired = await prisma.user.updateMany({ where: { id: { in: targets.map((user) => user.id) }, is_active: true }, data: { is_active: false } });
+  console.log(`environment          ${env}`);
+  console.log(`accounts matched     ${targets.length}`);
+  console.log(`logins switched off  ${retired.count}`);
+  if (productionActor && targets.length > 0) {
+    await prisma.auditEvent.create({
+      data: {
+        actor_user_id: productionActor.id, role: productionActor.role, action: 'pilot_accounts_retired',
+        object_type: 'pilot_dataset', object_id: DOMAIN,
+        after_summary: { accounts: targets.length, logins_switched_off: retired.count, reserved_test_domains: includeReserved },
+        correlation_id: randomUUID(), source: AuditSource.admin,
+      },
+    });
+    console.log('audit event recorded pilot_accounts_retired');
+  }
+}
+
 async function main() {
   const [command, argument] = process.argv.slice(2);
   switch (command) {
@@ -676,8 +708,9 @@ async function main() {
     case 'status': return status();
     case 'seed-discovery': return seedDiscovery();
     case 'reset': return reset();
+    case 'retire': return retire();
     default:
-      console.log('Usage: staging-pilot.ts <seed|seed-discovery|promote <email>|status|reset> (production: reset --confirm-production=<prefix> --actor-email=<admin>)');
+      console.log('Usage: staging-pilot.ts <seed|seed-discovery|promote <email>|status|reset|retire> (production: reset or retire --confirm-production=<prefix> --actor-email=<admin>)');
       process.exitCode = 1;
   }
 }
