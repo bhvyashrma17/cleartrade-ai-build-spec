@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { OrgTier, UserRole } from '@prisma/client';
 import { describe, expect, test } from 'vitest';
-import { createBugReport } from '../src/lib/bug-reports';
+import { createBugReport, listBugReports } from '../src/lib/bug-reports';
 import { prisma } from '../src/lib/prisma';
 import type { Principal } from '../src/types';
 
@@ -32,6 +32,28 @@ describe('authenticated bug reports', () => {
     const serialized = JSON.stringify(await prisma.bugReport.findUniqueOrThrow({ where: { id: report.id } }));
     expect(serialized).not.toMatch(/password|cookie|session.?token|oauth|refresh.?token|client.?secret/i);
     expect(createBugReport).toHaveLength(3);
+  });
+
+  test('R-40: active admins and ops supervisors are notified, and the report is listed for /ops/support', async () => {
+    const suffix = randomUUID();
+    const make = (role: UserRole, tag: string, is_active = true) => prisma.user.create({ data: { email: `${tag}-${suffix}@test.local`, name: tag, role, is_active } });
+    const [admin, supervisor, inactiveAdmin, finance, reporter] = await Promise.all([
+      make(UserRole.admin, 'triage-admin'), make(UserRole.ops_supervisor, 'triage-sup'),
+      make(UserRole.admin, 'triage-gone', false), make(UserRole.ops_finance, 'triage-fin'), make(UserRole.admin, 'triage-reporter'),
+    ]);
+    const report = await createBugReport(principal(reporter.id, reporter.email, reporter.role, null), {
+      subject: `Export button broken ${suffix}`, what_happened: 'Nothing happens on click.', expected: 'A download.', page_url: '',
+    }, randomUUID());
+    const notified = await prisma.notification.findMany({ where: { dedupe_key: `bug_report:${report.id}` }, select: { user_id: true, deep_link: true } });
+    const ids = notified.map((n) => n.user_id);
+    expect(ids).toEqual(expect.arrayContaining([admin.id, supervisor.id]));
+    expect(ids).not.toContain(inactiveAdmin.id);
+    expect(ids).not.toContain(finance.id);
+    expect(ids).not.toContain(reporter.id);
+    expect(new Set(notified.map((n) => n.deep_link))).toEqual(new Set(['/ops/support']));
+    const listed = await listBugReports(500);
+    expect(listed.find((row) => row.id === report.id)).toMatchObject({ subject: `Export button broken ${suffix}`, reporter: { email: reporter.email } });
+    expect(listed.map((row) => row.created_at.getTime())).toEqual([...listed.map((row) => row.created_at.getTime())].sort((a, b) => b - a));
   });
 
   test('About is a whole-row link, hides unavailable legal rows, and shared portal routes exist', async () => {

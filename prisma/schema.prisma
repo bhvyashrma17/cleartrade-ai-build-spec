@@ -858,6 +858,7 @@ model User {
   classifications_confirmed          ProductClassification[]           @relation("ClassificationConfirmer")
   products_hs_confirmed              Product[]
   auth_provider_accounts             AuthProviderAccount[]
+  password_reset_tokens              PasswordResetToken[]
   agent_decisions                    AgentDecision[]                   @relation("AgentDecisionActor")
   staff_invitations_sent             StaffInvitation[]                 @relation("StaffInvitationInviter")
   staff_invitations_revoked          StaffInvitation[]                 @relation("StaffInvitationRevoker")
@@ -907,6 +908,22 @@ model BugReport {
 
   @@index([reporter_user_id, created_at])
   @@index([created_at])
+}
+
+/// A one-time password reset link (R-39). Only the SHA-256 of the token is stored: the token itself
+/// exists only in the email. It expires 30 minutes after it is made and works once; asking again
+/// retires the earlier links.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at])
 }
 
 /// External identity linkage for social authentication.

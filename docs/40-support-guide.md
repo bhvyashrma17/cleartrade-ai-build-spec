@@ -26,7 +26,7 @@ Exporters see only their own organisation; agents only their assigned exporters;
 3. `/ops/discovery`: **Data freshness**, worst first; failed or partial runs since yesterday.
 4. `/ops/sanctions`: the last refresh succeeded.
 5. Railway: web, worker and scanner deployments are healthy; the worker's daily `input_freshness` line.
-6. The support inbox and new bug reports.
+6. The support inbox and `/ops/support` (bug reports).
 
 ## 3. Common requests
 
@@ -72,8 +72,10 @@ Exporters see only their own organisation; agents only their assigned exporters;
 
 ### 3.6 Accounts and sign-in
 - Sign-in is by email and password, or Google or Apple where enabled (docs/29).
-- **No self-service password reset exists yet** (being closed, E-049). Until it ships: a user whose
-  Google or Apple account uses the same email signs in with it; anyone else is escalated to the owner.
+- **Forgotten password:** "Forgot your password?" on the sign-in page sends a link that works once,
+  for 30 minutes (at most three an hour per account). The page answers the same way whether or not
+  the email has an account. Accounts made with Google or Apple sign in with them instead (E-050).
+- A reset does not sign out sessions already open on other devices; they end when they expire.
 - Staff join by invitation (`/ops/agents`); remove departing staff the same day.
 
 ### 3.7 Uploads
@@ -91,8 +93,9 @@ Exporters see only their own organisation; agents only their assigned exporters;
   domain. Staging rewrites every recipient to its redirect address, so staging never mails a customer.
 
 ### 3.10 Bug reports
-- The in-app forms store each report. They are triaged by the owner (a list in `/ops` is being added,
-  E-049). Reply within one working day from the support inbox.
+- Every report from the in-app forms appears in `/ops/support` (Bug reports in the Ops menu), newest
+  first, and each active admin and ops supervisor gets an in-app notification (E-050). Reply within
+  one working day from the support inbox.
 
 ## 4. When a provider is down
 
