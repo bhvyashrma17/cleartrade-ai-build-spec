@@ -23,7 +23,7 @@ import { getFeePolicy } from '@/lib/config';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
 import { assertCan } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
-import { assertCommitmentFeeTransition } from '@/lib/state-machines/commitment-fee';
+import { assertCommitmentFeeTransition, exporterFeeConfirmationProblem } from '@/lib/state-machines/commitment-fee';
 import { isRazorpayConfigured } from '@/lib/billing/razorpay';
 import { payCommitmentFeeSchema, zodFieldErrors } from '@/lib/validators';
 
@@ -52,9 +52,13 @@ export async function PATCH(request: NextRequest) {
     // NOT configured, which is local development and test: removing it outright would make
     // paid tier unreachable on a developer machine and push everyone towards seeding the
     // tier by hand, which is a worse habit than a documented, environment-gated path.
-    // Ops-confirmed sources (`manual_ops`, `bank_partner`, `AA`) are unaffected — those are
-    // a human at ClearTrade reconciling a real receipt, not a self-assertion.
-    if (input.source === 'exporter_update' && isRazorpayConfigured()) {
+    //
+    // The staff-confirmed sources (`manual_ops`, `bank_partner`, `AA`) are a human at
+    // ClearTrade reconciling a real receipt, and this route only ever authenticates the
+    // exporter itself: an exporter claiming one for its own organisation is the same free
+    // membership by another name, so it is refused everywhere (E-049).
+    const sourceProblem = exporterFeeConfirmationProblem(input.source, isRazorpayConfigured());
+    if (sourceProblem === 'gateway_required') {
       throw validationError(
         [{
           field: 'source',
@@ -62,6 +66,16 @@ export async function PATCH(request: NextRequest) {
           message: 'Memberships are confirmed by the payment gateway, not self-reported.',
         }],
         'Start your membership from the plans page — access unlocks automatically once payment clears.',
+      );
+    }
+    if (sourceProblem === 'staff_only') {
+      throw validationError(
+        [{
+          field: 'source',
+          code: 'staff_only',
+          message: 'Only ClearTrade staff can confirm a payment from a bank partner, an Account Aggregator or an Ops record.',
+        }],
+        'Report your own payment as exporter_update; ClearTrade confirms the rest.',
       );
     }
 

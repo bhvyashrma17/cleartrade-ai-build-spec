@@ -183,6 +183,8 @@ govern every PR.
 | `docs/36-demand-discovery-v5.md` | Demand Discovery v5 (owner-approved 13 Oct 2026): all 218 markets per product from CEPII BACI with Comtrade fallback and newest-year chain-link, the 12 metrics, the five-part score, labels, gates, auto-start on HS confirmation |
 | `docs/37-tariff-sources.md` | Official tariffs for every market (D-024): where each of the 218 markets' tariff comes from (connected, researched, directory, published rule), the agent's recording flow, customs unions, licences and the automation order |
 | `docs/38-regional-and-buyer-discovery.md` | Stages 2 and 3 of the product order (D-033): regional demand inside a v5 market (US states and ports from the Census Bureau) and real buyers from official importer lists (UK, Canada) |
+| `docs/39-production-launch.md` | **Read before any production change.** Production's state (read-only check, 3 Nov 2026), the switch-over from the 24 Aug code step by step (backups, storage, keys, scanner, worker, preflight, release, data, test-data removal) and rollback |
+| `docs/40-support-guide.md` | Support once exporters use production: roles, daily checks, common requests (runs, product codes, rankings, payments, sign-in, uploads, personal data), provider outages, the data calendar, incidents |
 
 ## Build order (don't build portal-by-portal)
 
