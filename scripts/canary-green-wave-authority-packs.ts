@@ -1,9 +1,13 @@
-/** Real-source green-wave canaries. Writes immutable evidence and refuses every non-staging environment. */
+/**
+ * Real-source green-wave canaries. Writes immutable evidence, so it refuses every environment except
+ * staging, and production with `--confirm-production=<database fingerprint prefix>` (docs/39 §4.2).
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { JobStatus, JobType, OrgTier, UserRole } from '@prisma/client';
 import { enqueueJob } from '@/lib/jobs';
 import { prisma } from '@/lib/prisma';
-import { validateRuntimeEnvironment } from '@/lib/runtime-config';
+import { productionConfirmationProblem } from '@/lib/production-confirmation';
+import { validateDatabaseEnvironment, validateRuntimeEnvironment } from '@/lib/runtime-config';
 import { acquireGreenWaveAuthorityBundle } from '@/lib/market-access/providers/green-wave-acquisition';
 import { GREEN_WAVE_CONFIGS, type GreenWaveCountry } from '@/lib/market-access/providers/green-wave-config';
 import { activeGreenWaveRelease, fetchGreenWaveMarketAccess, importGreenWaveRelease, reparseGreenWaveAuthorityRelease } from '@/lib/market-access/providers/green-wave-service';
@@ -13,6 +17,14 @@ import type { Principal } from '@/types';
 const RELEASE = '2026-09-15';
 const COUNTRIES: readonly GreenWaveCountry[] = ['NP', 'BT', 'AL', 'MU', 'LK'];
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+
+/** Staging, or production with `--confirm-production=<database fingerprint prefix>` (docs/39 §4.2). */
+function assertCanaryEnvironment(script: string) {
+  const env = process.env.APP_ENV;
+  if (env !== 'staging' && env !== 'production') throw new Error(`REFUSING TO RUN: ${script} may persist only in APP_ENV=staging or production.`);
+  const confirmation = productionConfirmationProblem(validateDatabaseEnvironment('worker'), process.argv, script);
+  if (confirmation) throw new Error(confirmation);
+}
 const roles = (country: GreenWaveCountry) => Object.fromEntries(GREEN_WAVE_CONFIGS[country].artifacts.map((artifact) => [artifact.name, artifact.role]));
 
 const CASES: Record<GreenWaveCountry, { ordinary: string; unusual: string; expected_general: number; expected_unusual_kind: string }> = {
@@ -116,7 +128,7 @@ async function semantics(country: GreenWaveCountry, principal: Principal) {
   const jobResult = completed.result as { snapshot_id?: string; regulatory_coverage_complete?: boolean } | null;
   if (!jobResult?.snapshot_id || jobResult.regulatory_coverage_complete !== false) throw new Error(`${country} worker persistence canary failed.`);
   const heartbeat = await prisma.workerHeartbeat.findFirst({ orderBy: { last_seen_at: 'desc' } });
-  if (!heartbeat || Date.now() - heartbeat.last_seen_at.getTime() > 120_000) throw new Error(`${country} has no current staging worker heartbeat after ingestion.`);
+  if (!heartbeat || Date.now() - heartbeat.last_seen_at.getTime() > 120_000) throw new Error(`${country} has no current worker heartbeat after ingestion.`);
   return { country, release: { id: release.id, checksum: release.checksum }, ordinary: { hs6: canary.ordinary, duty: ordinary.general_duty,
     resolution: ordinary.resolution.resolution, india_preference: ordinary.india_preference.applicability }, unusual: { hs6: canary.unusual, kinds: [...unusualKinds] },
     sri_lanka: sriLanka, historical_replay: { snapshot_id: snapshot.id, repeated_snapshot_id: repeated.id },
@@ -125,7 +137,7 @@ async function semantics(country: GreenWaveCountry, principal: Principal) {
 }
 
 async function main() {
-  if (process.env.APP_ENV !== 'staging') throw new Error('REFUSING TO RUN: green-wave canaries may persist only in APP_ENV=staging.');
+  assertCanaryEnvironment('canary-green-wave-authority-packs');
   validateRuntimeEnvironment('worker'); const principal = await actor();
   const phase = process.argv[2]; const requested = process.argv[3]?.toUpperCase();
   const countries = requested ? [requested as GreenWaveCountry] : COUNTRIES;
