@@ -5,7 +5,9 @@
  *
  * Prints the release, its period and counts, and whether it was NEW or UNCHANGED. Importing the same
  * bytes again changes nothing; a new file for a month already imported supersedes that month.
- * Refuses production. Prints no personal data beyond counts.
+ * Production only with `--confirm-production=<database fingerprint prefix>` (docs/39; the owner
+ * accepted the lists' licensing for production on 3 Nov 2026, E-049). Prints no personal data
+ * beyond counts.
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -14,6 +16,7 @@ import { OrgTier } from '@prisma/client';
 import { importImporterList } from '@/lib/buyer-discovery/importer-list-service';
 import { fileManifest, IMPORTER_LIST_SOURCES, type ImporterListSourceKey } from '@/lib/buyer-discovery/importer-lists';
 import { prisma } from '@/lib/prisma';
+import { productionConfirmationProblem } from '@/lib/production-confirmation';
 import { validateDatabaseEnvironment } from '@/lib/runtime-config';
 import type { Principal } from '@/types';
 
@@ -22,7 +25,8 @@ const one = (name: string) => { const found = values(name); if (found.length !==
 
 async function main() {
   const database = validateDatabaseEnvironment('worker');
-  if (database.environment === 'production' || process.env.DATABASE_ENVIRONMENT === 'production') throw new Error('import-importer-list refuses production.');
+  const confirmation = productionConfirmationProblem(database, process.argv, 'import-importer-list');
+  if (confirmation) throw new Error(confirmation);
   const sourceKey = one('source') as ImporterListSourceKey;
   if (!IMPORTER_LIST_SOURCES[sourceKey]) throw new Error(`Unknown --source=${sourceKey}. Use ${Object.keys(IMPORTER_LIST_SOURCES).join(', ')}.`);
   const files = values('file').map((path) => ({ name: basename(path), bytes: readFileSync(path) }));

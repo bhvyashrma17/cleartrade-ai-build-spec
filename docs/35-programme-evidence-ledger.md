@@ -2044,45 +2044,115 @@ sign-offs are recorded against one report.
 
 **Checks run.** Docs only: `git diff --check` clean.
 
+### E-049 · 2026-11-03 · Production: read-only check, the owner's decisions, the launch kit (in review)
+
+**Production, read-only (owner's Claude Code, 3 Nov).** Every query ran inside `BEGIN READ ONLY …
+ROLLBACK` with `default_transaction_read_only=on`, both confirmed by the database; Railway was read
+only and the CLI stayed linked to staging; no secret was printed. The report is
+`tmp/rw/production-readonly-check.md` on the owner's machine.
+- Database: Neon, AWS `ap-southeast-1`, Postgres 16, not staging's. 80 of the release's 85 migrations
+  applied, among them 15 that exist only on `staging/railway` (applied 26 Aug – 2 Sep). Missing: the
+  five October ones (docs/39 §1). None unfinished or unknown.
+- Data: 17 users (14 exporter owners, 2 agents, 1 admin: the owner's account, active), 16
+  organisations (12 free, 4 paid), one active FeePolicy, 14 discovery runs (newest 1 Sep), 3 deals,
+  21 documents, 287 audit events (newest 31 Oct). Test data: 4 `pilot.invalid` users in 3 `[PILOT]`
+  organisations owning every deal and document, and 1 user on a reserved test domain.
+- Railway: web and scanner only. Web deploys `master` automatically in Singapore; its build, start
+  and health check come from the root `railway.json` (deleted on `staging/railway`); last deploy
+  8 Oct, a redeploy of 24 Aug. The scanner has no source branch; its last deploy (24 Aug) failed.
+- Variables: no identity pins. Storage names `cleartrade-staging-4nwl2e`, the staging environment's
+  copy of the `cleartrade-staging` bucket; the scanner URL is staging's scanner; Razorpay configured.
+- `/` 200, `/api/health/live` 200, `/api/health/ready` **503**: the storage secret is stale since
+  Railway's 21 Oct roll (the key ID matches, the secret does not; compared without printing).
+- Cause of the cross-environment rows: the old staging service carried this database's URL
+  (docs/33 §5). It applied the 15 migrations and seeded the pilot on 18 Aug.
+
+**Owner decisions (3 Nov 2026, in chat).**
+- Put Demand Discovery into production now, to test it there. The production changes of docs/39
+  §2–§6 are authorized for one session with the owner present.
+- Payments stay on (Razorpay live); Razorpay's keys are not rotated. Production keeps its Neon
+  database. The scanner is fixed as part of the launch.
+- Licensing: UN Comtrade's permission is in hand, and BACI's and the importer lists' licensing is
+  fine (owner's statement): R-14, R-15 and R-31 closed.
+- Remove the test data: the `[PILOT]` organisations with their deals, documents and runs, and the
+  account on a reserved test domain.
+- Add a support guide; close every open item; AWS later.
+
+**Built (this PR).**
+- `docs/39-production-launch.md` (the switch-over, step by step, with rollback) and
+  `docs/40-support-guide.md` (roles, daily checks, common requests, provider outages, data calendar,
+  incidents).
+- `src/lib/production-confirmation.ts`: a script that may write to production asks for
+  `--confirm-production=<database fingerprint prefix>`, and refuses the flag elsewhere.
+  `import-importer-list.ts` now runs on production with it. `staging-pilot.ts`: `status` runs on
+  production; `reset` does with the confirmation and an admin `--actor-email`, and records
+  `pilot_data_removed`; `--include-reserved-test-domains` also removes accounts on `.test`,
+  `.example`, `.invalid`, `.localhost` and `example.com/.net/.org` (`src/lib/reserved-test-domains.ts`).
+  Seeding and promoting still refuse production.
+- **Defect fixed before launch (R-38).** `PATCH /api/v1/exporter-org/commitment-fee` only refused the
+  exporter's self-report when Razorpay was configured. It accepted `manual_ops`, `bank_partner` and
+  `AA` from the exporter itself, so any exporter could unlock paid tier without paying. Now, with the
+  gateway configured, every source is refused; without it, only `exporter_update`. The billing card
+  sends only `exporter_update`.
+
+**Found while writing the support guide, being closed.** No self-service password reset (R-39);
+in-app bug reports are stored but nobody is shown them (R-40).
+
+**Close-out list (owner: "don't leave anything open").** After the launch (docs/39): password reset
+(R-39); a bug-report list in `/ops` (R-40); heartbeat-based job staleness (R-11); delete the earlier
+engines (R-33), which also removes the intermittent test (R-25); orphan-row counts on staging and
+production (R-18); Singapore's first window run on production (R-26); staging's key rotation (R-36)
+and worker region (R-37); the two branches only on the owner's Mac (R-07, R-12); merged branches on
+GitHub, and the unmerged `data/dd5-reference-snapshots`; one decision sheet for docs/11 §7 and
+docs/13 §F. Done here: docs/37's cluster-1 row, which still said "pending" (on staging since E-028).
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files.
+`production-confirmation` 5 tests (new), `membership` 63 (2 new), `importer-lists` 5,
+`staging-pilot-discovery` 4, `admin-settings` 6: all pass. None of docs/39's production steps has
+run yet.
+
 ## Risk register
 
 
 | Id | Risk | Status | Next evidence |
 |---|---|---|---|
-| R-01 | CI has never run tests or build; unknown pre-existing failures may surface | Open — env fix in WP1; the one order-dependent failure CI would hit is fixed on WP1 (E-006); three tests are unverifiable locally | First CI run on the WP1 PR |
-| R-02 | Agent session cannot run DB tests or build (blocked hosts) | Partly mitigated — a local harness runs the full DB suite (E-006) and the build compiles with mocked font CSS (E-008); neither is canonical | Green CI on each WP PR |
-| R-03 | Staging DB, Railway state and sanctions snapshots unverified from the agent session | Partly resolved (E-009): migrations current; Phase 1 never run; no sanctions data; no config rows | WP3 staging runs and sanctions refresh |
-| R-04 | Production hazards (docs/33 §5): scanner URL → staging, failed scanner deploy, 8 Oct migration by old staging web, root `railway.json` move, shared Resend key; production has no worker; production scanner has no deploy trigger and its last deploy (24 Aug) failed (E-009) | Open — extended by E-009 | WP5 read-only inventory |
+| R-01 | CI has never run tests or build; unknown pre-existing failures may surface | Closed (E-049): CI runs the regression job on every PR (latest: #34, run 41517364545, passed) | — |
+| R-02 | Agent session cannot run DB tests or build (blocked hosts) | Closed (E-049): CI is the canonical check on every PR; the agent's local harness still runs the DB suite (E-006) | — |
+| R-03 | Staging DB, Railway state and sanctions snapshots unverified from the agent session | Partly resolved: staging's state is read by the owner's Claude Code at every gate run (E-044, E-046, E-048); sanctions snapshots still unread | `/ops/sanctions` on staging and production after the launch (docs/39, docs/40 §2) |
+| R-04 | Production hazards (docs/33 §5): scanner URL → staging, failed scanner deploy, 8 Oct migration by old staging web, root `railway.json` move, shared Resend key; production has no worker; production scanner has no deploy trigger and its last deploy (24 Aug) failed (E-009) | Open — confirmed and extended by the read-only check (E-049): no worker, the scanner never deployed and web scans against staging's, web's settings come from the root `railway.json` the release deletes, 15 staging migrations and pilot rows reached the database in Aug–Sep, the Resend key is shared | The launch (docs/39 §2–§3) and its checks |
 | R-05 | Tariff signal often unavailable by design (preference needs origin proof; specific duties) | Accepted in gate design | WP3 archetype runs |
 | R-06 | WP2 design constraints (clock, single-worker deadlock, TARIC per-day identity) | Resolved in code (E-005): D-004 clock; inline acquisition avoids the deadlock; one release-backed snapshot per destination per resolution day accepted | WP3 staging runs |
 | R-07 | Operator's local-only work unverified | Identified (E-009): two local-only branches, `tmp/rw/` (secrets), `.artifacts/` (1.4 GB) | Owner pushes or retires the two branches |
 | R-08 | Gate thresholds unapproved | Closed (E-048): approved as policy v4 (E-047); `PASS` on staging on 3 Nov and signed off against report `1482ca49…` | — |
 | R-09 | Second Railway project `cleartrade-staging` (deployed this branch on 9 Oct); database target and status unknown | Closed — project deleted 9–10 Oct (E-009) | — |
 | R-10 | Railway PR environments, if enabled with a production base, would migrate production on PR open | Closed — PR environments off (E-009); `focusedPrEnvironments` flag unverified | Re-check before enabling PR environments |
-| R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too | Keep one worker until staleness is heartbeat-based (WP5) |
+| R-11 | `reclaimStaleJobs` requeues any job still processing 300 s after it **started** (no heartbeat); with more than one worker a long deep run would execute twice. Safe today only because staging runs one worker and the sweep runs between jobs | Open (pre-existing; WP2 lengthens deep runs); v5 runs now include up to 53 tariff look-ups (E-019), so they run longer too. Production's new worker runs one replica (docs/39 §2.6) | Heartbeat-based staleness (E-049 close-out list) |
 | R-12 | The owner's local clone holds unpushed work; `wip/switzerland-tares` touches `market-access.ts`, where WP2 adds a required `retrieval` field | Open (E-009) | Owner rebases after WP2 lands; the typecheck names a missing field |
-| R-13 | Production web's `STORAGE_BUCKET` names the bucket `cleartrade-staging`; if it resolves to staging's bucket, production files land in staging storage (or the reverse) | Open — unverified (E-009) | Owner dashboard check; WP5 read-only inventory |
-| R-14 | UN Comtrade's licence prohibits commercial use without the UN's written permission; D-010 shows Comtrade-derived figures to customers before permission | Open — accepted by the owner (D-010); permission request sent by the owner on 14 Oct (E-018) | UNSD's reply; Comtrade display stays switchable in config |
-| R-15 | BACI is built from Comtrade data; Etalab 2.0 is CEPII's licence, and the position of the underlying UN data is unverified | Open (E-010) | Legal check before the production launch |
+| R-13 | Production web's `STORAGE_BUCKET` names the bucket `cleartrade-staging`; if it resolves to staging's bucket, production files land in staging storage (or the reverse) | Confirmed (E-049): production uses the staging environment's copy of the `cleartrade-staging` bucket, with a secret stale since 21 Oct; production's own copy is unused | docs/39 §2.2: production's own bucket by reference |
+| R-14 | UN Comtrade's licence prohibits commercial use without the UN's written permission; D-010 shows Comtrade-derived figures to customers before permission | Closed — the owner states UN Comtrade's permission is in hand (3 Nov 2026, E-049) | — |
+| R-15 | BACI is built from Comtrade data; Etalab 2.0 is CEPII's licence, and the position of the underlying UN data is unverified | Closed — licensing accepted by the owner (3 Nov 2026, E-049) | — |
 | R-16 | Agreement-based duty estimates can be wrong for a specific product | Accepted (D-017); always labelled, evidence quality 0.5 | Calibration on the three archetype products |
-| R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Open (E-010) | Imports run on the owner's machine or the Railway worker |
+| R-17 | The agent session cannot reach CEPII, World Bank or Comtrade hosts | Accepted (E-049): by design, imports run on the owner's machine or the Railway worker | — |
 | R-18 | Since `20260829120000`, deleting a run, product or organisation left its non-v4 `MarketAssessment` rows orphaned, and discovery retries appended duplicate result sets; staging/production may hold such rows | Open (E-012) — guard fixed going forward; no rows changed | Read-only counts on staging: assessments whose run is missing, and runs with more than one row per country; clean-up only with the owner's authorization |
 | R-19 | The ECGC text and the GeoDist CSV were made on the owner's machine; the ECGC command is inferred from the output (`pdftotext -layout`) and the GeoDist export tool was not recorded | Closed (E-018) — the owner re-derived both from the originals; byte-identical | — |
 | R-20 | v5 uses each country's latest World Bank value however old: tariff averages as old as 2002 and logistics scores as old as 2007 feed the duty estimate and the logistics metric | Decided (D-021): values more than 10 years old count as missing — built in E-019, pending merge | v5 runs on staging after E-019 deploys |
-| R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Open (E-021) — the list carries its check date | Monthly re-check; a new edition of `curated:sanctions-programmes` |
-| R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Open (E-021) — rules stop applying after `review_by` | Review dates in policy; yearly directory re-check |
-| R-23 | An agent mistypes a tariff line | Open (E-021) — reader, source and date kept; quality 0.9; audit event | A newer record supersedes; spot checks by Ops |
+| R-21 | Sanctions programmes change often; a stale flag misleads in either direction | Accepted (E-049) — the list carries its check date; the monthly re-check is in the support calendar (docs/40 §5) | Each monthly re-check, recorded in this ledger |
+| R-22 | A published rule or a directory link goes stale (Timor-Leste's rate is set each budget) | Accepted (E-049) — rules stop applying after `review_by`; reviews are in the support calendar (docs/40 §5) | Each review, recorded in this ledger |
+| R-23 | An agent mistypes a tariff line | Accepted (E-049) — reader, source and date kept; quality 0.9; audit event; monthly spot checks in the support calendar (docs/40 §5) | Each spot check, recorded in this ledger |
 | R-24 | An agent records a rate from one of the eight tariff sources whose reuse terms are not settled (Chile's research found no commercial reuse basis) | Accepted (D-028): allowed as built, one cited rate per line | Automated reading of these sources still waits for each licence |
 | R-25 | Intermittent CI failure in `country-truth-phase-1h-assessment`: a resumed Phase 1G calculation finds its stored CountryTradeMetrics row "computed under a different payload". The payload depends on the order of its input facts (`loadManifestInputs` in `src/lib/country-trade-metrics/service.ts` reads references and observations in no stated order; the supplier HHI and unit-value evidence follow input order), but the trigger is not confirmed: physically reordering the manifest references did not reproduce it locally. A resumed run in an environment could fail the same way | Open (pre-existing code; first CI attempt failed in runs 39025584959 and 39026589659 on PR #5's docs-only commits; no failure on other branches) | Diagnose in CI with the differing payload printed; then make the fact order deterministic, keeping stored rows' checksums valid |
 | R-26 | The Railway worker may not reach Singapore Statutes Online, or SSO may refuse automated requests from a cloud address; the live First Schedule has only been read through fixtures that follow the reviewed pack | Open (E-022) — nothing is fetched until `market_access.authority_refresh` is switched on; failures are recorded and the release in use is untouched | The first window run on staging is the live qualification; otherwise `--acquire-only` on a machine that can reach SSO, inside the window, and import the file |
-| R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Open (E-023) | Import each July Gazette; read table I row by row when it is worth the effort |
+| R-27 | The EAC release reads the 2026/27 measures only: after 30 June 2027 it states nothing until the July 2027 Gazette is read; table I's stays are applied to every member because its rows name states one by one (over-exclusion: 500 lines) | Accepted (E-049) — each July Gazette import is in the support calendar (docs/40 §5) | The July 2027 Gazette |
 | R-28 | A common tariff is not the member's whole tariff: Kazakhstan's, Kyrgyzstan's and Armenia's WTO-commitment rates, Ghana's and Nigeria's import adjustment measures and other national exceptions are not modelled; the EAEU text on Adilet lagged nomenclature amendments (Board Decision No. 43 of 7 Apr 2026) | Accepted (D-028): labelled, quality 0.8, said with every duty | Model the national lists where published; re-read the EAEU text after amendments enter into force |
 | R-29 | A tariff schedule read is not the whole applied tariff: trade remedies and temporary measures outside the schedules, the GCC members' exemptions, Argentina's, Paraguay's and Uruguay's national lists and regimes (Uruguay's own tariff is licence-pending), ex-tarifários and quota rates are not modelled; China's release states nothing after 31 Dec 2026; the CAMEX workbook changes most months; the UAE's CEPA year is counted from each anniversary of 1 May 2022 (if UAE customs counts calendar years, India's rate can be one step lower from January to April); Dubai Customs' website terms were not found | Accepted (D-028, D-031): labelled, quality 0.8 or 0.9, said with every duty (E-025) | Import China's 2027 tariff in late December; re-read the workbook when CAMEX updates it; confirm the CEPA year from a UAE customs notice; find Dubai Customs' terms |
-| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Mitigated (E-045, E-046): the score is kept (owner, option 1). Restricted or no ECGC cover counts as an accepted miss, and the results page lists India's own markets. Under the approved gate v4 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed: `PASS` (E-048) | Each new run's own stored calibration (E-042) |
-| R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Accepted by the owner (D-034) | Legal check before production; honour HMRC's monthly opt-outs by importing each new file |
+| R-30 | v5's top 10 for rice and brassware overlaps India's real top destinations 3 and 4 times in 10 (carpets 8): the score may undervalue markets India already supplies heavily (West African and Gulf rice buyers rank 19th to 112th) | Closed (E-048): the score is kept (owner, option 1); under the approved gate v4 the three archetypes count rice 8, brassware 8 and carpets 9 of 5 needed, `PASS`; every run stores its own calibration (E-042) | — |
+| R-31 | HMRC's importer list names sole traders, and both the Open Government Licence v3.0 and the Open Government Licence – Canada exclude personal data; showing every published entry (D-034) relies on the publishers having published them | Closed — accepted for production by the owner (D-034; 3 Nov 2026, E-049) | Honour HMRC's monthly opt-outs by importing each new file (docs/40 §5) |
 | R-32 | The Census reader has not read a live answer (no key in the agent session); a variable or format difference would show as a failed or empty run | Closed (E-039): the worker read the US live on 30 Oct | — |
 | R-33 | The earlier engines' code stays in the repository: it is refused only where `APP_ENV` is staging or production (D-036), so a misconfigured environment could still start a v4 run | Open (E-032); v5's gate has passed and is signed off (E-048) | Delete the earlier engines once no stored v4 run needs their code to be read |
 | R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
 | R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Closed (E-039): the bucket variables are references, the region is the literal `auto`, and the round trip passed 9 of 9 | — |
-| R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — the owner's decision (E-037); recommended: rotate staging's, starting with the keys shared across environments, and check production | The owner's decision |
-| R-37 | The staging worker runs in Amsterdam and the database in Singapore: every query crosses continents, and a v5 results write took 5.2 s | Mitigated (E-039): a 120 s write timeout | The owner moves the worker to Singapore |
+| R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — decided (E-049): production rotates in the launch (docs/39 §2.3; Razorpay excepted by the owner); staging follows | The launch; then staging's rotation |
+| R-37 | The staging worker runs in Amsterdam and the database in Singapore: every query crosses continents, and a v5 results write took 5.2 s | Mitigated (E-039): a 120 s write timeout. Production's worker is created in Singapore, beside web and Neon (docs/39 §2.6) | The owner moves staging's worker to Singapore |
+| R-38 | `PATCH /api/v1/exporter-org/commitment-fee` accepted the staff sources (`manual_ops`, `bank_partner`, `AA`) from the exporter itself, even with Razorpay configured: any exporter could unlock paid tier without paying | Closed (E-049): `exporterFeeConfirmationProblem`; with the gateway configured every source is refused, without it only `exporter_update` | — |
+| R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Open (E-049); interim handling in docs/40 §3.6 | A reset flow by email (E-049 close-out list) |
+| R-40 | In-app bug reports are stored but nobody is shown or told about them | Open (E-049) | A bug-report list in `/ops` (E-049 close-out list) |

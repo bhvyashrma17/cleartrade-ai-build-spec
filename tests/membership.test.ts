@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { afterAll, describe, expect, test } from 'vitest';
-import { JobType, OrgTier, SubscriptionStatus } from '@prisma/client';
+import { JobType, OrgTier, PaymentSource, SubscriptionStatus } from '@prisma/client';
 import {
   COMPARISON,
   DEFAULT_PLAN_PRICING,
@@ -24,6 +24,7 @@ import {
   toSubscriptionStatus,
 } from '../src/lib/state-machines/subscription';
 import { minTierFor } from '../src/lib/permissions';
+import { exporterFeeConfirmationProblem } from '../src/lib/state-machines/commitment-fee';
 import { databaseIdentityFingerprint, directDatabaseIdentityFingerprint, validateRuntimeEnvironment } from '../src/lib/runtime-config';
 import { PREVIEW_BUYERS, PREVIEW_MARKETS, SAMPLE_DISCLAIMER } from '../src/lib/billing/preview';
 import { prisma } from '../src/lib/prisma';
@@ -116,6 +117,21 @@ describe('the pricing table is wired to the permission matrix', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('an exporter can never confirm its own fee as staff (E-049)', () => {
+  test('with the gateway configured, every source is refused: memberships come from Razorpay', () => {
+    for (const source of Object.values(PaymentSource)) {
+      expect(exporterFeeConfirmationProblem(source, true), source).toBe('gateway_required');
+    }
+  });
+
+  test('without a gateway (development and test) only the self-report is accepted', () => {
+    expect(exporterFeeConfirmationProblem(PaymentSource.exporter_update, false)).toBeNull();
+    for (const source of [PaymentSource.manual_ops, PaymentSource.bank_partner, PaymentSource.AA]) {
+      expect(exporterFeeConfirmationProblem(source, false), source).toBe('staff_only');
+    }
+  });
+});
 
 describe('webhook signature verification', () => {
   const secret = 'whsec_test_2f9a4c1e8b7d6053';

@@ -175,7 +175,7 @@ confirmed against India's export values (BACI) before it starts.
 |---|---|---|
 | Customs unions | 24 members of ECOWAS, the EAC and the EAEU | Done (D-028, §4a) |
 | SG | Singapore | Done (D-029, §5a): saved nightly |
-| 1 | AE, BH, AR, PY, UY, CN, BR | Done (D-030, D-031, §4b), pending merge and staging import |
+| 1 | AE, BH, AR, PY, UY, CN, BR | Done (D-030, D-031, §4b); on staging since 19 Oct (E-028) |
 | 2 | TR, TH, MX | Next: the largest remaining Indian export markets among the researched sources |
 | 3 | EG, PH, JO, CH | |
 | 4 | Central America (GT, SV, HN, NI, CR — one common tariff; PA), CO, EC, DO | |

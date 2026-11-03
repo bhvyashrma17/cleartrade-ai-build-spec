@@ -37,6 +37,23 @@ export function allowedCommitmentFeeTransitions(from: Stage): Stage[] {
   return [...TRANSITIONS[from]];
 }
 
+/**
+ * What an EXPORTER may claim about its own fee (`PATCH /api/v1/exporter-org/commitment-fee`, which
+ * only exporters can call, for their own organisation). Only a self-report (`exporter_update`), and
+ * only while no payment gateway is configured: local development and test. `AA`, `bank_partner` and
+ * `manual_ops` are confirmations by ClearTrade staff, so an exporter claiming one for itself would
+ * unlock paid tier without paying (found before the production launch, E-049). With Razorpay
+ * configured, memberships are confirmed by the gateway alone.
+ */
+export function exporterFeeConfirmationProblem(
+  source: PaymentSource,
+  gatewayConfigured: boolean,
+): 'gateway_required' | 'staff_only' | null {
+  if (gatewayConfigured) return 'gateway_required';
+  if (source !== PaymentSource.exporter_update) return 'staff_only';
+  return null;
+}
+
 export interface CommitmentFeeTransitionInput {
   /** Required moving into `paid` — the same provenance vocabulary Payment.source uses. */
   source?: PaymentSource | null;
