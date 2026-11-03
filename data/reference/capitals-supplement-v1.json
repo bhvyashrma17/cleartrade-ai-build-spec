@@ -1,0 +1,12 @@
+{
+  "schema_version": "capitals-supplement-v1",
+  "compiled_on": "2026-10-14",
+  "rows": [
+    { "iso2": "BL", "city": "Gustavia", "lat": 17.8979083, "lon": -62.850556, "source": "Wikipedia, Gustavia infobox: 17°53′52.47″N 62°51′2.0″W", "source_url": "https://en.wikipedia.org/wiki/Gustavia" },
+    { "iso2": "BQ", "city": "Kralendijk", "lat": 12.14444, "lon": -68.26556, "source": "Wikipedia, Kralendijk infobox: 12°8′40″N 68°15′56″W", "source_url": "https://en.wikipedia.org/wiki/Kralendijk" },
+    { "iso2": "ME", "city": "Podgorica", "lat": 42.465973, "lon": 19.266307, "source": "Natural Earth 1:10m populated places v5.1.2 (public domain), ne_id 1159149511", "source_url": "https://github.com/nvkelso/natural-earth-vector/blob/v5.1.2/geojson/ne_10m_populated_places_simple.geojson" },
+    { "iso2": "SS", "city": "Juba", "lat": 4.829975, "lon": 31.580026, "source": "Natural Earth 1:10m populated places v5.1.2 (public domain), ne_id 1159149449", "source_url": "https://github.com/nvkelso/natural-earth-vector/blob/v5.1.2/geojson/ne_10m_populated_places_simple.geojson" },
+    { "iso2": "SX", "city": "Philipsburg", "lat": 18.0237, "lon": -63.0458, "source": "Wikipedia, Philipsburg infobox: 18°01′25″N 63°02′45″W", "source_url": "https://en.wikipedia.org/wiki/Philipsburg,_Sint_Maarten" },
+    { "iso2": "VA", "city": "Vatican City", "lat": 41.903282, "lon": 12.453387, "source": "Natural Earth 1:10m populated places v5.1.2 (public domain), ne_id 1159127243", "source_url": "https://github.com/nvkelso/natural-earth-vector/blob/v5.1.2/geojson/ne_10m_populated_places_simple.geojson" }
+  ]
+}

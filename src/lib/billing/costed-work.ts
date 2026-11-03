@@ -33,16 +33,25 @@ import { JobType, OrgTier } from '@prisma/client';
  *
  * - `demand_discovery` — reads the Comtrade-backed warehouse and, with
  *   `RATIONALE_WRITER=claude`, sends one LLM request per ranked market.
+ * - `country_screening` — Stage A global screening; one authenticated Comtrade request per
+ *   market that is not already covered by reusable evidence.
  * - `buyer_discovery` / `buyer_intelligence` — buyer enrichment and fit scoring against
  *   external sources.
  * - `document_generation` — the render pipeline, including malware scanning and object
  *   storage writes per artifact.
  * - `report_export` — bulk render and storage.
+ * - `demand_discovery_v5` — batched Comtrade calls for the newest year and any market-level
+ *   fallback (docs/36 §3.3), against the shared free-key quota.
+ * - `regional_demand_discovery` — four Census Bureau API calls per market against the
+ *   environment's one rate-limited key (D-033, docs/38).
  */
 export const COSTED_JOB_TYPES: readonly JobType[] = [
   JobType.demand_discovery,
+  JobType.demand_discovery_v5,
   JobType.country_truth_discovery,
+  JobType.country_screening,
   JobType.buyer_discovery,
+  JobType.regional_demand_discovery,
   JobType.buyer_intelligence,
   JobType.document_generation,
   JobType.report_export,

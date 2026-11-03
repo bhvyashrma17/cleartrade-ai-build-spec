@@ -16,7 +16,13 @@ import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { tenantScopeVia } from '@/lib/permissions';
 import { MarketDetail } from './MarketDetail';
+import { todayInrPerUsd } from '@/lib/fx/display-rate';
+import { RupeeRateProvider } from '@/components/fx/RupeeRate';
+import { isV5Assessment, v5Detail, type V5Detail } from '@/lib/demand-discovery-v5/detail';
 import { allowedEvidenceOrigins, isRealWorkflowEnvironment, nonRealEvidenceOrigins, unsafeEvidenceOrigins } from '@/lib/evidence-environment';
+import { regionalDemandView } from '@/lib/regional-demand/service';
+import { importerListSourceFor } from '@/lib/buyer-discovery/importer-lists';
+import { BUYER_DISCOVERY_MODEL } from '@/lib/buyer-discovery/service';
 
 export default async function MarketDetailPage({
   params,
@@ -37,7 +43,7 @@ export default async function MarketDetailPage({
   const assessment = await prisma.marketAssessment.findFirst({
     where: { id: marketAssessmentId, ...scope,...(isRealWorkflowEnvironment()?{evidence_origins:{hasSome:allowedEvidenceOrigins()},NOT:{evidence_origins:{hasSome:nonRealEvidenceOrigins()}}}:{}) },
     include: {
-      run: { select: { id: true, status: true, product_id: true, input_snapshot: true } },
+      run: { select: { id: true, status: true, product_id: true, input_snapshot: true, exporter_org_id: true } },
       product: { select: { id: true, name: true } },
     },
   });
@@ -51,43 +57,64 @@ export default async function MarketDetailPage({
   });
   const rank = siblings.findIndex((s) => s.id === assessment.id) + 1;
 
+  // Demand Discovery v5 rows carry their own rank, status and five-part breakdown (docs/36).
+  const v5: V5Detail | null = isV5Assessment(assessment)
+    ? v5Detail(assessment, await prisma.marketAssessment.count({ where: { run_id: assessment.run_id, market_status: 'ranked' } }))
+    : null;
+
+  // D-033: where inside the market the product arrives (v5 markets with an official regional source).
+  const regional = v5 ? await regionalDemandView(assessment.id, assessment.country_code) : null;
+  // Buyers are agent-curated (docs/11 §7): the exporter sees how many were found, not the list.
+  const buyerSource = importerListSourceFor(assessment.country_code);
+  const buyersFound = buyerSource && assessment.product?.id
+    ? { count: await prisma.buyerFitAssessment.count({ where: { exporter_org_id: assessment.run.exporter_org_id, product_id: assessment.product.id, model_version: BUYER_DISCOVERY_MODEL, buyer: { country_code: assessment.country_code } } }), source: buyerSource.label }
+    : null;
+
   const snapshot = assessment.run.input_snapshot as { description?: string | null } | null;
 
+  // D-023: rupee figures beside dollars follow today's ECB rate.
+  const rupeeRate = await todayInrPerUsd();
   return (
-    <MarketDetail
-      tier={tier}
-      assessment={{
-        id: assessment.id,
-        country_code: assessment.country_code,
-        overall_score: assessment.overall_score,
-        demand_score: assessment.demand_score,
-        growth_score: assessment.growth_score,
-        competition_score: assessment.competition_score,
-        india_share: assessment.india_share?.toString() ?? null,
-        tariff_summary: assessment.tariff_summary as Record<string, unknown> | null,
-        certification_requirements: assessment.certification_requirements as unknown[],
-        logistics_summary: assessment.logistics_summary as Record<string, unknown> | null,
-        price_band: assessment.price_band_min
-          ? {
-              min: assessment.price_band_min.toString(),
-              max: assessment.price_band_max?.toString() ?? null,
-              currency: assessment.price_band_currency,
-            }
-          : null,
-        rationale: assessment.rationale,
-        agent_note: assessment.agent_note,
-        generated_at: assessment.generated_at.toISOString(),
-        is_selected: assessment.is_selected,
-        is_saved: assessment.saved_at !== null,
-        rank,
-        total_ranked: siblings.length,
-        evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
-      }}
-      buyerDiscoveryHref={{
-        productId: assessment.product?.id ?? null,
-        countryCode: assessment.country_code,
-      }}
-      productDescription={snapshot?.description ?? assessment.product?.name ?? null}
-    />
+    <RupeeRateProvider rate={rupeeRate}>
+      <MarketDetail
+        tier={tier}
+        assessment={{
+          id: assessment.id,
+          country_code: assessment.country_code,
+          overall_score: assessment.overall_score,
+          demand_score: assessment.demand_score,
+          growth_score: assessment.growth_score,
+          competition_score: assessment.competition_score,
+          india_share: assessment.india_share?.toString() ?? null,
+          tariff_summary: assessment.tariff_summary as Record<string, unknown> | null,
+          certification_requirements: assessment.certification_requirements as unknown[],
+          logistics_summary: assessment.logistics_summary as Record<string, unknown> | null,
+          price_band: assessment.price_band_min
+            ? {
+                min: assessment.price_band_min.toString(),
+                max: assessment.price_band_max?.toString() ?? null,
+                currency: assessment.price_band_currency,
+              }
+            : null,
+          rationale: assessment.rationale,
+          agent_note: assessment.agent_note,
+          generated_at: assessment.generated_at.toISOString(),
+          is_selected: assessment.is_selected,
+          is_saved: assessment.saved_at !== null,
+          rank: v5 ? v5.rank : rank,
+          total_ranked: v5 ? v5.total_ranked : siblings.length,
+          evidence_warning:!isRealWorkflowEnvironment()&&unsafeEvidenceOrigins(assessment.evidence_origins).length?`Non-real evidence: ${unsafeEvidenceOrigins(assessment.evidence_origins).join(', ')}`:null,
+        }}
+        buyerDiscoveryHref={{
+          productId: assessment.product?.id ?? null,
+          countryCode: assessment.country_code,
+        }}
+        productDescription={snapshot?.description ?? assessment.product?.name ?? null}
+        v5={v5}
+        regional={regional}
+        canRequestRegional={tier === OrgTier.paid}
+        buyersFound={buyersFound}
+      />
+    </RupeeRateProvider>
   );
 }

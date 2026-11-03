@@ -10,11 +10,13 @@
  */
 
 import Link from 'next/link';
-import { buttonClass } from '@/components/ui/Button';
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { Button, MetricCard, StatusChip, UpgradeNotice } from '@/components/ui';
 import { ApiClientError, apiPost } from '@/lib/api-client';
+import { V5Breakdown, type V5Detail } from './V5Breakdown';
+import { RegionalDemand } from './RegionalDemand';
+import type { RegionalDemandView } from '@/lib/regional-demand/service';
 
 type Tier = 'guest' | 'free' | 'paid';
 
@@ -35,7 +37,8 @@ interface AssessmentDetail {
   generated_at: string;
   is_selected: boolean;
   is_saved: boolean;
-  rank: number;
+  /** Null for a v5 market that is not ranked (not enough data, no recorded demand, excluded). */
+  rank: number | null;
   total_ranked: number;
   evidence_warning: string | null;
 }
@@ -52,17 +55,26 @@ const countryName = (code: string) => {
 export function MarketDetail({
   tier,
   assessment,
-  buyerDiscoveryHref,
   productDescription,
+  v5 = null,
+  regional = null,
+  canRequestRegional = false,
+  buyersFound = null,
 }: {
   tier: Tier;
   assessment: AssessmentDetail;
   buyerDiscoveryHref: { productId: string | null; countryCode: string };
   productDescription: string | null;
+  /** Present for a Demand Discovery v5 assessment, which replaces the earlier score breakdown. */
+  v5?: V5Detail | null;
+  /** D-033: where inside the market the product arrives. Present for v5 markets. */
+  regional?: RegionalDemandView | null;
+  canRequestRegional?: boolean;
+  /** D-033: how many buyers an official importer list gave for this product here (count only). */
+  buyersFound?: { count: number; source: string } | null;
 }) {
-  const buyersUrl = buyerDiscoveryHref.productId
-    ? `/app/buyers?product_id=${encodeURIComponent(buyerDiscoveryHref.productId)}&country=${buyerDiscoveryHref.countryCode}`
-    : `/app/buyers?country=${buyerDiscoveryHref.countryCode}`;
+  // Buyer discovery is agent-curated (docs/11 §7): exporters cannot run the buyer search, so the
+  // buyer section explains who does instead of linking to a search that would refuse them.
 
   return (
     <div className="mx-auto max-w-3xl py-6">
@@ -74,13 +86,22 @@ export function MarketDetail({
 
       {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
 
-      {assessment.rationale ? (
+      {v5 ? <V5Breakdown detail={v5} /> : null}
+
+      {regional ? (
+        <section className="mt-6">
+          <SectionTitle>Where in {countryName(assessment.country_code)} it is imported</SectionTitle>
+          <RegionalDemand assessmentId={assessment.id} countryName={countryName(assessment.country_code)} initial={regional} canRequest={canRequestRegional} />
+        </section>
+      ) : null}
+
+      {!v5 && assessment.rationale ? (
         <p className="mt-4 rounded-lg border border-[var(--color-border)] bg-surface-muted p-4 text-sm text-[var(--color-text-secondary)]">
           {assessment.rationale}
         </p>
       ) : null}
 
-      <section className="mt-6">
+      {!v5 ? <section className="mt-6">
         <SectionTitle>Score breakdown</SectionTitle>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard label="Overall" value={assessment.overall_score == null ? 'Ineligible' : `${assessment.overall_score}/100`} secondaryText={assessment.overall_score == null ? 'Hard eligibility filter' : 'Weighted rank score'} />
@@ -109,7 +130,7 @@ export function MarketDetail({
             <DataGap label="India's share" />
           )}
         </div>
-      </section>
+      </section> : null}
 
       <section className="mt-6">
         <SectionTitle>Requirements</SectionTitle>
@@ -126,19 +147,13 @@ export function MarketDetail({
         <LogisticsSection assessment={assessment} />
       </section>
 
-      <section className="mt-8 rounded-lg border border-[var(--color-action)]/30 bg-surface p-5 shadow-card">
-        <h2 className="text-base font-semibold text-primary">Find buyers in this market</h2>
+      <section className="mt-8 rounded-lg border border-[color-mix(in_srgb,var(--color-action)_30%,transparent)] bg-surface p-5 shadow-card">
+        <h2 className="text-base font-semibold text-primary">Buyers in {countryName(assessment.country_code)}</h2>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          {productDescription
-            ? `See importers for "${productDescription}" in ${countryName(assessment.country_code)}.`
-            : `See importers in ${countryName(assessment.country_code)}.`}
+          {buyersFound && buyersFound.count > 0
+            ? `${buyersFound.count} ${buyersFound.count === 1 ? 'importer' : 'importers'} of ${productDescription ? `"${productDescription}"` : 'this product'} ${buyersFound.count === 1 ? 'was' : 'were'} found in the ${buyersFound.source}. Your ClearTrade agent reviews them and contacts the right ones for you.`
+            : `Your ClearTrade agent finds and vets importers of ${productDescription ? `"${productDescription}"` : 'this product'} in ${countryName(assessment.country_code)} for you.`}
         </p>
-        <Link
-          href={buyersUrl}
-          className={buttonClass('primary', 'md', 'mt-4')}
-        >
-          Find buyers in {countryName(assessment.country_code)}
-        </Link>
       </section>
     </div>
   );
@@ -172,7 +187,7 @@ function DecisionHeader({ tier, assessment }: { tier: Tier; assessment: Assessme
           {assessment.is_selected ? <StatusChip label="Selected target" tone="positive" icon="check" size="sm" /> : null}
         </div>
         <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Rank {assessment.rank} of {assessment.total_ranked} · {assessment.overall_score == null ? 'Ineligible' : `Score ${assessment.overall_score}/100`} · Generated{' '}
+          {assessment.rank ? `Rank ${assessment.rank} of ${assessment.total_ranked}` : 'Not ranked'} · {assessment.overall_score == null ? 'Ineligible' : `Score ${assessment.overall_score}/100`} · Generated{' '}
           {format(new Date(assessment.generated_at), 'dd MMM yyyy')}
         </p>
       </div>
@@ -256,7 +271,7 @@ function SaveSelectActions({ tier, assessment }: { tier: Tier; assessment: Asses
         </Button>
       </div>
       {confirming ? (
-        <div className="max-w-xs rounded border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-right text-xs">
+        <div className="max-w-xs rounded border border-[color-mix(in_srgb,var(--color-warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] p-3 text-right text-xs">
           <p className="text-primary">{confirming}</p>
           <div className="mt-2 flex justify-end gap-2">
             <button type="button" onClick={() => setConfirming(null)} className="text-[var(--color-text-secondary)] underline">

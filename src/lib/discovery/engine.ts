@@ -19,6 +19,8 @@
 
 /** What the caller knows about the product being assessed. */
 export interface DiscoveryInput {
+  /** Tenant whose confidential operational evidence may be considered. */
+  exporter_org_id?: string | null;
   /** Free-text product description. Always present — it is all a guest supplies. */
   description: string;
   /** Tariff classification, when known. Sharpens tariff/duty figures if the engine uses it. */

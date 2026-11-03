@@ -10,7 +10,7 @@ vi.mock('../src/lib/auth', () => ({ requirePrincipal: vi.fn(async () => currentP
 
 import { POST as postConfig } from '../src/app/api/v1/config/route';
 import { POST as postFeePolicy } from '../src/app/api/v1/fee-policy/route';
-import { getConfig } from '../src/lib/config';
+import { CONFIG_DEFAULTS, getConfig } from '../src/lib/config';
 import { permits } from '../src/lib/permissions';
 import { prisma } from '../src/lib/prisma';
 
@@ -56,6 +56,28 @@ describe('admin Settings permissions and configuration', () => {
     const source = await readFile(path.resolve('src/lib/staff-provisioning.ts'), 'utf8');
     expect(source).toContain("getConfig('agent.capacity')");
     expect(source).not.toMatch(/capacityTarget[^\n]*(throw|forbidden|validationError)/);
+  });
+
+  test('the Customs Atlas orchestration switch is versioned and audited through this API, and a malformed policy is refused', async () => {
+    const key = 'country_truth.market_access_orchestration';
+    await prisma.configSetting.deleteMany({ where: { key } });
+    try {
+      const refused = await postConfig(request('http://localhost/api/v1/config', { key, value: { ...CONFIG_DEFAULTS[key], enabled: 'yes', max_destinations: 0 }, description: 'UAT' }));
+      expect(refused.status).toBe(422);
+      expect((await refused.json()).error.fields.map((field: { message: string }) => field.message)).toEqual(['enabled must be true or false.', 'max_destinations must be a whole number from 1 to 100.']);
+      expect(await prisma.configSetting.count({ where: { key } })).toBe(0);
+      expect(await getConfig(key)).toMatchObject({ enabled: false });
+
+      const enabled = await postConfig(request('http://localhost/api/v1/config', { key, value: { ...CONFIG_DEFAULTS[key], enabled: true }, description: 'Enable Atlas acquisition on staging' }));
+      expect(enabled.status).toBe(201);
+      const created = (await enabled.json()).data as { id: string; version: number };
+      expect(await getConfig(key)).toMatchObject({ enabled: true, origin_country: 'IN' });
+      const audit = await prisma.auditEvent.findFirstOrThrow({ where: { object_type: 'config_setting', object_id: created.id } });
+      expect(audit.after_summary).toMatchObject({ key, version: created.version, change_reason: 'Enable Atlas acquisition on staging' });
+    } finally {
+      // Other files run deep jobs in this schema; the switch must not stay on for them.
+      await prisma.configSetting.deleteMany({ where: { key } });
+    }
   });
 
   test('FeePolicy update creates a new active row, preserves history, and audits the reason', async () => {

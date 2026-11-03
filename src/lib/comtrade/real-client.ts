@@ -1,41 +1,23 @@
 /** Authenticated/preview UN Comtrade client with fail-closed identity and completeness checks. */
 import { createHash } from 'node:crypto';
 import type { ComtradePolicy } from '@/lib/config';
-import type { ComtradeClient, ComtradeFetchParams, ComtradeFetchResult, ComtradeFlowRow } from './client';
+import type { ComtradeClient, ComtradeFetchParams, ComtradeFetchResult } from './client';
 import { ComtradeProviderRequestError, ComtradeRateLimitError } from './client';
+import { COMTRADE_PARSER_VERSION, isComtradeResponseBody, parseComtradeResponseBody, parseOptionalProviderNumber, revisionCode } from './parser';
+
+// Re-exported so existing importers of the parser primitives keep working; `parser.ts` owns them.
+export { parseOptionalProviderNumber };
+export type { ProviderNumberStatus } from './parser';
 
 const AUTH_BASE_URL = 'https://comtradeapi.un.org/data/v1/get/C/A/HS';
 const PREVIEW_BASE_URL = 'https://comtradeapi.un.org/public/v1/preview/C/A/HS';
 const HS_REFERENCE_URL = 'https://comtradeapi.un.org/files/v1/app/reference/HS.json';
-const PARSER_VERSION = 'comtrade-parser-v2';
 interface ReferenceRow { id: string; isLeaf: string | number; aggrLevel: number; }
-interface ComtradeApiRow {
-  reporterCode: number|string; partnerCode: number|string; partner2Code?: number|string|null;
-  cmdCode: string; refYear: number; period: number|string; flowCode?: string|null; freqCode?: string|null;
-  primaryValue: unknown; qty?: unknown; qtyUnitCode?: number|null; qtyUnitAbbr?: string|null;
-  altQty?: unknown; altQtyUnitAbbr?: string|null; netWgt?: unknown; grossWgt?: unknown;
-  customsCode?: string|null; mosCode?: string|null; clCode?: string|null; isQtyEstimated?: boolean|null; isNetWgtEstimated?: boolean|null;
-}
-const QUANTITY_UNITS: Record<number, string|null> = { 1:null, 2:'m²', 3:'1000 kWh', 4:'m', 5:'u', 6:'2u', 7:'l', 8:'kg', 9:'1000u', 10:'packages', 11:'12u', 12:'m³', 13:'carat' };
 const sleep = (ms:number) => new Promise((resolve)=>setTimeout(resolve,ms));
 const checksum = (text:string) => createHash('sha256').update(text).digest('hex');
 
-export type ProviderNumberStatus='observed'|'observed_zero'|'missing'|'suppressed'|'invalid'|'unavailable';
-export function parseOptionalProviderNumber(value:unknown):{value:number|null;status:ProviderNumberStatus}{
-  if(value===null||value===undefined)return {value:null,status:'missing'};
-  if(typeof value==='string'){
-    const trimmed=value.trim();
-    if(!trimmed)return {value:null,status:'missing'};
-    if(/suppressed|confidential|\.\./i.test(trimmed))return {value:null,status:'suppressed'};
-    if(/unavailable|n\/a/i.test(trimmed))return {value:null,status:'unavailable'};
-  }
-  const parsed=typeof value==='number'?value:Number(value);
-  if(!Number.isFinite(parsed)||parsed<0)return {value:null,status:'invalid'};
-  return {value:parsed,status:parsed===0?'observed_zero':'observed'};
-}
 function retryAfterMs(response:Response):number|null { const raw=response.headers.get('retry-after'); if(!raw)return null; const seconds=Number(raw); if(Number.isFinite(seconds))return Math.max(0,seconds*1000); const at=Date.parse(raw); return Number.isFinite(at)?Math.max(0,at-Date.now()):null; }
 function apiError(status:number, body:unknown):Error { const r=body&&typeof body==='object'?body as Record<string,unknown>:null; const message=typeof r?.message==='string'?r.message:typeof body==='string'?body:JSON.stringify(body); return new Error(`Comtrade request failed: ${status}${message?` ${message}`:''}`); }
-function revisionCode(revision:string){const normalized=revision.replace(/[^0-9]/g,'');const map:Record<string,string>={'1992':'H0','1996':'H1','2002':'H2','2007':'H3','2012':'H4','2017':'H5','2022':'H6'};return map[normalized]??revision;}
 function providerRequestError(error:unknown,physicalRequestCount:number){
   if(error instanceof ComtradeProviderRequestError||error instanceof ComtradeRateLimitError)return error;
   return new ComtradeProviderRequestError(error instanceof Error?error.message:String(error),physicalRequestCount,{cause:error});
@@ -69,22 +51,11 @@ export class ComtradeApiClient implements ComtradeClient {
       if(response.status===429){const wait=retryAfterMs(response);lastError=new ComtradeRateLimitError(`Comtrade rate limited request ${attempt+1}.`,wait,physicalCalls);if(attempt<this.policy.max_retries&&wait!=null&&wait<=60_000)await sleep(wait);continue;}
       const raw=await response.text();
       if(response.status>=500){lastError=apiError(response.status,raw);continue;}
-      let body:{data?:ComtradeApiRow[];count?:number}|Record<string,unknown>|null=null;try{body=JSON.parse(raw) as typeof body;}catch(error){throw providerRequestError(new Error('Comtrade response is not valid JSON.',{cause:error}),physicalCalls);}
-      if(!response.ok)throw providerRequestError(apiError(response.status,body),physicalCalls); if(!body||!Array.isArray((body as {data?:unknown}).data))throw providerRequestError(new Error('Comtrade response has no data array.'),physicalCalls);
-      const data=(body as {data:ComtradeApiRow[];count?:number}).data,providerCount=Number.isFinite(Number((body as {count?:number}).count))?Number((body as {count?:number}).count):null;
-      const requested=new Set(params.hs_codes),seen=new Set<string>(),rows:ComtradeFlowRow[]=[];let rejected=0;
-      for(const row of data){
-        const expectedFlow=params.flow_direction==='export'?'X':'M';
-        const partnerMismatch=params.partner==='all'?false:String(row.partnerCode)!==params.partner;
-        const mismatch=String(row.reporterCode)!==params.reporter||partnerMismatch||String(row.partner2Code??'0')!==partner2||Number(row.refYear)!==params.year||String(row.period)!==String(params.year)||!requested.has(row.cmdCode)||(row.flowCode!=null&&row.flowCode!==expectedFlow)||(row.freqCode!=null&&row.freqCode!==frequency)||(row.customsCode!=null&&row.customsCode!==customs)||(row.mosCode!=null&&row.mosCode!==mos)||(row.clCode!=null&&row.clCode!==revisionCode(revision));
-        if(mismatch){rejected++;continue;}
-        const key=`${row.reporterCode}:${row.partnerCode}:${row.partner2Code??0}:${row.cmdCode}:${row.refYear}:${expectedFlow}:${frequency}:${customs}:${mos}`;if(seen.has(key)){rejected++;continue;}seen.add(key);
-        const trade=parseOptionalProviderNumber(row.primaryValue),qty=parseOptionalProviderNumber(row.qty),alt=parseOptionalProviderNumber(row.altQty),net=parseOptionalProviderNumber(row.netWgt),gross=parseOptionalProviderNumber(row.grossWgt);
-        const quantity=qty.value;
-        rows.push({reporter:String(row.reporterCode),partner:String(row.partnerCode),partner2:String(row.partner2Code??'0'),hs_code:row.cmdCode,year:Number(row.refYear),period:String(row.period),flow_code:row.flowCode??expectedFlow,frequency:row.freqCode??frequency,customs_code:row.customsCode??customs,mode_of_supply:row.mosCode??mos,value:trade.value,value_status:trade.status,quantity,quantity_status:qty.status,unit:quantity==null?null:(row.qtyUnitAbbr?.trim()||(row.qtyUnitCode?QUANTITY_UNITS[row.qtyUnitCode]:null)||null),alternate_quantity:alt.value,alternate_quantity_unit:row.altQtyUnitAbbr??null,net_weight:net.value,gross_weight:gross.value,estimate_flag:Boolean(row.isQtyEstimated||row.isNetWgtEstimated),suppression_flag:trade.status==='suppressed',confidentiality_flag:trade.status==='suppressed'});
-      }
-      const truncated=providerCount!=null&&providerCount>data.length,complete=providerCount!=null&&!truncated&&rejected===0;
-      return {rows,request_count:physicalCalls,retrieved_at:retrievedAt,source_dataset_version:response.headers.get('last-modified')??response.headers.get('etag'),evidence_pages:[{http_status:response.status,raw_response_text:raw,response_checksum:checksum(raw),redacted_request:url.toString(),provider_row_count:providerCount,returned_row_count:data.length,completeness:complete?'COMPLETE':'PARTIAL',completeness_metadata:{provider_count:providerCount,response_rows:data.length,accepted_rows:rows.length,rejected_rows:rejected,truncated,pagination_supported:false,parser_version:PARSER_VERSION},quota_metadata:quotaMetadata(response.headers),retrieved_at:retrievedAt}]};
+      let body:unknown=null;try{body=JSON.parse(raw);}catch(error){throw providerRequestError(new Error('Comtrade response is not valid JSON.',{cause:error}),physicalCalls);}
+      if(!response.ok)throw providerRequestError(apiError(response.status,body),physicalCalls); if(!isComtradeResponseBody(body))throw providerRequestError(new Error('Comtrade response has no data array.'),physicalCalls);
+      // One parser, used here and again by re-normalization, so the two can never disagree.
+      const parsed=parseComtradeResponseBody(body,{reporter:params.reporter,partner:params.partner,partner2,year:params.year,flow_direction:params.flow_direction,frequency,customs_code:customs,mode_of_supply:mos,hs_revision:revision,hs_codes:params.hs_codes});
+      return {rows:parsed.rows,request_count:physicalCalls,retrieved_at:retrievedAt,source_dataset_version:response.headers.get('last-modified')??response.headers.get('etag'),evidence_pages:[{http_status:response.status,raw_response_text:raw,response_checksum:checksum(raw),redacted_request:url.toString(),provider_row_count:parsed.provider_row_count,returned_row_count:parsed.returned_row_count,completeness:parsed.complete?'COMPLETE':'PARTIAL',completeness_metadata:{provider_count:parsed.provider_row_count,response_rows:parsed.returned_row_count,accepted_rows:parsed.accepted_rows,rejected_rows:parsed.rejected_rows,truncated:parsed.truncated,pagination_supported:false,parser_version:COMTRADE_PARSER_VERSION},quota_metadata:quotaMetadata(response.headers),retrieved_at:retrievedAt}]};
     }
     if(lastError instanceof ComtradeRateLimitError)throw lastError;
     const message=lastError instanceof Error?lastError.message:'Comtrade request failed after retries.';

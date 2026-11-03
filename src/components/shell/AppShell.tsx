@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { UserRole } from '@prisma/client';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { Wordmark } from '@/components/brand/Wordmark';
 import { buttonClass } from '@/components/ui/Button';
 import { CommandPalette } from './CommandPalette';
@@ -43,6 +44,7 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
   exporter: [
     { label: 'Overview', href: '/app/overview', minTier: 'free' },
     { label: 'Readiness', href: '/app/readiness', minTier: 'free' },
+    { label: 'Products', href: '/app/products', minTier: 'paid' },
     { label: 'Markets', href: '/app/markets', minTier: 'guest' },
     { label: 'Buyers', href: '/app/buyers', minTier: 'guest' },
     { label: 'Deals', href: '/app/deals', minTier: 'paid' },
@@ -68,6 +70,7 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
   ],
   ops: [
     { label: 'Control Tower', href: '/ops', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
+    { label: 'Discovery', href: '/ops/discovery', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Assignments', href: '/ops/assignments', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Agents', href: '/ops/agents', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
     { label: 'Exceptions', href: '/ops/exceptions', minTier: 'paid', roles: ['ops_supervisor', 'admin'] },
@@ -75,6 +78,7 @@ export const NAVIGATION: Record<Portal, NavItem[]> = {
     { label: 'Disputes', href: '/ops/disputes', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
     { label: 'Settings', href: '/ops/settings', minTier: 'paid', roles: ['admin'] },
     { label: 'Audit', href: '/ops/audit', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
+    { label: 'Bug reports', href: '/ops/support', minTier: 'paid', roles: ['ops_supervisor', 'ops_finance', 'admin'] },
   ],
 };
 
@@ -324,6 +328,11 @@ export function AppShell({
         )}
       >
         {children}
+        {/* Every portal page carries the company line (owner, 3 Nov 2026). Inside <main>, so the
+            exporter's phone navigation bar, which <main>'s bottom padding clears, never covers it. */}
+        <footer className="mt-16 border-t border-line py-6">
+          <LegalLine />
+        </footer>
       </main>
 
       {portal === 'exporter' && mobileNav.length > 0 ? (

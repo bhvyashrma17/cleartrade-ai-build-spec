@@ -16,7 +16,7 @@ ClearTrade ships as one platform-neutral OCI image with separate process command
 
 ## Environment boundaries and secrets
 
-Use four independent environments: development, test, staging and production. Staging/production startup fails unless `DATABASE_ENVIRONMENT` exactly matches `APP_ENV`, the DB URL is not labelled dev/test/local, secrets meet minimum length, Comtrade is real, discovery is not mock, and storage is durable.
+Use four independent environments: development, test, staging and production. Staging/production startup fails unless `DATABASE_ENVIRONMENT` exactly matches `APP_ENV`, both pooled and direct DB URLs are TLS-protected and independently match `DATABASE_IDENTITY_SHA256` / `DIRECT_DATABASE_IDENTITY_SHA256`, secrets meet minimum length, Comtrade is real, discovery is not mock, and storage is durable. The same narrow identity guard runs before every repository migration, backup and restore command.
 
 Inject secrets through the platform secret manager; never bake `.env` into an image. Rotate the previously example-exposed `AUTH_SECRET` before staging. Required real-environment values are documented in `.env.staging.example`. Use distinct values and credentials for staging and production. Restrict DB, object storage, operational metrics, provider and AI credentials to the process that needs them.
 
@@ -25,7 +25,7 @@ Inject secrets through the platform secret manager; never bake `.env` into an im
 1. CI must pass schema validation, typecheck, lint, tests, application build and container build.
 2. Trigger `Prepare staging release`; the protected `staging` GitHub environment requires explicit approvers. It creates an OCI artifact but does not deploy it.
 3. Pin the immutable image digest and review migration SQL. Take a verified backup/PITR checkpoint.
-4. Run exactly one `npm run migrate:deploy` task using the direct DB URL. Never run `migrate dev` in staging/production.
+4. Run exactly one `npm run migrate:deploy` task using the direct DB URL. This command validates both database identity pins before Prisma starts. Never run `migrate dev` in staging/production.
 5. Roll out web, then worker. Require `/api/health/ready` to return 200. Keep the previous image digest available.
 6. Smoke-test login, one non-network job, upload round-trip, metrics authorization, and evidence-origin guards. Enable scheduled provider jobs separately.
 

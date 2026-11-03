@@ -1,6 +1,7 @@
 import {Prisma,ProductClassificationMethod,ProductClassificationStatus,UserRole} from '@prisma/client';
 import {AUDIT_ACTIONS,writeAuditEvent} from '@/lib/audit';
 import {prisma} from '@/lib/prisma';
+import {autoStartDemandDiscoveryV5} from '@/lib/demand-discovery-v5/service';
 import type {Principal} from '@/types';
 
 export const SUPPORTED_NOMENCLATURES={HS:['2022','HS2022'],'ITC-HS':['2022','HS2022']} as const;
@@ -36,7 +37,7 @@ export async function confirmClassification(input:{classification_id:string;prod
   if(candidate.status!==ProductClassificationStatus.candidate&&candidate.status!==ProductClassificationStatus.needs_review)throw new Error('Only a current proposed classification can be confirmed.');
   if(candidate.revision!==candidate.product.hs_classification_revision)throw new Error('This classification candidate is stale; review and confirm the latest revision instead.');
   projectHs6({itc_hs_code:candidate.itc_hs_code,hs6_code:candidate.hs6_code,nomenclature:candidate.nomenclature,nomenclature_version:candidate.nomenclature_version});
-  return prisma.$transaction(async tx=>{
+  const confirmed=await prisma.$transaction(async tx=>{
     const now=new Date(),previousCode=candidate.product.hs_code;
     await tx.productClassification.updateMany({where:{product_id:candidate.product_id,status:ProductClassificationStatus.confirmed},data:{status:ProductClassificationStatus.superseded,superseded_at:now}});
     const confirmed=await tx.productClassification.update({where:{id:candidate.id},data:{status:ProductClassificationStatus.confirmed,confirmed_by_id:actor.id,confirmed_at:now}});
@@ -44,6 +45,11 @@ export async function confirmClassification(input:{classification_id:string;prod
     if(previousCode&&previousCode!==candidate.hs6_code)await tx.marketAssessment.updateMany({where:{product_id:candidate.product_id,classification_current:true},data:{classification_current:false,classification_invalidated_at:now,classification_invalidation_reason:`Product classification changed from ${previousCode} to ${candidate.hs6_code}; recommendation requires recomputation.`}});
     await writeAuditEvent({db:tx,actor,action:AUDIT_ACTIONS.update,object_type:'product_classification',object_id:candidate.id,exporter_org_id:candidate.product.exporter_org_id,before_summary:{hs6_code:previousCode,status:candidate.product.hs_classification_status},after_summary:{hs6_code:candidate.hs6_code,status:'confirmed',revision:candidate.revision},correlation_id:correlationId});return confirmed;
   });
+  // D-018 (docs/36 §7): a confirmed code starts Demand Discovery v5 — for a paid tenant, where a
+  // BACI release is ready. The confirmation stands either way; what happened, and why, is audited.
+  const autoStart=await autoStartDemandDiscoveryV5({product_id:candidate.product_id,actor,correlation_id:correlationId});
+  await writeAuditEvent({actor,action:'demand_discovery_auto_start',object_type:'product_classification',object_id:candidate.id,exporter_org_id:candidate.product.exporter_org_id,after_summary:{started:autoStart.started,reason:autoStart.reason,run_id:autoStart.run_id??null,job_id:autoStart.job_id??null},correlation_id:correlationId}).catch(()=>undefined);
+  return confirmed;
 }
 
 export async function requireCountryTruthClassification(classificationId:string){

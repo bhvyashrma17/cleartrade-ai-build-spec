@@ -115,6 +115,23 @@ govern every PR.
   assertions against rows the seed already placed at the end state.** When you add a new
   lifecycle (a new gate, a new status enum, a new cross-object effect), extend the cross-portal
   walk rather than only adding a seeded-fixture scenario for it.
+- **A compatibility alias map is not an authority on provider identity.** `COMTRADE_LEGACY_AREA_TO_ISO2`
+  exists to READ area codes already sitting in stored evidence. Phase 1F initially inverted it to
+  decide which reporter code to ASK Comtrade about, and produced `381` for Italy — a code UN
+  Comtrade lists in neither its reporter nor its partner reference. The request would have returned
+  nothing, Italy would have been recorded `unavailable`, and no error would have been raised
+  anywhere; the same inversion happened to be right for the USA (`842`) and India (`699`), which is
+  exactly why it looked correct. Provider identity now comes from the provider's own reference
+  (`src/lib/comtrade/reporter-registry.ts` over a checked-in snapshot of the public, keyless
+  `files/v1/app/reference/Reporters.json`), and ISO/M49 stays the geographic identity. When you
+  need a provider's internal id, fetch its reference table — never derive one from a mapping built
+  for the opposite direction.
+- **A `BEFORE DELETE` trigger must `RETURN OLD`.** `NEW` is NULL in a delete trigger, and a BEFORE
+  trigger that returns NULL cancels the row silently — no error, `DELETE 0`, and an `ON DELETE
+  CASCADE` parent delete leaves the child orphaned. The `MarketAssessment` lineage guard did exactly
+  this for a month (fixed in `20261013181000`, ledger E-012): retries appended duplicate result sets
+  and deleted runs left their assessments behind. When a guard covers `UPDATE OR DELETE`, branch on
+  `TG_OP`, and test that a permitted delete actually removes the row.
 - **Restart the WORKER after adding a `JobType`, or it strands jobs in `processing` forever.**
   A long-running `npm run worker` holds a Prisma client generated before the new enum value
   existed. It still claims the new job (the candidate query selects only `id`, so nothing
@@ -158,6 +175,16 @@ govern every PR.
 | `docs/12-appendix-reference.md` | Screen registry, route conventions, glossary (CHA, BRC, ICEGATE, Incoterm, HS code…) |
 | `docs/13-blueprint-reconciliation.md` | **Read before Phase 0.** Where the two sources conflict, what's missing from each, and 10 decisions this raises |
 | `docs/14-guest-and-tiers.md` | **Read before any permission, auth or access-control work.** Guest/freemium tiers, the capability matrix, guest lifecycle from mint through upgrade, retention, and the abuse surface. Supersedes the "all access is authenticated" assumption in `docs/01`–`docs/13` |
+| `docs/31-global-country-screening.md` | Phase 1F Stage A: the derived country universe, Country Screening Policy v1, screening rank, quota planning and the handoff into the deep Country Truth pipeline |
+| `docs/33-railway-staging-amused-insight.md` | Railway staging as deployed: services, isolation from production, empty-database bootstrap, verification, open production hazards |
+| `docs/32-latest-usable-period.md` | Phase 1G: per-country latest-usable-period selection, the fallback walk and its four semantics, mixed-vintage ranking, per-reporter deep analysis windows, and freshness-weighted confidence |
+| `docs/34-phase-1-acceptance-gate.md` | The Phase 1 acceptance gate (policy v4, Demand Discovery v5 runs only, approved 2 Nov 2026; passed on staging and signed off 3 Nov 2026, so Phase 1 is frozen): thresholds, definitions (official duty, labelled estimate, calibration, scoring replay), evidence matrix, report fields, and the staging runbook for `scripts/gate-phase-1.ts` |
+| `docs/35-programme-evidence-ledger.md` | **Read before starting any roadmap work package.** Append-only record of verified repository/CI/staging state, owner decisions, checks run and open risks |
+| `docs/36-demand-discovery-v5.md` | Demand Discovery v5 (owner-approved 13 Oct 2026): all 218 markets per product from CEPII BACI with Comtrade fallback and newest-year chain-link, the 12 metrics, the five-part score, labels, gates, auto-start on HS confirmation |
+| `docs/37-tariff-sources.md` | Official tariffs for every market (D-024): where each of the 218 markets' tariff comes from (connected, researched, directory, published rule), the agent's recording flow, customs unions, licences and the automation order |
+| `docs/38-regional-and-buyer-discovery.md` | Stages 2 and 3 of the product order (D-033): regional demand inside a v5 market (US states and ports from the Census Bureau) and real buyers from official importer lists (UK, Canada) |
+| `docs/39-production-launch.md` | **Read before any production change.** Production's state (read-only check, 3 Nov 2026), the switch-over from the 24 Aug code step by step (backups, storage, keys, scanner, worker, preflight, release, data, test-data removal) and rollback |
+| `docs/40-support-guide.md` | Support once exporters use production: roles, daily checks, common requests (runs, product codes, rankings, payments, sign-in, uploads, personal data), provider outages, the data calendar, incidents |
 
 ## Build order (don't build portal-by-portal)
 
@@ -280,7 +307,8 @@ and permission check works on them unchanged.
 is not a new membership concept — it's the SAME commitment fee (`not_due`/`due`/`paid`/
 `waived`/`refunded`) docs/01 always specified, now doing the work of gating `paid` tier.
 Guest/free tier get `POST /api/v1/market-estimates` instead: a synchronous, no-LLM read of
-the `TradeFlow` warehouse returning observed historical import value + unit-price bands
+CEPII BACI, which covers every HS6 product (the `TradeFlow` warehouse is only the fallback
+where BACI is not loaded, E-041), returning observed historical import value + unit-price bands
 only. **Framing is a product requirement, not copy preference**: never project earnings or
 promised revenue, only "buyers in these markets imported X at Y–Z per unit" plus an
 explicit not-a-forecast disclaimer — enforced by `src/lib/market-estimate.ts` never

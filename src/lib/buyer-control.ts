@@ -58,8 +58,21 @@ export const BUYER_COMPONENTS = [
 
 export type BuyerComponentKey = (typeof BUYER_COMPONENTS)[number]['key'];
 
+/**
+ * The components of buyers found in an official importer list (D-033, docs/38 §2), with the keys
+ * `buyer-discovery/service.ts` writes. Kept beside the scorer's own so each assessment is read with
+ * the components its model actually produced.
+ */
+export const OFFICIAL_LIST_MODEL = 'buyer-official-lists-v1';
+export const OFFICIAL_LIST_COMPONENTS = [
+  { key: 'product_match', label: 'Product match' },
+  { key: 'focus', label: 'Product focus' },
+  { key: 'india_origin', label: 'Buys it from India' },
+  { key: 'activity', label: 'Months listed' },
+] as const;
+
 export interface BuyerComponentView {
-  key: BuyerComponentKey;
+  key: BuyerComponentKey | (typeof OFFICIAL_LIST_COMPONENTS)[number]['key'];
   label: string;
   /** Null when the model could not compute it. NOT zero — a gap is not a score of nothing. */
   score: number | null;
@@ -74,9 +87,10 @@ const asRecord = (v: unknown): Record<string, unknown> | null =>
 const asNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** Read the component breakdown out of the stored JSON, without interpreting gaps as zeros. */
-export function buyerComponentViews(components: Prisma.JsonValue | null): BuyerComponentView[] {
+export function buyerComponentViews(components: Prisma.JsonValue | null, modelVersion?: string): BuyerComponentView[] {
   const root = asRecord(components);
-  return BUYER_COMPONENTS.map(({ key, label }) => {
+  const definitions: readonly { key: BuyerComponentView['key']; label: string }[] = modelVersion === OFFICIAL_LIST_MODEL ? OFFICIAL_LIST_COMPONENTS : BUYER_COMPONENTS;
+  return definitions.map(({ key, label }) => {
     const entry = asRecord(root?.[key]);
     return {
       key,
@@ -159,6 +173,10 @@ export interface BuyerEvidence {
   featureProvenance: Prisma.JsonValue | null;
   sourceEvidenceCount: number;
   sanctions: { resultState: string; algorithmVersion: string; screenedAt: Date } | null;
+  /** For a buyer found in an official importer list: where it is and why it was found. Null otherwise. */
+  officialList: { source: string; periods: string[]; place: string | null; address: string | null; why: string[] } | null;
+  /** Risk flags on the buyer, e.g. not yet screened. Never hidden. */
+  riskFlags: { code: string; severity: string; summary: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +336,7 @@ export async function buyerControlRows(
       buyerName: fit.buyer.display_name,
       countryCode: fit.buyer.country_code,
       fit,
-      components: buyerComponentViews(fit.components),
+      components: buyerComponentViews(fit.components, fit.model_version),
       provenance: buyerModelProvenance(fit),
       modelRank,
       canonical,
@@ -341,6 +359,8 @@ export async function buyerControlRows(
               screenedAt: sanctionsCase.created_at,
             }
           : null,
+        officialList: officialListEvidence(fit.model_version, fit.components, fit.buyer.import_activity_summary),
+        riskFlags: Array.isArray(fit.buyer.risk_flags) ? (fit.buyer.risk_flags as { code: string; severity: string; summary: string }[]).filter((flag) => flag && typeof flag.summary === 'string') : [],
       },
       current,
       latest,
@@ -358,6 +378,23 @@ export async function buyerControlRows(
   });
 
   return sortByOperationalOrder(rows);
+}
+
+function officialListEvidence(modelVersion: string, components: Prisma.JsonValue, summary: Prisma.JsonValue | null): BuyerEvidence['officialList'] {
+  if (modelVersion !== OFFICIAL_LIST_MODEL) return null;
+  const root = asRecord(components);
+  const activity = asRecord(summary);
+  const source = asRecord(root?.source);
+  const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
+  const strings = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []);
+  const place = [text(activity?.town), text(activity?.postcode), text(activity?.region_name)].filter(Boolean).join(' · ') || null;
+  return {
+    source: text(source?.label) ?? 'Official importer list',
+    periods: strings(source?.periods),
+    place,
+    address: [...strings(activity?.address_lines), text(activity?.postcode)].filter(Boolean).join(', ') || null,
+    why: strings(root?.summary_lines),
+  };
 }
 
 function newest(dates: (Date | null)[]): Date | null {

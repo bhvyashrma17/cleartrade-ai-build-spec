@@ -1,0 +1,420 @@
+{
+  "schema_version": "india-trade-agreements-v1",
+  "compiled_on": "2026-10-13",
+  "purpose": "Agreement factor for the labelled duty estimate in Demand Discovery v5 (docs/36 §4.7). One row per agreement and partner. A partner with several agreements takes the strongest in force on the run date.",
+  "excluded": [
+    {
+      "agreement": "Global System of Trade Preferences (GSTP)",
+      "reason": "Margins of preference are small and cover few lines; counting it as partial would overstate preference for about 40 markets."
+    },
+    {
+      "agreement": "SAARC Preferential Trading Arrangement (SAPTA)",
+      "reason": "Superseded by SAFTA."
+    },
+    {
+      "agreement": "India–Thailand Early Harvest Scheme",
+      "reason": "Its lines are covered by the ASEAN–India agreement, which is listed."
+    },
+    {
+      "agreement": "India–Nepal Treaty of Trade",
+      "reason": "Its reciprocal concessions are limited; Nepal is covered by SAFTA (partial)."
+    },
+    {
+      "agreement": "India–EU FTA",
+      "reason": "Concluded January 2026; not in force on the compilation date."
+    },
+    {
+      "agreement": "Asia Pacific Trade Agreement (APTA), Mongolia",
+      "reason": "Mongolia acceded after the agreement entered into force; the date its concessions took effect is not yet verified, so it is left out rather than guessed."
+    }
+  ],
+  "rows": [
+    {
+      "agreement": "India–Bhutan Agreement on Trade, Commerce and Transit",
+      "partner_iso2": "BT",
+      "scope": "comprehensive",
+      "in_force_from": "2006-07-29",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Free trade regime between India and Bhutan (revised agreement)."
+    },
+    {
+      "agreement": "India–Sri Lanka FTA",
+      "partner_iso2": "LK",
+      "scope": "comprehensive",
+      "in_force_from": "2000-03-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "South Asian Free Trade Area (SAFTA)",
+      "partner_iso2": "BD",
+      "scope": "partial",
+      "in_force_from": "2006-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Long sensitive lists keep many lines at MFN rates, so SAFTA counts as partial. Pakistan is left out: it suspended trade with India in August 2019."
+    },
+    {
+      "agreement": "South Asian Free Trade Area (SAFTA)",
+      "partner_iso2": "BT",
+      "scope": "partial",
+      "in_force_from": "2006-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Long sensitive lists keep many lines at MFN rates, so SAFTA counts as partial. Pakistan is left out: it suspended trade with India in August 2019."
+    },
+    {
+      "agreement": "South Asian Free Trade Area (SAFTA)",
+      "partner_iso2": "MV",
+      "scope": "partial",
+      "in_force_from": "2006-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Long sensitive lists keep many lines at MFN rates, so SAFTA counts as partial. Pakistan is left out: it suspended trade with India in August 2019."
+    },
+    {
+      "agreement": "South Asian Free Trade Area (SAFTA)",
+      "partner_iso2": "NP",
+      "scope": "partial",
+      "in_force_from": "2006-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Long sensitive lists keep many lines at MFN rates, so SAFTA counts as partial. Pakistan is left out: it suspended trade with India in August 2019."
+    },
+    {
+      "agreement": "South Asian Free Trade Area (SAFTA)",
+      "partner_iso2": "LK",
+      "scope": "partial",
+      "in_force_from": "2006-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Long sensitive lists keep many lines at MFN rates, so SAFTA counts as partial. Pakistan is left out: it suspended trade with India in August 2019."
+    },
+    {
+      "agreement": "South Asian Free Trade Area (SAFTA)",
+      "partner_iso2": "AF",
+      "scope": "partial",
+      "in_force_from": "2006-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Long sensitive lists keep many lines at MFN rates, so SAFTA counts as partial. Pakistan is left out: it suspended trade with India in August 2019."
+    },
+    {
+      "agreement": "India–Singapore CECA",
+      "partner_iso2": "SG",
+      "scope": "comprehensive",
+      "in_force_from": "2005-08-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–Korea CEPA",
+      "partner_iso2": "KR",
+      "scope": "comprehensive",
+      "in_force_from": "2010-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "MY",
+      "scope": "comprehensive",
+      "in_force_from": "2010-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "SG",
+      "scope": "comprehensive",
+      "in_force_from": "2010-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "TH",
+      "scope": "comprehensive",
+      "in_force_from": "2010-01-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "VN",
+      "scope": "comprehensive",
+      "in_force_from": "2010-06-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "MM",
+      "scope": "comprehensive",
+      "in_force_from": "2010-09-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "ID",
+      "scope": "comprehensive",
+      "in_force_from": "2010-10-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "BN",
+      "scope": "comprehensive",
+      "in_force_from": "2010-11-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "LA",
+      "scope": "comprehensive",
+      "in_force_from": "2011-01-24",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "PH",
+      "scope": "comprehensive",
+      "in_force_from": "2011-06-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "ASEAN–India Trade in Goods Agreement",
+      "partner_iso2": "KH",
+      "scope": "comprehensive",
+      "in_force_from": "2011-08-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Entry into force was staggered by member."
+    },
+    {
+      "agreement": "India–Japan CEPA",
+      "partner_iso2": "JP",
+      "scope": "comprehensive",
+      "in_force_from": "2011-08-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–Malaysia CECA",
+      "partner_iso2": "MY",
+      "scope": "comprehensive",
+      "in_force_from": "2011-07-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–Mauritius CECPA",
+      "partner_iso2": "MU",
+      "scope": "partial",
+      "in_force_from": "2021-04-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Limited coverage: Mauritius grants concessions on a defined list of lines."
+    },
+    {
+      "agreement": "India–UAE CEPA",
+      "partner_iso2": "AE",
+      "scope": "comprehensive",
+      "in_force_from": "2022-05-01",
+      "in_force_until": null,
+      "source_url": "https://static.pib.gov.in/WriteReadData/specificdocs/documents/2026/aug/doc2026818961401.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–Australia ECTA",
+      "partner_iso2": "AU",
+      "scope": "comprehensive",
+      "in_force_from": "2022-12-29",
+      "in_force_until": null,
+      "source_url": "https://static.pib.gov.in/WriteReadData/specificdocs/documents/2026/aug/doc2026818961401.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–EFTA TEPA",
+      "partner_iso2": "CH",
+      "scope": "comprehensive",
+      "in_force_from": "2025-10-01",
+      "in_force_until": null,
+      "source_url": "https://www.efta.int/media-resources/news/efta-india-trade-and-economic-partnership-agreement-enters-force-joint",
+      "note": null
+    },
+    {
+      "agreement": "India–EFTA TEPA",
+      "partner_iso2": "LI",
+      "scope": "comprehensive",
+      "in_force_from": "2025-10-01",
+      "in_force_until": null,
+      "source_url": "https://www.efta.int/media-resources/news/efta-india-trade-and-economic-partnership-agreement-enters-force-joint",
+      "note": null
+    },
+    {
+      "agreement": "India–EFTA TEPA",
+      "partner_iso2": "NO",
+      "scope": "comprehensive",
+      "in_force_from": "2025-10-01",
+      "in_force_until": null,
+      "source_url": "https://www.efta.int/media-resources/news/efta-india-trade-and-economic-partnership-agreement-enters-force-joint",
+      "note": null
+    },
+    {
+      "agreement": "India–EFTA TEPA",
+      "partner_iso2": "IS",
+      "scope": "comprehensive",
+      "in_force_from": "2025-10-01",
+      "in_force_until": null,
+      "source_url": "https://www.efta.int/media-resources/news/efta-india-trade-and-economic-partnership-agreement-enters-force-joint",
+      "note": null
+    },
+    {
+      "agreement": "India–UK CETA",
+      "partner_iso2": "GB",
+      "scope": "comprehensive",
+      "in_force_from": "2026-07-15",
+      "in_force_until": null,
+      "source_url": "https://businesswales.gov.wales/news-and-blog/uk-india-free-trade-agreement-now-effect",
+      "note": null
+    },
+    {
+      "agreement": "India–Oman CEPA",
+      "partner_iso2": "OM",
+      "scope": "comprehensive",
+      "in_force_from": "2026-06-01",
+      "in_force_until": null,
+      "source_url": "https://www.pib.gov.in/blogs/blogsdescr.aspx?feaaid=518",
+      "note": null
+    },
+    {
+      "agreement": "India–New Zealand FTA",
+      "partner_iso2": "NZ",
+      "scope": "comprehensive",
+      "in_force_from": "2026-10-20",
+      "in_force_until": null,
+      "source_url": "https://www.thesenior.com.au/story/9354666/nz-india-trade-deal-to-come-into-force-on-october-20/",
+      "note": "Signed April 2026; ratifications exchanged September 2026. Not in force before 20 Oct 2026."
+    },
+    {
+      "agreement": "Asia Pacific Trade Agreement (APTA)",
+      "partner_iso2": "BD",
+      "scope": "partial",
+      "in_force_from": "1976-11-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Margins of preference on listed lines only."
+    },
+    {
+      "agreement": "Asia Pacific Trade Agreement (APTA)",
+      "partner_iso2": "CN",
+      "scope": "partial",
+      "in_force_from": "1976-11-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Margins of preference on listed lines only."
+    },
+    {
+      "agreement": "Asia Pacific Trade Agreement (APTA)",
+      "partner_iso2": "KR",
+      "scope": "partial",
+      "in_force_from": "1976-11-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Margins of preference on listed lines only."
+    },
+    {
+      "agreement": "Asia Pacific Trade Agreement (APTA)",
+      "partner_iso2": "LA",
+      "scope": "partial",
+      "in_force_from": "1976-11-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Margins of preference on listed lines only."
+    },
+    {
+      "agreement": "Asia Pacific Trade Agreement (APTA)",
+      "partner_iso2": "LK",
+      "scope": "partial",
+      "in_force_from": "1976-11-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "Margins of preference on listed lines only."
+    },
+    {
+      "agreement": "India–Afghanistan PTA",
+      "partner_iso2": "AF",
+      "scope": "partial",
+      "in_force_from": "2003-05-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "The source gives May 2003; the first of the month is used."
+    },
+    {
+      "agreement": "India–MERCOSUR PTA",
+      "partner_iso2": "AR",
+      "scope": "partial",
+      "in_force_from": "2009-06-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–MERCOSUR PTA",
+      "partner_iso2": "BR",
+      "scope": "partial",
+      "in_force_from": "2009-06-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–MERCOSUR PTA",
+      "partner_iso2": "PY",
+      "scope": "partial",
+      "in_force_from": "2009-06-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–MERCOSUR PTA",
+      "partner_iso2": "UY",
+      "scope": "partial",
+      "in_force_from": "2009-06-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": null
+    },
+    {
+      "agreement": "India–Chile PTA",
+      "partner_iso2": "CL",
+      "scope": "partial",
+      "in_force_from": "2007-08-01",
+      "in_force_until": null,
+      "source_url": "https://content.dgft.gov.in/Website/dgftprod/66bdfcc0-f3dc-42ea-841a-892debc79879/Appendix%202A-%20C%20(FTAs)%20updated.pdf",
+      "note": "The source gives August 2007; the first of the month is used. Expanded in 2017."
+    }
+  ]
+}

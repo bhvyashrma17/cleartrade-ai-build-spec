@@ -322,7 +322,10 @@ describe('typed adapters', () => {
     const { context, request } = await frozenRequest(w);
     const model = buildDocumentModel(DocType.CI, context, request.metadata, request.content_hash);
     const invoiceDate = model.reference.find((r) => r.label === 'Invoice date');
-    expect(invoiceDate!.value).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4}$/);
+    // `en-GB` short months are three letters except September, which ICU renders "Sept". The
+    // original `[a-z]{2}` accepted only three, so this test failed every September regardless of
+    // the timezone it was meant to be checking.
+    expect(invoiceDate!.value).toMatch(/^\d{2} [A-Z][a-z]{2,4} \d{4}$/);
   });
 
   test('a proforma carries no invoice number, and a commercial invoice does', async () => {

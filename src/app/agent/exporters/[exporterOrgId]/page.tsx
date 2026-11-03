@@ -20,11 +20,13 @@ import { MessageForm } from '@/components/agent/MessageForm';
 import { ProductQuickEditForm } from '@/components/agent/ProductQuickEditForm';
 import {ProductClassificationForm} from '@/components/agent/ProductClassificationForm';
 import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
-import { DemandDiscoveryControl } from '@/components/agent/DemandDiscoveryControl';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
+import { FindBuyersForm, type FindBuyersMarket } from '@/components/agent/FindBuyersForm';
+import { activeImporterLists } from '@/lib/buyer-discovery/importer-list-service';
+import { IMPORTER_LIST_SOURCES } from '@/lib/buyer-discovery/importer-lists';
+import { CountryTruthWork } from '@/components/agent/CountryTruthWork';
 import { buyerControlRows } from '@/lib/buyer-control';
 import { activeOnly as activeOnlyCandidates } from '@/lib/demand-control';
-import { activeOnly, marketControlRows, sortByOperationalOrder } from '@/lib/demand-control';
 import { requirePrincipal } from '@/lib/auth';
 import { loadExporterAccountScoped } from '@/lib/agent-accounts';
 import { permits } from '@/lib/permissions';
@@ -156,16 +158,21 @@ export default async function ExporterAccountPage({
   const readiness = org.readiness_assessments[0] ?? null;
   const blockers = (readiness?.blockers ?? []) as { code: string; severity: string; summary: string }[];
 
-  // Only queried for the tab that renders it — the overview must not pay for the control
-  // surface's reads on every visit.
-  const demandRows = activeTab === 'demand' && latestDiscoveryRun
-    ? sortByOperationalOrder(await marketControlRows(latestDiscoveryRun.id))
-    : [];
-  const visibleDemandRows = showAll ? demandRows : activeOnly(demandRows);
-
   // Tenant- and assignment-safe: buyerControlRows asserts org access through the same helper
   // every other org-scoped read uses, so this cannot surface an unassigned exporter's buyers.
   const buyerRows = activeTab === 'buyers' ? await buyerControlRows(principal, exporterOrgId) : [];
+  // D-033: the markets an official importer list covers, and whether one is imported here yet.
+  const canFindBuyers = activeTab === 'buyers' && permits(principal, 'buyer_discovery.run');
+  const buyerMarkets: FindBuyersMarket[] = canFindBuyers
+    ? await Promise.all(Object.values(IMPORTER_LIST_SOURCES).map(async (source) => ({
+        code: source.country_code,
+        name: source.country_code === 'GB' ? 'United Kingdom' : source.country_code === 'CA' ? 'Canada' : source.country_code,
+        unavailable: (await activeImporterLists(source.key)).length ? null : `No ${source.label} list has been imported on this environment yet.`,
+      })))
+    : [];
+  const buyerProducts = org.products
+    .filter((p) => p.hs_classification_status === 'confirmed' && p.hs_code && /^\d{6}$/.test(p.hs_code))
+    .map((p) => ({ id: p.id, name: p.name, hs6: p.hs_code! }));
   const visibleBuyerRows = showAll ? buyerRows : activeOnlyCandidates(buyerRows);
 
   return (
@@ -211,20 +218,13 @@ export default async function ExporterAccountPage({
       </nav>
 
       {activeTab === 'demand' ? (
-        <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
-          <h2 className="text-lg font-semibold text-primary">Demand Discovery control</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-            The model&rsquo;s recommendation and your decision, shown separately. Agent decisions
-            never change the AI score.
-          </p>
-          <div className="mt-4">
-            <DemandDiscoveryControl
-              rows={visibleDemandRows}
-              showAll={showAll}
-              runId={latestDiscoveryRun?.id ?? null}
-            />
-          </div>
-        </section>
+        <div className="space-y-4">
+        {/* The full AI-vs-decision table for all markets moved behind "Manage market decisions"
+            on each product — it is also now scoped to THAT product's own run rather than the
+            org's most recently run product, which is what `latestDiscoveryRun` gave every
+            product before this. See CountryTruthWork and the per-product `markets/manage` route. */}
+        <CountryTruthWork exporterOrgId={org.id} />
+        </div>
       ) : activeTab === 'buyers' ? (
         <section className="rounded-lg border border-[var(--color-border)] bg-surface p-5 shadow-card">
           <h2 className="text-lg font-semibold text-primary">Buyer Discovery control</h2>
@@ -232,6 +232,11 @@ export default async function ExporterAccountPage({
             Three separate layers: what the model recommends, what ClearTrade is operationally
             doing, and what agents have decided. Agent decisions never change the AI score.
           </p>
+          {canFindBuyers ? (
+            <div className="mt-4">
+              <FindBuyersForm exporterOrgId={org.id} products={buyerProducts} markets={buyerMarkets} />
+            </div>
+          ) : null}
           <div className="mt-4">
             <BuyerDiscoveryControl
               rows={visibleBuyerRows}
@@ -273,6 +278,7 @@ export default async function ExporterAccountPage({
                   ) : null}
                   <div className="mt-2">
                     <ProductQuickEditForm
+                      exporterOrgId={org.id}
                       productId={p.id}
                       initial={{
                         capacity_value: p.capacity_value?.toString() ?? '',

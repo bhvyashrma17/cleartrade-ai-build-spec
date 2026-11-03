@@ -167,9 +167,49 @@ function AiPanel({ row }: { row: BuyerControlRow }) {
   );
 }
 
+/** A buyer found in an official importer list: the list, the address and why it was found (D-033). */
+function OfficialListEvidence({ row }: { row: BuyerControlRow }) {
+  const list = row.evidence.officialList!;
+  const e = row.evidence;
+  return (
+    <div>
+      <h5 className="text-xs font-semibold text-primary">Supporting evidence</h5>
+      <p className="text-xs text-[var(--color-text-muted)]">From {list.source}{list.periods.length ? `, ${list.periods.join(', ')}` : ''}. Facts, not the model&rsquo;s components.</p>
+      <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-primary">
+        {list.why.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      <dl className="mt-1.5 grid grid-cols-1 gap-y-1 text-xs">
+        <div>
+          <dt className="text-[var(--color-text-muted)]">Address as published</dt>
+          <dd className="text-primary">{list.address ?? '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-[var(--color-text-muted)]">Source evidence rows</dt>
+          <dd className="text-primary">{e.sourceEvidenceCount}</dd>
+        </div>
+      </dl>
+      <p className="mt-1.5 text-xs">
+        <span className="text-[var(--color-text-muted)]">Sanctions: </span>
+        {e.sanctions ? (
+          <span className={e.sanctions.resultState === 'clear' ? 'text-primary' : 'text-critical'}>
+            {titleize(e.sanctions.resultState)} · {e.sanctions.algorithmVersion} · {fmtDate(e.sanctions.screenedAt)}
+          </span>
+        ) : e.riskFlags.some((flag) => flag.code === 'SCREENING_INCOMPLETE') ? (
+          <span className="text-critical">Not screened yet — the sanctions lists here are incomplete or stale</span>
+        ) : (
+          <span className="text-primary">No match on the current lists</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
 /** Supporting evidence — explicitly NOT model components. */
 function EvidencePanel({ row }: { row: BuyerControlRow }) {
   const e = row.evidence;
+  if (e.officialList) return <OfficialListEvidence row={row} />;
   const rows: [string, string][] = [
     ['12-month shipments', num(e.shipmentCount12m)],
     ['Last shipment', fmtDate(e.lastShipmentDate)],
@@ -326,6 +366,12 @@ export function BuyerDiscoveryControl({
               >
                 <td className="px-3 py-3">
                   <div className="font-medium text-primary">{row.buyerName}</div>
+                  {row.evidence.officialList ? (
+                    <div className="mt-0.5 max-w-xs text-xs text-[var(--color-text-secondary)]">
+                      {row.evidence.officialList.place ? <div>{row.evidence.officialList.place}</div> : null}
+                      {row.evidence.officialList.why[0] ? <div className="text-[var(--color-text-muted)]">{row.evidence.officialList.why[0]}</div> : null}
+                    </div>
+                  ) : null}
                   <div className="text-xs text-[var(--color-text-muted)]">
                     {row.countryCode}
                     {row.lastMeaningfulActivityAt ? ` · active ${fmtDate(row.lastMeaningfulActivityAt)}` : ''}

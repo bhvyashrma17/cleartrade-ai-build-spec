@@ -66,6 +66,7 @@ export async function runDemandDiscovery(ctx: JobContext): Promise<JobOutcome> {
   if (!description) throw new Error(`Discovery run ${runId} has no product context to search on.`);
 
   const input: DiscoveryInput = {
+    exporter_org_id: run.exporter_org_id,
     description,
     hs_code: snapshot.hs_code ?? null,
     target_countries: snapshot.target_countries ?? [],

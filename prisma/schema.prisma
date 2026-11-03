@@ -560,6 +560,9 @@ enum JobType {
   /// Agent-requested Country Truth orchestration. Enqueue-only until its dedicated
   /// acquisition/metrics/scoring handler is implemented.
   country_truth_discovery
+  /// Phase 1F Stage A: cheap global country screening that produces the deep pipeline's
+  /// candidate reporter set. Acquires one World import fact per country, never a deep package.
+  country_screening
   buyer_discovery
   document_generation
   report_export
@@ -578,6 +581,11 @@ enum JobType {
   import_record_retention
   market_access_ingest
   notification_delivery
+  /// Demand Discovery v5 (docs/36): every screening market for one confirmed HS6, from the
+  /// retained BACI release, reference datasets and a batched Comtrade newest year.
+  demand_discovery_v5
+  /// Regional demand inside one v5 market (D-033, docs/38): states and ports for the US.
+  regional_demand_discovery
 }
 
 enum NotificationChannel {
@@ -757,27 +765,32 @@ model ExporterOrg {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  assigned_agent           User?                    @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
-  users                    User[]                   @relation("OrgMembers")
-  products                 Product[]
-  readiness_assessments    ReadinessAssessment[]
-  discovery_runs           DiscoveryRun[]
-  buyer_leads              BuyerLead[]
-  buyer_fit_assessments    BuyerFitAssessment[]
-  buyer_outcomes           BuyerOutcome[]
-  buyer_shortlists         BuyerShortlist[]
-  deals                    Deal[]
-  tasks                    Task[]
-  assignments              AgentAssignment[]
-  invitations              Invitation[]
-  agent_decisions          AgentDecision[]
-  buyer_profiles           BuyerCommercialProfile[]
-  invoice_series           InvoiceSeries[]
-  issued_invoice_numbers   IssuedInvoiceNumber[]
-  exchange_rate_quotes     ExchangeRateQuote[]
-  document_input_snapshots DocumentInputSnapshot[]
-  bank_accounts            ExporterBankAccount[]
-  subscriptions            Subscription[]
+  assigned_agent               User?                             @relation("OrgAssignedAgent", fields: [assigned_agent_id], references: [id])
+  users                        User[]                            @relation("OrgMembers")
+  products                     Product[]
+  readiness_assessments        ReadinessAssessment[]
+  discovery_runs               DiscoveryRun[]
+  buyer_leads                  BuyerLead[]
+  buyer_fit_assessments        BuyerFitAssessment[]
+  buyer_outcomes               BuyerOutcome[]
+  buyer_shortlists             BuyerShortlist[]
+  deals                        Deal[]
+  tasks                        Task[]
+  assignments                  AgentAssignment[]
+  invitations                  Invitation[]
+  agent_decisions              AgentDecision[]
+  buyer_profiles               BuyerCommercialProfile[]
+  invoice_series               InvoiceSeries[]
+  issued_invoice_numbers       IssuedInvoiceNumber[]
+  exchange_rate_quotes         ExchangeRateQuote[]
+  country_truth_fact_snapshots CountryTruthFactSnapshot[]
+  document_input_snapshots     DocumentInputSnapshot[]
+  bank_accounts                ExporterBankAccount[]
+  subscriptions                Subscription[]
+  classification_refinements   ProductClassificationRefinement[]
+  market_scan_requests         MarketScanRequest[]
+  operational_cost_evidence    OperationalCostEvidence[]
+  logistics_route_evidence     LogisticsRouteEvidence[]
 
   @@index([assigned_agent_id])
   @@index([readiness_status])
@@ -807,58 +820,71 @@ model User {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  exporter_org                ExporterOrg?              @relation("OrgMembers", fields: [exporter_org_id], references: [id])
-  agent_for_orgs              ExporterOrg[]             @relation("OrgAssignedAgent")
-  agent_assignments           AgentAssignment[]         @relation("AssignmentAgent")
-  assignments_made            AgentAssignment[]         @relation("AssignmentActor")
-  owned_leads                 BuyerLead[]               @relation("LeadAgent")
-  created_leads               BuyerLead[]               @relation("LeadCreatedBy")
-  owned_deals                 Deal[]                    @relation("DealOwnerAgent")
-  owned_tasks                 Task[]                    @relation("TaskOwner")
-  proposals_made              DealProposal[]            @relation("ProposalProposedBy")
-  proposals_approved          DealProposal[]            @relation("ProposalApprovedBy")
-  proposals_changes_requested DealProposal[]            @relation("ProposalChangesRequestedBy")
-  outreach_activities         OutreachActivity[]
-  outreach_attempts           OutreachAttempt[]
-  buyer_lead_transitions      BuyerLeadTransition[]
-  raw_data_access_events      RawDataAccessEvent[]
-  data_deletion_reviews       DataDeletionRequest[]
-  audit_events                AuditEvent[]
-  notifications               Notification[]
-  notification_preferences    NotificationPreference[]
-  messages_sent               Message[]
-  internal_notes              InternalNote[]
-  documents_approved          Document[]                @relation("DocumentApprover")
-  documents_reviewed          Document[]                @relation("DocumentReviewer")
-  documents_filed             Document[]                @relation("DocumentFiler")
-  partner_handoffs            PartnerHandoff[]          @relation("PartnerHandoffOwner")
-  disputes_owned              Dispute[]
-  jobs_requested              Job[]
-  invitations_sent            Invitation[]              @relation("InvitationInviter")
-  task_evidence_uploaded      TaskEvidence[]            @relation("TaskEvidenceUploader")
-  task_evidence_reviewed      TaskEvidence[]            @relation("TaskEvidenceReviewer")
-  payouts                     Payout[]                  @relation("PayoutAgent")
-  payouts_approved            Payout[]                  @relation("PayoutApprovedBy")
-  payout_adjustments_made     PayoutAdjustment[]        @relation("PayoutAdjustmentAuthor")
-  sanctions_review_decisions  SanctionsReviewDecision[]
-  classifications_proposed    ProductClassification[]   @relation("ClassificationProposer")
-  classifications_confirmed   ProductClassification[]   @relation("ClassificationConfirmer")
-  products_hs_confirmed       Product[]
-  auth_provider_accounts      AuthProviderAccount[]
-  agent_decisions             AgentDecision[]           @relation("AgentDecisionActor")
-  staff_invitations_sent      StaffInvitation[]         @relation("StaffInvitationInviter")
-  staff_invitations_revoked   StaffInvitation[]         @relation("StaffInvitationRevoker")
-  staff_invitation_accepted   StaffInvitation?          @relation("StaffInvitationAcceptor")
-  staff_access_grants_made    StaffAccessGrant[]        @relation("StaffAccessGrantGrantor")
-  staff_access_grants_revoked StaffAccessGrant[]        @relation("StaffAccessGrantRevoker")
-  staff_access_grant_claimed  StaffAccessGrant?         @relation("StaffAccessGrantClaimant")
-  buyer_profiles_edited       BuyerCommercialProfile[]  @relation("BuyerProfileEditor")
-  exchange_rates_recorded     ExchangeRateQuote[]       @relation("ExchangeRateRecorder")
-  invoice_numbers_issued      IssuedInvoiceNumber[]     @relation("InvoiceNumberIssuer")
-  invoice_numbers_voided      IssuedInvoiceNumber[]     @relation("InvoiceNumberVoider")
-  document_snapshots_created  DocumentInputSnapshot[]   @relation("DocumentSnapshotCreator")
-  document_artifacts_created  DocumentArtifact[]        @relation("DocumentArtifactGenerator")
-  bug_reports                 BugReport[]
+  exporter_org                       ExporterOrg?                      @relation("OrgMembers", fields: [exporter_org_id], references: [id])
+  agent_for_orgs                     ExporterOrg[]                     @relation("OrgAssignedAgent")
+  agent_assignments                  AgentAssignment[]                 @relation("AssignmentAgent")
+  assignments_made                   AgentAssignment[]                 @relation("AssignmentActor")
+  owned_leads                        BuyerLead[]                       @relation("LeadAgent")
+  created_leads                      BuyerLead[]                       @relation("LeadCreatedBy")
+  owned_deals                        Deal[]                            @relation("DealOwnerAgent")
+  owned_tasks                        Task[]                            @relation("TaskOwner")
+  proposals_made                     DealProposal[]                    @relation("ProposalProposedBy")
+  proposals_approved                 DealProposal[]                    @relation("ProposalApprovedBy")
+  proposals_changes_requested        DealProposal[]                    @relation("ProposalChangesRequestedBy")
+  outreach_activities                OutreachActivity[]
+  outreach_attempts                  OutreachAttempt[]
+  buyer_lead_transitions             BuyerLeadTransition[]
+  raw_data_access_events             RawDataAccessEvent[]
+  data_deletion_reviews              DataDeletionRequest[]
+  audit_events                       AuditEvent[]
+  notifications                      Notification[]
+  notification_preferences           NotificationPreference[]
+  messages_sent                      Message[]
+  internal_notes                     InternalNote[]
+  documents_approved                 Document[]                        @relation("DocumentApprover")
+  documents_reviewed                 Document[]                        @relation("DocumentReviewer")
+  documents_filed                    Document[]                        @relation("DocumentFiler")
+  partner_handoffs                   PartnerHandoff[]                  @relation("PartnerHandoffOwner")
+  disputes_owned                     Dispute[]
+  jobs_requested                     Job[]
+  invitations_sent                   Invitation[]                      @relation("InvitationInviter")
+  task_evidence_uploaded             TaskEvidence[]                    @relation("TaskEvidenceUploader")
+  task_evidence_reviewed             TaskEvidence[]                    @relation("TaskEvidenceReviewer")
+  payouts                            Payout[]                          @relation("PayoutAgent")
+  payouts_approved                   Payout[]                          @relation("PayoutApprovedBy")
+  payout_adjustments_made            PayoutAdjustment[]                @relation("PayoutAdjustmentAuthor")
+  sanctions_review_decisions         SanctionsReviewDecision[]
+  classifications_proposed           ProductClassification[]           @relation("ClassificationProposer")
+  classifications_confirmed          ProductClassification[]           @relation("ClassificationConfirmer")
+  products_hs_confirmed              Product[]
+  auth_provider_accounts             AuthProviderAccount[]
+  password_reset_tokens              PasswordResetToken[]
+  agent_decisions                    AgentDecision[]                   @relation("AgentDecisionActor")
+  staff_invitations_sent             StaffInvitation[]                 @relation("StaffInvitationInviter")
+  staff_invitations_revoked          StaffInvitation[]                 @relation("StaffInvitationRevoker")
+  staff_invitation_accepted          StaffInvitation?                  @relation("StaffInvitationAcceptor")
+  staff_access_grants_made           StaffAccessGrant[]                @relation("StaffAccessGrantGrantor")
+  staff_access_grants_revoked        StaffAccessGrant[]                @relation("StaffAccessGrantRevoker")
+  staff_access_grant_claimed         StaffAccessGrant?                 @relation("StaffAccessGrantClaimant")
+  buyer_profiles_edited              BuyerCommercialProfile[]          @relation("BuyerProfileEditor")
+  exchange_rates_recorded            ExchangeRateQuote[]               @relation("ExchangeRateRecorder")
+  invoice_numbers_issued             IssuedInvoiceNumber[]             @relation("InvoiceNumberIssuer")
+  invoice_numbers_voided             IssuedInvoiceNumber[]             @relation("InvoiceNumberVoider")
+  document_snapshots_created         DocumentInputSnapshot[]           @relation("DocumentSnapshotCreator")
+  document_artifacts_created         DocumentArtifact[]                @relation("DocumentArtifactGenerator")
+  bug_reports                        BugReport[]
+  verified_product_certifications    ProductCertification[]            @relation("ProductCertificationVerifier")
+  decided_classification_refinements ProductClassificationRefinement[] @relation("ClassificationRefinementDecider")
+  entered_operational_costs          OperationalCostEvidence[]         @relation("OperationalCostEnteredBy")
+  verified_operational_costs         OperationalCostEvidence[]         @relation("OperationalCostVerifiedBy")
+  recorded_customs_valuations        CustomsValuationBasisEvidence[]   @relation("CustomsValuationRecorder")
+
+  market_scan_requests_made      MarketScanRequest[]               @relation("MarketScanRequester")
+  market_scan_requests_decided   MarketScanRequest[]               @relation("MarketScanDecider")
+
+  authority_releases_imported    AuthorityRelease[]                @relation("AuthorityReleaseImporter")
+  trade_dataset_releases_imported TradeDatasetRelease[]            @relation("TradeDatasetImporter")
+  reference_dataset_releases_imported ReferenceDatasetRelease[]    @relation("ReferenceDatasetImporter")
 
   @@index([exporter_org_id])
   @@index([role])
@@ -882,6 +908,22 @@ model BugReport {
 
   @@index([reporter_user_id, created_at])
   @@index([created_at])
+}
+
+/// A one-time password reset link (R-39). Only the SHA-256 of the token is stored: the token itself
+/// exists only in the email. It expires 30 minutes after it is made and works once; asking again
+/// retires the earlier links.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, created_at])
 }
 
 /// External identity linkage for social authentication.
@@ -963,6 +1005,11 @@ model Product {
   price_target_quantity_unit String?
   price_target_incoterm      String?  @db.VarChar(3)
 
+  /// The product's normal commercial quantity identity. This is a label, never permission to
+  /// convert a mass into a count, area, volume, package or any other dimension.
+  commercial_quantity_unit String?
+  piece_unit_name          String?
+
   /// Exporter-market-fit inputs. All nullable: absence lowers score confidence; it is
   /// never replaced by a guessed/default commercial capability.
   lead_time_days                  Int?
@@ -973,54 +1020,143 @@ model Product {
   logistics_constraints_confirmed Boolean  @default(false)
   desired_order_size_amount       Decimal? @db.Decimal(18, 4)
   desired_order_size_currency     String?  @db.VarChar(3)
+  desired_order_quantity_value    Decimal? @db.Decimal(18, 4)
+  desired_order_quantity_unit     String?
   customization_capability        String?
   packaging_capability            String?
+  customization_available         Boolean?
+  private_label_available         Boolean?
+  packaging_customization_available Boolean?
 
-  packaging  String?
+  packaging String?
+
+  /// Structured packaging. `packaging`/`packaging_capability` above remain free prose for the
+  /// exporter's own description; only these typed fields may be reasoned about, so a sentence
+  /// can never be mistaken for a declared capability.
+  packaging_format        String?
+  pack_size_value         Decimal? @db.Decimal(18, 4)
+  pack_size_unit          String?
+  units_per_package       Int?
+  package_weight_value    Decimal? @db.Decimal(18, 4)
+  package_weight_unit     String?
+  package_volume_value    Decimal? @db.Decimal(18, 4)
+  package_volume_unit     String?
+  /// Consumer packs inside one carton/master pack.
+  units_per_carton        Int?
+  cartons_per_pallet      Int?
+  palletized              Boolean?
+  carton_configuration    String?
+  pallet_configuration    String?
+  /// Container/load types this pack is compatible with, e.g. 20FT_DRY, 40FT_HC, REEFER_40FT.
+  container_compatibility String[] @default([])
+  /// Ocean is not the default. Air, road, rail, courier and multimodal compatibility can be
+  /// declared independently and remain unknown when this list is empty.
+  transport_mode_compatibility String[] @default([])
+  special_handling_codes  String[] @default([])
+  /// Required storage/transport temperature band, when the product needs one at all.
+  temperature_min_celsius Decimal? @db.Decimal(6, 2)
+  temperature_max_celsius Decimal? @db.Decimal(6, 2)
+  /// Null = unknown. False = exporter explicitly declared no temperature control is required.
+  temperature_controlled  Boolean?
+  fragile                 Boolean?
+  perishable              Boolean?
+  hazardous               Boolean?
+  dangerous_goods_un_number String?
+  dangerous_goods_hazard_class String?
+
+  /// Per commercial unit physical facts. Every number keeps its own dimension; no field here
+  /// is derived from another and no cross-dimensional conversion is allowed.
+  unit_net_weight_value   Decimal? @db.Decimal(18, 4)
+  unit_net_weight_unit    String?
+  unit_gross_weight_value Decimal? @db.Decimal(18, 4)
+  unit_gross_weight_unit  String?
+  unit_length_value       Decimal? @db.Decimal(18, 4)
+  unit_width_value        Decimal? @db.Decimal(18, 4)
+  unit_height_value       Decimal? @db.Decimal(18, 4)
+  unit_dimension_unit     String?
+  unit_volume_value       Decimal? @db.Decimal(18, 4)
+  unit_volume_unit        String?
+
+  /// Capacity actually free for new orders, as distinct from installed monthly capacity.
+  available_capacity_value Decimal? @db.Decimal(18, 4)
+  available_capacity_unit  String?
+  capacity_period          String?
+
+  /// The exporter's standard export shipment. Declared rather than inferred, because it is what
+  /// converts a per-shipment or per-container quote into a per-unit cost: guessing it would put
+  /// a plausible but wrong number into a landed cost. MOQ is a commercial minimum and is NOT a
+  /// substitute for it.
+  shipment_quantity_value  Decimal? @db.Decimal(18, 4)
+  shipment_quantity_unit   String?
+  shipment_container_count Int?
+  shipment_container_type  String?
+
+  /// Dispatch/manufacturing origin for this product. Falls back to the org address only when
+  /// explicitly absent; it is never silently assumed to equal the registered office.
+  origin_city          String?
+  origin_state         String?
+  origin_country       String? @db.VarChar(2)
+  origin_postal_code   String?
+  origin_location_code String?
+  origin_gateway_code  String?
+  /// exporter_declared | agent_verified | system_derived. A suggested gateway is not verified.
+  origin_provenance    String?
+
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  exporter_org           ExporterOrg             @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
-  certifications         ProductCertification[]
-  market_assessments     MarketAssessment[]
-  buyer_leads            BuyerLead[]
-  buyer_fit_assessments  BuyerFitAssessment[]
-  deals                  Deal[]
-  classification_history ProductClassification[]
-  hs_confirmed_by        User?                   @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
+  exporter_org                 ExporterOrg                       @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  classification_refinements   ProductClassificationRefinement[]
+  operational_cost_evidence    OperationalCostEvidence[]
+  certifications               ProductCertification[]
+  market_assessments           MarketAssessment[]
+  buyer_leads                  BuyerLead[]
+  buyer_fit_assessments        BuyerFitAssessment[]
+  deals                        Deal[]
+  classification_history       ProductClassification[]
+  country_truth_fact_snapshots CountryTruthFactSnapshot[]
+  hs_confirmed_by              User?                             @relation(fields: [hs_confirmed_by_id], references: [id], onDelete: SetNull)
+
+  market_scan_requests         MarketScanRequest[]
 
   @@index([exporter_org_id])
   @@index([hs_code])
 }
 
 model ProductClassification {
-  id                     String                      @id @default(cuid())
-  product_id             String
-  revision               Int
-  itc_hs_code            String?
-  hs6_code               String
-  nomenclature           String
-  nomenclature_version   String
-  method                 ProductClassificationMethod
+  id                           String                            @id @default(cuid())
+  product_id                   String
+  revision                     Int
+  itc_hs_code                  String?
+  hs6_code                     String
+  nomenclature                 String
+  nomenclature_version         String
+  method                       ProductClassificationMethod
   /// Canonical product facts frozen by the server when this classification is proposed.
   /// Later product edits must not rewrite the basis on which the code was reviewed.
-  product_facts_snapshot Json
-  evidence               Json
-  rationale              String
+  product_facts_snapshot       Json
+  evidence                     Json
+  rationale                    String
   /// Structured public/source references supporting the human classification decision.
-  source_references      Json
-  confidence             Decimal                     @db.Decimal(5, 4)
-  status                 ProductClassificationStatus
-  proposed_by_id         String
-  proposed_at            DateTime                    @default(now())
-  confirmed_by_id        String?
-  confirmed_at           DateTime?
-  superseded_at          DateTime?
-  product                Product                     @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  proposed_by            User                        @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
-  confirmed_by           User?                       @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
-  country_evidence_plans CountryEvidencePlan[]
-  country_trade_metrics  CountryTradeMetrics[]
+  source_references            Json
+  confidence                   Decimal                           @db.Decimal(5, 4)
+  status                       ProductClassificationStatus
+  proposed_by_id               String
+  proposed_at                  DateTime                          @default(now())
+  confirmed_by_id              String?
+  confirmed_at                 DateTime?
+  superseded_at                DateTime?
+  product                      Product                           @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  proposed_by                  User                              @relation("ClassificationProposer", fields: [proposed_by_id], references: [id], onDelete: Restrict)
+  confirmed_by                 User?                             @relation("ClassificationConfirmer", fields: [confirmed_by_id], references: [id], onDelete: SetNull)
+  country_evidence_plans       CountryEvidencePlan[]
+  country_screening_runs       CountryScreeningRun[]
+  country_trade_metrics        CountryTradeMetrics[]
+  country_truth_fact_snapshots CountryTruthFactSnapshot[]
+  classification_refinements   ProductClassificationRefinement[]
+  discovery_runs               DiscoveryRun[]
+
+  market_scan_requests   MarketScanRequest[]
 
   @@unique([product_id, revision])
   @@index([product_id, status])
@@ -1034,12 +1170,33 @@ model ProductCertification {
   status       CertificationStatus @default(not_started)
   evidence_ref String?
   valid_until  DateTime?
-  created_at   DateTime            @default(now())
-  updated_at   DateTime            @updatedAt
 
-  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  /// Who issued it, and the certificate's own reference. Both recorded, never inferred.
+  issuer                String?
+  certificate_reference String?
+  issue_date            DateTime?
+  valid_from            DateTime?
+  /// unverified | agent_verified. An exporter can never move its own row to agent_verified;
+  /// only an assigned agent's review does, and it records who and when.
+  verification_state    String    @default("unverified")
+  verified_by_id        String?
+  verified_at           DateTime?
+  /// Null = unknown (the default and the safe reading). True = the exporter has explicitly
+  /// declared it does NOT hold this certification, which is a fact and not the same as silence.
+  declared_absent       Boolean?
+  /// unknown | declared_held | declared_absent. Separate from lifecycle and verification.
+  declaration_state     String    @default("unknown")
+  /// Supporting document, when one has been uploaded.
+  document_id           String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  product     Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  verified_by User?   @relation("ProductCertificationVerifier", fields: [verified_by_id], references: [id], onDelete: SetNull)
 
   @@unique([product_id, code])
+  @@index([product_id, verification_state])
 }
 
 /// Fields derived from EXP-02/EXP-03 (the PRD gives no field dictionary — see docs/02 note).
@@ -1100,10 +1257,23 @@ model DiscoveryRun {
   completed_at DateTime?
   created_at   DateTime  @default(now())
 
-  exporter_org       ExporterOrg        @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  /// docs/36 §7. Null on runs before v5. `market-opportunity-v5` for a v5 run.
+  model_version     String?
+  /// classification_confirmed | manual | refresh — what started the run (D-018).
+  trigger           String?
+  /// The confirmed classification the run scored, frozen at enqueue.
+  classification_id String?
+  /// Every release, policy and provider read the run used, with checksums.
+  frozen_inputs     Json?
+  /// Counts by market status and the top markets handed on to regional discovery.
+  summary           Json?
+
+  exporter_org       ExporterOrg            @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  classification     ProductClassification? @relation(fields: [classification_id], references: [id], onDelete: SetNull)
   market_assessments MarketAssessment[]
 
   @@index([exporter_org_id, created_at])
+  @@index([product_id, model_version, created_at], map: "DiscoveryRun_product_model_idx")
 }
 
 model MarketAssessment {
@@ -1181,25 +1351,52 @@ model MarketAssessment {
   /// selection. Non-exclusive: any number of assessments may be saved at once.
   saved_at    DateTime?
 
-  run                   DiscoveryRun         @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  product               Product?             @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  agent_decisions       AgentDecision[]
-  country_trade_metrics CountryTradeMetrics? @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+  run                         DiscoveryRun              @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  product                     Product?                  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  agent_decisions             AgentDecision[]
+  country_trade_metrics       CountryTradeMetrics?      @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+  country_truth_fact_snapshot CountryTruthFactSnapshot? @relation(fields: [country_truth_fact_snapshot_id], references: [id], onDelete: Restrict)
 
-  country_trade_metrics_id           String?
-  country_trade_metrics_checksum     String?
-  country_evidence_manifest_id       String?
-  country_evidence_manifest_checksum String?
-  country_metric_policy_version      String?
-  country_metric_policy_hash         String?
-  country_truth_period_set           Int[]
-  country_truth_as_of_date           DateTime?
-  country_truth_assessment_state     String?
-  assessment_checksum                String?
+  country_trade_metrics_id             String?
+  country_trade_metrics_checksum       String?
+  country_evidence_manifest_id         String?
+  country_evidence_manifest_checksum   String?
+  country_metric_policy_version        String?
+  country_metric_policy_hash           String?
+  country_truth_period_set             Int[]
+  country_truth_as_of_date             DateTime?
+  country_truth_assessment_state       String?
+  assessment_checksum                  String?
+  /// Stable record identity (run + country + every frozen-input identity). The content
+  /// checksum may legitimately repeat across two runs; this record identity may not.
+  assessment_identity                  String?   @unique(map: "MarketAssessment_assessment_identity_key")
+  /// Phase 1H facts are immutable records separate from the scores derived from them.
+  country_truth_fact_snapshot_id       String?
+  country_truth_fact_snapshot_checksum String?
+
+  /// docs/36 (v5): ranked | not_enough_data | no_recorded_demand | excluded. Null before v5.
+  market_status   String?
+  /// 1 = best. Only ranked markets have one.
+  rank            Int?
+  /// Points (of 100) whose metrics had data; the score shares the missing points among them.
+  live_points     Int?
+  /// The newest year the market's demand figures come from.
+  data_year       Int?
+  /// The five parts and the twelve metrics, each with its score, quality and inputs.
+  score_breakdown Json?
+  labels          Json      @default("[]")
+  reasons         Json      @default("[]")
+  flag_reasons    Json      @default("[]")
+  /// Among the top markets passed on to regional and buyer discovery (D-019).
+  handed_off      Boolean   @default(false)
+
+  /// Where inside the market the product's imports arrive (D-033, docs/38).
+  regional_demand_runs RegionalDemandRun[]
 
   @@index([run_id, overall_score])
   @@index([product_id, country_code])
   @@index([country_trade_metrics_id])
+  @@index([country_truth_fact_snapshot_id])
 }
 
 /// Explicit destination/HS hard gates. Sanctions entity-list rows never become a country
@@ -1227,53 +1424,141 @@ model MarketEligibilityRule {
 /// One authoritative retrieval for a jurisdiction + HS scope. A COMPLETE snapshot is
 /// required before absence of a restriction can be interpreted as evidence.
 model MarketAccessEvidenceSnapshot {
-  id                    String                     @id @default(cuid())
-  jurisdiction          String
-  country_code          String                     @db.VarChar(2)
-  hs_code_scope         String
-  source_authority      String
-  source_reference      String
-  source_version        String?
-  retrieved_at          DateTime
-  effective_at          DateTime?
-  expires_at            DateTime?
-  completeness_status   EvidenceCompletenessStatus
-  tariff_coverage       Boolean                    @default(false)
-  regulatory_coverage   Boolean                    @default(false)
-  parser_version        String
-  evidence_origin       EvidenceOrigin             @default(unknown_legacy)
-  provider              String                     @default("unknown_legacy")
-  source_dataset        String?
-  source_run_id         String?
-  raw_response_checksum String?
-  raw_evidence          Json
-  evidence              MarketAccessEvidence[]
+  id                        String                     @id @default(cuid())
+  jurisdiction              String
+  country_code              String                     @db.VarChar(2)
+  hs_code_scope             String
+  source_authority          String
+  source_reference          String
+  source_version            String?
+  retrieved_at              DateTime
+  effective_at              DateTime?
+  expires_at                DateTime?
+  completeness_status       EvidenceCompletenessStatus
+  tariff_coverage           Boolean                    @default(false)
+  regulatory_coverage       Boolean                    @default(false)
+  parser_version            String
+  evidence_origin           EvidenceOrigin             @default(unknown_legacy)
+  provider                  String                     @default("unknown_legacy")
+  source_dataset            String?
+  source_run_id             String?
+  /// Stable identity of one logical authority/release/request/parser result. Null on historical
+  /// rows. A repeat acquisition reuses the existing immutable snapshot; a changed release or a
+  /// newer parser version produces a distinct identity and therefore a new snapshot.
+  ingest_identity           String?                    @unique
+  /// Generic retained authority release that supplied the raw bytes, when this was a bulk/file
+  /// source. Lookup/API providers legitimately leave this null.
+  authority_release_id      String?
+  raw_response_checksum     String?
+  raw_evidence              Json
+  /// The HS6 the snapshot was requested FOR, kept apart from `hs_code_scope`, which may be a
+  /// national line. Null on rows written before national-code refinement existed.
+  hs6_code                  String?
+  /// Which national nomenclature the child lines belong to: UK_COMMODITY, EU_TARIC, US_HTS, GCC.
+  national_code_system      String?
+  /// exact | all_children_equivalent | classification_refinement_required | unavailable.
+  /// An HS6 that fans out into materially different national lines resolves to refinement
+  /// required; it is never collapsed by picking a rate.
+  classification_resolution String?
+  candidate_line_count      Int?
+  /// Every candidate line considered, why they were or were not equivalent, and what differed.
+  resolution_detail         Json?
+  evidence                  MarketAccessEvidence[]
+  tariff_lines              MarketAccessTariffLine[]
+  authority_release         AuthorityRelease?          @relation(fields: [authority_release_id], references: [id], onDelete: Restrict)
 
   @@index([country_code, hs_code_scope, retrieved_at])
+  @@index([country_code, hs6_code, retrieved_at])
+  @@index([authority_release_id])
+}
+
+/// One national tariff line beneath a requested HS6, exactly as the authority publishes it.
+///
+/// Separate from `MarketAccessEvidence` because that model answers "what applies to this
+/// product" while this one preserves the full candidate set the answer was derived from —
+/// including the lines that were rejected. Duty expressions are retained verbatim: a specific
+/// duty such as `121.00 GBP / 1000 kg` has no honest percentage, so `ad_valorem_rate_percent`
+/// stays null rather than carrying an invented number.
+model MarketAccessTariffLine {
+  id                        String    @id @default(cuid())
+  snapshot_id               String
+  jurisdiction              String
+  country_code              String    @db.VarChar(2)
+  hs6_code                  String
+  hs_revision               String
+  national_tariff_code      String
+  national_code_system      String
+  description               String
+  declarable                Boolean   @default(true)
+  /// third_country_duty | tariff_preference | tariff_quota | additional_duty | vat | other.
+  measure_kind              String
+  /// The authority's own geographic-area identifier for the measure (ERGA OMNES, a group, or a
+  /// country). Retained unmapped so a group can never be silently read as a country.
+  origin_geographic_area_id String?
+  origin_scope              String
+  applies_to_origin_country String?   @db.VarChar(2)
+  /// Verbatim duty text from the source. Never normalised away.
+  duty_expression           String
+  /// ad_valorem | specific | compound | mixed | none | unparsed.
+  duty_kind                 String
+  /// Populated ONLY when the expression is purely ad valorem.
+  ad_valorem_rate_percent   Decimal?  @db.Decimal(9, 4)
+  specific_amount           Decimal?  @db.Decimal(18, 6)
+  specific_currency         String?   @db.VarChar(3)
+  specific_unit             String?
+  specific_unit_quantity    Decimal?  @db.Decimal(18, 6)
+  /// Conditions that gate the measure — quota membership, document requirements, footnotes.
+  conditions                Json
+  effective_from            DateTime?
+  effective_to              DateTime?
+  source_reference          String
+  raw_measure               Json
+  created_at                DateTime  @default(now())
+
+  snapshot MarketAccessEvidenceSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([snapshot_id])
+  @@index([country_code, hs6_code, national_tariff_code])
 }
 
 model MarketAccessEvidence {
-  id                      String                       @id @default(cuid())
-  snapshot_id             String
-  jurisdiction            String
-  country_code            String                       @db.VarChar(2)
-  hs_code_scope           String
-  rule_type               MarketAccessRuleType
-  source_authority        String
-  source_reference        String
-  retrieved_at            DateTime
-  effective_at            DateTime?
-  expires_at              DateTime?
-  superseded_at           DateTime?
-  status                  MarketAccessEvidenceStatus
-  confidence              Decimal                      @db.Decimal(5, 4)
-  evidence_origin         EvidenceOrigin               @default(unknown_legacy)
-  tariff_rate_percent     Decimal?                     @db.Decimal(9, 4)
-  requirement_code        String?
-  requirement_description String?
-  requirement_obtainable  Boolean?
-  raw_evidence            Json
-  snapshot                MarketAccessEvidenceSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+  id                       String                       @id @default(cuid())
+  snapshot_id              String
+  jurisdiction             String
+  country_code             String                       @db.VarChar(2)
+  hs_code_scope            String
+  rule_type                MarketAccessRuleType
+  source_authority         String
+  source_reference         String
+  retrieved_at             DateTime
+  effective_at             DateTime?
+  expires_at               DateTime?
+  superseded_at            DateTime?
+  status                   MarketAccessEvidenceStatus
+  confidence               Decimal                      @db.Decimal(5, 4)
+  evidence_origin          EvidenceOrigin               @default(unknown_legacy)
+  tariff_rate_percent      Decimal?                     @db.Decimal(9, 4)
+  /// The national line this determination was made on, when one was resolved.
+  national_tariff_code     String?
+  national_code_system     String?
+  /// Verbatim duty text. Present whenever the row carries a duty, including specific and
+  /// compound duties that have no ad-valorem equivalent.
+  duty_expression          String?
+  duty_kind                String?
+  /// India-origin applicability, recorded explicitly rather than inferred from evidence status.
+  /// confirmed_applicable | potentially_applicable_requires_origin_proof | not_applicable |
+  /// unknown. The mere existence of a preferential line is never applicability.
+  preference_applicability String?
+  /// What the applicability determination rests on, or what is missing for it.
+  preference_basis         String?
+  /// discovery_grade | execution_grade. Discovery-grade evidence compares markets; it is never
+  /// presented as sufficient for customs execution.
+  verification_grade       String?
+  requirement_code         String?
+  requirement_description  String?
+  requirement_obtainable   Boolean?
+  raw_evidence             Json
+  snapshot                 MarketAccessEvidenceSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
 
   @@index([country_code, hs_code_scope, rule_type, status])
   @@index([snapshot_id])
@@ -1304,6 +1589,9 @@ model SupplierCoverageAssertion {
 /// not a generated recommendation: unknown rates/times remain null and validity is explicit.
 model LogisticsRouteEvidence {
   id                                 String                  @id @default(cuid())
+  /// Null only for genuinely reusable public-authority/provider evidence. A partner/manual lane
+  /// captured for one exporter is tenant-scoped and must never be selected for another tenant.
+  exporter_org_id                    String?
   origin_country                     String                  @db.VarChar(2)
   origin_state                       String?
   origin_city                        String?
@@ -1332,11 +1620,16 @@ model LogisticsRouteEvidence {
   hs_code_scope                      String?
   confidence                         Decimal                 @db.Decimal(5, 4)
   status                             LogisticsEvidenceStatus @default(verified)
+  assertion_class                    EvidenceAssertionClass  @default(authoritative_public)
   evidence_origin                    EvidenceOrigin
   raw_evidence                       Json?
   created_at                         DateTime                @default(now())
 
-  @@unique([provider, source_reference])
+  exporter_org ExporterOrg? @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+
+  @@unique([exporter_org_id, provider, source_reference])
+  @@index([exporter_org_id, destination_country, status])
+  @@index([provider, source_reference])
   @@index([origin_country, destination_country, transport_mode, valid_until])
   @@index([destination_country, hs_code_scope, status])
 }
@@ -1592,6 +1885,9 @@ model Buyer {
   deprioritized            Boolean            @default(false)
   deprioritization_reasons Json               @default("[]")
   sanctions_blocked        Boolean            @default(false)
+  /// For a buyer found in an official importer list (D-033, docs/38 §2): "<source>:<entity key>",
+  /// so the same importer in later lists updates this row instead of creating another.
+  source_entity_key        String?            @unique
   created_at               DateTime           @default(now())
   updated_at               DateTime           @updatedAt
 
@@ -3372,6 +3668,221 @@ enum EvidenceOrigin {
   manually_entered_real
 }
 
+/// Epistemic ownership of a fact. This is deliberately orthogonal to EvidenceOrigin:
+/// `public_real` says a row may serve in production, while `authoritative_public` says who
+/// actually stands behind the assertion. A partner quote and an exporter declaration can both
+/// be real production evidence without becoming public-authority facts.
+/// A destination's national tariff line for one product, and how it was arrived at.
+///
+/// HS6 is a classification of goods; a national tariff line is a DECLARABLE code, and the step
+/// between them is a judgement about the actual product. This record exists so that judgement is
+/// never implicit: it keeps the full candidate set the authority returned, which line was
+/// selected, on what basis, by whom, and how strongly that is verified.
+///
+/// Nothing here selects a line automatically. `refinement_required` is a legitimate terminal
+/// state and is what HS 100630 currently resolves to in the UK and US.
+model ProductClassificationRefinement {
+  id                        String  @id @default(cuid())
+  exporter_org_id           String
+  product_id                String
+  product_classification_id String
+  /// The frozen HS6 every candidate must sit beneath.
+  hs6_code                  String
+  hs_revision               String
+  destination_country       String  @db.VarChar(2)
+  national_code_system      String
+  /// The snapshot whose candidate set this refinement is answering.
+  source_snapshot_id        String?
+
+  /// unresolved | refinement_required | exporter_declared_selection | agent_verified_selection |
+  /// authoritative_verified | superseded.
+  state                  String  @default("unresolved")
+  /// Every candidate the authority returned, with the description and duty that distinguishes it.
+  candidate_lines        Json
+  candidate_count        Int
+  /// Null in every state except a selection. Always one of `candidate_lines`.
+  selected_national_code String?
+  /// Why this line and not its siblings, in product terms.
+  selection_rationale    String?
+  /// The product attributes that determined it, so the decision can be re-derived.
+  deciding_attributes    Json?
+  /// Distinguishing questions still outstanding before a line can be chosen.
+  outstanding_questions  Json?
+
+  source_authority String
+  source_reference String
+  effective_from   DateTime?
+  effective_to     DateTime?
+
+  decided_by_id    String?
+  decided_at       DateTime?
+  evidence_origin  EvidenceOrigin         @default(unknown_legacy)
+  assertion_class  EvidenceAssertionClass @default(unknown_legacy)
+  /// Refinements are append-only: a revision supersedes rather than rewrites, so an assessment
+  /// that cited the previous state stays readable.
+  superseded_at    DateTime?
+  superseded_by_id String?
+  created_at       DateTime               @default(now())
+
+  exporter_org           ExporterOrg                       @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product                Product                           @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  product_classification ProductClassification             @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  decided_by             User?                             @relation("ClassificationRefinementDecider", fields: [decided_by_id], references: [id], onDelete: SetNull)
+  superseded_by          ProductClassificationRefinement?  @relation("ClassificationRefinementSupersession", fields: [superseded_by_id], references: [id], onDelete: SetNull)
+  supersedes             ProductClassificationRefinement[] @relation("ClassificationRefinementSupersession")
+
+  @@index([exporter_org_id, product_id, destination_country, created_at])
+  @@index([product_classification_id, destination_country, state])
+}
+
+/// One operational cost input to Export Economics, as somebody actually stated it.
+///
+/// Deliberately ONE model rather than five near-identical ones: a CHA quote, an inland haulage
+/// quote, a cargo insurance quote, a financing estimate and a destination handling quote differ
+/// in which fields are populated, not in what they are — a priced, dated, attributable
+/// assertion about one cost component. Fields that genuinely belong to one kind of quote
+/// (carrier, equipment, coverage) are explicit columns rather than being flattened into JSON.
+///
+/// Immutable. A revised quote is a new row that supersedes its predecessor, so an assessment
+/// that used the old figure keeps meaning what it meant.
+model OperationalCostEvidence {
+  id                        String  @id @default(cuid())
+  exporter_org_id           String
+  product_id                String?
+  product_classification_id String?
+  /// Destination this cost was quoted for. Null only for origin-side costs that do not vary by
+  /// destination; selection still requires an explicit match or an explicit null.
+  destination_country       String? @db.VarChar(2)
+  hs6_code                  String?
+  hs_revision               String?
+
+  /// One of the eight Export Economics cost components.
+  component  String
+  /// cha | inland_transport | cargo_insurance | financing | destination_handling | packaging |
+  /// international_freight | cleartrade_fee. Narrows `component` to the kind of quote it is.
+  quote_type String
+
+  amount           Decimal  @db.Decimal(18, 4)
+  currency         String   @db.VarChar(3)
+  /// The quantity this amount is FOR: per_unit | per_kg | per_shipment | per_container |
+  /// percent_of_value. Never assumed.
+  rate_basis       String
+  /// The unit `rate_basis` counts in, when it counts something (kg, MT, CTN, 20FT_DRY).
+  quantity_unit    String?
+  /// Populated only for percent_of_value bases.
+  percent_of_value Decimal? @db.Decimal(9, 4)
+  /// The basis a percentage applies to, e.g. cif_value or invoice_value.
+  percent_basis    String?
+
+  /// Which Incoterm party owns this cost. Recorded so a buyer-paid cost cannot silently enter
+  /// exporter economics.
+  cost_owner String @default("exporter")
+
+  /// Route/partner context, populated for the quote kinds that have it.
+  route_evidence_id String?
+  transport_mode    String?
+  equipment_code    String?
+  carrier_name      String?
+  partner_name      String?
+  quote_reference   String?
+  /// Insurance-specific: what the cover actually is.
+  coverage_terms    String?
+  coverage_percent  Decimal? @db.Decimal(6, 2)
+
+  observed_at    DateTime
+  effective_from DateTime
+  /// An operational quote without an expiry is not open-ended: selection requires validity.
+  valid_until    DateTime?
+
+  assertion_class  EvidenceAssertionClass
+  evidence_origin  EvidenceOrigin
+  source           String
+  source_reference String
+  document_id      String?
+  entered_by_id    String?
+  verified_by_id   String?
+  verified_at      DateTime?
+  /// Frozen identity of the policy a system-derived amount came from (currently FeePolicy).
+  derivation       Json?
+  confidence       Decimal                @db.Decimal(5, 4)
+  status           String                 @default("verified")
+  superseded_at    DateTime?
+  superseded_by_id String?
+  raw_evidence     Json?
+  created_at       DateTime               @default(now())
+
+  exporter_org  ExporterOrg               @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product       Product?                  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  entered_by    User?                     @relation("OperationalCostEnteredBy", fields: [entered_by_id], references: [id], onDelete: SetNull)
+  verified_by   User?                     @relation("OperationalCostVerifiedBy", fields: [verified_by_id], references: [id], onDelete: SetNull)
+  superseded_by OperationalCostEvidence?  @relation("OperationalCostSupersession", fields: [superseded_by_id], references: [id], onDelete: SetNull)
+  supersedes    OperationalCostEvidence[] @relation("OperationalCostSupersession")
+
+  @@index([exporter_org_id, destination_country, component, valid_until])
+  @@index([exporter_org_id, product_id, component, status])
+  @@index([route_evidence_id])
+}
+
+/// How a destination values goods for customs, and on what authority.
+///
+/// Deliberately separate from the trade-statistical import valuation basis: a country may
+/// report import statistics on one basis and assess duty on another, and conflating them puts a
+/// duty on the wrong base. Only an authoritative citation may establish either.
+model CustomsValuationBasisEvidence {
+  id                  String                 @id @default(cuid())
+  jurisdiction        String
+  country_code        String                 @db.VarChar(2)
+  /// legal_customs_valuation | trade_statistical_import_valuation. The two are recorded
+  /// separately and are never substituted for one another.
+  valuation_type      String
+  /// CIF | FOB | CIP | other, as the source states it.
+  basis               String
+  included_components String[]               @default([])
+  excluded_components String[]               @default([])
+  source_authority    String
+  source_reference    String
+  source_version      String?
+  effective_from      DateTime
+  effective_to        DateTime?
+  observed_at         DateTime
+  retrieved_at        DateTime
+  /// discovery_grade | execution_grade.
+  verification_grade  String                 @default("discovery_grade")
+  assertion_class     EvidenceAssertionClass
+  evidence_origin     EvidenceOrigin
+  recorded_by_id      String?
+  confidence          Decimal                @db.Decimal(5, 4)
+  status              String                 @default("verified")
+  superseded_at       DateTime?
+  notes               String?
+  raw_evidence        Json?
+  created_at          DateTime               @default(now())
+
+  recorded_by User? @relation("CustomsValuationRecorder", fields: [recorded_by_id], references: [id], onDelete: SetNull)
+
+  @@unique([country_code, valuation_type, basis, effective_from, source_reference], map: "CustomsValuationBasisEvidence_identity_key")
+  @@index([country_code, valuation_type, effective_from])
+}
+
+enum EvidenceAssertionClass {
+  authoritative_public
+  exporter_declared
+  agent_verified
+  partner_quote
+  /// Computed by ClearTrade from its own versioned policy (currently the ClearTrade fee from
+  /// FeePolicy). Not an observation of the world, so it is not authoritative_public; not a
+  /// claim by a party, so it is not a declaration or a quote.
+  system_derived
+  /// Supplied under commercial licence by a specialist trade-content provider that attributes the
+  /// fact to a customs authority or treaty, but which ClearTrade did not obtain from that
+  /// authority directly. The vendor is a secondary distributor, so this is never
+  /// authoritative_public no matter how faithful the reproduction or how much it cost. Usable
+  /// only where `licensed-providers.ts` records an approval covering the provider, dataset,
+  /// destination and assertion type.
+  licensed_authoritative_content
+  unknown_legacy
+}
+
 enum IngestStatus {
   running
   throttled
@@ -3548,12 +4059,14 @@ model SourceEvidence {
   observations                NormalizedTradeObservation[]
   country_evidence_items      CountryEvidencePlanItem[]
   country_evidence_references CountryEvidenceManifestReference[]
+  country_screening_results   CountryScreeningResult[]
 
   @@index([request_fingerprint, source_origin, retrieved_at])
   @@index([response_checksum])
 }
 
-/// Frozen acquisition intent for one confirmed HS classification and one common reporting period.
+/// Frozen acquisition intent for one confirmed HS classification. Each candidate reporter may be
+/// analysed across its own consecutive window, ending at the latest year it actually reported.
 /// Execution state lives on child items; the definition and policy snapshot are never recalculated.
 model CountryEvidencePlan {
   id                        String          @id @default(cuid())
@@ -3567,23 +4080,36 @@ model CountryEvidencePlan {
   policy_version            String
   policy_hash               String
   policy_snapshot           Json
+  /// Union of every reporter's window. Individual reporters may cover different years.
   period_set                Int[]
+  /// The newest year any reporter in this plan is analysed through.
   latest_common_year        Int
   requested_history_years   Int
   actual_history_years      Int
+  /// Phase 1G: each reporter's own consecutive analysis window, ending at the latest year that
+  /// reporter actually has usable evidence for. Null on plans built before per-reporter windows.
+  reporter_period_windows   Json?
+  /// The period the screen preferred. Per-reporter lag is measured against this.
+  preferred_period          Int?
   candidate_strategy        String
   status                    String          @default("planned")
   estimated_call_cost       Int
   allow_partial_execution   Boolean         @default(false)
+  /// The frozen Stage-A screening run whose shortlist produced this plan's candidate reporters.
+  /// Nullable because the pilot request path names countries directly and has no screening run;
+  /// when set it is the answer to "which global screen produced this Deep Country Truth?".
+  screening_run_id          String?
   created_at                DateTime        @default(now())
   updated_at                DateTime        @updatedAt
 
   product_classification ProductClassification     @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  screening_run          CountryScreeningRun?      @relation(fields: [screening_run_id], references: [id], onDelete: SetNull)
   items                  CountryEvidencePlanItem[]
   manifests              CountryEvidenceManifest[]
 
   @@index([product_classification_id, created_at])
   @@index([status, created_at])
+  @@index([screening_run_id])
 }
 
 /// One independently resolvable provider request in a Country Evidence Plan.
@@ -3660,12 +4186,55 @@ model CountryTradeMetrics {
   checksum                  String   @unique
   created_at                DateTime @default(now())
 
-  manifest               CountryEvidenceManifest @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
-  product_classification ProductClassification   @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  manifest               CountryEvidenceManifest    @relation(fields: [manifest_id], references: [id], onDelete: Restrict)
+  product_classification ProductClassification      @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
   market_assessments     MarketAssessment[]
+  fact_snapshots         CountryTruthFactSnapshot[]
 
   @@unique([manifest_id, reporter_code, metric_policy_hash, calculation_version])
   @@index([product_classification_id, reporter_code, created_at])
+}
+
+/// Immutable Phase 1H fact manifest for one exporter × product classification × country.
+///
+/// The payload contains typed first-party facts and selected external facts, never component or
+/// overall scores. `snapshot_key` identifies the frozen question and selected evidence;
+/// `facts_checksum` protects the canonical payload. A semantic change must use a new calculation
+/// version or policy hash and therefore creates a new row instead of reinterpreting history.
+model CountryTruthFactSnapshot {
+  id                         String                   @id @default(cuid())
+  snapshot_key               String                   @unique(map: "CountryTruthFactSnapshot_snapshot_key_key")
+  schema_version             String
+  calculation_version        String
+  exporter_org_id            String
+  product_id                 String
+  product_classification_id  String
+  country_trade_metrics_id   String
+  reporter_code              String
+  country_code               String                   @db.VarChar(2)
+  hs_code                    String
+  hs_revision                String
+  as_of_date                 DateTime
+  exporter_snapshot_checksum String
+  selection_policy_version   Int
+  selection_policy_hash      String
+  selection_policy_snapshot  Json
+  facts_payload              Json
+  facts_checksum             String
+  evidence_origins           EvidenceOrigin[]         @default([unknown_legacy])
+  assertion_classes          EvidenceAssertionClass[] @default([unknown_legacy])
+  created_at                 DateTime                 @default(now())
+
+  exporter_org           ExporterOrg           @relation(fields: [exporter_org_id], references: [id], onDelete: Restrict)
+  product                Product               @relation(fields: [product_id], references: [id], onDelete: Restrict)
+  product_classification ProductClassification @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  country_trade_metrics  CountryTradeMetrics   @relation(fields: [country_trade_metrics_id], references: [id], onDelete: Restrict)
+  market_assessments     MarketAssessment[]
+
+  @@unique([country_trade_metrics_id, exporter_snapshot_checksum, selection_policy_hash, calculation_version], map: "CountryTruthFactSnapshot_input_identity_key")
+  @@index([exporter_org_id, product_id, country_code, created_at], map: "CountryTruthFactSnapshot_org_product_country_created_idx")
+  @@index([product_classification_id, reporter_code, as_of_date], map: "CountryTruthFactSnapshot_classification_reporter_as_of_idx")
+  @@index([facts_checksum], map: "CountryTruthFactSnapshot_facts_checksum_idx")
 }
 
 model CountryEvidenceManifestReference {
@@ -3687,6 +4256,119 @@ model CountryEvidenceManifestReference {
   source_evidence SourceEvidence          @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
 
   @@unique([manifest_id, plan_item_key])
+  @@index([source_evidence_id])
+}
+
+/// Frozen Stage A global screening intent for one confirmed classification and one annual period.
+///
+/// The definition, the country universe it evaluated and the policy that chose it are frozen at
+/// creation; only execution state advances. A completed run and its results are immutable, so a
+/// historical shortlist can always prove which countries were considered and on what evidence.
+model CountryScreeningRun {
+  id                               String          @id @default(cuid())
+  run_key                          String          @unique
+  product_classification_id        String
+  hs_code                          String
+  hs_revision                      String
+  as_of_date                       DateTime
+  /// The period this run PREFERS. Phase 1G lets each market resolve to an older usable year;
+  /// the year actually used is `CountryScreeningResult.observation_period`.
+  screening_period                 Int
+  /// Frozen latest-usable-period policy. Execution reads this snapshot, never live config.
+  period_selection_policy_version  String
+  period_selection_policy_hash     String
+  period_selection_policy_snapshot Json
+  max_fallback_lookback_years      Int
+  source_mode                      TradeSourceMode
+  policy_version                   String
+  policy_hash                      String
+  policy_snapshot                  Json
+  universe_version                 String
+  universe_checksum                String
+  universe_size                    Int
+  /// Provider reporting identity frozen into the run. A reporter-reference refresh that moves
+  /// any reporter code changes this, the universe checksum, the run key and every request
+  /// fingerprint beneath it — so a completed run can never be reinterpreted under new codes.
+  reporter_registry_version        String
+  reporter_registry_checksum       String
+  /// Full resolved universe and its exclusions, so the evaluated set is provable after the fact.
+  universe_snapshot                Json
+  screening_algorithm_version      String
+  parser_version                   String
+  normalization_version            String
+  shortlist_target_size            Int
+  max_shortlist_size               Int
+  estimated_call_cost              Int
+  allow_partial_execution          Boolean         @default(false)
+  status                           String          @default("planned")
+  resolved_count                   Int             @default(0)
+  eligible_count                   Int             @default(0)
+  shortlist_size                   Int             @default(0)
+  physical_call_count              Int             @default(0)
+  /// Last quota accounting for this run: considered, reusable, required, estimated, available.
+  quota_snapshot                   Json?
+  completed_at                     DateTime?
+  created_at                       DateTime        @default(now())
+  updated_at                       DateTime        @updatedAt
+
+  evidence_plans CountryEvidencePlan[]
+
+  product_classification ProductClassification    @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  results                CountryScreeningResult[]
+
+  @@index([product_classification_id, created_at])
+  @@index([status, created_at])
+}
+
+/// One screened country. Missing, suppressed, unavailable and incompatible are distinct states
+/// and are never rewritten as an observed zero; `import_value` is only ever a real observation.
+model CountryScreeningResult {
+  id                    String    @id @default(cuid())
+  run_id                String
+  result_key            String    @unique
+  reporter_code         String
+  country_code          String    @db.VarChar(2)
+  iso_numeric           String
+  country_name          String
+  /// Canonical Comtrade request identity. Shared with the deep plan's latest World import item.
+  request_fingerprint   String
+  screening_status      String    @default("pending_acquisition")
+  screening_score       Decimal?  @db.Decimal(9, 6)
+  screening_rank        Int?
+  import_value          Decimal?  @db.Decimal(20, 3)
+  /// The observation's own status: observed, observed_zero, suppressed, missing, invalid.
+  import_value_status   String?
+  /// The year the usable observation actually came from. Differs per market under Phase 1G.
+  observation_period    Int?
+  /// The year this run preferred, so lag is readable without joining the run.
+  preferred_period      Int?
+  /// Years between the preferred and selected period. 0 = current.
+  period_lag            Int?
+  /// Evidence weight for that lag. Never applied to `import_value`.
+  evidence_confidence   Decimal?  @db.Decimal(6, 4)
+  /// Raw demand score discounted by evidence confidence. What ranking and shortlist use.
+  selection_score       Decimal?  @db.Decimal(9, 6)
+  /// The year acquisition must ask about next, when the period walk is waiting on evidence.
+  next_probe_period     Int?
+  freshness_state       String    @default("unknown")
+  source_evidence_id    String?
+  observation_id        String?
+  evidence_retrieved_at DateTime?
+  shortlisted           Boolean   @default(false)
+  decision_reason       String    @default("pending_acquisition")
+  provenance            Json?
+  attempts              Int       @default(0)
+  last_attempted_at     DateTime?
+  error                 String?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  run             CountryScreeningRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  source_evidence SourceEvidence?     @relation(fields: [source_evidence_id], references: [id], onDelete: Restrict)
+
+  @@unique([run_id, reporter_code])
+  @@index([run_id, screening_rank])
+  @@index([run_id, screening_status])
   @@index([source_evidence_id])
 }
 
@@ -4183,6 +4865,67 @@ enum TransportDocumentType {
 /// purpose: a rate with no traceable origin must not be recordable at all, and `rbi_reference`
 /// or `customs_notified` may only be claimed when the notification is cited (enforced by a
 /// database CHECK on `source_reference`).
+/// Immutable raw response from an authoritative public FX publisher (currently the ECB SDMX
+/// data portal). Kept apart from `ExchangeRateQuote`, which is exporter-scoped and holds
+/// tenant-recorded regulatory and bank rates: a published reference rate belongs to nobody, so
+/// scoping it to one exporter would either duplicate it per tenant or leak it between them.
+model AuthoritativeFxSnapshot {
+  id                     String                       @id @default(cuid())
+  provider               String
+  source_authority       String
+  source_dataset         String
+  source_dataset_version String?
+  /// The provider's own series identity, e.g. the SDMX key `EXR.D.INR.EUR.SP00.A`.
+  series_key             String
+  request_reference      String
+  requested_at           DateTime
+  retrieved_at           DateTime
+  http_status            Int
+  raw_response_checksum  String
+  raw_response_text      String
+  parser_version         String
+  normalization_version  String
+  environment            String
+  evidence_origin        EvidenceOrigin               @default(unknown_legacy)
+  completeness           EvidenceCompletenessStatus
+  status                 String                       @default("accepted")
+  observations           AuthoritativeFxObservation[]
+  created_at             DateTime                     @default(now())
+
+  @@index([provider, series_key, retrieved_at])
+  @@index([environment, retrieved_at])
+}
+
+/// One published reference observation: a rate FOR a stated date, not for a retrieval time.
+model AuthoritativeFxObservation {
+  id                    String         @id @default(cuid())
+  snapshot_id           String
+  provider              String
+  series_key            String
+  /// Units of quote_currency per ONE unit of base_currency, in the publisher's own direction.
+  /// ECB publishes foreign currency per euro, so base is EUR and quote is the foreign currency.
+  base_currency         String         @db.VarChar(3)
+  quote_currency        String         @db.VarChar(3)
+  rate                  Decimal        @db.Decimal(24, 10)
+  /// The date the observation IS FOR. Never the retrieval date.
+  observation_date      DateTime       @db.Date
+  observation_status    String
+  normalization_version String
+  parser_version        String
+  environment           String
+  evidence_origin       EvidenceOrigin @default(unknown_legacy)
+  retrieved_at          DateTime
+  created_at            DateTime       @default(now())
+
+  snapshot AuthoritativeFxSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Restrict)
+
+  /// One published value per series, date and normalization within an environment. A second
+  /// retrieval of the same day reuses the row instead of creating a rival observation.
+  @@unique([provider, series_key, observation_date, normalization_version, environment], map: "AuthoritativeFxObservation_identity_key")
+  @@index([environment, base_currency, quote_currency, observation_date])
+  @@index([snapshot_id])
+}
+
 enum ExchangeRateSource {
   rbi_reference
   customs_notified
@@ -4479,4 +5222,408 @@ model DocumentArtifact {
 
   @@unique([document_id, format])
   @@index([input_snapshot_id])
+}
+
+/// Lifecycle of an exporter's request for a global market scan.
+///
+/// A scan acquires one authoritative observation per reporting market — roughly 218 metered
+/// provider calls against a platform-wide quota. Phase 1F made execution staff-initiated for
+/// exactly that reason, so the exporter's action is a REQUEST and the metered work stays behind
+/// a human approval. `queued` and `running` mirror the screening job rather than duplicating it.
+enum MarketScanRequestStatus {
+  pending
+  approved
+  queued
+  running
+  completed
+  rejected
+  failed
+}
+
+/// One exporter request for a global market scan, and its approval trail.
+///
+/// The request carries a product and a classification identity and NOTHING about which markets
+/// to look at, which provider mode to use, or what policy to screen under: those are all derived
+/// server-side at approval time from the canonical services. There is deliberately no column
+/// here through which a client could influence the metered work.
+model MarketScanRequest {
+  id                        String                  @id @default(cuid())
+  exporter_org_id           String
+  product_id                String
+  /// The classification the request was raised against. Approval re-reads the product's current
+  /// confirmed classification and refuses if it has moved, so a stale identity is never screened.
+  product_classification_id String
+  /// Denormalised classification identity, frozen at request time, for the same staleness check.
+  hs6_code                  String
+  hs_revision               String
+
+  status           MarketScanRequestStatus @default(pending)
+  requested_by_id  String
+  requested_at     DateTime                @default(now())
+  decided_by_id    String?
+  decided_at       DateTime?
+  /// Required when `status` is `rejected`; the exporter is shown this verbatim.
+  rejection_reason String?
+
+  /// Set once approval hands off to the canonical screening service.
+  screening_job_id String?
+  screening_run_id String?
+  /// Why the request reached a terminal state without spending provider budget — for example
+  /// because a current completed screen already covered this exact classification and policy.
+  resolution_note  String?
+
+  correlation_id String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  exporter_org           ExporterOrg           @relation(fields: [exporter_org_id], references: [id], onDelete: Cascade)
+  product                Product               @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  product_classification ProductClassification @relation(fields: [product_classification_id], references: [id], onDelete: Restrict)
+  requested_by           User                  @relation("MarketScanRequester", fields: [requested_by_id], references: [id])
+  decided_by             User?                 @relation("MarketScanDecider", fields: [decided_by_id], references: [id])
+
+  @@index([exporter_org_id, status, requested_at])
+  @@index([status, requested_at])
+  @@index([product_classification_id, status])
+}
+
+/// Lifecycle shared by every retained official bulk/file authority release. The database enum
+/// keeps its historical TARIC name through @map so applied migrations and old rows are untouched.
+enum AuthorityReleaseStatus {
+  /// Uploaded and validated, but not yet the release evidence is read from.
+  imported
+  /// The release new ingests resolve against.
+  active
+  /// Superseded by a newer release. Retained: assessments cite the release they used.
+  superseded
+  /// Validation failed; the artifact is kept so the failure is inspectable.
+  rejected
+
+  @@map("TaricReleaseStatus")
+}
+
+enum AuthorityReleaseChange {
+  NEW_RELEASE
+  CHANGED
+
+  @@map("AuthorityReleaseChange")
+}
+
+/// One immutable raw release from a customs/tariff authority. This is the safely-generalised
+/// former TaricRelease model: it remains mapped to the same physical table, preserving every
+/// historical TARIC row while allowing Canada and future bulk packs to share one lifecycle.
+/// Append-only record of a bulk adapter's REAL-ARCHIVE operational qualification.
+///
+/// Semantic correctness is proven by tests; this proves the other half — that decoding the actual
+/// retained archive fits the worker it runs on. It cannot live on AuthorityRelease because that row
+/// is immutable by trigger (including `validation`), and qualification is genuinely re-derived: a
+/// new parser version or a materially larger archive invalidates the previous result. Rows are
+/// appended, never updated, so a regression is visible as history rather than overwritten.
+model AuthorityReleaseQualification {
+  id String @id @default(cuid())
+
+  release_id String
+  source_family String
+  release_identifier String
+  /// Qualification is only valid for the parser version it was measured against.
+  parser_version String
+  /// Ties the result to exact bytes; a different archive is a different subject.
+  archive_checksum String
+
+  row_count Int
+  peak_rss_bytes BigInt
+  ceiling_bytes BigInt
+  /// How many bulk decodes shared the process during measurement. 1 = per-adapter ceiling.
+  concurrency Int @default(1)
+  /// passed | warned | failed
+  status String
+
+  qualified_at DateTime @default(now())
+
+  release AuthorityRelease @relation(fields: [release_id], references: [id], onDelete: Restrict)
+
+  @@index([release_id, qualified_at], map: "AuthorityReleaseQualification_release_idx")
+  @@index([source_family, qualified_at], map: "AuthorityReleaseQualification_family_idx")
+}
+
+model AuthorityRelease {
+  id String @id @default(cuid())
+
+  /// Operator-facing label, e.g. "TARIC 2026-09" or "CBSA T2026-2".
+  label String
+  source_family String
+  authority String @map("source_authority")
+  /// Exact destinations the release is authoritative for; never inferred from a customs union.
+  destination_scope Json
+  source_url String
+  release_identifier String
+  reference_date DateTime
+  source_distribution String
+  retrieved_at DateTime
+  source_format String
+
+  /// SHA-256 of the retained source bundle. It is deliberately not globally unique: identical
+  /// bytes may be published under different release identities or source contexts.
+  checksum String @map("bundle_sha256")
+  size_bytes Int @map("bundle_size_bytes")
+  /// Where the original artifact is retained, through the existing secure storage layer.
+  artifact_object_key String
+  /// Per-file name/sha256/size, so a single altered table is detectable after the fact.
+  file_manifest    Json
+
+  reader_version String
+  parser_version String
+  status         AuthorityReleaseStatus @default(imported)
+  /// Validation detail, including the failure reason when `status` is `rejected`.
+  validation     Json
+  change_classification AuthorityReleaseChange
+  change_basis Json
+  previous_release_id String?
+
+  imported_by_id String
+  imported_at    DateTime @default(now())
+  activated_at   DateTime?
+  superseded_at  DateTime?
+  correlation_id String?
+
+  imported_by User @relation("AuthorityReleaseImporter", fields: [imported_by_id], references: [id])
+  previous_release AuthorityRelease? @relation("AuthorityReleaseHistory", fields: [previous_release_id], references: [id], onDelete: Restrict)
+  later_releases AuthorityRelease[] @relation("AuthorityReleaseHistory")
+  evidence_snapshots MarketAccessEvidenceSnapshot[]
+  qualifications AuthorityReleaseQualification[]
+
+  @@unique([source_family, authority, release_identifier, checksum], map: "AuthorityRelease_logical_acquisition_key")
+  @@index([source_family, authority, status, reference_date], map: "AuthorityRelease_source_status_reference_idx")
+  @@index([previous_release_id], map: "AuthorityRelease_previous_release_id_idx")
+  @@map("TaricRelease")
+}
+
+/// docs/36 §3.1. A retained bulk trade dataset release, e.g. CEPII BACI HS17 V202601. Rows are
+/// never stored in the database: the archive is partitioned by year and HS2 chapter into gzip CSV
+/// objects in storage, each with its own checksum, and a run reads only the partitions it needs.
+/// Identity fields are immutable by trigger; only the import's own progress fields move, and only
+/// while `status` is `importing`.
+model TradeDatasetRelease {
+  id              String                    @id @default(cuid())
+  /// Provider key, e.g. `cepii_baci`.
+  provider        String
+  /// The publisher's version label, e.g. `V202601`.
+  dataset_version String
+  /// The HS nomenclature the publisher used for this file, e.g. `HS17`.
+  hs_revision     String
+  first_year      Int
+  last_year       Int
+  source_url      String
+  /// Licence identifier, e.g. `etalab-2.0`. Attribution obligations travel with it.
+  licence         String
+  archive_sha256  String
+  archive_bytes   BigInt
+  retrieved_at    DateTime
+  reader_version  String
+  parser_version  String
+  status          TradeDatasetReleaseStatus @default(importing)
+  row_count       BigInt                    @default(0)
+  partition_count Int                       @default(0)
+  /// SHA-256 over the sorted partition manifest, so the whole release has one identity.
+  manifest_sha256 String?
+  /// Member listing, header checks and, on failure, the reason.
+  validation      Json                      @default("{}")
+  environment     String
+  evidence_origin EvidenceOrigin
+  imported_by_id  String
+  imported_at     DateTime                  @default(now())
+  completed_at    DateTime?
+  superseded_at   DateTime?
+  correlation_id  String?
+
+  imported_by User                    @relation("TradeDatasetImporter", fields: [imported_by_id], references: [id])
+  partitions  TradeDatasetPartition[]
+  countries   TradeDatasetCountry[]
+
+  @@index([provider, hs_revision, status, last_year], map: "TradeDatasetRelease_provider_status_idx")
+}
+
+enum TradeDatasetReleaseStatus {
+  importing
+  ready
+  failed
+  superseded
+}
+
+/// One year × HS2 chapter slice of a trade dataset release, retained as a gzip CSV object.
+/// Append-only.
+model TradeDatasetPartition {
+  id         String  @id @default(cuid())
+  release_id String
+  year       Int
+  hs_chapter String  @db.VarChar(2)
+  object_key String
+  sha256     String
+  bytes      Int
+  row_count  Int
+  /// Sum of the partition's trade values, in the publisher's unit (BACI: thousand current USD).
+  value_sum  Decimal @db.Decimal(24, 3)
+
+  release TradeDatasetRelease @relation(fields: [release_id], references: [id], onDelete: Restrict)
+
+  @@unique([release_id, year, hs_chapter], map: "TradeDatasetPartition_release_year_chapter_key")
+}
+
+/// The release's own country reference: the publisher's numeric code to ISO identity. Provider
+/// identity comes from the provider's reference, never from an alias map (AGENTS.md).
+/// Append-only.
+model TradeDatasetCountry {
+  id            String  @id @default(cuid())
+  release_id    String
+  provider_code String
+  iso2          String? @db.VarChar(2)
+  iso3          String? @db.VarChar(3)
+  name          String
+
+  release TradeDatasetRelease @relation(fields: [release_id], references: [id], onDelete: Restrict)
+
+  @@unique([release_id, provider_code], map: "TradeDatasetCountry_release_code_key")
+  @@index([release_id, iso2], map: "TradeDatasetCountry_release_iso2_idx")
+}
+
+/// docs/36 §3.2. A small reference dataset (ECGC ratings, WDI indicators, capital coordinates,
+/// India's trade agreements, Comtrade data availability) held as validated, immutable rows. A run
+/// freezes the release ids it read. Only `status` and `superseded_at` may change, once.
+model ReferenceDatasetRelease {
+  id              String                        @id @default(cuid())
+  dataset_key     String
+  /// The publisher's own version or "as of" label, e.g. `ST w.e.f. 01.07.2026`.
+  version         String
+  source_url      String
+  source_sha256   String
+  source_bytes    Int
+  licence         String
+  retrieved_at    DateTime
+  parser_version  String
+  row_count       Int
+  rows            Json
+  rows_sha256     String
+  validation      Json                          @default("{}")
+  status          ReferenceDatasetReleaseStatus @default(active)
+  environment     String
+  evidence_origin EvidenceOrigin
+  imported_by_id  String
+  imported_at     DateTime                      @default(now())
+  superseded_at   DateTime?
+  correlation_id  String?
+
+  imported_by User @relation("ReferenceDatasetImporter", fields: [imported_by_id], references: [id])
+
+  @@unique([dataset_key, source_sha256, parser_version, environment], map: "ReferenceDatasetRelease_identity_key")
+  @@index([dataset_key, environment, status, imported_at], map: "ReferenceDatasetRelease_key_status_idx")
+}
+
+enum ReferenceDatasetReleaseStatus {
+  active
+  superseded
+}
+
+enum RegionalDemandStatus {
+  queued
+  running
+  completed
+  /// The source could not be asked (for example, no API key is configured); `reason` says why.
+  unavailable
+  failed
+}
+
+/// Regional demand inside one Demand Discovery v5 market (D-033, docs/38): where in the market the
+/// product's imports arrive. For the US: states of destination and ports of entry, from the Census
+/// Bureau's monthly trade figures. One row per request; the market page shows the newest completed
+/// row. `result` is written once when the run completes and never recalculated.
+model RegionalDemandRun {
+  id                   String               @id @default(cuid())
+  market_assessment_id String
+  exporter_org_id      String
+  product_id           String?
+  country_code         String               @db.VarChar(2)
+  hs6_code             String               @db.VarChar(6)
+  /// Which official source answers for this market, e.g. `us_census_intltrade`.
+  source_key           String
+  status               RegionalDemandStatus @default(queued)
+  /// hand_off (a top-10 market, D-019) | requested (from the market page) | operator (a script).
+  trigger              String
+  requested_by_id      String?
+  job_id               String?
+  result               Json?
+  /// Why the run is unavailable or failed, in plain words.
+  reason               String?
+  evidence_origin      EvidenceOrigin       @default(public_real)
+  retrieved_at         DateTime?
+  created_at           DateTime             @default(now())
+  completed_at         DateTime?
+
+  market_assessment MarketAssessment @relation(fields: [market_assessment_id], references: [id], onDelete: Cascade)
+
+  @@index([market_assessment_id, created_at])
+  @@index([exporter_org_id, created_at])
+}
+
+/// An official list of importers as published (D-033, docs/38 §2): HMRC's monthly importer details
+/// (UK) and ISED's Canadian Importers Database. One row per imported file set. Several periods can be
+/// active at once (each month is its own list); importing a file for a period that already has an
+/// active release supersedes that release. Entries are the publisher's rows, merged per importer.
+model ImporterListRelease {
+  id              String                        @id @default(cuid())
+  /// uk_hmrc_importers | ca_cid_major_importers
+  source_key      String
+  country_code    String                        @db.VarChar(2)
+  /// The period the list describes: a month for HMRC ("2026-08"), a year for ISED ("2023").
+  period          String
+  /// Each file's name, sha256 and size.
+  file_manifest   Json
+  source_url      String
+  /// sha256 over the file manifest, so a file set has one identity.
+  source_sha256   String
+  source_bytes    Int
+  licence         String
+  parser_version  String
+  row_count       Int
+  validation      Json                          @default("{}")
+  status          ReferenceDatasetReleaseStatus @default(active)
+  retrieved_at    DateTime
+  environment     String
+  evidence_origin EvidenceOrigin
+  imported_by_id  String
+  imported_at     DateTime                      @default(now())
+  superseded_at   DateTime?
+  correlation_id  String?
+
+  entries ImporterListEntry[]
+
+  @@unique([source_key, source_sha256, parser_version, environment], map: "ImporterListRelease_identity_key")
+  @@index([source_key, environment, status, period])
+}
+
+model ImporterListEntry {
+  id            String   @id @default(cuid())
+  release_id    String
+  /// The importer within its source: normalised name and postcode.
+  entity_key    String
+  name          String
+  address_lines String[]
+  town          String?
+  postcode      String?
+  region_code   String?
+  region_name   String?
+  /// Codes as published: eight-digit CN for HMRC, HS6 or HS10 for ISED; a two-digit chapter where the
+  /// publisher suppressed the detail.
+  hs_codes      String[]
+  /// The distinct six-digit headings of the codes above that have six digits or more.
+  hs6_codes     String[]
+  /// ISED's by-country list: "<hs6>:<ISO2>" pairs, e.g. "570110:IN".
+  origin_hs6    String[] @default([])
+  /// What the source says about the entry, e.g. a non-resident importer.
+  notes         Json     @default("[]")
+
+  release ImporterListRelease @relation(fields: [release_id], references: [id], onDelete: Cascade)
+
+  @@unique([release_id, entity_key])
+  @@index([hs6_codes(ops: ArrayOps)], type: Gin)
+  @@index([origin_hs6(ops: ArrayOps)], type: Gin)
 }

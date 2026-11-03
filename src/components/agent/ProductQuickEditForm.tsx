@@ -25,7 +25,7 @@ interface ProductFields {
   packaging: string;
 }
 
-export function ProductQuickEditForm({ productId, initial }: { productId: string; initial: Partial<ProductFields> }) {
+export function ProductQuickEditForm({ exporterOrgId, productId, initial }: { exporterOrgId: string; productId: string; initial: Partial<ProductFields> }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [fields, setFields] = useState<ProductFields>({
@@ -55,18 +55,20 @@ export function ProductQuickEditForm({ productId, initial }: { productId: string
     setBusy(true);
     setError(null);
     try {
-      await apiPatch(`/api/v1/products/${productId}`, {
-        capacity_value: fields.capacity_value ? Number(fields.capacity_value) : null,
+      // Same Phase 1H declaration endpoint as the full exporter-information page. The server
+      // decides provenance; an agent using this compact editor cannot create verified facts.
+      await apiPatch(`/api/v1/exporters/${exporterOrgId}/products/${productId}/operational-facts`, {
+        capacity_value: fields.capacity_value || null,
         capacity_unit: fields.capacity_unit || null,
-        moq_value: fields.moq_value ? Number(fields.moq_value) : null,
+        moq_value: fields.moq_value || null,
         moq_unit: fields.moq_unit || null,
-        price_target_amount: fields.price_target_amount ? Number(fields.price_target_amount) : null,
+        price_target_amount: fields.price_target_amount || null,
         price_target_currency: fields.price_target_currency || null,
         price_target_quantity_unit: fields.price_target_quantity_unit || null,
         price_target_incoterm: fields.price_target_incoterm || null,
         lead_time_days: fields.lead_time_days ? Number(fields.lead_time_days) : null,
         delivery_commitment_days: fields.delivery_commitment_days ? Number(fields.delivery_commitment_days) : null,
-        desired_order_size_amount: fields.desired_order_size_amount ? Number(fields.desired_order_size_amount) : null,
+        desired_order_size_amount: fields.desired_order_size_amount || null,
         desired_order_size_currency: fields.desired_order_size_currency || null,
         customization_capability: fields.customization_capability || null,
         packaging_capability: fields.packaging_capability || null,
@@ -96,7 +98,7 @@ export function ProductQuickEditForm({ productId, initial }: { productId: string
           Capacity
           <div className="mt-0.5 flex gap-1">
             <input value={fields.capacity_value} onChange={set('capacity_value')} placeholder="Value" inputMode="decimal" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
-            <input value={fields.capacity_unit} onChange={set('capacity_unit')} placeholder="Unit (e.g. MT/month)" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
+            <input value={fields.capacity_unit} onChange={set('capacity_unit')} placeholder="Unit (e.g. tonne)" className="w-full rounded border border-[var(--color-border)] bg-surface px-2 py-1 text-primary focus-visible-ring" />
           </div>
         </label>
         <label className="col-span-2">

@@ -16,6 +16,7 @@
 import Link from 'next/link';
 import { OrgTier } from '@prisma/client';
 import { redirect } from 'next/navigation';
+import { LegalLine } from '@/components/brand/LegalLine';
 import { Wordmark } from '@/components/brand/Wordmark';
 import { JourneyFrame } from '@/components/ui/JourneyFrame';
 import { buttonClass } from '@/components/ui/Button';
@@ -164,7 +165,7 @@ function LandingPage() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-shell flex-wrap items-center justify-between gap-6 px-5 py-10 sm:px-8">
           <Wordmark size="sm" tagline />
-          <p className="text-xs text-muted">© {new Date().getFullYear()} ClearTrade</p>
+          <LegalLine className="sm:text-right" />
         </div>
       </footer>
     </div>

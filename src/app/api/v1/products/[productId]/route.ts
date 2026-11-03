@@ -8,29 +8,10 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { requirePrincipal } from '@/lib/auth';
-import { AUDIT_ACTIONS, summarize, writeAuditEvent } from '@/lib/audit';
-import { assertCan, assertOrgAccess } from '@/lib/permissions';
 import { errorResponse, newCorrelationId, notFound, single, validationError } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
 import { quickEditProductSchema, zodFieldErrors } from '@/lib/validators';
-
-const EDITABLE_FIELDS: (
-  | 'capacity_value'
-  | 'capacity_unit'
-  | 'moq_value'
-  | 'moq_unit'
-  | 'price_target_amount'
-  | 'price_target_currency'
-  | 'price_target_quantity_unit'
-  | 'price_target_incoterm'
-  | 'lead_time_days'
-  | 'delivery_commitment_days'
-  | 'desired_order_size_amount'
-  | 'desired_order_size_currency'
-  | 'customization_capability'
-  | 'packaging_capability'
-  | 'packaging'
-)[] = ['capacity_value', 'capacity_unit', 'moq_value', 'moq_unit', 'price_target_amount', 'price_target_currency', 'price_target_quantity_unit', 'price_target_incoterm', 'lead_time_days', 'delivery_commitment_days', 'desired_order_size_amount', 'desired_order_size_currency', 'customization_capability', 'packaging_capability', 'packaging'];
+import { declareProductOperationalFacts } from '@/lib/exporter-facts/service';
 
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ productId: string }> }) {
   const correlationId = newCorrelationId();
@@ -38,10 +19,8 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ produ
     const principal = await requirePrincipal();
     const { productId } = await ctx.params;
 
-    const product = await prisma.product.findUnique({ where: { id: productId } });
+    const product = await prisma.product.findUnique({ where: { id: productId }, select: { exporter_org_id: true } });
     if (!product) throw notFound('That product is not available.');
-    await assertOrgAccess(principal, product.exporter_org_id);
-    assertCan(principal, 'exporter_master_data.edit');
 
     const body = await request.json().catch(() => null);
     const parsed = quickEditProductSchema.safeParse(body);
@@ -52,41 +31,21 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ produ
       throw validationError([{ field: 'packaging', code: 'required', message: 'Nothing to update.' }]);
     }
 
-    const before = summarize(product, EDITABLE_FIELDS);
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const row = await tx.product.update({
-        where: { id: productId },
-        data: {
-          ...(input.capacity_value !== undefined ? { capacity_value: input.capacity_value } : {}),
-          ...(input.capacity_unit !== undefined ? { capacity_unit: input.capacity_unit } : {}),
-          ...(input.moq_value !== undefined ? { moq_value: input.moq_value } : {}),
-          ...(input.moq_unit !== undefined ? { moq_unit: input.moq_unit } : {}),
-          ...(input.price_target_amount !== undefined ? { price_target_amount: input.price_target_amount } : {}),
-          ...(input.price_target_currency !== undefined ? { price_target_currency: input.price_target_currency } : {}),
-          ...(input.price_target_quantity_unit !== undefined ? { price_target_quantity_unit: input.price_target_quantity_unit } : {}),
-          ...(input.price_target_incoterm !== undefined ? { price_target_incoterm: input.price_target_incoterm } : {}),
-          ...(input.lead_time_days !== undefined ? { lead_time_days: input.lead_time_days } : {}),
-          ...(input.delivery_commitment_days !== undefined ? { delivery_commitment_days: input.delivery_commitment_days } : {}),
-          ...(input.desired_order_size_amount !== undefined ? { desired_order_size_amount: input.desired_order_size_amount } : {}),
-          ...(input.desired_order_size_currency !== undefined ? { desired_order_size_currency: input.desired_order_size_currency?.toUpperCase() } : {}),
-          ...(input.customization_capability !== undefined ? { customization_capability: input.customization_capability } : {}),
-          ...(input.packaging_capability !== undefined ? { packaging_capability: input.packaging_capability } : {}),
-          ...(input.packaging !== undefined ? { packaging: input.packaging } : {}),
-        },
-      });
-      await writeAuditEvent({
-        db: tx,
-        actor: principal,
-        action: AUDIT_ACTIONS.update,
-        object_type: 'product',
-        object_id: row.id,
-        exporter_org_id: row.exporter_org_id,
-        before_summary: before,
-        after_summary: summarize(row, EDITABLE_FIELDS),
-        correlation_id: correlationId,
-      });
-      return row;
+    const decimal = (value: { toString(): string } | null | undefined) => value == null ? value : value.toString();
+    // Compatibility alias only: the canonical service owns validation, scope, audit and the
+    // exporter_declared provenance decision. There is no second master-data write path here.
+    const updated = await declareProductOperationalFacts({
+      actor: principal,
+      exporter_org_id: product.exporter_org_id,
+      product_id: productId,
+      correlation_id: correlationId,
+      facts: {
+        ...input,
+        capacity_value: decimal(input.capacity_value),
+        moq_value: decimal(input.moq_value),
+        price_target_amount: decimal(input.price_target_amount),
+        desired_order_size_amount: decimal(input.desired_order_size_amount),
+      },
     });
 
     return NextResponse.json(single(updated), { headers: { 'x-correlation-id': correlationId } });

@@ -10,9 +10,15 @@
  * domain (RFC 2606 — can never resolve or collide with a real address), so `reset` can find
  * exactly its own rows and nothing else. There is no "delete everything" path.
  *
- * ENVIRONMENT GATE: refuses to run unless APP_ENV is `staging` or `local`. Production is
- * rejected explicitly rather than merely not matched, so a mis-set variable cannot make this
- * runnable there.
+ * ENVIRONMENT GATE: `seed`, `seed-discovery` and `promote` refuse to run unless APP_ENV is
+ * `staging` or `local`; production is rejected explicitly rather than merely not matched, so a
+ * mis-set variable cannot make them runnable there. On production only `status` (read-only) and
+ * `reset` run, and `reset` only with `--confirm-production=<database fingerprint prefix>` and
+ * `--actor-email=<admin>`: pilot rows reached production's database in August 2026, while an old
+ * staging service pointed at it (docs/39, E-049). A production reset records one audit event.
+ * `reset --include-reserved-test-domains` also removes accounts on domains nobody can receive
+ * mail at (`.test`, `.example`, `.invalid`, `.localhost`, `example.com/.net/.org`), with any
+ * organisation all of whose members are removed.
  *
  *   railway run -- npx tsx scripts/staging-pilot.ts status
  *   PILOT_PASSWORD='<choose one>' railway run -- npx tsx scripts/staging-pilot.ts seed
@@ -24,13 +30,17 @@
  */
 
 import {
-  BankPresentationType, BillOfExchangeType, DealStage, DisputeSeverity, DisputeStatus, DocType,
+  AuditSource, BankPresentationType, BillOfExchangeType, DealStage, DisputeSeverity, DisputeStatus, DocType,
   EvidenceOrigin, ExceptionState, ExchangeRateSource, FreightPaymentTerm, GenerationStatus,
   InsuranceCaseStatus, NotifyPartyMode, OrgTier, PartnerType, PaymentSource, PaymentStatus,
   Prisma, PrismaClient, ScopeType, ShipmentMode, ShipmentStatus, SlaState, TaskPriority,
   TaskState, TransportDocumentType, UserRole, VgmMethod,
 } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { hashPassword } from '../src/lib/auth';
+import { productionConfirmationProblem } from '../src/lib/production-confirmation';
+import { isReservedTestEmail, RESERVED_TEST_DOMAINS, RESERVED_TEST_TLDS } from '../src/lib/reserved-test-domains';
+import { validateDatabaseEnvironment } from '../src/lib/runtime-config';
 import { seedAlphaDiscoveryFixture } from '../src/lib/staging-pilot-discovery';
 
 const prisma = new PrismaClient();
@@ -40,10 +50,12 @@ const LABEL = '[PILOT]';
 const DOMAIN = 'pilot.invalid';
 const isPilotEmail = { contains: `@${DOMAIN}` };
 
-function assertSafeEnvironment() {
+/** `write` commands never run on production; `read` (status) and `reset` may (see the header). */
+function assertSafeEnvironment(mode: 'write' | 'read' | 'reset' = 'write') {
   const env = process.env.APP_ENV ?? 'local';
   if (env === 'production' || process.env.DATABASE_ENVIRONMENT === 'production') {
-    throw new Error('staging-pilot refuses to run against production.');
+    if (mode === 'write') throw new Error('staging-pilot refuses to run against production.');
+    return 'production';
   }
   if (env !== 'staging' && env !== 'local') {
     throw new Error(`staging-pilot expects APP_ENV=staging or local, found "${env}".`);
@@ -439,7 +451,7 @@ async function promote(email: string) {
 }
 
 async function status() {
-  const env = assertSafeEnvironment();
+  const env = assertSafeEnvironment('read');
   const [users, orgs, deals, docs, artifacts, assignments, invitations] = await Promise.all([
     prisma.user.count({ where: { email: isPilotEmail } }),
     prisma.exporterOrg.count({ where: { display_name: { startsWith: LABEL } } }),
@@ -506,14 +518,31 @@ async function seedDiscovery() {
  * and reports zero counts rather than erroring.
  */
 async function reset() {
-  const env = assertSafeEnvironment();
+  const env = assertSafeEnvironment('reset');
+  const productionActor = env === 'production' ? await confirmProductionReset() : null;
 
-  const [orgs, users] = await Promise.all([
+  // `--include-reserved-test-domains` also removes accounts on domains nobody can receive mail at
+  // (src/lib/reserved-test-domains.ts), with any organisation whose members are all being removed.
+  const includeReserved = process.argv.includes('--include-reserved-test-domains');
+  const [orgs, pilotUsers, reservedCandidates] = await Promise.all([
     prisma.exporterOrg.findMany({ where: { display_name: { startsWith: LABEL } }, select: { id: true } }),
     prisma.user.findMany({ where: { email: isPilotEmail }, select: { id: true } }),
+    includeReserved
+      ? prisma.user.findMany({
+        where: { OR: [...RESERVED_TEST_TLDS, ...RESERVED_TEST_DOMAINS.map((domain) => `@${domain}`)].map((suffix) => ({ email: { endsWith: suffix, mode: 'insensitive' as const } })) },
+        select: { id: true, email: true, exporter_org_id: true },
+      })
+      : Promise.resolve([]),
   ]);
+  const reservedUsers = reservedCandidates.filter((user) => isReservedTestEmail(user.email) && !pilotUsers.some((pilot) => pilot.id === user.id));
+  const userIds = [...pilotUsers.map((u) => u.id), ...reservedUsers.map((u) => u.id)];
+  const reservedEmails = reservedUsers.map((user) => user.email);
   const orgIds = orgs.map((o) => o.id);
-  const userIds = users.map((u) => u.id);
+  for (const orgId of new Set(reservedUsers.map((user) => user.exporter_org_id).filter((id): id is string => id != null))) {
+    if (orgIds.includes(orgId)) continue;
+    const otherMembers = await prisma.user.count({ where: { exporter_org_id: orgId, id: { notIn: userIds } } });
+    if (otherMembers === 0) orgIds.push(orgId);
+  }
 
   // Issued invoice numbers are protected by a no-delete trigger, so a pilot org cannot be
   // removed while it holds any — the cascade would hit the trigger and the whole transaction
@@ -562,6 +591,7 @@ async function reset() {
       where: {
         OR: [
           { email: isPilotEmail },
+          { email: { in: reservedEmails } },
           { invited_by_id: { in: userIds } },
           { revoked_by_id: { in: userIds } },
           { accepted_user_id: { in: userIds } },
@@ -584,8 +614,9 @@ async function reset() {
     // rows are removed, after pilot shipments have cascaded away with their organisations.
     prisma.partner.deleteMany({ where: { display_name: { startsWith: LABEL } } }),
     // Last: every inbound reference that could block a User row has been cleared or deleted
-    // above, in dependency order.
-    prisma.user.deleteMany({ where: { email: isPilotEmail } }),
+    // above, in dependency order. Any other reference (a reserved-domain account made by another
+    // script) aborts the whole transaction, so nothing is half-removed.
+    prisma.user.deleteMany({ where: { id: { in: userIds } } }),
   ]);
 
   console.log(`environment          ${env}`);
@@ -598,6 +629,43 @@ async function reset() {
   console.log(`buyers removed           ${deletedBuyers.count}`);
   console.log(`partners removed         ${deletedPartners.count}`);
   console.log(`users removed            ${deletedUsers.count}`);
+  console.log(`  of them reserved-domain ${reservedUsers.length}`);
+
+  if (productionActor) {
+    // Production keeps a record of its own clean-up: who removed the pilot rows, and how many.
+    await prisma.auditEvent.create({
+      data: {
+        actor_user_id: productionActor.id,
+        role: productionActor.role,
+        action: 'pilot_data_removed',
+        object_type: 'pilot_dataset',
+        object_id: DOMAIN,
+        after_summary: {
+          reserved_test_domain_users: reservedUsers.length,
+          orgs: deletedOrgs.count, users: deletedUsers.count, audit_events: deletedAudit.count,
+          invitations: deletedInvites.count, assignments: deletedAssignments.count,
+          buyers: deletedBuyers.count, partners: deletedPartners.count,
+        },
+        correlation_id: randomUUID(),
+        source: AuditSource.admin,
+      },
+    });
+    console.log('audit event recorded     pilot_data_removed');
+  }
+}
+
+/**
+ * A production reset names the database it means and the admin who runs it (see the header).
+ * Throws before anything is deleted when either is missing or wrong.
+ */
+async function confirmProductionReset() {
+  const problem = productionConfirmationProblem(validateDatabaseEnvironment('worker'), process.argv, 'staging-pilot reset');
+  if (problem) throw new Error(problem);
+  const emails = process.argv.filter((value) => value.startsWith('--actor-email=')).map((value) => value.slice('--actor-email='.length).trim().toLowerCase());
+  if (emails.length !== 1) throw new Error('staging-pilot reset on production needs --actor-email=<admin> once.');
+  const actor = await prisma.user.findUnique({ where: { email: emails[0]! }, select: { id: true, role: true } });
+  if (!actor || actor.role !== UserRole.admin) throw new Error(`${emails[0]} is not a ClearTrade admin.`);
+  return actor;
 }
 
 async function main() {
@@ -609,7 +677,7 @@ async function main() {
     case 'seed-discovery': return seedDiscovery();
     case 'reset': return reset();
     default:
-      console.log('Usage: staging-pilot.ts <seed|seed-discovery|promote <email>|status|reset>');
+      console.log('Usage: staging-pilot.ts <seed|seed-discovery|promote <email>|status|reset> (production: reset --confirm-production=<prefix> --actor-email=<admin>)');
       process.exitCode = 1;
   }
 }

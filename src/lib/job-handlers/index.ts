@@ -15,12 +15,14 @@
  */
 
 import { JobType } from '@prisma/client';
-import { registerJobHandler } from '@/lib/jobs';
+import { registerJobEndHook, registerJobHandler } from '@/lib/jobs';
 import { runComtradeIngest } from '@/lib/job-handlers/comtrade';
 import { runCbpManifestIngest } from '@/lib/job-handlers/cbp-manifest';
 import { runBuyerIntelligenceJob } from '@/lib/job-handlers/buyer-intelligence';
 import { runDemandDiscovery } from '@/lib/job-handlers/discovery';
+import { runDemandDiscoveryV5, settleV5Run } from '@/lib/job-handlers/demand-discovery-v5';
 import { runCountryTruthDiscovery } from '@/lib/job-handlers/country-truth-discovery';
+import { runGlobalCountryScreening } from '@/lib/job-handlers/country-screening';
 import { runDocumentGeneration } from '@/lib/job-handlers/documents';
 import { runPayoutRecompute } from '@/lib/job-handlers/payouts';
 import { runReadinessAssessment } from '@/lib/job-handlers/readiness';
@@ -28,13 +30,19 @@ import { runSanctionsIngest } from '@/lib/job-handlers/sanctions';
 import { runImportRecordRetention } from '@/lib/job-handlers/import-retention';
 import { runMarketAccessIngest } from '@/lib/job-handlers/market-access';
 import { runNotificationDelivery } from '@/lib/job-handlers/notification-delivery';
+import { runRegionalDemand } from '@/lib/job-handlers/regional-demand';
+import { runBuyerDiscovery } from '@/lib/job-handlers/buyer-discovery';
 
 let registered = false;
 
 export function registerAllJobHandlers() {
   if (registered) return;
   registerJobHandler(JobType.demand_discovery, runDemandDiscovery);
+  registerJobHandler(JobType.demand_discovery_v5, runDemandDiscoveryV5);
+  // E-039: when the queue ends an attempt, the run follows its job rather than staying `processing`.
+  registerJobEndHook(JobType.demand_discovery_v5, async (job) => { await settleV5Run(job); });
   registerJobHandler(JobType.country_truth_discovery, runCountryTruthDiscovery);
+  registerJobHandler(JobType.country_screening, runGlobalCountryScreening);
   registerJobHandler(JobType.readiness_assessment, runReadinessAssessment);
   registerJobHandler(JobType.document_generation, runDocumentGeneration);
   registerJobHandler(JobType.payout_recompute, runPayoutRecompute);
@@ -45,7 +53,9 @@ export function registerAllJobHandlers() {
   registerJobHandler(JobType.import_record_retention, runImportRecordRetention);
   registerJobHandler(JobType.market_access_ingest, runMarketAccessIngest);
   registerJobHandler(JobType.notification_delivery, runNotificationDelivery);
-  // Not yet implemented — buyer_discovery, report_export. Jobs of those types fail fast
-  // with NO_HANDLER instead of hanging.
+  registerJobHandler(JobType.regional_demand_discovery, runRegionalDemand);
+  registerJobHandler(JobType.buyer_discovery, runBuyerDiscovery);
+  // Not yet implemented — report_export. Jobs of that type fail fast with NO_HANDLER instead of
+  // hanging.
   registered = true;
 }

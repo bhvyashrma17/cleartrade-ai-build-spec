@@ -85,7 +85,8 @@ visitor → market_estimate.run (guest) → register → due → pay → paid ti
 ```
 
 - **`market_estimate.run`** (`POST /api/v1/market-estimates`) is the guest-facing
-  replacement for full Discovery: a synchronous, no-LLM read of the trade warehouse
+  replacement for full Discovery: a synchronous, no-LLM read of CEPII BACI, which covers every
+  HS6 product (since E-041; the Comtrade trade warehouse is the fallback where BACI is not loaded),
   returning **observed historical import values and unit-price bands only** — never a
   ranking, never a projection. Framing is a product requirement, not copy preference:
   language is "buyers in these markets imported X at Y–Z per unit," with an explicit

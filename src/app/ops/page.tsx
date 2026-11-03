@@ -5,6 +5,7 @@ import { RiskState, SlaState, TaskState, UserRole } from '@prisma/client';
 import { AccessDenied } from '@/components/access-denied';
 import { EmptyState, MetricCard, PageHeader, StatusChip, Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui';
 import { requirePortalAccess } from '@/lib/auth';
+import { loadInputFreshness, needsAttention } from '@/lib/demand-discovery-v5/input-freshness';
 import { prisma } from '@/lib/prisma';
 
 const stages = [
@@ -26,7 +27,7 @@ export default async function OpsControlTowerPage() {
   }
 
   const now = new Date();
-  const [blockedDeals, overdueSlas, unassignedExporters, rejectedDocs, shipmentExceptions, overduePayments, openDisputes, stageGroups, riskDeals, riskShipments, agents, escalatedTasks] = await Promise.all([
+  const [blockedDeals, overdueSlas, unassignedExporters, rejectedDocs, shipmentExceptions, overduePayments, openDisputes, stageGroups, riskDeals, riskShipments, agents, escalatedTasks, freshness] = await Promise.all([
     prisma.deal.count({ where: { risk_state: RiskState.blocked } }),
     prisma.task.count({ where: { state: { notIn: [TaskState.done, TaskState.cancelled] }, sla_state: { in: [SlaState.overdue, SlaState.escalated] } } }),
     prisma.exporterOrg.count({ where: { assigned_agent_id: null } }),
@@ -39,6 +40,8 @@ export default async function OpsControlTowerPage() {
     prisma.shipment.findMany({ where: { exception_state: { not: 'none' } }, orderBy: { updated_at: 'asc' }, take: 8, include: { deal: { include: { exporter_org: true, owner_agent: true } } } }),
     prisma.user.findMany({ where: { role: UserRole.agent, is_active: true }, orderBy: { name: 'asc' }, select: { id: true, name: true, _count: { select: { agent_assignments: { where: { status: 'active' } }, owned_deals: { where: { stage: { in: ['qualifying', 'negotiating', 'terms_agreed', 'deal_locked', 'executing'] } } }, owned_tasks: { where: { state: { notIn: ['done', 'cancelled'] }, sla_state: { in: ['overdue', 'escalated'] } } } } } } }),
     prisma.task.findMany({ where: { escalated_at: { not: null }, state: { notIn: [TaskState.done, TaskState.cancelled] } }, orderBy: { escalated_at: 'desc' }, take: 6, include: { owner: true, exporter_org: true, deal: true } }),
+    // docs/36 §7a: Demand Discovery inputs that are overdue or missing.
+    loadInputFreshness(now),
   ]);
 
   const stageCounts = new Map(stageGroups.map((row) => [row.journey_stage, row._count._all]));
@@ -51,7 +54,7 @@ export default async function OpsControlTowerPage() {
     ['Blocked deals', blockedDeals, '/ops/exceptions?type=blocked_deals'], ['Overdue SLAs', overdueSlas, '/ops/exceptions?type=overdue_sla'],
     ['Unassigned exporters', unassignedExporters, '/ops/assignments'], ['Documents rejected', rejectedDocs, '/ops/exceptions?type=rejected_docs'],
     ['Shipment exceptions', shipmentExceptions, '/ops/exceptions?type=shipment_exceptions'], ['Overdue payments', overduePayments, '/ops/finance?filter=overdue'],
-    ['Open disputes', openDisputes, '/ops/disputes'],
+    ['Open disputes', openDisputes, '/ops/disputes'], ['Stale data inputs', freshness.filter(needsAttention).length, '/ops/discovery#data-freshness'],
   ];
 
   return (

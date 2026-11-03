@@ -9,6 +9,8 @@
  * conditional UPDATE, so two workers cannot take the same row.
  *
  * Loop, per tick:
+ *   0. the hourly membership sweep, the nightly authority-window refresh and the daily data
+ *      freshness check (each self-throttled)
  *   1. reclaim jobs abandoned by a crashed worker
  *   2. claim one job and run it
  *   3. if nothing was claimable, sleep for the configured interval
@@ -20,12 +22,17 @@
 
 import { getConfig } from '../src/lib/config';
 import { registerAllJobHandlers } from '../src/lib/job-handlers';
-import { claimNextJob, reclaimStaleJobs, runClaimedJob } from '../src/lib/jobs';
+import { claimNextJob, closeOrphanedAttempts, reclaimStaleJobs, runClaimedJob } from '../src/lib/jobs';
+import { reconcileV5Runs } from '../src/lib/job-handlers/demand-discovery-v5';
+import { sweepV5Refresh } from '../src/lib/demand-discovery-v5/refresh';
+import { autoImportReferenceData } from '../src/lib/demand-discovery-v5/reference-auto-import';
 import { prisma } from '../src/lib/prisma';
 import {hostname} from 'node:os';
 import {log,reportError} from '../src/lib/observability';
 import {validateRuntimeEnvironment} from '../src/lib/runtime-config';
 import {expireLapsedMemberships} from '../src/lib/billing/subscription-service';
+import {runDueAuthorityRefreshes} from '../src/lib/market-access/providers/singapore-refresh';
+import {loadInputFreshness, needsAttention} from '../src/lib/demand-discovery-v5/input-freshness';
 
 let shuttingDown = false;
 let activeJobId: string | null = null;
@@ -52,6 +59,102 @@ async function sweepLapsedMemberships(): Promise<void> {
   const { downgraded } = await expireLapsedMemberships({ correlationId: `worker-membership-sweep:${instanceId}` });
   if (downgraded.length > 0) log('info', 'memberships_expired', { count: downgraded.length });
 }
+
+/**
+ * D-029: official tariffs an authority lets us fetch only in a window (Singapore Statutes Online,
+ * 03:00–07:00 Singapore Time) are saved here, inside it, so runs at any hour read the saved copy.
+ * Outside the window this reads nothing; inside it, `singapore-refresh.ts` decides from the switch
+ * (`market_access.authority_refresh`, off by default) and tonight's attempts whether to fetch.
+ * A refresh failure is recorded and reported, never allowed to stop the job loop.
+ */
+const AUTHORITY_REFRESH_SWEEP_INTERVAL_MS = Number(process.env.AUTHORITY_REFRESH_SWEEP_INTERVAL_MS ?? 600_000);
+let lastAuthorityRefreshAt = 0;
+
+async function sweepAuthorityRefresh(): Promise<void> {
+  if (Date.now() - lastAuthorityRefreshAt < AUTHORITY_REFRESH_SWEEP_INTERVAL_MS) return;
+  lastAuthorityRefreshAt = Date.now();
+  try {
+    const { singapore } = await runDueAuthorityRefreshes({ correlation_id: `worker-authority-refresh:${instanceId}:${new Date().toISOString().slice(0, 10)}` });
+    if (singapore.status !== 'not_due') log(singapore.status === 'failed' ? 'warn' : 'info', 'authority_refresh', { source: 'SG_SSO_CUSTOMS_DUTIES', status: singapore.status, release_id: singapore.release_id ?? undefined, reason: singapore.reason ?? undefined });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_authority_refresh' });
+  }
+}
+/**
+ * docs/36 §7a: once a day, log every Demand Discovery input that is overdue or missing, so a stale
+ * dataset shows in the logs as well as on the ops pages (the Control Tower's "Stale data inputs").
+ * It reads only, and a failure is reported, never allowed to stop the job loop.
+ */
+const INPUT_FRESHNESS_SWEEP_INTERVAL_MS = Number(process.env.INPUT_FRESHNESS_SWEEP_INTERVAL_MS ?? 86_400_000);
+let lastInputFreshnessAt = 0;
+
+async function sweepInputFreshness(): Promise<void> {
+  if (Date.now() - lastInputFreshnessAt < INPUT_FRESHNESS_SWEEP_INTERVAL_MS) return;
+  lastInputFreshnessAt = Date.now();
+  try {
+    const stale = (await loadInputFreshness()).filter(needsAttention);
+    for (const row of stale) log('warn', 'input_freshness', { input: row.key, status: row.status, due_at: row.due_at ?? undefined, refresh: row.refresh });
+    log('info', 'input_freshness_checked', { needs_attention: stale.length });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_input_freshness' });
+  }
+}
+/**
+ * E-039: attempts and v5 runs left `processing` under a job that had already ended, from before the
+ * stale reclaim closed them, are settled here. New cases no longer arise, so every 10 minutes is ample.
+ */
+const ORPHAN_SWEEP_INTERVAL_MS = Number(process.env.ORPHAN_SWEEP_INTERVAL_MS ?? 600_000);
+let lastOrphanSweepAt = 0;
+
+async function sweepOrphanedWork(): Promise<void> {
+  if (Date.now() - lastOrphanSweepAt < ORPHAN_SWEEP_INTERVAL_MS) return;
+  lastOrphanSweepAt = Date.now();
+  try {
+    const attempts = await closeOrphanedAttempts();
+    const runs = await reconcileV5Runs();
+    if (attempts || runs) log('warn', 'orphaned_work_settled', { attempts, runs });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_orphan_sweep' });
+  }
+}
+/**
+ * E-040 (stage 1, item 5): hourly, out-of-date v5 runs are re-run, oldest first, within the daily
+ * budget (`refresh.ts`). A failure is reported and never stops the job loop.
+ */
+const V5_REFRESH_SWEEP_INTERVAL_MS = Number(process.env.V5_REFRESH_SWEEP_INTERVAL_MS ?? 3_600_000);
+let lastV5RefreshAt = 0;
+
+async function sweepDemandDiscoveryRefresh(): Promise<void> {
+  if (Date.now() - lastV5RefreshAt < V5_REFRESH_SWEEP_INTERVAL_MS) return;
+  lastV5RefreshAt = Date.now();
+  try {
+    const result = await sweepV5Refresh();
+    if (result && (result.started.length || result.skipped.length)) {
+      log('info', 'v5_refresh', { checked: result.checked, out_of_date: result.out_of_date, started: result.started.length, skipped: result.skipped.length, budget_left: result.budget_left });
+    }
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_v5_refresh' });
+  }
+}
+/**
+ * E-040 (stage 1, item 4): daily, the keyless World Bank and Comtrade inputs that are due are
+ * downloaded and imported (`reference-auto-import.ts`), before the refresh sweep reads them.
+ */
+const REFERENCE_AUTO_IMPORT_SWEEP_INTERVAL_MS = Number(process.env.REFERENCE_AUTO_IMPORT_SWEEP_INTERVAL_MS ?? 86_400_000);
+let lastReferenceAutoImportAt = 0;
+
+async function sweepReferenceAutoImport(): Promise<void> {
+  if (Date.now() - lastReferenceAutoImportAt < REFERENCE_AUTO_IMPORT_SWEEP_INTERVAL_MS) return;
+  lastReferenceAutoImportAt = Date.now();
+  try {
+    const result = await autoImportReferenceData();
+    if (!result || !result.due.length) return;
+    for (const item of result.imported) log('info', 'reference_auto_import', { dataset: item.key, change: item.change, release_id: item.release_id });
+    for (const item of result.failed) log('warn', 'reference_auto_import_failed', { dataset: item.key, reason: item.reason });
+  } catch (error) {
+    reportError(error, { event_scope: 'worker_reference_auto_import' });
+  }
+}
 const instanceId=process.env.WORKER_INSTANCE_ID??`${hostname()}-${process.pid}`,heartbeatId=`worker:${instanceId}`;
 let consecutiveFailures=0;
 async function heartbeat(status='ready',lastError?:string){await prisma.workerHeartbeat.upsert({where:{id:heartbeatId},create:{id:heartbeatId,instance_id:instanceId,status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():null,consecutive_failures:consecutiveFailures},update:{status,active_job_id:activeJobId,last_seen_at:new Date(),last_error:lastError?.slice(0,1000),last_error_at:lastError?new Date():undefined,consecutive_failures:consecutiveFailures}});}
@@ -62,6 +165,11 @@ async function tick(): Promise<boolean> {
   // Before claiming work, not after: a tick that finds a job returns early below, so a
   // busy worker would otherwise never reach the sweep at all.
   await sweepLapsedMemberships();
+  await sweepAuthorityRefresh();
+  await sweepInputFreshness();
+  await sweepOrphanedWork();
+  await sweepReferenceAutoImport();
+  await sweepDemandDiscoveryRefresh();
 
   const reclaimed = await reclaimStaleJobs();
   if (reclaimed.requeued || reclaimed.failed) {
@@ -93,11 +201,12 @@ async function tick(): Promise<boolean> {
 }
 
 async function main() {
+  log('info','platform_worker_starting',{instance_id:instanceId});
   validateRuntimeEnvironment('worker');
   registerAllJobHandlers();
   const policy = await getConfig('jobs.policy');
-  log('info','worker_started',{instance_id:instanceId,poll_interval_ms:policy.worker_poll_interval_ms,stale_after_seconds:policy.stale_after_seconds});
   await heartbeat('ready');
+  log('info','worker_started',{instance_id:instanceId,poll_interval_ms:policy.worker_poll_interval_ms,stale_after_seconds:policy.stale_after_seconds});
   const heartbeatTimer=setInterval(()=>void heartbeat(activeJobId?'busy':'ready').catch(error=>reportError(error,{event_scope:'worker_heartbeat'})),Number(process.env.WORKER_HEARTBEAT_INTERVAL_MS??15000));heartbeatTimer.unref();
 
   // `--once` drains the queue and exits: used by tests and by a one-shot CI run, so a

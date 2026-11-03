@@ -12,8 +12,21 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { WORLD_PARTNER } from '@/lib/comtrade/areas';
+import { COMTRADE_REPORTER_REGISTRY_VERSION } from '@/lib/comtrade/reporter-registry';
+import { COUNTRY_SCREENING_ALGORITHM_VERSION } from '@/lib/country-screening/ranking';
+import { COUNTRY_SCREENING_UNIVERSE_VERSION, type CountryScreeningExclusionReason } from '@/lib/country-screening/universe';
+import { INDIA_ORIGIN_UNIT_VALUE_VERSION } from '@/lib/country-trade-metrics/calculator';
 import { DEFAULT_PLAN_PRICING, type PlanPricing } from '@/lib/billing/plans';
+import type {
+  AssertionClass,
+  ExportEconomicsV3Policy,
+  ExporterMarketFitV3Policy,
+  LogisticsV3Policy,
+  MarketAccessV2Policy,
+} from '@/lib/country-truth/phase-1h-calculations';
 import type { Money } from '@/types';
+import { DEMAND_DISCOVERY_V5_DEFAULT_POLICY, type DemandDiscoveryV5Policy } from '@/lib/demand-discovery-v5/policy';
 
 // ---------------------------------------------------------------------------
 // Config keys and their value shapes
@@ -113,10 +126,16 @@ export interface ConfigShape {
   'jobs.policy': JobsPolicy;
   'comtrade.policy': ComtradePolicy;
   'country_evidence.policy': CountryEvidencePolicy;
+  'country_period_selection.policy': CountryPeriodSelectionPolicy;
+  'country_screening.policy': CountryScreeningPolicy;
   'country_trade_metrics.policy': CountryTradeMetricPolicy;
   'country_truth.scoring_v4': CountryTruthScoringV4Policy;
+  'country_truth.phase_1h': CountryTruthPhase1HPolicy;
+  'country_truth.market_access_orchestration': CountryTruthMarketAccessOrchestrationPolicy;
   'discovery.scoring': DiscoveryScoringPolicy;
   'market_estimate.policy': MarketEstimatePolicy;
+  'demand_discovery.v5': DemandDiscoveryV5Config;
+  'market_access.authority_refresh': AuthorityRefreshConfig;
   /**
    * Membership prices. Here — not in `src/lib/billing/plans.ts` — because money is never a
    * literal in application code (docs/01 §2), and because Ops must be able to reprice
@@ -133,6 +152,82 @@ export interface ConfigShape {
  * anything, so there are no weights here — only how much to show and how to bucket the
  * cache key.
  */
+/**
+ * Demand Discovery v5 (docs/36). The scoring policy is frozen into every run with its hash; the
+ * switches decide when v5 runs and which providers it may call. `enabled: false` stops new runs
+ * without a deploy; the earlier engines are retired (D-036), so nothing runs in their place.
+ */
+export interface DemandDiscoveryV5Config {
+  enabled: boolean;
+  /** E-040 (stage 1, item 5): re-run a product's newest finished run when newer data would change it (`refresh.ts`). */
+  refresh_on_new_data: boolean;
+  /** Refresh runs started per UTC day at most, oldest first: each makes two batched Comtrade calls (the free key allows 500 a day). */
+  refresh_daily_budget: number;
+  /** E-040 (stage 1, item 4): import the keyless World Bank and Comtrade inputs daily when due (`reference-auto-import.ts`). */
+  reference_auto_import: boolean;
+  /** The ops supervisor or admin account those imports run as; with none, nothing is imported. */
+  reference_auto_import_actor_email: string | null;
+  /** D-018: confirming a product's classification starts a run (paid tier only). */
+  auto_start_on_classification: boolean;
+  /** D-010/R-14: use Comtrade for the newest year (§5.3). */
+  comtrade_newest_year: boolean;
+  /** D-010/R-14: use a market's own Comtrade series where BACI lacks it (§3.3). */
+  comtrade_market_fallback: boolean;
+  /** maxRecords for one batched Comtrade call (the free key allows 100,000). */
+  comtrade_max_records: number;
+  /** How far back an FX observation may be walked for the exporter's price (days). */
+  fx_max_lookback_days: number;
+  /**
+   * Fetch the ECB reference rates a run needs when the environment holds none for its date
+   * (`demand-discovery-v5/fx.ts`). The ECB API is public and keyless, and its terms allow reuse
+   * with attribution. Off: a price outside US dollars stays uncompared until rates are stored.
+   */
+  fx_fetch_missing: boolean;
+  /**
+   * D-028: convert a floating currency the ECB does not publish (and no peg covers) with the US
+   * Treasury reporting rate (`src/lib/fx/treasury.ts`; public domain, quarterly). With
+   * `fx_fetch_missing` on, a run that finds none stored fetches the Treasury list once.
+   */
+  fx_treasury_fallback: boolean;
+  /** How far back a Treasury rate may be (days): a quarter plus the weeks before the next one is published. */
+  fx_treasury_max_lookback_days: number;
+  /**
+   * D-020: look up the product's official tariff in every market with a Customs Atlas source inside
+   * each run (`demand-discovery-v5/tariff-step.ts`). Off: a run reads only tariff evidence ingested
+   * earlier, and every other market's duty is the labelled estimate.
+   */
+  tariff_acquisition: boolean;
+  /** Ceiling for one live tariff fetch (UK, US) inside a run, in milliseconds. */
+  tariff_live_fetch_timeout_ms: number;
+  policy: DemandDiscoveryV5Policy;
+}
+
+/**
+ * D-029: official tariffs whose authority allows automated fetching only inside a window. The worker
+ * fetches them there and saves them as authority releases, so a run at any hour reads the saved copy
+ * (`market-access/providers/singapore-refresh.ts`). Written through the audited config API or
+ * `scripts/authority-refresh.ts`; not an Ops-console setting.
+ */
+export interface AuthorityRefreshConfig {
+  singapore: {
+    /** Off by default: nothing is fetched from Singapore Statutes Online until this is switched on. */
+    enabled: boolean;
+    /** The active ops supervisor or admin account saved releases are imported as. */
+    actor_email: string | null;
+    /** The first saved copy becomes the one runs read once it passes qualification. */
+    activate_first_release: boolean;
+    /**
+     * A changed tariff becomes the one runs read automatically. Off: it is saved and held for
+     * review, because a saved release records only the amendments reviewed in code (to S 67/2026).
+     */
+    activate_changed_tariff: boolean;
+    /** Failed attempts allowed in one night's window. */
+    max_attempts_per_window: number;
+    /** Wait between a failed attempt and the next. */
+    minutes_between_attempts: number;
+  };
+}
+
 export interface MarketEstimatePolicy {
   /** How many top-importing markets the estimate names. */
   top_n_markets: number;
@@ -243,6 +338,16 @@ export interface ComtradePolicy {
   hs_codes_per_request: number;
   /** Conservative local ceiling below the advertised free-key quota. */
   daily_request_budget: number;
+  /**
+   * Calls a batch must leave unspent. A batch that would drop the day's remaining allowance
+   * below this floor defers instead of executing, so an interactive acquisition can never
+   * consume the headroom a retry or an operational query still needs.
+   *
+   * Deliberately here rather than in `country_evidence.policy`: that policy is hashed into
+   * every plan_key, so adding a field there would make every historical plan irreproducible.
+   * Quota headroom is a provider-account concern and changes no evidence identity.
+   */
+  minimum_request_reserve?: number;
   /** Highest-value chapters first; the full ingest script consumes this exact order. */
   chapter_priority: string[];
 }
@@ -262,6 +367,106 @@ export interface CountryEvidencePolicy {
   world_partner_code: string;
   all_suppliers_partner_code: string;
   candidate_strategy: 'explicit_candidates_v1';
+  allow_partial_execution: boolean;
+}
+
+/**
+ * Latest-usable-period selection (Phase 1G).
+ *
+ * Owns the answer to "which annual period should THIS country be judged on?", separately from
+ * how any country is scored. It exists because a globally-common latest year silently excludes
+ * every reporter that files late, which is a property of national statistics offices rather
+ * than of demand.
+ *
+ * The two numeric constants are derived from policy this repository already holds rather than
+ * invented: `discovery.scoring.confidence.accepted_reporting_lag_years` (2) sets how far back
+ * the walk may go, and `discovery.scoring.recency_decay_per_year` (0.8) sets what a year of age
+ * costs in evidence confidence. Nothing here ever alters a raw trade value.
+ */
+export interface CountryPeriodSelectionPolicy {
+  policy_version: string;
+  selection_rule: 'first_usable_walking_back_v1';
+  /** Annual data becomes eligible only from this UTC month. */
+  annual_release_month_utc: number;
+  /** How many years older than the preferred period the walk may reach. */
+  max_fallback_lookback_years: number;
+  /** Cell statuses that answer the question. Anything else is not a usable observation. */
+  usable_cell_statuses: string[];
+  /** A measured zero is an answer; searching past it would manufacture demand. Must stay true. */
+  observed_zero_terminates_selection: boolean;
+  /** Suppression says a value exists and is withheld — not that the market is absent. */
+  suppressed_permits_fallback: boolean;
+  /** An HS-revision mismatch is a real incompatibility at that year, so an older year may serve. */
+  incompatible_permits_fallback: boolean;
+  /** Our own outage is never evidence about a country. Must stay false. */
+  provider_failure_permits_fallback: boolean;
+  /** Evidence weight decay per year of lag. Mirrors discovery.scoring.recency_decay_per_year. */
+  recency_decay_per_year: number;
+  /** Freshness label per lag, index 0 = preferred period. */
+  freshness_states_by_lag: string[];
+  /** Label applied once the lookback is exhausted. */
+  beyond_lookback_state: string;
+  /**
+   * How long acquired evidence for a CLOSED (non-preferred) period stays reusable. A closed
+   * year does not change, so re-acquiring it on the preferred period's 90-day clock would
+   * re-buy the same immutable fact forever — and would do it to exactly the lagging countries
+   * this policy exists to serve.
+   */
+  closed_period_freshness_days: number;
+}
+
+/**
+ * Stage A global country screening (Phase 1F).
+ *
+ * This policy decides which countries are worth spending deep Country Truth quota on. It is
+ * NOT an attractiveness model: it names one cheap trade signal (latest usable World import
+ * value for the confirmed HS6, by reporter), the evidence that signal is allowed to come
+ * from, and how many markets survive to the deep pipeline. Every constant that changes a
+ * screening outcome lives here rather than in service code, so a historical run can be
+ * reproduced from its frozen snapshot alone.
+ */
+export interface CountryScreeningPolicy {
+  policy_version: string;
+  /** Names the stage so a later regional-discovery stage cannot be confused with this one. */
+  screening_stage: 'stage_a_global_demand_v1';
+  universe_version: string;
+  /** Reporter identity comes from the provider's own reference, never from an alias map. */
+  reporter_identity_strategy: 'comtrade_reporter_reference_v1';
+  reporter_registry_version: string;
+  /** ISO 3166-1 alpha-2 → why that identity can never be a ClearTrade target market. */
+  excluded_iso2_codes: Record<string, CountryScreeningExclusionReason>;
+  /** ClearTrade exports FROM India; India is not one of its own target markets. */
+  exclude_origin_country: boolean;
+  /** Canonical ISO identity. The reporter code for it is resolved through the registry. */
+  origin_country_iso2: string;
+  /** Guard against a universe that silently explodes past what quota planning assumes. */
+  max_countries_per_run: number;
+  /** Deep-analysis shortlist target. Fewer markets ship when fewer qualify. */
+  shortlist_target_size: number;
+  max_shortlist_size: number;
+  /** Minimum evidence requirement: a real observation at or above this annual import value. */
+  minimum_import_value_usd: number;
+  world_partner_code: string;
+  /** Annual data becomes eligible only from this UTC month, matching country_evidence. */
+  annual_release_month_utc: number;
+  /**
+   * Retained for historical run snapshots only. Phase 1G moved the lookback into
+   * `country_period_selection.policy`; this field must stay 0 so a v1 snapshot still parses
+   * and no second, disagreeing lookback can be configured here.
+   */
+  period_fallback_lookback_years: number;
+  latest_period_freshness_days: number;
+  /** v1 screens on complete responses only; relaxing it would be a new policy version. */
+  require_complete_evidence: boolean;
+  required_parser_version: string;
+  required_normalization_version: string;
+  screening_algorithm_version: string;
+  /** Market-size transformation. Screening rank is explicitly not a v4 country score. */
+  demand_signal: { method: 'world_import_value_log10_v1'; floor_usd: number; ceiling_usd: number };
+  tie_breaker: 'selection_score_desc_then_screening_score_desc_then_import_value_desc_then_period_lag_asc_then_reporter_code_asc_v2';
+  /** The period-selection policy this screening policy is pinned to. */
+  period_selection_policy_version: string;
+  max_acquisition_attempts_per_country: number;
   allow_partial_execution: boolean;
 }
 
@@ -299,7 +504,60 @@ export interface CountryTruthScoringV4Policy {
   risk:{trade_stability_weight:number;macro_resilience_weight:number;payment_resilience_weight:number;volatility_ceiling_pp:number};
   export_economics:{existing_economics_weight:number;unit_value_weight:number;benchmark_ratio_ceiling:number};
   ranking:{minimum_available_base_weight:number;require_demand:boolean;require_growth_or_competition:boolean};
-  confidence:{formula_version:'weighted_component_evidence_coverage_v4'};
+  confidence:{formula_version:string;/** Confidence decay per year the analysis window lags the preferred period. */recency_decay_per_year:number};
+}
+
+/**
+ * WP2: Customs Atlas acquisition inside the deep Country Truth run (docs/35 E-004).
+ *
+ * Off by default. When enabled at request time the policy is frozen into the job payload, the
+ * deep run acquires tariff evidence for its own shortlisted destinations, and tariff evidence is
+ * admitted up to the run's tariff clock rather than the screen's as-of date (owner decision D-004).
+ * With it off, payloads, fact manifests and assessments are byte-identical to the pre-WP2 path.
+ */
+export interface CountryTruthMarketAccessOrchestrationPolicy {
+  policy_version: string;
+  enabled: boolean;
+  /** Origin every acquisition is requested for; Country Truth assesses Indian exports only. */
+  origin_country: 'IN';
+  /** Destinations beyond this count are recorded as skipped, never silently dropped. */
+  max_destinations: number;
+  /**
+   * Ceiling for one LIVE fetch (UK, US). Release-backed sources read retained artifacts and are
+   * not raced: abandoning one mid-decode would leave it running in the background.
+   */
+  live_fetch_timeout_ms: number;
+}
+
+/**
+ * Phase 1H non-trade pillar policy.
+ *
+ * Every sub-policy carries its own formula/calculation version because a change to any of them
+ * changes the meaning of a persisted score. `policy_version` names the bundle; the config row
+ * version and this object's canonical hash together form the identity that a frozen assessment
+ * records, so an Ops edit produces a NEW assessment rather than reinterpreting an old one.
+ */
+export interface CountryTruthPhase1HPolicy {
+  policy_version: string;
+  calculation_version: string;
+  /** Schema version of the persisted CountryTruthFactSnapshot payload. */
+  facts_schema_version: string;
+  /**
+   * Version of the supplemental India-origin unit-value statistic Phase 1H records in its own
+   * fact manifest. It lives here, not in country_trade_metrics.policy, so revising it changes
+   * Phase 1H manifest identity only and never a CountryTradeMetrics identity.
+   */
+  india_origin_unit_value_version: string;
+  /**
+   * Destinations whose reported import statistics are known to be valued CIF, and are therefore
+   * comparable to a landed-cost buildup. Empty by default: a unit value whose valuation basis is
+   * unrecorded is not published as a benchmark rather than being assumed CIF.
+   */
+  trade_statistical_import_valuation_by_country: Record<string, 'CIF' | 'FOB'>;
+  market_access: MarketAccessV2Policy;
+  export_economics: ExportEconomicsV3Policy;
+  exporter_market_fit: ExporterMarketFitV3Policy;
+  logistics_feasibility: LogisticsV3Policy;
 }
 
 /**
@@ -330,6 +588,159 @@ export type ConfigKey = keyof ConfigShape;
  * Seed values only. docs/01 §2 "current/default assumption" column, plus the concrete
  * SLA starting values from AGT-07 (docs/13 E4).
  */
+/**
+ * Evidence authority multipliers. They reduce CONFIDENCE only — never a pillar score — so that
+ * "we are less sure" can never be mistaken for "this market is worse". `unknown_legacy` is
+ * pinned to zero because a row whose authorship was never recorded may not lend credibility.
+ */
+const PHASE_1H_ASSERTION_CONFIDENCE: Record<AssertionClass, number> = {
+  authoritative_public: 1,
+  // Our own fee under a versioned policy is not an uncertain observation of the world; it is a
+  // definition. It still cannot raise a pillar on its own — it is one required component of many.
+  system_derived: 1,
+  agent_verified: 0.9,
+  partner_quote: 0.8,
+  exporter_declared: 0.7,
+  // Deliberately 1, not a discount. The multipliers above grade how likely an assertion is to be
+  // WRONG about the world: an exporter describing its own capacity (0.7) can be mistaken in a way
+  // a government API response (1) cannot. Licensed content is not a weaker observation — it is the
+  // authority's own published value, relayed under contract. The ways it actually degrades are
+  // already modelled precisely elsewhere: staleness by the freshness policy, unproven regulatory
+  // completeness by `completeness_status`, and HS6-only content by classification resolution.
+  // Applying an invented 0.8 or 0.9 on top would double-count those, and would understate
+  // confidence we genuinely have, which is its own dishonesty. The real control is binary and
+  // lives in `licensed-providers.ts`: either an approval covers this provider, dataset,
+  // destination and assertion type, or the fact is never admitted at all. If a provider's
+  // transcription error rate is ever measured, a multiplier can be introduced from that evidence.
+  licensed_authoritative_content: 1,
+  unknown_legacy: 0,
+};
+
+// v4 accompanies country-truth-fact-selection-v4. The pillar formulas are still unchanged; the
+// identity moves because route tenancy, frozen shipment basis and available-capacity selection
+// changed which evidence can be admitted, and every earlier
+// manifest must stay reproducible under exactly the rules that produced it.
+const PHASE_1H_CALCULATION_VERSION = 'country-truth-phase-1h-v4';
+
+const PHASE_1H_TARIFF_POLICY = {
+  formula_version: 'applicable-india-tariff-v2',
+  calculation_version: PHASE_1H_CALCULATION_VERSION,
+  minimum_evidence_confidence: 50,
+};
+
+/**
+ * Cost components already carried by an exporter price quoted at each Incoterm.
+ *
+ * DAP/DPU/DDP are listed deliberately even though they cannot currently be used: naming what
+ * they bundle lets the calculation reject them with the real reason (the price already contains
+ * post-customs cost that we refuse to invent a split for) instead of a vague "unknown Incoterm".
+ */
+const PHASE_1H_INCOTERM_COST_OWNERSHIP: CountryTruthPhase1HPolicy['export_economics']['incoterm_cost_ownership'] = {
+  EXW: [],
+  FCA: ['packaging', 'inland_transport'],
+  FAS: ['packaging', 'inland_transport'],
+  FOB: ['packaging', 'inland_transport', 'origin_charges'],
+  CFR: ['packaging', 'inland_transport', 'origin_charges', 'international_freight'],
+  CPT: ['packaging', 'inland_transport', 'origin_charges', 'international_freight'],
+  CIF: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance'],
+  CIP: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance'],
+  DAP: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance', 'destination_charges'],
+  DPU: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance', 'destination_charges'],
+  DDP: ['packaging', 'inland_transport', 'origin_charges', 'international_freight', 'insurance', 'destination_charges'],
+};
+
+const PHASE_1H_DEFAULT_POLICY: CountryTruthPhase1HPolicy = {
+  policy_version: 'country-truth-phase-1h-v4',
+  calculation_version: PHASE_1H_CALCULATION_VERSION,
+  facts_schema_version: 'country-truth-facts-v1',
+  india_origin_unit_value_version: INDIA_ORIGIN_UNIT_VALUE_VERSION,
+  trade_statistical_import_valuation_by_country: {},
+  market_access: {
+    formula_version: 'market-access-v2',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    weights: { tariff: 60, regulatory: 40 },
+    tariff_policy: PHASE_1H_TARIFF_POLICY,
+    tariff_zero_score_percent: 25,
+    requirement_penalties: { restriction: 25, mandatory_certification: 15, other_document: 5 },
+    unresolved_obtainability_penalty: 10,
+    maximum_requirement_age_days: 180,
+    maximum_coverage_age_days: 30,
+    // Licensed content is listed for Market Access only, and listing is not trust. A fact in that
+    // class is created solely when `licensed-providers.ts` records an approval covering the
+    // provider, dataset, destination and assertion type; with the registry empty no such fact can
+    // exist, so this entry admits nothing today. The registry is the gate, this is the vocabulary.
+    allowed_assertion_classes: ['authoritative_public', 'licensed_authoritative_content'],
+  },
+  export_economics: {
+    formula_version: 'export-economics-v3',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    tariff_policy: PHASE_1H_TARIFF_POLICY,
+    incoterm_cost_ownership: PHASE_1H_INCOTERM_COST_OWNERSHIP,
+    // Every component is required. A component left out of this list is added to the landed
+    // cost as nothing at all, which is exactly the "missing becomes zero" defect — and it
+    // biases the score OPTIMISTICALLY, because a cost we failed to record makes the market
+    // look cheaper. Relaxing an entry here is a deliberate, versioned Ops decision.
+    required_cost_components: [
+      'packaging',
+      'inland_transport',
+      'origin_charges',
+      'international_freight',
+      'insurance',
+      'destination_charges',
+      'financing',
+      'cleartrade_fee',
+    ],
+    allowed_price_assertion_classes: ['exporter_declared', 'agent_verified'],
+    allowed_benchmark_assertion_classes: ['authoritative_public'],
+    allowed_cost_assertion_classes: ['authoritative_public', 'system_derived', 'agent_verified', 'partner_quote', 'exporter_declared'],
+    allowed_customs_basis_assertion_classes: ['authoritative_public'],
+    // Deliberately empty. Ops must state a destination's valuation rule with a citation before
+    // duty is taken on it; seeding a guess here would be indistinguishable from fabricated data.
+    customs_valuation_basis_by_country: {},
+    allowed_fx_assertion_classes: ['authoritative_public'],
+    maximum_price_age_days: 180,
+    // Customs statistics publish in arrears; the benchmark's age is measured from the end of
+    // the period it describes, so this window has to admit the normal reporting lag.
+    maximum_benchmark_age_days: 1100,
+    maximum_cost_component_age_days: 90,
+    maximum_customs_basis_age_days: 400,
+    maximum_fx_age_days: 7,
+    full_score_at_or_below_ratio: 0.9,
+    zero_score_at_or_above_ratio: 1.6,
+  },
+  exporter_market_fit: {
+    formula_version: 'exporter-market-fit-v3',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    weights: { capacity: 20, moq: 15, production_lead_time: 15, price: 20, packaging: 10, certification: 20 },
+    certification_scores: { held_documented: 100, held_undocumented: 70, in_progress: 40, not_started: 10, confirmed_absent: 0, expired: 5 },
+    packaging_scores: { capability_matches: 100, capability_does_not_match: 20 },
+    allowed_benchmark_assertion_classes: ['authoritative_public'],
+    allowed_exporter_assertion_classes: ['exporter_declared', 'agent_verified'],
+    allowed_fx_assertion_classes: ['authoritative_public'],
+    maximum_benchmark_age_days: 365,
+    maximum_exporter_fact_age_days: 365,
+    maximum_fx_age_days: 7,
+  },
+  logistics_feasibility: {
+    formula_version: 'logistics-feasibility-v3',
+    calculation_version: PHASE_1H_CALCULATION_VERSION,
+    assertion_class_multipliers: PHASE_1H_ASSERTION_CONFIDENCE,
+    weights: { route_availability: 40, transit_time: 20, freight_burden: 25, handling_compatibility: 15 },
+    route_available_score: 100,
+    route_unavailable_score: 0,
+    transit_zero_score_days: 90,
+    freight_burden_zero_score_percent: 20,
+    handling_scores: { supported: 100, unsupported: 20 },
+    maximum_route_age_days: 30,
+    maximum_freight_quote_age_days: 30,
+    allowed_route_assertion_classes: ['authoritative_public', 'partner_quote'],
+    allowed_freight_quote_assertion_classes: ['partner_quote', 'agent_verified'],
+  },
+};
+
 export const CONFIG_DEFAULTS: ConfigShape = {
   'agent.capacity': { target_exporters_per_agent: 10 },
   'sla.thresholds': {
@@ -490,6 +901,7 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     retry_backoff_ms: 2000,
     hs_codes_per_request: 50,
     daily_request_budget: 450,
+    minimum_request_reserve: 100,
     chapter_priority: [
       '84', '85', '27', '30', '87', '71', '39', '29', '72', '73', '61', '62', '63', '09',
       '01', '02', '03', '04', '05', '06', '07', '08', '10', '11', '12', '13', '14', '15',
@@ -516,7 +928,61 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     candidate_strategy: 'explicit_candidates_v1',
     allow_partial_execution: false,
   },
+  'country_period_selection.policy': {
+    policy_version: 'country-period-selection-policy-v1',
+    selection_rule: 'first_usable_walking_back_v1',
+    annual_release_month_utc: 8,
+    // discovery.scoring.confidence.accepted_reporting_lag_years
+    max_fallback_lookback_years: 2,
+    usable_cell_statuses: ['observed', 'observed_zero'],
+    observed_zero_terminates_selection: true,
+    suppressed_permits_fallback: false,
+    incompatible_permits_fallback: true,
+    provider_failure_permits_fallback: false,
+    // discovery.scoring.recency_decay_per_year -> lag 0 = 1.0, lag 1 = 0.8, lag 2 = 0.64
+    recency_decay_per_year: 0.8,
+    freshness_states_by_lag: ['current', 'recent', 'aged'],
+    beyond_lookback_state: 'stale',
+    closed_period_freshness_days: 3650,
+  },
+  'country_screening.policy': {
+    policy_version: 'country-screening-policy-v2',
+    screening_stage: 'stage_a_global_demand_v1',
+    universe_version: COUNTRY_SCREENING_UNIVERSE_VERSION,
+    reporter_identity_strategy: 'comtrade_reporter_reference_v1',
+    reporter_registry_version: COMTRADE_REPORTER_REGISTRY_VERSION,
+    // Uninhabited or civilian-population-free territories cannot import commercially, and
+    // XK/983 is an ISO user-assigned code the UN never assigned. Nothing else is removed:
+    // a market with no authenticated evidence is reported as `unavailable`, not deleted.
+    excluded_iso2_codes: {
+      AQ: 'no_resident_population', BV: 'no_resident_population', GS: 'no_resident_population',
+      HM: 'no_resident_population', IO: 'no_resident_population', TF: 'no_resident_population',
+      UM: 'no_resident_population', XK: 'not_un_m49_identity',
+    },
+    exclude_origin_country: true,
+    origin_country_iso2: 'IN',
+    max_countries_per_run: 300,
+    shortlist_target_size: 20,
+    max_shortlist_size: 30,
+    minimum_import_value_usd: 100_000,
+    world_partner_code: WORLD_PARTNER,
+    annual_release_month_utc: 8,
+    period_fallback_lookback_years: 0,
+    latest_period_freshness_days: 90,
+    require_complete_evidence: true,
+    required_parser_version: 'comtrade-parser-v2',
+    required_normalization_version: 'comtrade-normalization-v2',
+    screening_algorithm_version: COUNTRY_SCREENING_ALGORITHM_VERSION,
+    demand_signal: { method: 'world_import_value_log10_v1', floor_usd: 100_000, ceiling_usd: 10_000_000_000 },
+    tie_breaker: 'selection_score_desc_then_screening_score_desc_then_import_value_desc_then_period_lag_asc_then_reporter_code_asc_v2',
+    period_selection_policy_version: 'country-period-selection-policy-v1',
+    max_acquisition_attempts_per_country: 2,
+    allow_partial_execution: false,
+  },
   'country_trade_metrics.policy': {
+    // Frozen at v1. The India-origin unit value Phase 1H needs is a SEPARATE supplemental
+    // statistic (see calculateIndiaOriginUnitValues) precisely so that this identity — and
+    // therefore every CountryTradeMetrics row Phase 1G has already validated — is unchanged.
     policy_version: 'country-trade-metrics-v1',
     calculation_version: 'country-trade-calculator-v1',
     expected_history_years: 5,
@@ -549,7 +1015,15 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     risk:{trade_stability_weight:60,macro_resilience_weight:20,payment_resilience_weight:20,volatility_ceiling_pp:50},
     export_economics:{existing_economics_weight:80,unit_value_weight:20,benchmark_ratio_ceiling:2},
     ranking:{minimum_available_base_weight:45,require_demand:true,require_growth_or_competition:true},
-    confidence:{formula_version:'weighted_component_evidence_coverage_v4'},
+    confidence:{formula_version:'weighted_component_evidence_coverage_and_recency_v5',recency_decay_per_year:0.8},
+  },
+  'country_truth.phase_1h': PHASE_1H_DEFAULT_POLICY,
+  'country_truth.market_access_orchestration': {
+    policy_version: 'market-access-orchestration-v1',
+    enabled: false,
+    origin_country: 'IN',
+    max_destinations: 30,
+    live_fetch_timeout_ms: 60_000,
   },
   'discovery.scoring': {
     model_version: 'market-attractiveness-v3',
@@ -585,6 +1059,27 @@ export const CONFIG_DEFAULTS: ConfigShape = {
     quantity_band_breakpoints: [100, 1_000, 10_000],
   },
   'billing.plans': DEFAULT_PLAN_PRICING,
+  'demand_discovery.v5': {
+    enabled: true,
+    auto_start_on_classification: true,
+    comtrade_newest_year: true,
+    comtrade_market_fallback: true,
+    comtrade_max_records: 100_000,
+    fx_max_lookback_days: 7,
+    fx_fetch_missing: true,
+    fx_treasury_fallback: true,
+    fx_treasury_max_lookback_days: 120,
+    tariff_acquisition: true,
+    tariff_live_fetch_timeout_ms: 60_000,
+    refresh_on_new_data: true,
+    refresh_daily_budget: 100,
+    reference_auto_import: true,
+    reference_auto_import_actor_email: null,
+    policy: DEMAND_DISCOVERY_V5_DEFAULT_POLICY,
+  },
+  'market_access.authority_refresh': {
+    singapore: { enabled: false, actor_email: null, activate_first_release: true, activate_changed_tariff: false, max_attempts_per_window: 3, minutes_between_attempts: 30 },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -610,12 +1105,48 @@ export async function getConfig<K extends ConfigKey>(key: K): Promise<ConfigShap
   if (key === 'country_evidence.policy') {
     return { ...CONFIG_DEFAULTS['country_evidence.policy'], ...(row.value as object) } as ConfigShape[K];
   }
+  if (key === 'country_period_selection.policy') {
+    return { ...CONFIG_DEFAULTS['country_period_selection.policy'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'country_screening.policy') {
+    const defaults=CONFIG_DEFAULTS['country_screening.policy'],stored=row.value as Partial<CountryScreeningPolicy>;
+    return {...defaults,...stored,excluded_iso2_codes:{...defaults.excluded_iso2_codes,...(stored.excluded_iso2_codes??{})},demand_signal:{...defaults.demand_signal,...(stored.demand_signal??{})}} as ConfigShape[K];
+  }
   if (key === 'country_trade_metrics.policy') {
     return { ...CONFIG_DEFAULTS['country_trade_metrics.policy'], ...(row.value as object) } as ConfigShape[K];
   }
   if (key === 'country_truth.scoring_v4') {
     const defaults=CONFIG_DEFAULTS['country_truth.scoring_v4'],stored=row.value as Partial<CountryTruthScoringV4Policy>;
-    return {...defaults,...stored,base_component_weights:{...defaults.base_component_weights,...(stored.base_component_weights??{})},demand:{...defaults.demand,...(stored.demand??{})},growth:{...defaults.growth,...(stored.growth??{})},competition:{...defaults.competition,...(stored.competition??{})},risk:{...defaults.risk,...(stored.risk??{})},export_economics:{...defaults.export_economics,...(stored.export_economics??{})},ranking:{...defaults.ranking,...(stored.ranking??{})},confidence:{...defaults.confidence,...(stored.confidence??{})}} as ConfigShape[K];
+    return {...defaults,...stored,base_component_weights:{...defaults.base_component_weights,...(stored.base_component_weights??{})},demand:{...defaults.demand,...(stored.demand??{})},growth:{...defaults.growth,...(stored.growth??{})},competition:{...defaults.competition,...(stored.competition??{})},risk:{...defaults.risk,...(stored.risk??{})},export_economics:{...defaults.export_economics,...(stored.export_economics??{})},ranking:{...defaults.ranking,...(stored.ranking??{})},// A stored row predating the recency term has no decay key. Taking the whole confidence block
+    // from defaults keeps `formula_version` and the arithmetic describing the same thing.
+    confidence:(stored.confidence&&'recency_decay_per_year' in stored.confidence)?{...defaults.confidence,...stored.confidence}:defaults.confidence} as ConfigShape[K];
+  }
+  if (key === 'country_truth.phase_1h') {
+    // Each pillar block is merged whole-field over defaults so a stored row written before a
+    // new knob existed still yields a complete, hashable policy rather than an undefined field
+    // that would silently disable a guard.
+    const defaults=CONFIG_DEFAULTS['country_truth.phase_1h'],stored=row.value as Partial<CountryTruthPhase1HPolicy>;
+    return {
+      ...defaults,
+      ...stored,
+      market_access:{...defaults.market_access,...(stored.market_access??{})},
+      export_economics:{...defaults.export_economics,...(stored.export_economics??{})},
+      exporter_market_fit:{...defaults.exporter_market_fit,...(stored.exporter_market_fit??{})},
+      logistics_feasibility:{...defaults.logistics_feasibility,...(stored.logistics_feasibility??{})},
+    } as ConfigShape[K];
+  }
+  if (key === 'demand_discovery.v5') {
+    // A stored row replaces the policy whole when it carries one: a partial policy would hash as
+    // a version nobody wrote. Switches merge over defaults so an older row stays complete.
+    const defaults = CONFIG_DEFAULTS['demand_discovery.v5'], stored = row.value as Partial<DemandDiscoveryV5Config>;
+    return { ...defaults, ...stored, policy: stored.policy ?? defaults.policy } as ConfigShape[K];
+  }
+  if (key === 'country_truth.market_access_orchestration') {
+    return { ...CONFIG_DEFAULTS['country_truth.market_access_orchestration'], ...(row.value as object) } as ConfigShape[K];
+  }
+  if (key === 'market_access.authority_refresh') {
+    const defaults = CONFIG_DEFAULTS['market_access.authority_refresh'], stored = row.value as Partial<AuthorityRefreshConfig>;
+    return { ...defaults, ...stored, singapore: { ...defaults.singapore, ...(stored.singapore ?? {}) } } as ConfigShape[K];
   }
   if (key === 'documents.registry') {
     const stored = row.value as unknown as DocTypeRegistryEntry[];
@@ -760,6 +1291,40 @@ export async function resolvePagination(params: {
   const requested = Number(params.per_page ?? policy.default_per_page) || policy.default_per_page;
   const per_page = Math.min(Math.max(1, requested), policy.max_per_page);
   return { page, per_page, skip: (page - 1) * per_page, take: per_page };
+}
+
+/** Problems with a `market_access.authority_refresh` value, empty when valid (config API and script). */
+export function authorityRefreshConfigProblems(value: unknown): string[] {
+  const config = value as Partial<AuthorityRefreshConfig> | null;
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return ['The value must be an object.'];
+  const sg = config.singapore as Partial<AuthorityRefreshConfig['singapore']> | undefined;
+  if (!sg || typeof sg !== 'object' || Array.isArray(sg)) return ['singapore must be an object.'];
+  const problems: string[] = [];
+  for (const field of ['enabled', 'activate_first_release', 'activate_changed_tariff'] as const) {
+    if (sg[field] !== undefined && typeof sg[field] !== 'boolean') problems.push(`singapore.${field} must be true or false.`);
+  }
+  if (sg.actor_email !== undefined && sg.actor_email !== null && (typeof sg.actor_email !== 'string' || !/^[^@\s]+@[^@\s]+$/.test(sg.actor_email))) problems.push('singapore.actor_email must be an email address or null.');
+  if (sg.enabled === true && !sg.actor_email) problems.push('singapore.actor_email is required when the refresh is enabled.');
+  if (sg.max_attempts_per_window !== undefined && (!Number.isInteger(sg.max_attempts_per_window) || sg.max_attempts_per_window < 1 || sg.max_attempts_per_window > 6)) problems.push('singapore.max_attempts_per_window must be a whole number from 1 to 6.');
+  if (sg.minutes_between_attempts !== undefined && (!Number.isInteger(sg.minutes_between_attempts) || sg.minutes_between_attempts < 10 || sg.minutes_between_attempts > 120)) problems.push('singapore.minutes_between_attempts must be a whole number from 10 to 120.');
+  return problems;
+}
+
+/**
+ * Problems with a stored `country_truth.market_access_orchestration` value, empty when valid.
+ * Used by the config API before a version is written and by the deep request before a policy is
+ * frozen into a job, so a malformed switch fails loudly instead of half-enabling acquisition.
+ */
+export function marketAccessOrchestrationPolicyProblems(value: unknown): string[] {
+  const policy = value as Partial<CountryTruthMarketAccessOrchestrationPolicy> | null;
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return ['The policy must be an object.'];
+  const problems: string[] = [];
+  if (typeof policy.policy_version !== 'string' || !policy.policy_version.trim()) problems.push('policy_version must be a non-empty string.');
+  if (typeof policy.enabled !== 'boolean') problems.push('enabled must be true or false.');
+  if (policy.origin_country !== 'IN') problems.push('origin_country must be IN.');
+  if (!Number.isInteger(policy.max_destinations) || policy.max_destinations! < 1 || policy.max_destinations! > 100) problems.push('max_destinations must be a whole number from 1 to 100.');
+  if (!Number.isInteger(policy.live_fetch_timeout_ms) || policy.live_fetch_timeout_ms! < 1_000 || policy.live_fetch_timeout_ms! > 300_000) problems.push('live_fetch_timeout_ms must be a whole number from 1000 to 300000.');
+  return problems;
 }
 
 /**
