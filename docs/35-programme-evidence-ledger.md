@@ -2111,6 +2111,28 @@ docs/13 §F. Done here: docs/37's cluster-1 row, which still said "pending" (on 
 `staging-pilot-discovery` 4, `admin-settings` 6: all pass. None of docs/39's production steps has
 run yet.
 
+### E-050 · 2026-11-03 · Password reset and a bug-report inbox (R-39, R-40) (in review)
+
+**Built.**
+- *Password reset.* "Forgot your password?" on the sign-in page (`/forgot-password`) →
+  `POST /api/v1/password-reset`, which always answers 202 with the same message. A link goes only to
+  an active account with a password, at most three an hour. The token is 32 random bytes; only its
+  SHA-256 is stored (`PasswordResetToken`, migration `20261103120000_password_reset_tokens`, forward
+  only). It works once, for 30 minutes, and asking again retires earlier links. `/reset-password` →
+  `POST /api/v1/password-reset/confirm` sets the new password, uses up every open link of the account
+  in the same transaction (a second submission of one link fails), and audits `password_reset`. The
+  email goes straight through the configured provider, so the token never sits in a notification;
+  staging still redirects it. Sessions already open elsewhere are not ended (JWT sessions); noted in
+  docs/40 §3.6.
+- *Bug-report inbox.* `/ops/support` (Ops menu: Bug reports) lists every report, newest first, for
+  ops supervisors, ops finance and admins. Each new report notifies every active admin and ops
+  supervisor in the app, written in the same transaction as the report.
+- docs/40 §2, §3.6 and §3.10 updated.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files.
+`password-reset` 4 tests (new), `bug-reports` 8 (1 new), `social-auth` 21, `legal-line` 2: all pass.
+The migration was applied by the local harness with the other 85.
+
 ## Risk register
 
 
@@ -2154,5 +2176,5 @@ run yet.
 | R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — decided (E-049): production rotates in the launch (docs/39 §2.3; Razorpay excepted by the owner); staging follows | The launch; then staging's rotation |
 | R-37 | The staging worker runs in Amsterdam and the database in Singapore: every query crosses continents, and a v5 results write took 5.2 s | Mitigated (E-039): a 120 s write timeout. Production's worker is created in Singapore, beside web and Neon (docs/39 §2.6) | The owner moves staging's worker to Singapore |
 | R-38 | `PATCH /api/v1/exporter-org/commitment-fee` accepted the staff sources (`manual_ops`, `bank_partner`, `AA`) from the exporter itself, even with Razorpay configured: any exporter could unlock paid tier without paying | Closed (E-049): `exporterFeeConfirmationProblem`; with the gateway configured every source is refused, without it only `exporter_update` | — |
-| R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Open (E-049); interim handling in docs/40 §3.6 | A reset flow by email (E-049 close-out list) |
-| R-40 | In-app bug reports are stored but nobody is shown or told about them | Open (E-049) | A bug-report list in `/ops` (E-049 close-out list) |
+| R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Closed (E-050): reset by a one-time emailed link | — |
+| R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |

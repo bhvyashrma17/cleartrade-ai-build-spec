@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useState } from 'react';
 import { Button, Input } from '@/components/ui';
 import { authenticate, type LoginState } from './actions';
@@ -52,6 +53,9 @@ export function LoginForm({ callbackUrl, oauthErrorMessage, socialProviders }: L
           }} />
         </div>
         <Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? 'Signing in…' : 'Sign in'}</Button>
+        <p className="text-center text-sm">
+          <Link href="/forgot-password" className="text-muted underline underline-offset-2 hover:text-bone">Forgot your password?</Link>
+        </p>
       </form>
     </div>
   );
