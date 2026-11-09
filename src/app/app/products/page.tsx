@@ -8,7 +8,7 @@
 import Link from 'next/link';
 import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { prisma } from '@/lib/prisma';
-import { Card, EmptyState, PageHeader, StatusChip } from '@/components/ui';
+import { buttonClass, Card, EmptyState, PageHeader, StatusChip } from '@/components/ui';
 import { assessProductReadiness } from '@/lib/country-discovery/readiness';
 
 export const dynamic = 'force-dynamic';
@@ -26,11 +26,23 @@ export default async function ProductsPage() {
       <PageHeader
         title="Your products"
         description="Choose a product to find the export markets that suit it best."
+        actions={
+          products.length > 0 ? (
+            <Link href="/app/markets" className={buttonClass('secondary', 'md')}>
+              Add a product
+            </Link>
+          ) : null
+        }
       />
       {products.length === 0 ? (
         <EmptyState
           title="No products yet"
           description="ClearTrade compares markets for one product at a time. Add a product and its HS classification to begin."
+          action={
+            <Link href="/app/markets" className={buttonClass('primary', 'md')}>
+              Add a product
+            </Link>
+          }
         />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
