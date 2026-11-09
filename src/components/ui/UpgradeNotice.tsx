@@ -15,10 +15,20 @@ import { buttonClass } from './Button';
 
 export type UpgradeTier = 'free' | 'paid';
 
+// Since 9 Nov 2026 an account alone runs no tools (docs/14 §3c), so the `free` step is
+// "create an account on the way to membership": registration lands on the plans page.
 const TIER_COPY: Record<UpgradeTier, { name: string; cta: string; href: string }> = {
-  free: { name: 'a free account', cta: 'Create free account', href: '/register' },
+  free: { name: 'an account', cta: 'Create an account', href: '/register?callbackUrl=/app/plans' },
   paid: { name: 'Premium', cta: 'See plans', href: '/app/plans' },
 };
+
+/**
+ * Which step to name for someone who may not run a tool: a visitor or guest needs an account
+ * first, a free account needs a membership. Paid callers never reach a notice.
+ */
+export function upgradeTierFor(tier: 'guest' | 'free' | 'paid' | null | undefined): UpgradeTier {
+  return tier === 'free' ? 'paid' : 'free';
+}
 
 interface UpgradeNoticeBase {
   /** What is withheld, in the user's terms. */

@@ -1,11 +1,12 @@
 /**
  * EXP-07 Buyer Detail.
  *
- * Same anonymous-visitor contract as Market Detail (`getPrincipal()`, not a throwing
- * guard) — a guest can view a buyer's global facts, with contacts withheld, without
- * ever registering (docs/04's own instruction: "Guest tier sees the page with contacts
- * withheld, per the existing tier projection" — reusing `tierMeets('buyer_contact.view')`
- * exactly the way `/api/v1/buyers` decides it for the list).
+ * Same visitor contract as Market Detail (`getPrincipal()`, not a throwing guard), but since
+ * 9 Nov 2026 (docs/14 §3c, ledger E-052) a buyer profile is part of buyer discovery and opens
+ * for paid members only: a visitor, a guest or a free account gets the members-only notice
+ * and nothing about the buyer is read. (Before, a guest saw a buyer's global facts with
+ * contacts withheld, per docs/04.) Contacts reuse `tierMeets('buyer_contact.view')` exactly
+ * the way `/api/v1/buyers` decides it for the list.
  *
  * Buyer has no `exporter_org_id` — it is a global entity — so there is no tenant scope
  * to fail on for the buyer read itself; `notFound()` only fires for a genuinely missing
@@ -21,7 +22,7 @@ import { notFound } from 'next/navigation';
 import { OrgTier } from '@prisma/client';
 import { RelationshipActions } from '@/components/buyer-detail/RelationshipActions';
 import { buyerChip, LEAD_STAGE_DISPLAY, VERIFICATION_DISPLAY } from '@/components/buyer-detail/statusDisplay';
-import { StatusChip, UpgradeNotice } from '@/components/ui';
+import { StatusChip, UpgradeNotice, upgradeTierFor } from '@/components/ui';
 import { getPrincipal } from '@/lib/auth';
 import { tierMeets } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -38,6 +39,17 @@ export default async function BuyerDetailPage({ params }: { params: Promise<{ bu
   const { buyerId } = await params;
   const principal = await getPrincipal();
   const tier = principal?.tier ?? OrgTier.guest;
+  if (!tierMeets(tier, 'buyer_discovery.run')) {
+    return (
+      <div className="mx-auto max-w-3xl py-6">
+        <UpgradeNotice
+          requiredTier={upgradeTierFor(tier)}
+          title="Buyer profiles are for members"
+          description="A buyer's trade record, fit and contacts open with a membership. Buyer discovery shows a sample of what you get."
+        />
+      </div>
+    );
+  }
   const canSeeContacts = tierMeets(tier, 'buyer_contact.view');
 
   const buyer = await prisma.buyer.findFirst({

@@ -49,6 +49,7 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-036 | 2026-10-30 | The earlier discovery engines are retired: in staging and production nothing starts a Country Truth v4 scan, scan request or detailed analysis, or a warehouse-engine run, and acceptance gates check v5 runs only. Owner's words: "the acceptance gates should not run old v4s." | Owner | Demand Discovery, Phase 1 gate (docs/34) |
 | D-037 | 2026-10-30 | Demand Discovery uses actual data or labelled estimates only; agents neither read nor record tariffs. Owner's words: "we don't want agents reading, either have labeled estimates or actual data in demand discovery." | Owner | Demand Discovery v5, Customs Atlas (docs/36, docs/37) |
 | D-038 | 2026-10-30 | Build order: finish Demand Discovery first, then regional demand for all its markets, then buyers for the same markets, with source research and tariff work alongside; tariff automation for every market (D-030) resumes as part of finishing stage 1. Owner's words: "Ideate well about what to build in demand discovery first to finish it once and for all, then covering the region for all the countries covered in it, and then the buyer discovery for the same countries. It's a simultaneous project, I guess." and "The completion of the demand discovery first, right? If yes, then let's proceed with it." | Owner | Programme |
+| D-039 | 2026-11-09 | Every tool runs for paid members only. Owner's words: "the only way to do it is being a paid user", and for visitors and free accounts "it shouldn't burn actual credits, it should just be with static data to show the sample of workflow … and make that accurate. but don't exhaust our resources." The owner's own test account becomes a member through an audited fee waiver ("I register, you mark it paid"). | Owner | Product access (docs/14 §3c), E-052 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2168,6 +2169,47 @@ The migration was applied by the local harness with the other 85.
   scanner fall back to their own service settings. Their build, start, pre-deploy, health check and restart
   settings must be entered by hand before then (R-41).
 - Delete `tmp/rw/production.env` on the owner's machine when Part 3 is done.
+
+### E-052 · 2026-11-09 · Tools are members-only; an audited fee waiver for the test account (D-039) (in review)
+
+**Why.** During the production check the agent, signed out, used the product code finder on the markets
+page; the owner stopped it before any estimate ran and decided (D-039) that no tool runs for anyone who
+is not a paid member.
+
+**Built.**
+- *Tier map.* `CAPABILITY_MIN_TIER` keeps below `paid` only the profile view, company details,
+  notices, team, and the two ways to pay. `market_estimate.run` (was guest), `readiness.run`,
+  `buyer_contact.view`, `buyer_lead.create`, `buyer_shortlist.create` and `task_evidence.upload`
+  (were free) are now paid. `buyer_discovery.run` and `demand_discovery.run` already were.
+- *Routes.* `POST /api/v1/market-estimates` no longer mints a guest: no session is 401, below paid is
+  402, both before anything is read. `POST /api/v1/hs-finder` takes the same gate. Nothing in the
+  product mints a guest any more; guest tenants minted before this keep the old lifecycle.
+- *Pages.* Below paid, `/app/markets` and `/app/buyers` show a members-only notice and the static
+  sample, and read nothing from the database; the market estimate screen is removed. The buyer
+  profile, `/app/readiness` and the Enablement Center show the notice and read nothing. Readiness
+  left the free navigation. The homepage, sign-up, plans page and free-plan banner no longer say
+  the tools are free. A visitor's next step is "Create an account" (registration lands on the plans
+  page); a free account's is "See plans".
+- *Fee waiver.* `scripts/waive-commitment-fee.ts`: due → waived through the commitment-fee state
+  machine, an active admin as actor, a reason of at least 10 characters, `--dry-run`,
+  `--confirm-production` on production; the update and its `commitment_fee_waived` audit event
+  commit together. A waived fee is a permanent paid grant (`resolveTier()`).
+- docs/14 §3 and new §3c, docs/40 §3.5, AGENTS.md tier table. The guest-funnel scenarios in
+  `scripts/browser-verify.ts` and `scripts/verify-commitment-fee-gate.ts` (local dev harnesses, not
+  in CI or any runbook) describe the old funnel; they are marked retired rather than rewritten.
+
+**Not yet.** The sample still uses the illustrative figures of `src/lib/billing/preview.ts`. Making it
+accurate needs a real, dated run, which comes from the test account once it is a member; that follows
+as its own change.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files.
+`paid-only-tools` 3 tests (new: the map below paid is exactly the six account and payment
+capabilities; the estimate refuses visitor/guest/free before computing and mints nothing; the pages'
+members-only branch reads nothing), `waive-commitment-fee` 5 (new), `hs-finder-route` 3 (1 new),
+`membership` 63, `admin-settings` 6, `social-auth` 21, `user-settings` 8, `production-confirmation` 5,
+`password-reset` 4, `market-estimate-baci` 2, `demand-discovery-v5-exporter-fit` 6: all pass.
+`pilot-e2e` fails one escalation test in this workspace with and without the change (local database
+only; it passes in CI).
 
 ## Risk register
 

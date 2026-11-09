@@ -25,12 +25,15 @@ const EXPLORE: MenuLink[] = [
 
 const MANAGE_FREE: MenuLink[] = [
   { label: 'Plans & billing', href: '/app/plans', description: 'Compare Free and Premium, and manage your membership.' },
-  { label: 'Readiness', href: '/app/readiness', description: 'Your export-readiness assessment and score.' },
   { label: 'Settings', href: '/app/settings', description: 'Your account, plan, session and support options.' },
   { label: 'Notifications & Account', href: '/app/notifications', description: 'Alerts, preferences, organization profile and team.' },
 ];
 
+// Readiness is a tool, and tools run for paid members only (docs/14 §3c, ledger E-052).
+const READINESS: MenuLink = { label: 'Readiness', href: '/app/readiness', description: 'Your export-readiness assessment and score.' };
+
 const PAID_ONLY: { label: string; description: string }[] = [
+  { label: READINESS.label, description: READINESS.description },
   { label: 'Deals', description: 'Every deal your agent is working, across every buyer.' },
   { label: 'Tasks', description: 'Cross-deal task queue, owner and due time.' },
   { label: 'Messages', description: 'Conversations with your agent and buyers.' },
@@ -122,11 +125,8 @@ export default async function MorePage() {
       </Section>
 
       <Section title="Manage">
-        {isAtLeastFree ? (
-          MANAGE_FREE.map((item) => <LinkRow key={item.href} item={item} />)
-        ) : (
-          <LockedRow label="Readiness" description="Your export-readiness assessment and score." />
-        )}
+        {isPaid ? <LinkRow item={READINESS} /> : null}
+        {isAtLeastFree ? MANAGE_FREE.map((item) => <LinkRow key={item.href} item={item} />) : null}
         {!isPaid ? PAID_ONLY.map((item) => <LockedRow key={item.label} label={item.label} description={item.description} />) : null}
       </Section>
 

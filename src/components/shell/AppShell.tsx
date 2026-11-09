@@ -43,7 +43,7 @@ export interface NavItem {
 export const NAVIGATION: Record<Portal, NavItem[]> = {
   exporter: [
     { label: 'Overview', href: '/app/overview', minTier: 'free' },
-    { label: 'Readiness', href: '/app/readiness', minTier: 'free' },
+    { label: 'Readiness', href: '/app/readiness', minTier: 'paid' },
     { label: 'Products', href: '/app/products', minTier: 'paid' },
     { label: 'Markets', href: '/app/markets', minTier: 'guest' },
     { label: 'Buyers', href: '/app/buyers', minTier: 'guest' },
@@ -229,8 +229,8 @@ export function AppShell({
                   <span aria-hidden="true" className="size-1.5 rounded-full bg-slate" />
                   Guest
                 </span>
-                <Link href="/register" className={buttonClass('primary', 'sm')}>
-                  Create free account
+                <Link href="/register?callbackUrl=/app/plans" className={buttonClass('primary', 'sm')}>
+                  Create an account
                 </Link>
               </>
             ) : (
@@ -242,7 +242,7 @@ export function AppShell({
                     same bar would make the marker stop reading as a marker. Bone is the
                     highest-contrast treatment available on this ground anyway, which is
                     what "prominent" means in a dark system; it is the same weight the
-                    guest bar already gives "Create free account". */}
+                    guest bar already gives "Create an account". */}
                 {showUpgrade ? (
                   <Link href="/app/plans" className={buttonClass('primary', 'sm')}>
                     Upgrade

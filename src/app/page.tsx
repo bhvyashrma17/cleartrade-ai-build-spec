@@ -76,16 +76,16 @@ function LandingPage() {
                 <em className="italic text-accent">chaos.</em>
               </h1>
               <p className="mt-8 max-w-lg text-base leading-relaxed text-slate text-pretty">
-                Find your markets and buyers free. When you&rsquo;re ready to ship, a ClearTrade
-                agent handles the paperwork, customs, freight and payment with you.
+                Ranked markets and real buyers for your product, then a ClearTrade agent handles
+                the paperwork, customs, freight and payment with you.
               </p>
 
               <div className="mt-10 flex flex-wrap items-center gap-4">
                 {/* One primary CTA (docs/00 §6): everything else here is secondary to it. */}
                 <Link href="/app/markets" className={buttonClass('primary', 'md', 'h-11 min-h-11 px-6 text-sm shadow-accent')}>
-                  Find your export markets
+                  See how it works
                 </Link>
-                <span className="text-xs text-muted">Free · no account needed</span>
+                <span className="text-xs text-muted">A sample run · no account needed</span>
               </div>
 
               <p className="mt-8 text-sm text-muted">
@@ -151,13 +151,13 @@ function LandingPage() {
           </div>
         </section>
 
-        {/* --- Tiers. Honest about the boundary: what is free, and what is not. --- */}
+        {/* --- Tiers. Honest about the boundary: the tools run for members only (docs/14 §3c). --- */}
         <section className="mx-auto max-w-shell px-5 pb-28 sm:px-8">
           <h2 className="eyebrow border-t border-line pt-5">What you get, and when you pay</h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <Tier name="Try it free" price="No account" description="Search markets and buyers with no sign-up. A couple of searches, on us — enough to see if there's real demand for what you make." />
-            <Tier name="Free account" price="₹0" description="Save your searches, see buyer contact details, and build a list of leads you own." />
-            <Tier name="Paid plan" price="One-time commitment fee" description="A ClearTrade agent works your deals: negotiation, documents, shipping coordination and payment tracking, start to finish." accent />
+            <Tier name="See a sample" price="No account" description="Walk through a sample run: ranked markets, the reasons behind each rank, and the buyers that follow. Nothing runs on your product yet." />
+            <Tier name="Account" price="₹0" description="Your company profile and team, ready for membership. The tools open when you become a member." />
+            <Tier name="Membership" price="One-time commitment fee" description="Every tool on your own products — markets, regions, buyers and contacts, readiness, documents — and a ClearTrade agent on your deals, start to finish." accent />
           </div>
         </section>
       </main>
