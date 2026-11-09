@@ -1,5 +1,6 @@
 /**
- * Owner-approved idea 3 (E-042): the scoring's health across India's export sectors, on staging.
+ * Owner-approved idea 3 (E-042): the scoring's health across India's export sectors, on staging, and
+ * on production as its read-only acceptance check (docs/39 §5).
  *
  *   npx tsx --env-file=tmp/rw/operator.env scripts/dd5-health-check.ts [--top=100] [--year=2024] [--codes=100630,741810] [--org=<exporter org id>] [--out=report.json]
  *
@@ -7,7 +8,8 @@
  * partition is read once), or the codes given, scores each as a v5 run would from stored data only,
  * without the exporter's own figures, and compares its top 10 with India's own top destinations.
  * No Comtrade calls, tariff look-ups or FX fetches are made. The rows it could write are counted
- * before and after, and the report says if any count moved. Refuses production. Prints no secrets.
+ * before and after, and the report says if any count moved. Production only with
+ * `--confirm-production=<database fingerprint prefix>`. Prints no secrets.
  * `--org` is whose market-access evidence scope is read; by default the "[TEST] DD5 archetypes"
  * exporter's.
  */
@@ -16,6 +18,7 @@ import { getConfig } from '@/lib/config';
 import { ARCHETYPE_EXPORTER_NAME } from '@/lib/demand-discovery-v5/archetype-runs';
 import { indiaTopExports, scoreProductOffline, summarizeHealthCheck, type HealthCheckProduct } from '@/lib/demand-discovery-v5/health-check';
 import { prisma } from '@/lib/prisma';
+import { productionConfirmationProblem } from '@/lib/production-confirmation';
 import { validateDatabaseEnvironment } from '@/lib/runtime-config';
 
 const arg = (name: string) => process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3)?.trim() || undefined;
@@ -31,7 +34,8 @@ async function writableCounts() {
 
 async function main() {
   const database = validateDatabaseEnvironment('worker');
-  if (database.environment === 'production' || process.env.DATABASE_ENVIRONMENT === 'production') throw new Error('dd5-health-check refuses production.');
+  const confirmation = productionConfirmationProblem(database, process.argv, 'dd5-health-check');
+  if (confirmation) throw new Error(confirmation);
   const top = Number(arg('top') ?? 100);
   if (!Number.isInteger(top) || top < 1 || top > 500) throw new Error('--top must be an integer from 1 to 500.');
   const orgId = arg('org') ?? (await prisma.exporterOrg.findFirst({ where: { display_name: ARCHETYPE_EXPORTER_NAME }, select: { id: true } }))?.id;
