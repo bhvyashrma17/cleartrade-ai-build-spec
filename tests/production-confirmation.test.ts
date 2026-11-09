@@ -33,8 +33,8 @@ describe('production confirmation', () => {
     }
   });
 
-  test('the two scripts that may write to production use it; the pilot seed still refuses production', () => {
-    for (const file of ['scripts/import-importer-list.ts', 'scripts/staging-pilot.ts']) {
+  test('the scripts that may write to production use it; the pilot seed still refuses production', () => {
+    for (const file of ['scripts/import-importer-list.ts', 'scripts/staging-pilot.ts', 'scripts/dd5-auto-import.ts', 'scripts/canary-iceland-authority-pack.ts', 'scripts/canary-green-wave-authority-packs.ts']) {
       expect(readFileSync(file, 'utf8'), file).toContain('productionConfirmationProblem(');
     }
     const pilot = readFileSync('scripts/staging-pilot.ts', 'utf8');
