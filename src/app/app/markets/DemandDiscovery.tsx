@@ -1,15 +1,18 @@
 'use client';
 
 /**
- * EXP-04 Demand Discovery input + run state.
+ * EXP-04 Demand Discovery input + run state. Rendered for paid members only (docs/14 §3c).
  *
- * Guest tier types product context straight in (description + HS code) and no Product
- * row is created for them. Free/paid pick a saved product. The tier boundary is shown,
- * never merely implied by a missing control (docs/03 §5).
+ * A run needs a saved product with a confirmed HS code. A member with no product yet — and
+ * one who chooses "Add another product" — describes it, picks the code (the code finder
+ * helps), confirms it, and `POST /api/v1/products` saves it and starts the run (E-053).
+ * Otherwise the member picks one of their saved products. The guest branches below are
+ * unreachable since 9 Nov 2026 (no guest runs anything).
  */
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button, Input, Skeleton, StatusChip, UpgradeNotice } from '@/components/ui';
 import { ApiClientError, apiGet, apiPost } from '@/lib/api-client';
 import { useJobPoll } from '@/hooks';
@@ -71,6 +74,10 @@ export function DemandDiscovery({
   latestRun: { runId: string; jobId: string } | null;
 }) {
   const isGuest = tier === 'guest';
+  const router = useRouter();
+  // A member with no saved product starts by adding one; others can switch to it.
+  const [adding, setAdding] = useState(products.length === 0);
+  const [codeConfirmed, setCodeConfirmed] = useState(false);
   const [productId, setProductId] = useState('');
   const [description, setDescription] = useState('');
   const [hsCode, setHsCode] = useState('');
@@ -85,11 +92,31 @@ export function DemandDiscovery({
       : { kind: 'idle' },
   );
 
-  const useAdHoc = isGuest || products.length === 0;
+  const addMode = !isGuest && adding;
+  const useAdHoc = isGuest || addMode;
 
   async function run() {
     setPhase({ kind: 'running' });
     try {
+      if (addMode) {
+        const saved = await apiPost<{ data: { product_id: string; run: { id: string; job_id: string | null; status: string } | null; not_started_reason: string | null } }>('/api/v1/products', {
+          name: description.trim(),
+          hs_code: hsCode.trim(),
+          confirm_hs_code: codeConfirmed,
+          ...(picked && picked.hs6 === hsCode.trim() ? { code_list: 'Official HS 2022 list (product code finder)' } : {}),
+        });
+        setAdding(false);
+        setCodeConfirmed(false);
+        setProductId(saved.data.product_id);
+        // The saved product joins the list and the history on the server render.
+        router.refresh();
+        setPhase(
+          saved.data.run
+            ? { kind: 'accepted', result: { job_id: saved.data.run.job_id, status: saved.data.run.status, target: { type: 'discovery_run', id: saved.data.run.id } } }
+            : { kind: 'error', message: saved.data.not_started_reason ?? 'Your product is saved, but the search did not start.', fields: {} },
+        );
+        return;
+      }
       const payload = useAdHoc
         ? { product_description: description.trim(), hs_code: hsCode.trim() || undefined }
         : { product_id: productId };
@@ -127,9 +154,17 @@ export function DemandDiscovery({
   const jobPending = Boolean(activeJobId) && activeJob == null;
 
   const fieldErrors = phase.kind === 'error' ? phase.fields : {};
+  // Errors on a field this form shows go beside it; anything else (e.g. `product_id`) goes in the alert.
+  const shownFields = useAdHoc ? ['product_description', 'name', 'hs_code', 'confirm_hs_code'] : [];
+  const unshownError = phase.kind === 'error' && !Object.keys(fieldErrors).some((field) => shownFields.includes(field));
   const submitting = phase.kind === 'running';
   const locked = submitting || jobIsActive || jobPending;
-  const canSubmit = (useAdHoc ? description.trim().length >= 3 : Boolean(productId)) && !locked;
+  const canSubmit =
+    (addMode
+      ? description.trim().length >= 3 && /^\d{6}$/.test(hsCode.trim()) && codeConfirmed
+      : useAdHoc
+        ? description.trim().length >= 3
+        : Boolean(productId)) && !locked;
 
   return (
     <div className="py-6">
@@ -169,15 +204,18 @@ export function DemandDiscovery({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Organic turmeric powder, food grade"
-                error={fieldErrors.product_description}
+                error={fieldErrors.product_description ?? fieldErrors.name}
               />
               <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                A plain description is enough — you don&rsquo;t need to know the customs code.
+                {addMode
+                  ? 'This becomes your saved product. A plain description is enough.'
+                  : 'A plain description is enough — you don’t need to know the customs code.'}
               </p>
             </div>
             <div>
               <label htmlFor="hs" className="mb-1.5 block text-sm font-medium text-primary">
-                HS code <span className="font-normal text-[var(--color-text-secondary)]">(optional)</span>
+                HS code{' '}
+                {addMode ? null : <span className="font-normal text-[var(--color-text-secondary)]">(optional)</span>}
               </label>
               <Input
                 id="hs"
@@ -193,8 +231,9 @@ export function DemandDiscovery({
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                  The tariff classification for your product. Add it if you know it — it sharpens the
-                  tariff and duty figures.
+                  {addMode
+                    ? 'The 6-digit customs code for your product. Demand Discovery ranks markets for this code.'
+                    : 'The tariff classification for your product. Add it if you know it — it sharpens the tariff and duty figures.'}
                 </p>
               )}
               <button
@@ -218,6 +257,25 @@ export function DemandDiscovery({
                 />
               ) : null}
             </div>
+            {addMode ? (
+              <div>
+                <label className="flex items-start gap-2 text-sm text-primary">
+                  <input
+                    type="checkbox"
+                    checked={codeConfirmed}
+                    onChange={(e) => setCodeConfirmed(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>This code describes my product. I confirm it as my product&rsquo;s classification.</span>
+                </label>
+                {fieldErrors.confirm_hs_code ? <p className="mt-1 text-xs text-critical">{fieldErrors.confirm_hs_code}</p> : null}
+                {products.length > 0 ? (
+                  <button type="button" onClick={() => setAdding(false)} className="mt-2 text-xs font-semibold text-primary underline underline-offset-2">
+                    Choose a saved product instead
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div>
@@ -239,17 +297,22 @@ export function DemandDiscovery({
               ))}
             </select>
             {productId?<ProductClassificationForm key={productId} productId={productId} productName={products.find(product=>product.id===productId)?.name??''} status={products.find(product=>product.id===productId)?.hs_classification_status??null} method="exporter_supplied"/>:null}
+            {isGuest ? null : (
+              <button type="button" onClick={() => { setAdding(true); setPhase({ kind: 'idle' }); }} className="mt-2 text-xs font-semibold text-primary underline underline-offset-2">
+                Add another product
+              </button>
+            )}
           </div>
         )}
 
-        {phase.kind === 'error' && !Object.keys(fieldErrors).length ? (
+        {unshownError ? (
           <p role="alert" className="mt-3 text-sm text-critical">
             {phase.message}
           </p>
         ) : null}
 
         <Button onClick={run} disabled={!canSubmit} className="mt-5 w-full sm:w-auto">
-          {submitting ? 'Starting search…' : 'Find markets'}
+          {submitting ? 'Starting search…' : addMode ? 'Save product and find markets' : 'Find markets'}
         </Button>
         {jobIsActive || jobPending ? (
           <p className="mt-2 text-xs text-[var(--color-text-secondary)]">

@@ -142,10 +142,13 @@ must say UNCHANGED (docs/36 §10).
 
 ## 5. The owner's test
 
-- Signed out: the free estimate for a product (the code finder opens under the HS field).
-- As an exporter: register with an email that is not the admin account, pay the commitment fee
-  (Razorpay is live, so this is a real payment; an admin can waive it in `/ops` instead), add a
-  product and confirm its HS code. Demand Discovery starts by itself; the results show the ranked
+- Signed out (and as a free account): Markets and Buyers show the members-only notice and the sample;
+  nothing runs (D-039, docs/14 §3c). The estimate and code-finder APIs answer 401 / 402.
+- As an exporter: register with an email that is not the admin account and become a member, either by
+  paying (Razorpay is live, so this is a real payment) or, for the owner's QA account, by the audited
+  waiver `scripts/waive-commitment-fee.ts` (docs/40 §3.5). Then add a product and confirm its HS code:
+  on Markets, describe it, pick the code (the code finder helps), tick the confirmation and press
+  "Save product and find markets" (`POST /api/v1/products`, E-053). Demand Discovery starts by itself; the results show the ranked
   markets and "Where India already sells most". On a market page: regional demand (US) and buyers
   (UK).
 - As admin: the run in `/ops/discovery`.
