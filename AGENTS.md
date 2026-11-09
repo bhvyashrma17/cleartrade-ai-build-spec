@@ -289,24 +289,28 @@ for where things live today vs. where docs/13 originally sketched them.
 **Commercial tiers (docs/14)**
 
 `ExporterOrg.tier` is `guest | free | paid`. A guest is a real org + user with a real
-session, minted on their **first search** (not first page view), so every existing tenancy
-and permission check works on them unchanged.
+session; since 9 Nov 2026 nothing mints one (the market estimate used to), so guests are only
+the tenants minted before then.
 
-| | guest | free | paid |
+**Every tool runs for paid members only (owner decision 9 Nov 2026, docs/14 §3c, E-052).**
+Visitors and free accounts see a static sample (`src/lib/billing/preview.ts`) and nothing runs
+or is read on their behalf. Below `paid`, only the account, team, company details, notices and
+the two ways to pay stay open.
+
+| | visitor / guest | free | paid |
 |---|---|---|---|
-| Pre-membership market estimate | ✓ (capped per IP, observed history only — no ranking, no LLM) | ✓ | ✓ |
-| Full Demand Discovery (ranked, save/select) | — | — | ✓ (commitment fee paid) |
-| Buyer Discovery | ✓ (contacts hidden, result ceiling) | ✓ | ✓ |
-| Saved discovery history | — (persisted, but no history UI; purged after retention) | ✓ | ✓ |
-| Readiness | — | ✓ | ✓ |
-| Buyer contacts | — | ✓ | ✓ |
-| Buyer leads | — | ✓ (no agent assigned) | ✓ |
+| Market estimate, code finder | — (sample only) | — (sample only) | ✓ |
+| Full Demand Discovery (ranked, regions, save/select) | — (sample only) | — (sample only) | ✓ |
+| Buyer Discovery, buyer profiles, contacts | — (sample only) | — (sample only) | ✓ |
+| Readiness, evidence uploads | — | — | ✓ |
+| Buyer leads, shortlists | — | — | ✓ |
 | Deals, documents, shipment, payment, agent | — | — | ✓ |
+| Account, team, company details, paying the fee or a membership | register first | ✓ | ✓ |
 
 **Full Demand Discovery moved behind the commitment fee (docs/01 §2, docs/14 §3a).** This
 is not a new membership concept — it's the SAME commitment fee (`not_due`/`due`/`paid`/
 `waived`/`refunded`) docs/01 always specified, now doing the work of gating `paid` tier.
-Guest/free tier get `POST /api/v1/market-estimates` instead: a synchronous, no-LLM read of
+Paid members also get `POST /api/v1/market-estimates` (guest/free had it until 9 Nov 2026): a synchronous, no-LLM read of
 CEPII BACI, which covers every HS6 product (the `TradeFlow` warehouse is only the fallback
 where BACI is not loaded, E-041), returning observed historical import value + unit-price bands
 only. **Framing is a product requirement, not copy preference**: never project earnings or

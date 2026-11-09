@@ -120,7 +120,7 @@ export const COMPARISON: readonly ComparisonFeature[] = [
   {
     capability: 'buyer_lead.create',
     label: 'Your own lead pipeline',
-    detail: 'Shortlist buyers and track them yourself. On Free these stay unassigned — no agent capacity is used.',
+    detail: 'Shortlist buyers and track them yourself, alongside the leads your agent works.',
   },
   {
     capability: 'demand_discovery.run',

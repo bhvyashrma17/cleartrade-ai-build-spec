@@ -2,7 +2,8 @@
  * Real-source staging canary for the Iceland Skatturinn authority pack.
  *
  * It writes an immutable release and evidence snapshots, so it refuses every environment except
- * staging. Runtime identity pins are validated before the first network or database write.
+ * staging, and production with `--confirm-production=<database fingerprint prefix>` (docs/39 §4.2).
+ * Runtime identity pins are validated before the first network or database write.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { OrgTier } from '@prisma/client';
@@ -10,7 +11,8 @@ import { acquireIcelandAuthorityBundle, icelandKeysUrlForRelease } from '@/lib/m
 import { readIcelandAuthorityBundle } from '@/lib/market-access/providers/iceland-bundle';
 import { fetchIcelandMarketAccess, importIcelandRelease, reparseIcelandAuthorityRelease } from '@/lib/market-access/providers/iceland-service';
 import { prisma } from '@/lib/prisma';
-import { validateRuntimeEnvironment } from '@/lib/runtime-config';
+import { productionConfirmationProblem } from '@/lib/production-confirmation';
+import { validateDatabaseEnvironment, validateRuntimeEnvironment } from '@/lib/runtime-config';
 import type { Principal } from '@/types';
 
 // Qualified 11 Oct 2026 (docs/customs-atlas/iceland-october-2026-requalification.md). The 1 September
@@ -21,8 +23,16 @@ const EXPECTED_KEYS_SHA256 = '65466de4a4a4b08da025187c8f1202f307ab0469ae32cc0ffc
 const EXPECTED_PHYSICAL_RECORDS = 31_483;
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
+/** Staging, or production with `--confirm-production=<database fingerprint prefix>` (docs/39 §4.2). */
+function assertCanaryEnvironment(script: string) {
+  const env = process.env.APP_ENV;
+  if (env !== 'staging' && env !== 'production') throw new Error(`REFUSING TO RUN: ${script} may persist only in APP_ENV=staging or production.`);
+  const confirmation = productionConfirmationProblem(validateDatabaseEnvironment('worker'), process.argv, script);
+  if (confirmation) throw new Error(confirmation);
+}
+
 async function main() {
-  if (process.env.APP_ENV !== 'staging') throw new Error('REFUSING TO RUN: Iceland canaries may persist only in APP_ENV=staging.');
+  assertCanaryEnvironment('canary-iceland-authority-pack');
   validateRuntimeEnvironment('worker');
   const user = await prisma.user.findUnique({ where: { email: process.env.ICELAND_CANARY_ACTOR_EMAIL ?? 'admin@cleartrade.example' } });
   if (!user) throw new Error('Seed or configure ICELAND_CANARY_ACTOR_EMAIL as an existing staging ops/admin user.');

@@ -59,6 +59,13 @@ Exporters see only their own organisation; agents only their assigned exporters;
   due or overdue; §5 says who refreshes it.
 
 ### 3.5 Payments and memberships
+- Every tool runs for paid members only (D-039, docs/14 §3c). Visitors and free accounts see a sample
+  and a "Create an account" or "See plans" button; "I signed up but can't run anything" is expected
+  until they pay.
+- A member without paying (the owner's test account, a partner the owner names) is a commitment-fee
+  waiver: an admin runs `scripts/waive-commitment-fee.ts` with the account's email and a reason
+  (production also needs `--confirm-production`, docs/39 §2). It is audited and does not expire.
+  Only on the owner's instruction.
 - Memberships are Razorpay subscriptions (monthly or annual). Access unlocks when Razorpay's
   webhook confirms the payment at `https://www.cleartrade.in/api/v1/billing/razorpay/webhook`.
 - Paid but locked: in Razorpay, check that the payment was captured and look at the webhook's
@@ -68,7 +75,8 @@ Exporters see only their own organisation; agents only their assigned exporters;
 - Exporters cannot mark a fee paid themselves while Razorpay is configured, and can never claim a
   staff confirmation (bank partner, Account Aggregator, Ops) for themselves (E-049).
 - Refunds: ops finance refunds in Razorpay and cancels the subscription there, then records it in the
-  ledger. The app has no refund screen yet; never change a tier in the database by hand.
+  ledger. The app has no refund screen yet; never change a tier in the database by hand (the waiver
+  script above is the one audited way to grant one).
 
 ### 3.6 Accounts and sign-in
 - Sign-in is by email and password, or Google or Apple where enabled (docs/29).

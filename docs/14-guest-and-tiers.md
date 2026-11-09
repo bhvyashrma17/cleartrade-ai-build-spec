@@ -1,5 +1,11 @@
 # 14 — Guest Access & Commercial Tiers
 
+> **Changed 9 Nov 2026 (owner decision, §3c, ledger E-052): every tool runs for paid members
+> only.** Visitors and free accounts see a static sample of the workflow and nothing runs on
+> their behalf; nothing mints a guest any more. Where this document says a guest or a free
+> account may run something, §3c overrides it. The guest machinery (§5) stays in the code for
+> guest tenants that already exist, and is unreachable for new visitors.
+
 **This document supersedes the "all access is authenticated and tenant-scoped" assumption
 that runs through `docs/01`–`docs/13`.** Those documents were written for a product where
 every request carried a session and belonged to a paying tenant. That is no longer true:
@@ -58,13 +64,16 @@ never "accidentally free".
 
 | Capability | Min tier | Notes |
 |---|---|---|
-| `market_estimate.run` | `guest` | The pre-membership estimate — see §3a. Additionally IP-capped, same budget as before — see §5 |
-| `buyer_discovery.run` | `guest` | Results capped at `max_buyer_results` for guests |
+| `market_estimate.run` | `paid` | **Changed 9 Nov 2026 (§3c).** Was `guest`, the pre-membership estimate of §3a |
+| `buyer_discovery.run` | `paid` | Never in the map, so always paid by default; the buyer profile page now follows it too (§3c) |
 | `exporter_profile.view` | `guest` | |
-| `readiness.run` | `free` | |
-| `buyer_contact.view` | `free` | The paid asset; see §4 |
-| `buyer_lead.create` | `free` | Created with `assigned_agent_id = null` below `paid` |
+| `readiness.run` | `paid` | **Changed 9 Nov 2026 (§3c).** Was `free` |
+| `buyer_contact.view` | `paid` | **Changed 9 Nov 2026 (§3c).** Was `free` |
+| `buyer_lead.create` | `paid` | **Changed 9 Nov 2026 (§3c).** Was `free` |
+| `buyer_shortlist.create` | `paid` | **Changed 9 Nov 2026 (§3c).** Was `free` |
+| `task_evidence.upload` | `paid` | **Changed 9 Nov 2026 (§3c).** Was `free` |
 | `exporter_master_data.edit` | `free` | |
+| `notification.manage`, `team.manage` | `free` | |
 | `commitment_fee.pay` | `free` | Records the fee paid and flips the org to `paid` — see §3a. Self-reported source refused once a gateway is configured |
 | `membership.manage` | `free` | Start/cancel a recurring membership — see §3b. A guest must register first |
 | `demand_discovery.run` | `paid` | **Changed.** Full ranked Demand Discovery — ranked markets, market detail, save/select — now requires the commitment fee paid. Was `guest`; guest/free get `market_estimate.run` instead |
@@ -163,6 +172,29 @@ Role limits still apply independently. A **paid** exporter still cannot `outreac
 `agent.assign` — those are agent/ops capabilities and no amount of money changes that.
 Staff principals (agent, ops, admin) have no tenant and resolve to `tier: 'paid'`, so the
 tier gate never fires on them.
+
+### 3c. Tools are members-only (owner decision, 9 Nov 2026)
+
+The product owner decided on 9 Nov 2026 that **no tool runs for anyone who is not a paid
+member**, and that visitors and free accounts see a static, accurate sample of the workflow
+instead, so that nothing they do spends our resources (ledger E-052). Concretely:
+
+- `CAPABILITY_MIN_TIER` (`src/lib/permissions.ts`) keeps below `paid` only what a person needs
+  to become a member: their profile view, company details, notices, team, and the two ways to
+  pay (`commitment_fee.pay`, `membership.manage`). Every tool capability is `paid`; see §3.
+- `POST /api/v1/market-estimates` and `POST /api/v1/hs-finder` refuse a caller without a
+  session (401) or below `paid` (402 `UPGRADE_REQUIRED`) **before** reading anything. The
+  estimate no longer mints a guest, so no route mints one; §5 applies only to guest tenants
+  minted before this change.
+- `/app/markets` and `/app/buyers` render, below `paid`, a members-only notice and the sample
+  from `src/lib/billing/preview.ts` — no database query, no provider call. The buyer profile
+  page, `/app/readiness` and the Enablement Center show the notice and read nothing.
+- A visitor's next step is "Create an account" (registration lands on the plans page); a free
+  account's is "See plans". Signing up stays free; using the tools does not.
+
+To reopen anything, move its capability down in that one map; `src/lib/billing/plans.ts`
+derives the pricing table from the same map, and `tests/paid-only-tools.test.ts` names the
+capabilities that may sit below `paid`, so a change there is deliberate.
 
 ### Error semantics
 

@@ -10,6 +10,13 @@
  * `commitment_fee_status: 'paid'`.
  *
  *   npx tsx --env-file=.env scripts/verify-commitment-fee-gate.ts
+ *
+ * **Retired in part, 9 Nov 2026 (owner decision, docs/14 §3c, ledger E-052).** Tools now run
+ * for paid members only and nothing mints a guest, so the scenarios here that run the market
+ * estimate, the code finder or buyer search as a visitor, guest or free account describe the
+ * old funnel and will report FAIL. They are kept for the paid-path scenarios, not maintained.
+ * The members-only behaviour is covered by `tests/paid-only-tools.test.ts` and the production
+ * browser check recorded under E-052.
  */
 
 import {

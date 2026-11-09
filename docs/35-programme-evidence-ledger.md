@@ -49,6 +49,7 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-036 | 2026-10-30 | The earlier discovery engines are retired: in staging and production nothing starts a Country Truth v4 scan, scan request or detailed analysis, or a warehouse-engine run, and acceptance gates check v5 runs only. Owner's words: "the acceptance gates should not run old v4s." | Owner | Demand Discovery, Phase 1 gate (docs/34) |
 | D-037 | 2026-10-30 | Demand Discovery uses actual data or labelled estimates only; agents neither read nor record tariffs. Owner's words: "we don't want agents reading, either have labeled estimates or actual data in demand discovery." | Owner | Demand Discovery v5, Customs Atlas (docs/36, docs/37) |
 | D-038 | 2026-10-30 | Build order: finish Demand Discovery first, then regional demand for all its markets, then buyers for the same markets, with source research and tariff work alongside; tariff automation for every market (D-030) resumes as part of finishing stage 1. Owner's words: "Ideate well about what to build in demand discovery first to finish it once and for all, then covering the region for all the countries covered in it, and then the buyer discovery for the same countries. It's a simultaneous project, I guess." and "The completion of the demand discovery first, right? If yes, then let's proceed with it." | Owner | Programme |
+| D-039 | 2026-11-09 | Every tool runs for paid members only. Owner's words: "the only way to do it is being a paid user", and for visitors and free accounts "it shouldn't burn actual credits, it should just be with static data to show the sample of workflow … and make that accurate. but don't exhaust our resources." The owner's own test account becomes a member through an audited fee waiver ("I register, you mark it paid"). | Owner | Product access (docs/14 §3c), E-052 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2133,6 +2134,83 @@ run yet.
 `password-reset` 4 tests (new), `bug-reports` 8 (1 new), `social-auth` 21, `legal-line` 2: all pass.
 The migration was applied by the local harness with the other 85.
 
+### E-051 · 2026-11-03 · Production launched: the release is live; what is left (in review)
+
+**Switch-over (docs/39, owner with Claude Code and the agent, 3 Nov IST).**
+- Part 1 (§2): Neon branch `before-launch-2026-11-03` (agent, in the browser; endpoint `ep-solitary-resonance`
+  checked first); variables saved; production's own bucket by reference; scanner source `master` with a
+  public domain on port 3000, `PORT=3000`; worker `cleartrade-worker-production` created with its settings
+  entered by hand (a new service cannot use a config file, below); five fresh secrets; separate Resend keys
+  for production and staging; the Neon password reset and both URLs set from the clipboard without being
+  printed; identity pins set. Preflights: `runtime validation (web)` and `(worker)` pass. Fingerprint
+  prefix `6317e339e3e2`.
+- Owner decisions: one shared UN Comtrade key and one shared Census key across environments (exception to
+  R-36); Razorpay keys unchanged.
+- Release: PR #37 (CI run 41666261464 passed) merged; master at `eb22a065`. The worker's pre-deploy applied
+  the six migrations (all 86 recorded); web's found none pending. The scanner deployed separately with the
+  owner's OK (15:59Z). Readiness 200 `ready` (database, storage, worker), also after
+  `REQUIRE_WORKER_READY=true`. Scanner check 6/6, 401 without or with a wrong token; storage 9/9.
+- Data (§4): 13 reference datasets NEW then UNCHANGED with staging's pins (Comtrade lists from the 14 Oct
+  files); BACI HS17 89,207,221 and HS22 33,900,195 rows, as staging; 221 active official tariff releases
+  against staging's 223 (21 families equal, 9 loaded live as newer editions); HMRC August 2026 list,
+  106,285 importers.
+
+**Not done, being closed (this PR and the next session).**
+- Test data: `reset` stopped at an immutability trigger (`ExchangeRateQuote is immutable evidence`) and
+  rolled back. The pilot organisations hold immutable evidence, so they cannot be deleted by design. Added:
+  `staging-pilot.ts retire`, which switches off the pilot logins (and the reserved-domain account) and
+  keeps the labelled rows, with an audit event. Waiting for the owner's choice.
+- Tariffs: Iceland and Sri Lanka loaded only through staging-only canaries, now allowed on production with
+  `--confirm-production`. Canada's newer edition needs `--country-treatments-url`; the official URL is in
+  `docs/customs-atlas/p1-cc4-wave1-implementation.md`, and staging's active release records both URLs.
+- Settings without a screen: `dd5-auto-import.ts` now runs on production with `--confirm-production`
+  (reference auto-import actor); Singapore's nightly refresh is `authority-refresh.ts --enable`.
+- **Railway config-as-code ends on 1 Dec 2026** (Railway's notice on every service): after that web and the
+  scanner fall back to their own service settings. Their build, start, pre-deploy, health check and restart
+  settings must be entered by hand before then (R-41).
+- Delete `tmp/rw/production.env` on the owner's machine when Part 3 is done.
+
+### E-052 · 2026-11-09 · Tools are members-only; an audited fee waiver for the test account (D-039) (in review)
+
+**Why.** During the production check the agent, signed out, used the product code finder on the markets
+page; the owner stopped it before any estimate ran and decided (D-039) that no tool runs for anyone who
+is not a paid member.
+
+**Built.**
+- *Tier map.* `CAPABILITY_MIN_TIER` keeps below `paid` only the profile view, company details,
+  notices, team, and the two ways to pay. `market_estimate.run` (was guest), `readiness.run`,
+  `buyer_contact.view`, `buyer_lead.create`, `buyer_shortlist.create` and `task_evidence.upload`
+  (were free) are now paid. `buyer_discovery.run` and `demand_discovery.run` already were.
+- *Routes.* `POST /api/v1/market-estimates` no longer mints a guest: no session is 401, below paid is
+  402, both before anything is read. `POST /api/v1/hs-finder` takes the same gate. Nothing in the
+  product mints a guest any more; guest tenants minted before this keep the old lifecycle.
+- *Pages.* Below paid, `/app/markets` and `/app/buyers` show a members-only notice and the static
+  sample, and read nothing from the database; the market estimate screen is removed. The buyer
+  profile, `/app/readiness` and the Enablement Center show the notice and read nothing. Readiness
+  left the free navigation. The homepage, sign-up, plans page and free-plan banner no longer say
+  the tools are free. A visitor's next step is "Create an account" (registration lands on the plans
+  page); a free account's is "See plans".
+- *Fee waiver.* `scripts/waive-commitment-fee.ts`: due → waived through the commitment-fee state
+  machine, an active admin as actor, a reason of at least 10 characters, `--dry-run`,
+  `--confirm-production` on production; the update and its `commitment_fee_waived` audit event
+  commit together. A waived fee is a permanent paid grant (`resolveTier()`).
+- docs/14 §3 and new §3c, docs/40 §3.5, AGENTS.md tier table. The guest-funnel scenarios in
+  `scripts/browser-verify.ts` and `scripts/verify-commitment-fee-gate.ts` (local dev harnesses, not
+  in CI or any runbook) describe the old funnel; they are marked retired rather than rewritten.
+
+**Not yet.** The sample still uses the illustrative figures of `src/lib/billing/preview.ts`. Making it
+accurate needs a real, dated run, which comes from the test account once it is a member; that follows
+as its own change.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files.
+`paid-only-tools` 3 tests (new: the map below paid is exactly the six account and payment
+capabilities; the estimate refuses visitor/guest/free before computing and mints nothing; the pages'
+members-only branch reads nothing), `waive-commitment-fee` 5 (new), `hs-finder-route` 3 (1 new),
+`membership` 63, `admin-settings` 6, `social-auth` 21, `user-settings` 8, `production-confirmation` 5,
+`password-reset` 4, `market-estimate-baci` 2, `demand-discovery-v5-exporter-fit` 6: all pass.
+`pilot-e2e` fails one escalation test in this workspace with and without the change (local database
+only; it passes in CI).
+
 ## Risk register
 
 
@@ -2178,3 +2256,4 @@ The migration was applied by the local harness with the other 85.
 | R-38 | `PATCH /api/v1/exporter-org/commitment-fee` accepted the staff sources (`manual_ops`, `bank_partner`, `AA`) from the exporter itself, even with Razorpay configured: any exporter could unlock paid tier without paying | Closed (E-049): `exporterFeeConfirmationProblem`; with the gateway configured every source is refused, without it only `exporter_update` | — |
 | R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Closed (E-050): reset by a one-time emailed link | — |
 | R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |
+| R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Open (E-051) | Every service's settings entered by hand before 1 Dec, on staging and production |

@@ -9,7 +9,8 @@
  *   npx tsx --env-file=<env> scripts/dd5-auto-import.ts --run-now
  *
  * `--enable`/`--disable` write a new version of `demand_discovery.v5` as the audited config API does,
- * changing only the two auto-import fields: no admin web session is needed. Refuses production.
+ * changing only the two auto-import fields: no admin web session is needed. Production only with
+ * `--confirm-production=<database fingerprint prefix>` (docs/39 §4.4; production has no screen for this).
  * Prints no secrets.
  */
 import { OrgTier } from '@prisma/client';
@@ -17,6 +18,7 @@ import { getConfig } from '@/lib/config';
 import { autoImportReferenceData, autoImportSource, writeAutoImportSwitch } from '@/lib/demand-discovery-v5/reference-auto-import';
 import { loadInputFreshness } from '@/lib/demand-discovery-v5/input-freshness';
 import { prisma } from '@/lib/prisma';
+import { productionConfirmationProblem } from '@/lib/production-confirmation';
 import { validateDatabaseEnvironment } from '@/lib/runtime-config';
 import type { Principal } from '@/types';
 
@@ -32,7 +34,8 @@ async function principal(email: string): Promise<Principal> {
 
 async function main() {
   const database = validateDatabaseEnvironment('worker');
-  if (database.environment === 'production' || process.env.DATABASE_ENVIRONMENT === 'production') throw new Error('dd5-auto-import refuses production.');
+  const confirmation = productionConfirmationProblem(database, process.argv, 'dd5-auto-import');
+  if (confirmation) throw new Error(confirmation);
   const header = { environment: database.environment, database_fingerprint: database.database_fingerprint.slice(0, 12) };
 
   if (flag('enable') || flag('disable')) {

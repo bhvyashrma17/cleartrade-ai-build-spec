@@ -31,8 +31,9 @@ export function UpgradeBanner({ priceDisplay }: { priceDisplay: string }) {
             You&rsquo;re on the Free plan
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-muted text-pretty">
-            Premium ranks every market for your own product, unlocks buyer contacts and the
-            document engine, and puts a ClearTrade agent on your deals. From{' '}
+            The tools run for members. Premium runs them on your own products — ranked markets,
+            regions, buyers and contacts, readiness and documents — and puts a ClearTrade agent on
+            your deals. From{' '}
             <span className="font-medium text-bone">{priceDisplay}</span>.
           </p>
         </div>
