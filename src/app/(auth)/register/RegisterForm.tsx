@@ -134,7 +134,7 @@ export function RegisterForm({
       ) : null}
 
       <Button type="submit" className="w-full" disabled={submitting}>
-        {submitting ? 'Creating account…' : 'Create free account'}
+        {submitting ? 'Creating account…' : 'Create account'}
       </Button>
 
       <p className="text-center text-sm text-[var(--color-text-secondary)]">

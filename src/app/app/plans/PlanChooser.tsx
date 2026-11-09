@@ -121,8 +121,9 @@ export function PlanChooser({
           <p className="text-figure text-bone">₹0</p>
           <p className="mt-1 text-sm text-muted">Free forever. No card needed.</p>
           <p className="mt-5 border-t border-line pt-5 text-sm text-slate">
-            {freeFeatureCount} of {premiumFeatureCount} features included. Everything else is a
-            labelled sample so you can see what it does before you pay for it.
+            {freeFeatureCount === 0
+              ? 'Your account and team. No tool runs on Free: each one is a labelled sample so you can see what it does before you pay for it.'
+              : `${freeFeatureCount} of ${premiumFeatureCount} features included. Everything else is a labelled sample so you can see what it does before you pay for it.`}
           </p>
           <p
             className="mt-5 flex min-h-control items-center justify-center rounded-md border border-line bg-surface-2 text-sm font-medium text-muted"

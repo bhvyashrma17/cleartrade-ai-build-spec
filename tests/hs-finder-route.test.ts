@@ -4,9 +4,24 @@ import { EvidenceOrigin, OrgTier, UserRole } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { importReferenceDataset } from '@/lib/reference-datasets/service';
 
-/** E-043: the finder endpoint needs no session, reads only the imported code list, and writes nothing. */
-vi.mock('../src/lib/auth', () => ({ getPrincipal: vi.fn(async () => null) }));
+/**
+ * E-043: the finder endpoint reads only the imported code list and writes nothing. Since E-052 (9 Nov
+ * 2026) it runs for paid members only: no session is 401 and a free account is UPGRADE_REQUIRED, both
+ * before the code list is read.
+ */
+const auth = vi.hoisted(() => ({ caller: null as null | { id: string; email: string; name: string; role: 'exporter_owner'; exporter_org_id: string; tier: 'guest' | 'free' | 'paid' } }));
+vi.mock('../src/lib/auth', async () => {
+  const { unauthenticated } = await import('../src/lib/errors');
+  return {
+    getPrincipal: vi.fn(async () => auth.caller),
+    requirePrincipal: vi.fn(async () => {
+      if (!auth.caller) throw unauthenticated();
+      return auth.caller;
+    }),
+  };
+});
 const { POST } = await import('../src/app/api/v1/hs-finder/route');
+const member = (tier: 'guest' | 'free' | 'paid') => ({ id: randomUUID(), email: `m-${tier}@t.test`, name: 'Member', role: 'exporter_owner' as const, exporter_org_id: randomUUID(), tier });
 
 const ask = async (body: unknown) => {
   const response = await POST(new Request('http://test/api/v1/hs-finder', { method: 'POST', body: JSON.stringify(body) }) as never);
@@ -14,7 +29,21 @@ const ask = async (body: unknown) => {
 };
 
 describe('POST /api/v1/hs-finder', () => {
-  test('before the list is imported it says so; afterwards it finds codes for a visitor without a session', async () => {
+  test('only a paid member may use it: no session is 401, a guest or free account is UPGRADE_REQUIRED', async () => {
+    auth.caller = null;
+    const anonymous = await ask({ description: 'agarbatti' });
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.body.error.code).toBe('UNAUTHENTICATED');
+    for (const tier of ['guest', 'free'] as const) {
+      auth.caller = member(tier);
+      const refused = await ask({ description: 'agarbatti' });
+      expect(refused.status, tier).toBe(402);
+      expect(refused.body.error.code, tier).toBe('UPGRADE_REQUIRED');
+    }
+  });
+
+  test('before the list is imported it says so; afterwards it finds codes for a paid member', async () => {
+    auth.caller = member('paid');
     const before = await ask({ description: 'agarbatti' });
     if (before.body.data.available === false) expect(before.body.data.reason).toMatch(/not loaded/);
 
@@ -34,6 +63,7 @@ describe('POST /api/v1/hs-finder', () => {
   });
 
   test('a description that is missing, too long or carries unknown fields is refused', async () => {
+    auth.caller = member('paid');
     expect((await ask({})).status).toBe(422);
     expect((await ask({ description: 'x'.repeat(301) })).status).toBe(422);
     expect((await ask({ description: 'rice', hs6: '100630' })).status).toBe(422);

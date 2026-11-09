@@ -1,47 +1,55 @@
 /**
- * EXP-04 Demand Discovery. `/app/markets` · Exporter (all tiers, including guest) · P0.
+ * EXP-04 Demand Discovery. `/app/markets` · Exporter (all tiers, including no session) · P0.
  *
- * This is the one exporter surface that renders with **no session at all**. A visitor
- * has not been minted as a guest yet — that now happens on their first ESTIMATE call
- * (`POST /api/v1/market-estimates`), not on this page load — so this page must not call
- * a guard that throws.
+ * This page renders with **no session at all**, so it must not call a guard that throws:
+ * `getPrincipal()` (not `requireExporterPrincipal()`) is deliberate — null here means
+ * "visitor", which is a supported state, not an error.
  *
- * `getPrincipal()` (not `requireExporterPrincipal()`) is deliberate: null here means
- * "anonymous visitor", which is a supported state, not an error.
- *
- * Tier branch (docs/14 §3 tier change): full ranked Demand Discovery now requires
- * `paid` tier (the commitment fee). Guest and free tier get the pre-membership estimate
- * (`MarketEstimate`) instead — the acquisition surface moved, it did not disappear.
+ * Tier branch (docs/14 §3c, owner decision 9 Nov 2026, ledger E-052): Demand Discovery runs
+ * for paid members only. A visitor, a guest or a free account gets the members-only notice
+ * and the static sample — no estimate, no code finder, no warehouse read, nothing minted.
  */
 
 import { OrgTier } from '@prisma/client';
+import { PageHeader, UpgradeNotice, upgradeTierFor } from '@/components/ui';
 import { getPrincipal } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { todayInrPerUsd } from '@/lib/fx/display-rate';
 import { RupeeRateProvider } from '@/components/fx/RupeeRate';
 import { DemandDiscovery } from './DemandDiscovery';
-import { MarketEstimate } from './MarketEstimate';
 import { RankedMarketsSample } from './RankedMarketsSample';
 
 export default async function MarketsPage() {
   const principal = await getPrincipal();
   const tier = principal?.tier ?? OrgTier.guest;
-  const policy = await getConfig('guest.policy');
 
   if (tier !== OrgTier.paid) {
-    // The estimate is what this tier actually gets; the sample below it is what they are
-    // being sold. Neither costs a provider credit — the estimate is a warehouse read and
-    // the sample is a constant (see `src/lib/billing/preview.ts`).
+    // Nothing on this branch reads the database or calls a provider: the notice is static
+    // and the sample is a constant (`src/lib/billing/preview.ts`).
     return (
       <>
-        <MarketEstimate tier={tier} guestRunLimit={policy.discovery_runs_per_ip} />
+        <PageHeader
+          title="Find your best export markets"
+          description="Demand Discovery scores and ranks every market for your own product, with the reasons behind each rank."
+        />
+        <UpgradeNotice
+          requiredTier={upgradeTierFor(tier)}
+          title="Demand Discovery runs for members"
+          description={
+            tier === OrgTier.free
+              ? 'Take a membership to run it on your own products. The sample below shows what a run gives you.'
+              : 'Create an account, then take a membership to run it on your own products. The sample below shows what a run gives you.'
+          }
+        />
         <div className="mt-10">
           <RankedMarketsSample />
         </div>
       </>
     );
   }
+
+  const policy = await getConfig('guest.policy');
 
   // Saved products only exist for a tenant that has them; a guest supplies context ad hoc.
   const products =

@@ -47,9 +47,9 @@ export default async function RegisterPage({
 
   return (
     <section className="rounded-xl border border-line-strong bg-surface p-6 sm:p-8">
-      <h1 className="display text-title-page text-bone">Create your free account</h1>
+      <h1 className="display text-title-page text-bone">Create your account</h1>
       <p className="mt-3 text-sm text-muted">
-        Save your searches, see buyer contacts, and track leads.
+        Creating an account is free. The tools run for members: become one from the plans page.
       </p>
 
       {isGuestUpgrade && runCount > 0 ? (

@@ -24,7 +24,7 @@ export type {
 export { Skeleton } from './Skeleton';
 export type { SkeletonProps } from './Skeleton';
 
-export { UpgradeNotice } from './UpgradeNotice';
+export { UpgradeNotice, upgradeTierFor } from './UpgradeNotice';
 export type { UpgradeNoticeProps, UpgradeTier } from './UpgradeNotice';
 
 export { SamplePanel } from './SamplePanel';

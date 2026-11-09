@@ -1,14 +1,14 @@
 /**
  * EXP-06 Buyer Discovery — Search & Shortlist. `/app/buyers` · Exporter (all tiers) · P0.
  *
- * Open to anonymous visitors and guests, so this uses `getPrincipal()` rather than
+ * Renders for a visitor with no session, so this uses `getPrincipal()` rather than
  * `requireExporterPrincipal()` — no session is a supported state here, not an error.
  * The exporter layout enforces the role boundary; the tier boundary is enforced per
- * capability in /api/v1/buyers (contacts) and /api/v1/buyer-leads (saving a lead).
+ * capability in /api/v1/buyers (search, contacts) and /api/v1/buyer-leads (saving a lead).
  *
- * Guests have no Product rows by design (no placeholder products are ever created for
- * them), so they get the same ad-hoc context they used for discovery instead of a
- * product selector.
+ * Buyer search runs for paid members only (docs/14 §3c, owner decision 9 Nov 2026, ledger
+ * E-052). A visitor, a guest or a free account gets the members-only notice and the static
+ * sample, and this page reads nothing from the database for them.
  *
  * `?country=` / `?product_id=` prefill from EXP-05's "Find buyers in this market" —
  * docs/04 EXP-05-AC03 requires that link to always carry a valid product/country
@@ -16,6 +16,7 @@
  */
 
 import { OrgTier } from '@prisma/client';
+import { PageHeader, UpgradeNotice, upgradeTierFor } from '@/components/ui';
 import { getPrincipal } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { BuyersExplorer } from './BuyersExplorer';
@@ -28,10 +29,35 @@ export default async function BuyersPage({
 }) {
   const principal = await getPrincipal();
   const tier = principal?.tier ?? OrgTier.guest;
+
+  if (tier !== OrgTier.paid) {
+    // Static notice + constant sample (`src/lib/billing/preview.ts`): no query, no provider.
+    return (
+      <>
+        <PageHeader
+          title="Buyer discovery"
+          description="Find importers of your product in a market, see how well each one fits, and reach the people who buy."
+        />
+        <UpgradeNotice
+          requiredTier={upgradeTierFor(tier)}
+          title="Buyer discovery runs for members"
+          description={
+            tier === OrgTier.free
+              ? 'Take a membership to search buyers for your own products and see their contacts. The sample below shows what you get.'
+              : 'Create an account, then take a membership to search buyers for your own products. The sample below shows what you get.'
+          }
+        />
+        <div className="mt-10">
+          <AgentWorkflowSample />
+        </div>
+      </>
+    );
+  }
+
   const params = await searchParams;
 
   const products =
-    principal?.exporter_org_id && tier !== OrgTier.guest
+    principal?.exporter_org_id
       ? await prisma.product.findMany({
           where: { exporter_org_id: principal.exporter_org_id },
           select: { id: true, name: true },
@@ -44,36 +70,15 @@ export default async function BuyersPage({
   const initialProductId =
     params.product_id && products.some((p) => p.id === params.product_id) ? params.product_id : null;
 
-  // What a guest searched for most recently, so the buyer list has context to sit under
-  // without inventing a Product row for them. Only consulted when the URL didn't already
-  // name a market — a Market Detail link is more specific than "whatever they last typed".
-  const lastAdHoc =
-    !params.country && principal?.exporter_org_id && tier === OrgTier.guest
-      ? await prisma.discoveryRun.findFirst({
-          where: { exporter_org_id: principal.exporter_org_id, product_id: null },
-          orderBy: { created_at: 'desc' },
-          select: { input_snapshot: true },
-        })
-      : null;
-
-  const snapshot = lastAdHoc?.input_snapshot as { description?: string | null } | null;
-
   return (
     <>
       <BuyersExplorer
         products={products}
         tier={tier}
-        adHocContext={snapshot?.description ?? null}
+        adHocContext={null}
         initialCountry={params.country?.toUpperCase() ?? ''}
         initialProductId={initialProductId ?? ''}
       />
-      {/* What Premium adds on top of the search this tier already has. Constants only —
-          no credit is spent rendering it (see `src/lib/billing/preview.ts`). */}
-      {tier === OrgTier.paid ? null : (
-        <div className="mt-10">
-          <AgentWorkflowSample />
-        </div>
-      )}
     </>
   );
 }

@@ -19,7 +19,7 @@ import { AskAgentButton } from '@/components/enablement/AskAgentButton';
 import { enablementChip, TASK_STATE_DISPLAY } from '@/components/enablement/statusDisplay';
 import { EvidenceUploadForm } from '@/components/enablement/EvidenceUploadForm';
 import { SelfCompleteButton } from '@/components/enablement/SelfCompleteButton';
-import { StatusChip, UpgradeNotice } from '@/components/ui';
+import { StatusChip, UpgradeNotice, upgradeTierFor } from '@/components/ui';
 import { getPrincipal } from '@/lib/auth';
 import {
   isEvidenceRequiredReadinessTask,
@@ -37,13 +37,14 @@ function fmt(d: Date | null): string {
 
 export default async function EnablementCenterPage() {
   const principal = await getPrincipal();
-  if (!principal || principal.tier === OrgTier.guest) {
+  // Readiness runs for paid members only since 9 Nov 2026 (docs/14 §3c, ledger E-052).
+  if (!principal || principal.tier !== OrgTier.paid) {
     return (
       <div className="mx-auto max-w-3xl py-4 md:py-6">
         <UpgradeNotice
-          title="The Enablement Center needs a free account"
-          requiredTier="free"
-          description="Create a free account to run your readiness assessment and track the tasks that come out of it."
+          title="The Enablement Center is for members"
+          requiredTier={upgradeTierFor(principal?.tier)}
+          description="Members run the readiness assessment and track the tasks that come out of it."
         />
       </div>
     );

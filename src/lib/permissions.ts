@@ -608,41 +608,41 @@ const TIER_RANK: Record<OrgTier, number> = {
  * deliberately opens it, so the failure mode of forgetting is "too strict", never "free".
  */
 const CAPABILITY_MIN_TIER: Partial<Record<Capability, OrgTier>> = {
-  // Guest — the acquisition surface. Runs are additionally IP-capped at the route.
+  // Owner decision, 9 Nov 2026 (docs/14 §3c, ledger E-052): **every tool runs for paid
+  // members only.** A visitor or a free account sees a static, dated sample of the workflow
+  // (`src/lib/billing/preview.ts`) and nothing runs on their behalf — no estimate, no code
+  // finder, no buyer read, no readiness run, no upload. What stays open below `paid` is only
+  // what a person needs to become a member: their account, their team, their own company
+  // details, notices, and the two ways to pay.
   //
-  // `demand_discovery.run` moved to `paid` below — full ranked Demand Discovery (ranked
-  // markets, market detail, save/select) is now the commitment-fee-gated product, per the
-  // docs/14 tier-matrix change. `market_estimate.run` is what guest tier gets instead: the
-  // pre-membership estimate (observed historical import value + unit-price bands, no
-  // ranking, no LLM) — the acquisition surface moved here, not away.
-  'market_estimate.run': OrgTier.guest,
+  // Guest — no tools. Nothing mints a guest any more (the market estimate used to).
   'exporter_profile.view': OrgTier.guest,
 
-  // Free — unlocked by registering. Saved history, readiness, own pipeline, no agent.
-  // Free tier still gets `market_estimate.run` too (it's a floor, not a guest-only perk),
-  // plus the fee CTA (`commitment_fee.pay`) that is the free tenant's next step.
-  'readiness.run': OrgTier.free,
-  'buyer_contact.view': OrgTier.free,
-  'buyer_lead.create': OrgTier.free,
+  // Free — a registered account on its way to membership. No tools.
   'exporter_master_data.edit': OrgTier.free,
   'notification.manage': OrgTier.free,
   'team.manage': OrgTier.free,
-  'task_evidence.upload': OrgTier.free,
-  'buyer_shortlist.create': OrgTier.free,
   'commitment_fee.pay': OrgTier.free,
   // A guest cannot subscribe: there is no account to attach a membership to, and the
   // upgrade path is register-then-subscribe. `free` is therefore the floor, not `guest`.
   'membership.manage': OrgTier.free,
 
-  // Paid — unlocked by the commitment fee (docs/01 §2), not by "everything else falls
-  // through" alone. Named explicitly here (rather than left to the default) so a reader
-  // grepping for "why is this paid-gated" finds the answer next to the capability, not
-  // buried in a comment about the fallback.
+  // Paid — unlocked by the commitment fee (docs/01 §2) or a membership, not by "everything
+  // else falls through" alone. Named explicitly here (rather than left to the default) so a
+  // reader grepping for "why is this paid-gated" finds the answer next to the capability,
+  // not buried in a comment about the fallback. The first six were open to guest or free
+  // tier until the 9 Nov decision above.
+  'market_estimate.run': OrgTier.paid,
+  'readiness.run': OrgTier.paid,
+  'buyer_contact.view': OrgTier.paid,
+  'buyer_lead.create': OrgTier.paid,
+  'buyer_shortlist.create': OrgTier.paid,
+  'task_evidence.upload': OrgTier.paid,
   'demand_discovery.run': OrgTier.paid,
   'market_assessment.save': OrgTier.paid,
 
-  // Everything else falls through to paid: the agent-assisted workflow — deals,
-  // documents, shipment, payment, outreach, disputes, payout, assignment, audit.
+  // Everything else falls through to paid: buyer search, the agent-assisted workflow —
+  // deals, documents, shipment, payment, outreach, disputes, payout, assignment, audit.
 };
 
 export function minTierFor(capability: Capability): OrgTier {

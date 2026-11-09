@@ -92,7 +92,7 @@ export default async function PlansPage() {
   // A guest reaching this page has no account to attach a membership to. Registration is
   // the actual next step, so send them there rather than showing a checkout that would
   // reject them — `membership.manage` is `free`-floored for exactly this reason.
-  if (org.tier === OrgTier.guest) redirect('/register?next=/app/plans');
+  if (org.tier === OrgTier.guest) redirect('/register?callbackUrl=/app/plans');
 
   const [pricing, subscription] = await Promise.all([
     getConfig('billing.plans'),
@@ -235,7 +235,7 @@ export default async function PlansPage() {
           {[
             {
               q: 'What exactly does a Free account get?',
-              a: `${freeFeatureCount} of the ${COMPARISON.length} features above, on your own data — the market estimate, your readiness assessment and score, buyer search with contact details, and your own lead pipeline. The Premium-only features are shown to you as clearly labelled samples so you can judge them before paying.`,
+              a: 'Your account, your company profile and team, and the samples. No tool runs on a Free account: every feature above runs for members, on your own products. Taking a membership is how you start.',
             },
             {
               q: 'Is the sample built from my data?',
