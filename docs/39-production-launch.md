@@ -75,9 +75,10 @@ deploy it supplies what the deleted root `railway.json` did, plus the pre-deploy
 `npm run migrate:deploy` (identity check, then migrations) and the `/api/health/ready` check (120 s).
 
 ### 2.6 Worker (owner, CC)
-- Owner: production → *New service* → this repository, branch `master`, region **Singapore** (web
-  and Neon are there; R-37), *Config file path* `deploy/railway/worker.railway.json`, 1 replica
-  (R-11), 2 GB / 2 vCPU.
+- Owner: production → *New service* (empty) named `cleartrade-worker-production` → this repository,
+  branch `master`, region **Singapore** (web and Neon are there; R-37), 1 replica (R-11). Railway no
+  longer lets a new service use a config file (R-41), so its settings are entered by hand: Dockerfile
+  builder, start `npm run worker:platform`, pre-deploy `npm run migrate:deploy`, restart on failure ×10.
 - CC: every variable of web except `PORT` as a reference to web's (as staging, docs/33 §2).
 
 ### 2.7 Preflight (CC, read-only)
@@ -130,6 +131,9 @@ must say UNCHANGED (docs/36 §10).
    refresh (4.4). The US and the UK need nothing (live APIs). CC then compares the two active lists.
 3. **Importer lists** (stage 3): the newest HMRC monthly list, through
    `import-importer-list.ts … --confirm-production=<prefix>` (the owner accepted the licensing, E-049).
+   Canada's ingest needs `--tariff-url` and `--country-treatments-url`: read both from staging's active
+   CA release, or see `docs/customs-atlas/p1-cc4-wave1-implementation.md`. Iceland and Sri Lanka load
+   through their canaries with `--confirm-production` (E-051).
 4. **Settings** (owner, as admin in `/ops`): `demand_discovery.v5` →
    `reference_auto_import_actor_email` (an ops supervisor or admin) so the World Bank and Comtrade
    lists refresh daily, and re-runs on new data on; the official tariff look-up on;
@@ -145,6 +149,9 @@ must say UNCHANGED (docs/36 §10).
   markets and "Where India already sells most". On a market page: regional demand (US) and buyers
   (UK).
 - As admin: the run in `/ops/discovery`.
+- The read-only acceptance check: `dd5-health-check.ts --top=100 --org=<an exporter org id>
+  --confirm-production=<prefix>` scores India's top 100 export products from production's stored data,
+  compares each top 10 with India's own destinations, and reports that no row was written.
 
 ## 6. Removing the test data (CC, after the backup in §2.1)
 
@@ -153,6 +160,11 @@ railway run --environment production --service cleartrade-ai-build-spec -- npx t
 railway run --environment production --service cleartrade-ai-build-spec -- npx tsx scripts/staging-pilot.ts reset \
   --include-reserved-test-domains --confirm-production=<prefix> --actor-email=<owner's admin email>
 ```
+
+**On production use `retire`, not `reset` (E-051):** the pilot organisations hold immutable evidence
+(exchange-rate quotes among it), so `reset` stops at a trigger and changes nothing. `staging-pilot.ts
+retire --include-reserved-test-domains --confirm-production=<prefix> --actor-email=<admin>` switches
+off those logins, keeps the labelled rows and records `pilot_accounts_retired`.
 
 `reset` removes the `[PILOT]` organisations with everything they own (deals, documents, runs), the
 `pilot.invalid` users and the account on a reserved test domain, in one transaction, and records a
@@ -175,4 +187,8 @@ delete that bucket copy in Railway.
 - Staging gets its own Resend and Comtrade keys and its other secrets rotated (R-36), and its
   worker moves to Singapore (R-37).
 - docs/33 §5's hazards are resolved by §2–§3; the ledger records each check with its result.
+- Before 1 Dec 2026 (R-41): every service's build, start, pre-deploy, health check and restart settings
+  entered as the service's own settings, matching `deploy/railway/*.railway.json`, and the config file
+  path cleared, on staging and production.
+- Delete `tmp/rw/production.env` on the owner's machine.
 - Support from day one: `docs/40-support-guide.md`.
