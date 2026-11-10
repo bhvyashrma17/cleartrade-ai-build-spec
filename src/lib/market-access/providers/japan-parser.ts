@@ -127,6 +127,15 @@ function isQuotaConditioned(rates: Record<string, string>): boolean {
 }
 
 /**
+ * D-042: a line that is Japan's WTO tariff quota — the Government's minimum-access channel (rice
+ * 1006.30-010: "For the tariff rate quota in Japan's Schedule to the WTO Agreement Free"). A quota
+ * that only one EPA partner's column grants is not this, and never splits an HS6.
+ */
+function isWtoQuotaLine(rates: Record<string, string>): boolean {
+  return Object.values(rates).some((value) => /Schedule to the WTO Agreement|access commitment/i.test(value));
+}
+
+/**
  * D-042 (R-46): what an import outside Japan's quota pays on a state-traded staple. Beside the
  * Government's quota line, the "Other" line of rice, wheat and barley publishes a low Temporary
  * duty and an asterisked WTO figure (rice, 2026: Temporary 49 yen/kg, WTO *(341yen /kg)). An
@@ -194,7 +203,7 @@ export function buildJapanMarketAccess(args: {
   // D-042 (R-46): an HS6 split into the quota line(s) and other lines is resolved among the other
   // lines. Their out-of-quota rate is what an ordinary exporter pays and is scored; the quota line's
   // rate is said beside it, never scored.
-  const quotaItems = built.filter((item) => item.quota);
+  const quotaItems = built.filter((item) => item.quota && isWtoQuotaLine(item.entry.row.rates));
   const openItems = built.filter((item) => !item.quota);
   const splitByQuota = quotaItems.length > 0 && openItems.length > 0;
   if (splitByQuota) {
