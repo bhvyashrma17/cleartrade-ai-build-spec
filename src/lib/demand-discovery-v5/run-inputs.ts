@@ -122,20 +122,6 @@ async function availability(year: number) {
   return { active, codes: new Set((active?.rows ?? []).map((row) => row.reporter_code)) };
 }
 
-/**
- * Customs Atlas evidence for the product's exact HS6 in every market that has any, resolved to the
- * official duty on Indian goods (`official-duty.ts`) under the deep assessment's admission rules.
- * Reads stored evidence; with `tariff_acquisition` on, the run has just looked the product up in every
- * market with a Customs Atlas source (`tariff-step.ts`), and `as_of` is the tariff clock.
- *
- * A line an agent recorded by hand (`authoritative_manual`, D-024) is not read: duty comes only from
- * official sources the system reads itself, or a labelled estimate (owner, 30 Oct 2026, D-037).
- *
- * D-045: where the HS6 splits into national lines with different duties, the line is chosen from
- * the answers on file for the product and market, then from the product's own words
- * (`national-line.ts`); the chosen lines' official duty is scored. Otherwise the market keeps its
- * estimate and names the question that would settle it.
- */
 interface SplitLineChoice {
   snapshot_id: string;
   source_authority: string;
@@ -171,7 +157,7 @@ function storedCandidates(detail: unknown): CandidateLine[] {
  * for India itself, current, not excluding India, the same on every chosen line.
  */
 async function splitLineChoices(args: {
-  snapshots: readonly { id: string; country_code: string; classification_resolution: string | null; retrieved_at: Date; source_authority: string; resolution_detail: unknown }[];
+  snapshots: readonly { id: string; country_code: string; classification_resolution: string | null; retrieved_at: Date; source_authority: string }[];
   as_of: Date;
   product: { id: string | null; text: string } | null;
 }): Promise<Map<string, SplitLineChoice>> {
@@ -190,6 +176,10 @@ async function splitLineChoices(args: {
         select: { destination_country: true, deciding_attributes: true },
       })
     : [];
+  // Only the newest split snapshot of each market is read for its candidates: a live source stores a
+  // snapshot per run, and each preserves its full candidate set.
+  const details = new Map((await prisma.marketAccessEvidenceSnapshot.findMany({ where: { id: { in: [...newest.values()].map((snapshot) => snapshot.id) } }, select: { id: true, resolution_detail: true } }))
+    .map((snapshot) => [snapshot.id, snapshot.resolution_detail]));
   const answers = new Map<string, Record<string, unknown>>();
   for (const refinement of refinements) {
     if (!answers.has(refinement.destination_country) && refinement.deciding_attributes && typeof refinement.deciding_attributes === 'object') {
@@ -197,7 +187,7 @@ async function splitLineChoices(args: {
     }
   }
   for (const [market, snapshot] of [...newest].sort(([a], [b]) => a.localeCompare(b))) {
-    const candidates = currentCandidates(storedCandidates(snapshot.resolution_detail), args.as_of);
+    const candidates = currentCandidates(storedCandidates(details.get(snapshot.id)), args.as_of);
     if (!candidates.length) continue;
     const outcome = chooseNationalLines({ candidates, product_text: args.product.text, answers: answers.get(market) ?? null });
     let indiaPreference: SplitLineChoice['india_preference'] = null;
@@ -224,11 +214,25 @@ async function splitLineChoices(args: {
   return result;
 }
 
+/**
+ * Customs Atlas evidence for the product's exact HS6 in every market that has any, resolved to the
+ * official duty on Indian goods (`official-duty.ts`) under the deep assessment's admission rules.
+ * Reads stored evidence; with `tariff_acquisition` on, the run has just looked the product up in every
+ * market with a Customs Atlas source (`tariff-step.ts`), and `as_of` is the tariff clock.
+ *
+ * A line an agent recorded by hand (`authoritative_manual`, D-024) is not read: duty comes only from
+ * official sources the system reads itself, or a labelled estimate (owner, 30 Oct 2026, D-037).
+ *
+ * D-045: where the HS6 splits into national lines with different duties, the line is chosen from
+ * the answers on file for the product and market, then from the product's own words
+ * (`national-line.ts`); the chosen lines' official duty is scored. Otherwise the market keeps its
+ * estimate and names the question that would settle it.
+ */
 export async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate>; score_india_preference?: boolean; product?: { id: string | null; text: string } }) {
   const origins = allowedEvidenceOrigins();
   const snapshots = await prisma.marketAccessEvidenceSnapshot.findMany({
     where: { country_code: { in: [...args.markets] }, OR: [{ hs_code_scope: args.hs6 }, { hs6_code: args.hs6 }], retrieved_at: { lte: args.as_of }, evidence_origin: { in: origins }, provider: { not: AGENT_RECORDED_PROVIDER } },
-    select: { id: true, country_code: true, provider: true, source_dataset: true, classification_resolution: true, evidence_origin: true, retrieved_at: true, source_authority: true, resolution_detail: true },
+    select: { id: true, country_code: true, provider: true, source_dataset: true, classification_resolution: true, evidence_origin: true, retrieved_at: true, source_authority: true },
     orderBy: { id: 'asc' },
   });
   const lines = await splitLineChoices({ snapshots, as_of: args.as_of, product: args.product ?? null });
