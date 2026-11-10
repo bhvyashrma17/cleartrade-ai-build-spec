@@ -114,7 +114,10 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
             </div>
           ))}
           <p className="text-xs text-[var(--color-text-muted)]">
-            Measures without data are left out and their points shared among the rest; a gap is never counted as zero.
+            {detail.market_status === 'not_enough_data' && detail.rank != null
+              // D-044 (policy v9): a market short of data counts each measure without data as zero.
+              ? 'This market is short of data: each measure without data counts as zero in its score, so it ranks after the fully scored markets. Each measure itself is still shown without data, never as zero.'
+              : 'Measures without data are left out and their points shared among the rest; a gap is never counted as zero.'}
           </p>
         </div>
       ) : null}

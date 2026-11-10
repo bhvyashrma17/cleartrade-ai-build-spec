@@ -62,8 +62,10 @@ describe('a market’s page and the agent’s views', () => {
   });
 
   test('the status line says where a ranked-last market stands and why', () => {
-    const short = renderToStaticMarkup(createElement(V5Breakdown, { detail: v5Detail(fields({}), 217)! }));
+    const short = renderToStaticMarkup(createElement(V5Breakdown, { detail: v5Detail(fields({ score_breakdown: { parts: [{ part: 'risk', points: 10, live_points: 10, score: 95 }], metrics: [] } }), 217)! }));
     expect(short).toContain('#216</span> of 217 · 19/100 · confidence 0%');
+    expect(short).toContain('each measure without data counts as zero in its score, so it ranks after the fully scored markets');
+    expect(short).not.toContain('a gap is never counted as zero');
     expect(short).toContain('Ranked after the fully scored markets: 20 of 100 points have data, and each measure without data counts as zero.');
     const none = renderToStaticMarkup(createElement(V5Breakdown, { detail: v5Detail(fields({ market_status: 'no_recorded_demand', rank: 217, overall_score: null, live_points: null }), 217)! }));
     expect(none).toContain('#217</span> of 217');
