@@ -109,18 +109,18 @@ export const COMPARISON: readonly ComparisonFeature[] = [
   },
   {
     capability: 'buyer_discovery.run',
-    label: 'Buyer search',
-    detail: 'Search verified overseas buyers and see how well each fits your product.',
+    label: 'Buyer discovery',
+    detail: 'Your ClearTrade agent finds importers of your product in your top markets and vets them; you see how many were found in each.',
   },
   {
     capability: 'buyer_contact.view',
     label: 'Buyer contact details',
-    detail: 'Names, roles, emails and phone numbers for the buyers you shortlist.',
+    detail: 'Names, roles and contact details of the buyers your agent puts forward.',
   },
   {
     capability: 'buyer_lead.create',
-    label: 'Your own lead pipeline',
-    detail: 'Shortlist buyers and track them yourself, alongside the leads your agent works.',
+    label: 'Lead pipeline',
+    detail: 'Every buyer your agent works is tracked as a lead, from first contact to a deal.',
   },
   {
     capability: 'demand_discovery.run',
