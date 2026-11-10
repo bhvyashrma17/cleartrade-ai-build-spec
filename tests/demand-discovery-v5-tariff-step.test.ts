@@ -56,14 +56,16 @@ describe('v5 tariff look-up', () => {
 
     const step = await acquireV5Tariffs({
       job_id: `job-${randomUUID()}`, hs6, markets: ['FR', 'DE', 'AT', 'BT', 'de'], resolution_clock: new Date('2026-10-14T06:00:00Z'),
-      live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:02:00Z'),
+      live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:02:00Z'), retry_delay_ms: 0,
     });
-    // Country order would be AT, DE, FR; one source at a time it is AT, FR (the bloc), then DE.
-    expect(asked).toEqual(['AT', 'FR', 'DE']);
+    // Country order would be AT, DE, FR; one source at a time it is AT, FR (the bloc), then DE; then
+    // FR once more, as a failed look-up is retried before the run settles for the estimate (R-48).
+    expect(asked).toEqual(['AT', 'FR', 'DE', 'FR']);
     expect(step.outcomes.map((item) => [item.country_code, item.outcome, item.provider_key])).toEqual([
       ['AT', 'acquired', 'fixture_bloc'], ['DE', 'acquired', 'fixture_live'], ['FR', 'failed', 'fixture_bloc'],
     ]);
-    expect(step.outcomes.find((item) => item.country_code === 'FR')!.reason).toBe('Fixture release could not be read.');
+    expect(step.outcomes.find((item) => item.country_code === 'FR')).toMatchObject({ reason: 'Fixture release could not be read.', attempts: 2, first_attempt: { outcome: 'failed', reason: 'Fixture release could not be read.' } });
+    expect(step.outcomes.find((item) => item.country_code === 'AT')!.attempts).toBeUndefined();
     expect(step.tariff_clock.toISOString()).toBe('2026-10-14T06:02:00.000Z');
     expect(await prisma.marketAccessEvidenceSnapshot.count({ where: { hs6_code: hs6 } })).toBe(2);
   });
@@ -75,7 +77,7 @@ describe('v5 tariff look-up', () => {
     };
     const broken: MarketAccessAdapter = { provider_key: 'fixture_broken', retrieval: 'retained_release', async fetch() { throw validationError([{ field: 'bundle', code: 'corrupt_archive', message: 'unreadable' }]); } };
     setTariffAdapterResolverForTesting((country) => (country === 'SG' ? saved : country === 'KR' ? broken : undefined));
-    const step = await acquireV5Tariffs({ job_id: `job-${randomUUID()}`, hs6: '100630', markets: ['SG', 'KR'], resolution_clock: new Date('2026-10-14T06:00:00Z'), live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:00:00Z') });
+    const step = await acquireV5Tariffs({ job_id: `job-${randomUUID()}`, hs6: '100630', markets: ['SG', 'KR'], resolution_clock: new Date('2026-10-14T06:00:00Z'), live_fetch_timeout_ms: 5_000, now: () => new Date('2026-10-14T06:00:00Z'), retry_delay_ms: 0 });
     expect(step.outcomes.map((item) => [item.country_code, item.outcome, item.reason])).toEqual([
       // A validation error's reason is what its fields say, not the generic envelope message.
       ['KR', 'failed', 'unreadable'],
@@ -96,6 +98,31 @@ describe('v5 tariff look-up', () => {
       degraded: false,
       notes: ["The connected tariff source does not cover this product for AD, where the market's own tariff applies, so that market's duty is not the official rate this run."],
     });
+  });
+
+  test('a look-up that fails or times out is asked once more; the second answer stands (R-48)', async () => {
+    const hs6 = `8${String(Date.now()).slice(-5)}`;
+    const calls = new Map<string, number>();
+    // The UK answers on the second asking, as on production after the deploy of 10 Nov; Canada never.
+    const flaky: MarketAccessAdapter = {
+      provider_key: 'fixture_flaky_live', retrieval: 'live_fetch',
+      async fetch(request) {
+        const n = (calls.get(request.destination_country) ?? 0) + 1;
+        calls.set(request.destination_country, n);
+        if (request.destination_country === 'GB' && n === 1) return new Promise(() => undefined);
+        if (request.destination_country === 'CA') throw new Error('Fixture source refused the request.');
+        return tariffResult(request.destination_country, hs6, 4, new Date('2026-10-14T06:01:00Z'));
+      },
+    };
+    setTariffAdapterResolverForTesting((country) => (['GB', 'CA'].includes(country) ? flaky : undefined));
+    const step = await acquireV5Tariffs({ job_id: `job-${randomUUID()}`, hs6, markets: ['GB', 'CA'], resolution_clock: new Date('2026-10-14T06:00:00Z'), live_fetch_timeout_ms: 50, now: () => new Date('2026-10-14T06:02:00Z'), retry_delay_ms: 0 });
+    expect(Object.fromEntries(calls)).toEqual({ CA: 2, GB: 2 });
+    expect(step.outcomes).toMatchObject([
+      { country_code: 'CA', outcome: 'failed', attempts: 2, first_attempt: { outcome: 'failed' } },
+      { country_code: 'GB', outcome: 'acquired', attempts: 2, first_attempt: { outcome: 'timed_out', reason: 'Live fetch exceeded 50 ms; nothing was persisted.' } },
+    ]);
+    expect(await prisma.marketAccessEvidenceSnapshot.count({ where: { hs6_code: hs6 } })).toBe(1);
+    expect(summarizeTariffOutcomes(step.outcomes)).toEqual({ degraded: true, notes: ["The official tariff look-up failed twice for CA, so that market's duty is not the official rate this run."] });
   });
 
   test('only a failed or timed-out look-up degrades the run', () => {

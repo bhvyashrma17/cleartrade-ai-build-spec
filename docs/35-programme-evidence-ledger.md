@@ -2647,6 +2647,23 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
   - The United States asks "Is the rice parboiled?". After the assigned agent answers through the real questions service, the next read scores 1.4¢/kg on 1006.30.90.
 - 52 discovery, gate, refinement, refresh and provider test files: 543 of 544 pass. The one failure is `market-scan-requests`, as on `staging/railway`.
 
+### E-064 · 2026-11-10 · A failed tariff look-up is asked once more (R-48) (in review)
+
+**Why (R-48).** On 10 Nov, the first production run after a deploy lost the UK look-up while the worker read retained releases from cold, and a run two minutes later completed. One lost look-up leaves its market on the estimate and the whole run "Ranked, with gaps".
+
+**Built** (`tariff-step.ts`):
+- After every source has been asked, each look-up that failed or timed out is asked once more, after a 3-second pause (`retry_delay_ms`).
+- The second asking goes source by source, as the first does. The second answer stands.
+- A retried market records both attempts (`attempts: 2`, `first_attempt`) in the run's frozen tariff step.
+- A run is degraded only when the second asking fails too, and its note says "failed twice".
+- A timed-out live fetch has persisted nothing, so asking again cannot duplicate evidence.
+- Worst case, a run takes one more live timeout per failing live market (60 s each).
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `demand-discovery-v5-tariff-step`: 6 tests, 1 new. The UK times out once and is acquired on the second asking; Canada fails twice and degrades the run. One snapshot is stored.
+- `demand-discovery-v5-run` passes.
+
 ## Risk register
 
 
@@ -2699,4 +2716,4 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
 | R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
-| R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Open (E-060), low: observed once | A second occurrence, or warming the readers' caches when the worker starts |
+| R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated in code (E-064, in review): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate | A production run after the release whose tariff step shows a second attempt, or no lost look-up after a deploy |
