@@ -2770,6 +2770,21 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 
 **Order (production).** The worker must run reader v2 before the release is imported: it re-reads the bundle at every look-up, and v1 stops at the blank dutiable lines. So: merge, release, deploy. Then the owner's Claude Code runs `build-singapore-saved-bundle.ts` on the saved folder and imports with `--activate` (`railway run --environment production --service cleartrade-worker-production`). The new release then re-runs products on the hourly refresh.
 
+### E-068 · 2026-11-11 · A product's first run can use its price and capacity (in review)
+
+**Found.** Price fit and volume fit (docs/36 §4 #11, #12) carry 10 of the 100 points. A run freezes the product's facts when it starts, and confirming the code on Add product starts it. Add product asked for no price or capacity, so every product's first run scored without them; the figures could only be entered afterwards, on the product's details page, for later runs. (Earlier in this session I told the owner they could not be entered at all. That was wrong: the details page has both.)
+
+**Built.**
+- **Add product** (`/app/markets`) has an optional "Your price and capacity" group: FOB price per kg (INR, USD or EUR) and monthly capacity (tonnes or kg). Blank means "add later". Thousands separators are dropped ("1,25,000"), and anything that is not a number above zero is named beside its field before anything is sent.
+- **`POST /api/v1/products`** takes `fob_price_per_kg {amount, currency}` and `monthly_capacity {value, unit}`. They are checked before anything is written, so a bad figure saves nothing; errors name `fob_price_per_kg.amount` and the like. They are written through `declareProductOperationalFacts` (so they stay `exporter_declared`, with its audit event) before the code is confirmed, so the first run freezes them. Stored as price per `kg`, `FOB`, and capacity per `month`, which is exactly what `exporterUsdPerKg` and `exporterYearlyKg` read.
+- **Fixed in `declareProductOperationalFacts`:** a capacity period sent with production capacity alone was dropped; it was written only alongside available capacity. The details form always sends both, so it was not affected. Available capacity without a period still clears the period, as before.
+
+**Checks run (agent workspace).**
+- `products-create-route`: 5 tests, 3 new. The facts are on the product when confirmation runs (95.50 INR/kg FOB; 20 tonnes a month, read as 240,000 kg a year); either one alone is fine; a zero price, a word, a unit in cartons or an extra key is refused with the field named and no product saved; the capacity period is kept, cleared or left alone as described.
+- `exporter-facts-authorization`, `phase-1h-operational-pillars`, `demand-discovery-v5-metrics` and `-run` pass: 72 tests across 5 files.
+- `tsc --noEmit` and ESLint: clean.
+- The form rendered with the app's own CSS at 900 px and 375 px: no horizontal scroll; the group sits under the code confirmation.
+
 ## Risk register
 
 

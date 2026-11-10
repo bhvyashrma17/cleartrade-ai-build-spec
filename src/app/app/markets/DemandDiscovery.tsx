@@ -6,6 +6,8 @@
  * A run needs a saved product with a confirmed HS code. A member with no product yet — and
  * one who chooses "Add another product" — describes it, picks the code (the code finder
  * helps), confirms it, and `POST /api/v1/products` saves it and starts the run (E-053).
+ * A FOB price per kg and a monthly capacity can come in with it, so the first run can score
+ * price fit and volume fit (E-068).
  * Otherwise the member picks one of their saved products. The guest branches below are
  * unreachable since 9 Nov 2026 (no guest runs anything).
  */
@@ -60,6 +62,18 @@ type Phase =
   | { kind: 'blocked'; message: string; requiredTier: 'free' | 'paid' }
   | { kind: 'error'; message: string; fields: Record<string, string> };
 
+/** A typed figure without thousands separators ("1,25,000" → "125000"); empty when blank. */
+function figure(text: string) {
+  return text.replace(/[,\s]/g, '');
+}
+
+/** Why an optional figure cannot be sent, or null when it is blank or a number above zero. */
+function figureProblem(text: string): string | null {
+  const value = figure(text);
+  if (!value) return null;
+  return /^\d+(\.\d+)?$/.test(value) && Number(value) > 0 ? null : 'Enter a number above zero, like 95 or 2.5.';
+}
+
 export function DemandDiscovery({
   tier,
   products,
@@ -85,6 +99,12 @@ export function DemandDiscovery({
   // The product code finder (E-046): open under the HS field; a pick fills it and shows what it means.
   const [finding, setFinding] = useState(false);
   const [picked, setPicked] = useState<{ hs6: string; description: string } | null>(null);
+  // Optional figures for price fit and volume fit (E-068). The first run freezes the product's
+  // facts, so they only count on that run if they come in with the product. Blank means "later".
+  const [fobPrice, setFobPrice] = useState('');
+  const [fobCurrency, setFobCurrency] = useState('INR');
+  const [capacity, setCapacity] = useState('');
+  const [capacityUnit, setCapacityUnit] = useState<'tonne' | 'kg'>('tonne');
   // Seeded from the server so a returning user picks up whatever was last running or
   // finished, instead of an empty page that silently discards their search.
   const [phase, setPhase] = useState<Phase>(
@@ -105,9 +125,13 @@ export function DemandDiscovery({
           hs_code: hsCode.trim(),
           confirm_hs_code: codeConfirmed,
           ...(picked && picked.hs6 === hsCode.trim() ? { code_list: 'Official HS 2022 list (product code finder)' } : {}),
+          ...(figure(fobPrice) ? { fob_price_per_kg: { amount: figure(fobPrice), currency: fobCurrency } } : {}),
+          ...(figure(capacity) ? { monthly_capacity: { value: figure(capacity), unit: capacityUnit } } : {}),
         });
         setAdding(false);
         setCodeConfirmed(false);
+        setFobPrice('');
+        setCapacity('');
         setProductId(saved.data.product_id);
         // The saved product joins the list and the history on the server render.
         router.refresh();
@@ -156,13 +180,17 @@ export function DemandDiscovery({
 
   const fieldErrors = phase.kind === 'error' ? phase.fields : {};
   // Errors on a field this form shows go beside it; anything else (e.g. `product_id`) goes in the alert.
-  const shownFields = useAdHoc ? ['product_description', 'name', 'hs_code', 'confirm_hs_code'] : [];
+  const shownFields = useAdHoc
+    ? ['product_description', 'name', 'hs_code', 'confirm_hs_code', ...(addMode ? ['fob_price_per_kg.amount', 'fob_price_per_kg.currency', 'monthly_capacity.value', 'monthly_capacity.unit'] : [])]
+    : [];
   const unshownError = phase.kind === 'error' && !Object.keys(fieldErrors).some((field) => shownFields.includes(field));
   const submitting = phase.kind === 'running';
   const locked = submitting || jobIsActive || jobPending;
+  const fobPriceProblem = figureProblem(fobPrice) ?? fieldErrors['fob_price_per_kg.amount'] ?? fieldErrors['fob_price_per_kg.currency'];
+  const capacityProblem = figureProblem(capacity) ?? fieldErrors['monthly_capacity.value'] ?? fieldErrors['monthly_capacity.unit'];
   const canSubmit =
     (addMode
-      ? description.trim().length >= 3 && /^\d{6}$/.test(hsCode.trim()) && codeConfirmed
+      ? description.trim().length >= 3 && /^\d{6}$/.test(hsCode.trim()) && codeConfirmed && !figureProblem(fobPrice) && !figureProblem(capacity)
       : useAdHoc
         ? description.trim().length >= 3
         : Boolean(productId)) && !locked;
@@ -270,6 +298,73 @@ export function DemandDiscovery({
                   <span>This code describes my product. I confirm it as my product&rsquo;s classification.</span>
                 </label>
                 {fieldErrors.confirm_hs_code ? <p className="mt-1 text-xs text-critical">{fieldErrors.confirm_hs_code}</p> : null}
+                <fieldset className="mt-4 rounded-md border border-[var(--color-border)] p-4">
+                  <legend className="px-1 text-sm font-medium text-primary">
+                    Your price and capacity{' '}
+                    <span className="font-normal text-[var(--color-text-secondary)]">(optional)</span>
+                  </legend>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    We compare your price with what each market pays, and what you can supply with what
+                    it buys. Leave these blank to add them later on the product&rsquo;s details page.
+                  </p>
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="fob-price" className="mb-1.5 block text-sm font-medium text-primary">
+                        FOB price per kg
+                      </label>
+                      <div className="flex items-start gap-2">
+                        <select
+                          aria-label="Price currency"
+                          value={fobCurrency}
+                          onChange={(e) => setFobCurrency(e.target.value)}
+                          className="focus-visible-ring min-h-control rounded border border-[var(--color-border-strong)] bg-surface px-2 text-sm text-primary"
+                        >
+                          <option value="INR">INR ₹</option>
+                          <option value="USD">USD $</option>
+                          <option value="EUR">EUR €</option>
+                        </select>
+                        <div className="min-w-0 flex-1">
+                          <Input
+                            id="fob-price"
+                            value={fobPrice}
+                            onChange={(e) => setFobPrice(e.target.value)}
+                            placeholder="95"
+                            inputMode="decimal"
+                            error={fobPriceProblem ?? undefined}
+                            hint="Your price for one kg, loaded on the ship at the Indian port."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="capacity" className="mb-1.5 block text-sm font-medium text-primary">
+                        Monthly capacity
+                      </label>
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Input
+                            id="capacity"
+                            value={capacity}
+                            onChange={(e) => setCapacity(e.target.value)}
+                            placeholder="20"
+                            inputMode="decimal"
+                            error={capacityProblem ?? undefined}
+                            hint="How much you can make or source in a month."
+                          />
+                        </div>
+                        <select
+                          aria-label="Capacity unit"
+                          value={capacityUnit}
+                          onChange={(e) => setCapacityUnit(e.target.value === 'kg' ? 'kg' : 'tonne')}
+                          className="focus-visible-ring min-h-control rounded border border-[var(--color-border-strong)] bg-surface px-2 text-sm text-primary"
+                        >
+                          <option value="tonne">tonnes</option>
+                          <option value="kg">kg</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </fieldset>
                 {products.length > 0 ? (
                   <button type="button" onClick={() => setAdding(false)} className="mt-2 text-xs font-semibold text-primary underline underline-offset-2">
                     Choose a saved product instead
