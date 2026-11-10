@@ -30,7 +30,7 @@ export interface CuratedMarket {
   country_code: string;
   rank: number | null;
   score: number | null;
-  /** Importers found in an official list for this product and market; null where no list covers it. */
+  /** Importers found in an official list for this product and market; null where no list covers the market or none is imported here. */
   importers: { count: number; source: string } | null;
 }
 

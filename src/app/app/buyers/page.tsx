@@ -8,11 +8,13 @@
  * is read from the database. Members: buyer discovery is agent-curated (docs/11 §7) — the API
  * refuses buyer search to exporter roles — so the page shows, per product, the markets its latest
  * Demand Discovery run handed on and the official importer counts there (E-055). It used to render
- * a search screen that every member call was refused by.
+ * a search screen that every member call was refused by. A count is shown only where a list of
+ * that source is imported in this environment (E-056).
  */
 
 import { JobStatus, OrgTier } from '@prisma/client';
-import { importerListSourceFor } from '@/lib/buyer-discovery/importer-lists';
+import { activeImporterLists } from '@/lib/buyer-discovery/importer-list-service';
+import { importerListSourceFor, type ImporterListSourceKey } from '@/lib/buyer-discovery/importer-lists';
 import { BUYER_DISCOVERY_MODEL } from '@/lib/buyer-discovery/service';
 import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { PageHeader, UpgradeNotice, upgradeTierFor } from '@/components/ui';
@@ -76,6 +78,14 @@ export default async function BuyersPage() {
       })
     : [];
 
+  // E-056: a source counts only once one of its lists is imported here. Production has no Canadian
+  // list (R-45), and "no importer of this product in the list" would claim a list was searched.
+  const loaded = new Map<ImporterListSourceKey, Promise<boolean>>();
+  const listLoaded = (key: ImporterListSourceKey) => {
+    if (!loaded.has(key)) loaded.set(key, activeImporterLists(key).then((lists) => lists.length > 0));
+    return loaded.get(key)!;
+  };
+
   const curated: CuratedProduct[] = await Promise.all(
     products.map(async (product) => {
       const run = latestRun.get(product.id);
@@ -83,7 +93,8 @@ export default async function BuyersPage() {
         handed
           .filter((market) => market.run_id === run?.id)
           .map(async (market) => {
-            const source = importerListSourceFor(market.country_code);
+            const listed = importerListSourceFor(market.country_code);
+            const source = listed && (await listLoaded(listed.key)) ? listed : null;
             return {
               assessment_id: market.id,
               country_code: market.country_code,

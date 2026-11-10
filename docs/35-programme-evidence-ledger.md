@@ -51,6 +51,7 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-038 | 2026-10-30 | Build order: finish Demand Discovery first, then regional demand for all its markets, then buyers for the same markets, with source research and tariff work alongside; tariff automation for every market (D-030) resumes as part of finishing stage 1. Owner's words: "Ideate well about what to build in demand discovery first to finish it once and for all, then covering the region for all the countries covered in it, and then the buyer discovery for the same countries. It's a simultaneous project, I guess." and "The completion of the demand discovery first, right? If yes, then let's proceed with it." | Owner | Programme |
 | D-039 | 2026-11-09 | Every tool runs for paid members only. Owner's words: "the only way to do it is being a paid user", and for visitors and free accounts "it shouldn't burn actual credits, it should just be with static data to show the sample of workflow … and make that accurate. but don't exhaust our resources." The owner's own test account becomes a member through an audited fee waiver ("I register, you mark it paid"). | Owner | Product access (docs/14 §3c), E-052 |
 | D-040 | 2026-11-10 | Singapore's tariff: switch the nightly refresh off on production and staging (Singapore Statutes Online refuses it from Railway with HTTP 403) and load the customs duties order once from the owner's machine inside SSO's 03:00–07:00 SGT automation window (`authority-refresh.ts --acquire-only`, then `import-retained-authority-release.ts --family=SG`). Chosen from three options: this, refresh off with no Singapore tariff, or leaving the refresh on | Owner | Market access (R-43), E-054 |
+| D-041 | 2026-11-10 | Scope until further notice: Demand Discovery production-ready, with its hand-off into regional demand and buyer discovery working; no new regional or buyer work. Owner's words: "I just want demand discovery to be production ready, that's all. And the pipeline carrying from demand discovery to the regional and buyer to work fine." Canada's importer list (R-45) is deferred | Owner | E-056 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2337,6 +2338,51 @@ because `next/font` could not fetch a Google font inside the Docker build). Sign
 `membership` 62, `paid-only-tools` 3 (members' Buyers page guard added), `products-create-route`
 2: all pass.
 
+
+### E-056 · 2026-11-10 · Release #46 live; the members' Buyers page counts importers only where a list is imported; scope (D-041) (in review)
+
+**Scope (D-041).** The owner narrowed the work to a production-ready Demand Discovery with its
+hand-off into regional demand and buyer discovery working; nothing new on the regional or buyer
+side. Canada's importer list (R-45) is deferred.
+
+**Release #46 live** (#44 and #45; merged by the owner 07:39 UTC; master CI run 42776792973
+passed; Railway production web "Deployment successful" from the merge). Signed out on
+www.cleartrade.in: `/app/markets` 200 with the frozen basmati run ("A real result for basmati rice
+(HS 100630), run on 10 Nov 2026 and frozen here. It is not your data and not live"), first market
+United States 85, confidence 82%; `/app/buyers` 200 with the members' notice and the importers-by-
+region sample (London 85); `POST /api/v1/market-estimates` and `POST /api/v1/products` 401.
+
+**Found on production, as the owner's QA member.** `/app/buyers` lists the basmati run's ten
+handed-off markets in rank order with their scores, and United Kingdom reads "184 importers found
+in the HMRC importer details (UK Trade Info)". Canada read "No importer of this product in the
+Canadian Importers Database (ISED, from CBSA data) yet; your agent searches further", but
+production has no Canadian list (its reader is not built, R-45), so the line claimed a search that
+never ran.
+
+**Built (this PR).** `/app/buyers` shows a count only where a list of the market's source is
+imported in the environment (`activeImporterLists`); elsewhere the market reads "Your agent finds
+and vets importers here", as markets without an official list do. `tests/buyers-page.test.ts`
+renders the page for a paid member from a run with GB, CA and US handed on and an imported HMRC
+list: GB has its count, CA and US have none, and a list with no importer of the product still says
+so. Without the fix the test fails (Canada had a count of 0).
+
+**Correction to E-055.** The basmati run was `partial` because of the failed tariff look-ups alone.
+The missing fit inputs (FOB price, capacity) are a note and never make a run partial: `loadRunInputs`
+degrades a run only for a failed or timed-out tariff look-up, a failed Comtrade step or a failed ECB
+rate.
+
+**R-44, the owner's Claude Code inventory.** 98 stored files are missing from production's bucket,
+all from releases imported 1–3 Sep 2026: EU TARIC 2026-09 (27.4 MB), Japan's 96 tariff chapters
+(2026-08-08) and Korea's KCS tariff (22.4 MB). Staging's bucket does not hold production's keys,
+but staging's own releases (imported 11 Oct) hold files with the same SHA-256 under staging's keys.
+Options put to the owner: restore each file from staging's bucket under production's key, written
+only where the bytes' SHA-256 and size equal production's row, no database write (recommended);
+re-acquire the three tariffs on production (new release rows; EU TARIC needs an EU Login holder);
+or leave the 31 markets on estimated duties. Awaiting the owner's choice.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files;
+`buyers-page` 2, `paid-only-tools` 3, `buyer-discovery` 8: all pass.
+
 ## Risk register
 
 
@@ -2385,5 +2431,5 @@ because `next/font` could not fetch a Google font inside the Docker build). Sign
 | R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
 | R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
 | R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
-| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Open (E-055) | CC restores each file from staging's bucket where its SHA-256 matches the row; a new production run shows official duties for those markets |
-| R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Open (E-055) | CC imports staging's edition into production; Canada's market page shows the count |
+| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Open (E-055): 98 files missing; restore from staging's bucket by SHA-256 proposed, awaiting the owner (E-056) | CC restores each file from staging's bucket where its SHA-256 matches the row; a new production run shows official duties for those markets |
+| R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
