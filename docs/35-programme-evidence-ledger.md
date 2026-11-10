@@ -2770,6 +2770,36 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 
 **Order (production).** The worker must run reader v2 before the release is imported: it re-reads the bundle at every look-up, and v1 stops at the blank dutiable lines. So: merge, release, deploy. Then the owner's Claude Code runs `build-singapore-saved-bundle.ts` on the saved folder and imports with `--activate` (`railway run --environment production --service cleartrade-worker-production`). The new release then re-runs products on the hourly refresh.
 
+### E-069 · 2026-11-11 · A tariff source with no publishing rhythm can be re-checked, not only re-imported (in review)
+
+**Found (the owner asked to clear the GCC, UEMOA and TARIC reminders, E-066).**
+- A source with no recorded rhythm is due a year after its edition's date. The GCC tariff (Dubai Customs' update of 23 Jul 2025) and the UEMOA edition of the ECOWAS tariff (TEC 2022 V4) were both overdue on `/ops/discovery`.
+- Research on 10–11 Nov found no newer edition of either. The GCC's 2026 notice (CN 2/2026) only extends the transition to 8-digit codes; `IntegratedCustomsTariffv4.pdf` on Dubai Customs' site is a presentation, not a tariff. UEMOA's TEC 2022 V4 is still the newest.
+- Nothing could record that. Importing the same edition again finds the existing release (UNCHANGED) and keeps its edition date, so the row would have stayed overdue for good.
+- TARIC is different: it is published monthly, needs an EU Login holder to download, and a re-check of an old month does not make it current. Its monthly steps are now written down in docs/37 §8.
+
+**Built.**
+- **`src/lib/market-access/source-recheck.ts`.**
+  - The official files of a release are its manifest without what ClearTrade derived (normalized lines, acquisition manifest).
+  - `compareWithRelease` says "unchanged" only when every file fetched today matches one of the release's files by SHA-256 and every official file was supplied. Otherwise it names the differing and missing files.
+  - `recordSourceRecheck` records an unchanged re-check as an audit event on the release (`authority_source_rechecked`, `authority_release`), for operations staff and admins only.
+- **`scripts/recheck-authority-source.ts --source-family=…`.** `--list` prints the files to fetch, with their URLs. With `--file=…` for each and `--actor-email`, it records an unchanged re-check, or names the changed files, records nothing and exits 1. It checks the database identity first.
+- **Freshness.** A source with no publishing rhythm is due a year after its newest unchanged re-check, when that is later than the edition's date. A source with a rhythm (TARIC monthly, China yearly) is not reset this way. The ops page shows "re-checked {date}" beside the release, and the default rule's refresh text names the script.
+- **Docs:** docs/40 §5, the yearly row; docs/37 §8, the re-check and TARIC's monthly steps.
+
+**Checks run (agent workspace).**
+- `source-recheck`: 4 tests, all new. Derived files are excluded; unchanged needs every file; a new edition and a missing file are named; GCC goes from overdue (due 23 Jul 2026) to fresh (due 11 Nov 2027) after a re-check on 11 Nov 2026, while TARIC stays overdue; an exporter account is refused; the loader reads the newest re-check.
+- `demand-discovery-v5-input-freshness` (9) and `-national-line` (11) pass.
+- `tsc --noEmit` and ESLint: clean.
+- The script, end to end, on a throwaway local database with an active GCC release built from two test files:
+  - `--list` named both files and their URLs;
+  - one file only: "changed or incomplete — nothing recorded", the missing file named, exit 1;
+  - an exporter account: refused, exit 1;
+  - both files: "unchanged — re-check recorded", one audit event with `checked_on` 2026-11-11, exit 0;
+  - an amended file: named as differing, nothing recorded, exit 1.
+
+**Next (production, after release).** The owner's Claude Code runs `--list` for `GCC_UNIFIED_TARIFF` and `ECOWAS_CET_UEMOA_TEC` on production, fetches the files it names from their official URLs, and runs the re-check with them. Unchanged clears the reminder; changed means a new edition to import.
+
 ## Risk register
 
 
