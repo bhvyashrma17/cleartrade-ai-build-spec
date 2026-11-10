@@ -55,6 +55,7 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-042 | 2026-11-10 | Quota duties (R-46): where a tariff-rate quota gives a cheaper rate for a volume or a channel, Demand Discovery scores the rate an ordinary exporter pays outside the quota and says the quota's rate beside it, never scoring it, as China's reader already did; first for Korea and Japan. Owner's answer: "Score outside-quota (Recommended)" | Owner | E-058 |
 | D-043 | 2026-11-10 | Korea's applied rate (R-47): read Korea's rate priority (Customs Act Art. 50) from the stored rows, so the WTO rate applies where it is lower than the basic rate; to be done right after the quota release. Owner's answer: "Yes, right after (Recommended)" | Owner | E-058 |
 | D-044 | 2026-11-10 | Rank every market (policy v9). Markets without enough data rank after every fully scored market, by a score in which each measure without data counts as zero; markets with no recorded imports rank last. North Korea stays excluded (UN sanctions), and only fully scored markets are handed on. Owner's words: "Countries, all countries should be ranked. If there is an issue, we should fix that." Answer: "Rank them last (Recommended)" | Owner | E-062 |
+| D-045 | 2026-11-10 | A code that splits into national lines with different duties: use the line the product's own description names; otherwise the exporter or agent answers a question, and the next run uses the official duty. Answers on file come before the description, and a duty is settled only when every line still in scope carries it. Owner's answer: "Description, then a question (Recommended)" | Owner | E-063 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2612,6 +2613,39 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
   - `phase-1-gate`: the v9 and v8 rank rules.
   - `market-assessment-delete-guard`: the new constraint.
   - `demand-discovery-v5-rank-all`: 4 new tests on the pages.
+
+### E-063 · 2026-11-10 · A code that splits into national lines: answers, then the description (D-045) (in review)
+
+**Why.** On production, 59 of the basmati run's 218 markets had estimated duties, the United States and the United Kingdom among the top 30. Many of them split HS 1006.30 into national lines with different duties, and the run stopped at the split. The United States' lines are parboiled 11.2% and other 1.4¢/kg; the agent's questions page asks "Is the rice parboiled?". The owner chose: the product's description, then a question.
+
+**Built.**
+- **`national-line.ts` (pure):**
+  - when every candidate line carries one duty, the split never mattered;
+  - otherwise the answers on file decide first, then what the product's own words state (`answersNamedIn`: "Basmati rice" is Basmati; "not parboiled" and "non-basmati" are not);
+  - a duty is settled only when every line still in scope carries it;
+  - otherwise the first question that would narrow the lines is named.
+- **Run inputs** (`splitLineChoices`, `officialDuties`):
+  - for each market whose newest snapshot needs refinement, the run reads the stored candidates in force on its date, the product's answers on file and its frozen name and description;
+  - `resolveChosenLineDuty` scores the chosen lines' official rate. India's own preference on every chosen line, read from the snapshot's line measures, is scored as for a single line (D-026); a quota is shown, not scored;
+  - currencies are converted as for any official duty;
+  - the frozen inputs record the choice: how, the lines, and the answers used.
+- **Open splits:** the market keeps its estimate, and the duty measure names the open question.
+  - The market page (member and agent) says the code splits into lines with different duties and links to "Answer 'Is the rice parboiled?'".
+  - The questions page says the next run uses the official duty.
+- **Refresh:** an answer recorded after a run that kept such an estimate is a reason to re-run the product on the hourly refresh. This also covers runs from before this change, by their stored reason. It uses the existing daily budget and the `refresh_on_new_data` switch.
+- **Explanation:** "Duty on Indian goods is about 1% (1.4¢/kg at this market's prices) on the tariff line the answers about the goods point to." The description and one-duty cases say so in the same way.
+
+**Not changed:**
+- No policy version; the official quality applies to a chosen line.
+- Agent-entered tariffs stay retired (D-037): the lines and duties are the source's own.
+- The questions page still narrows to one line where the answers allow.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `demand-discovery-v5-national-line`: 10 new tests, among them a stored-evidence run read.
+  - The description settles a UK-shaped split, with India's 0% preference on the Basmati lines.
+  - The United States asks "Is the rice parboiled?". After the assigned agent answers through the real questions service, the next read scores 1.4¢/kg on 1006.30.90.
+- 52 discovery, gate, refinement, refresh and provider test files: 543 of 544 pass. The one failure is `market-scan-requests`, as on `staging/railway`.
 
 ## Risk register
 

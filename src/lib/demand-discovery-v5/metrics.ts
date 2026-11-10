@@ -237,8 +237,11 @@ export interface StandardDutyNote { duty_percent: number | null; expression: str
 /** D-042 (R-46): the official duty is a tariff-rate quota's out-of-quota rate; the quota's own rate, said and never scored. */
 export interface DutyQuotaNote { duty_expression: string; percent: number | null; basis: string; out_of_quota_floor?: boolean }
 
+/** D-045: the national line(s) chosen for a split HS6, and how (`national-line.ts`). */
+export interface DutyLineChoice { basis: 'answers' | 'description' | 'description_and_answers' | 'one_duty'; codes: string[] }
+
 /** Which rate an official duty carries: India's published preference, or the ordinary rate. */
-type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string }; schedule_read?: { schedule: string; label: string }; quota?: DutyQuotaNote | null };
+type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string }; schedule_read?: { schedule: string; label: string }; quota?: DutyQuotaNote | null; line_choice?: DutyLineChoice | null };
 
 /** §4.7: the sector average times the agreement factor. `official_note` says why an official duty was not usable. */
 export interface EstimatedDuty {
@@ -251,6 +254,8 @@ export interface EstimatedDuty {
   official_note?: string | null;
   /** The customs union whose common external tariff stood in for the market's own average. */
   customs_union?: string | null;
+  /** D-045: the HS6 splits into lines with different duties here; the question that would settle which. */
+  line_question?: string | null;
 }
 
 export type DutyInput =
@@ -274,6 +279,7 @@ function scoreEstimatedDuty(input: EstimatedDuty, policy: DemandDiscoveryV5Polic
       duty_percent: round(estimate, 4), basis: 'estimate', sector_average_percent: round(input.sector_average_percent, 4), ...(input.sector_average_year != null ? { sector_average_year: input.sector_average_year } : {}), agreement_scope: input.agreement_scope, agreement: input.agreement_name,
       ...(input.customs_union ? { customs_union: input.customs_union } : {}),
       ...(officialNote ? { official_note: officialNote } : {}),
+      ...(input.line_question ? { line_question: input.line_question } : {}),
     },
   };
 }
@@ -299,6 +305,8 @@ export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, qua
   const officialQuality = byAgent ? quality.agent_recorded ?? quality.official : union ? quality.common_tariff ?? quality.official : schedule ? quality.schedule_read ?? quality.official : quality.official;
   // D-042: an out-of-quota duty says the quota's own rate.
   const quotaNote = (input.kind === 'official' || input.kind === 'official_specific') ? input.quota ?? null : null;
+  // D-045: a line chosen for a split HS6 says how it was chosen and which line it is.
+  const lineChoice = (input.kind === 'official' || input.kind === 'official_specific') ? input.line_choice ?? null : null;
   const official = (percent: number, extra: Record<string, string | number>, preference: DutyPreferenceNote | null | undefined): MetricResult => ({
     key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: officialQuality, reason: null,
     inputs: {
@@ -306,6 +314,7 @@ export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, qua
       ...(preferred ? { rate: 'india_preference', standard_percent: standardNote?.duty_percent == null ? null : round(standardNote.duty_percent, 4), standard_duty: standardNote?.expression ?? null } : {}),
       ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4), ...(preference.quota ? { preference_quota: 'yes' } : {}) } : {}),
       ...(quotaNote ? { quota_duty: quotaNote.duty_expression, quota_percent: quotaNote.percent == null ? null : round(quotaNote.percent, 4), quota_basis: quotaNote.basis, ...(quotaNote.out_of_quota_floor ? { duty_floor: 'yes' } : {}) } : {}),
+      ...(lineChoice ? { line_choice: lineChoice.basis, national_lines: lineChoice.codes.length, ...(lineChoice.codes.length === 1 ? { national_line: lineChoice.codes[0]! } : {}) } : {}),
     },
   });
   if (input.kind === 'official') return official(input.duty_percent, { source: input.source }, input.preference);

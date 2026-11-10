@@ -180,11 +180,17 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
       // An official specific duty is shown with what it is per kilogram: the percentage is derived.
       const specific = typeof inputs.duty_expression === 'string' ? ` (${inputs.duty_expression} at this market's prices)` : '';
       // D-024: a rate an agent read from the official tariff says so.
-      const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
+      const source = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
         // D-028: a customs union's common external tariff names itself; the member's own exceptions are not checked.
         : typeof inputs.common_tariff === 'string' ? ` under the ${inputs.common_tariff}; this market's own exceptions are not checked`
         // D-031: a market's own tariff read from a retained schedule names itself; trade remedies are not checked.
         : typeof inputs.schedule_read === 'string' ? ` (read from ${inputs.schedule_read}; trade remedies are not checked)` : '';
+      // D-045: the code splits into tariff lines here; the scored line says how it was chosen.
+      const line = inputs.line_choice === 'description' ? " on the tariff line the product's description names"
+        : inputs.line_choice === 'answers' ? ' on the tariff line the answers about the goods point to'
+          : inputs.line_choice === 'description_and_answers' ? ' on the tariff line the description and the answers about the goods point to'
+            : inputs.line_choice === 'one_duty' ? ', the same on every tariff line under this code' : '';
+      const read = `${source}${line}`;
       // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
       if (inputs.rate === 'india_preference') {
         const standardPercent = num(inputs.standard_percent);

@@ -41,7 +41,9 @@ import { dutyInputs, tariffSector, type SectorTariff } from './duty-inputs';
 import { exporterUsdPerKg, exporterYearlyKg } from './exporter-inputs';
 import { createUsdRateResolver, type UsdRate } from './fx';
 import { logisticsEstimates } from './logistics-fallback';
-import { resolveOfficialDuty, storedDuty, type OfficialDutyResolution } from './official-duty';
+import { resolveChosenLineDuty, resolveOfficialDuty, storedDuty, type OfficialDutyResolution } from './official-duty';
+import { chooseNationalLines, currentCandidates, type NationalLineOutcome } from './national-line';
+import type { CandidateLine } from '@/lib/market-access/classification-refinement';
 import { policyHash } from './policy';
 import { acquireV5Tariffs, summarizeTariffOutcomes } from './tariff-step';
 import { coordinateInputs, ecgcInputs } from './reference-inputs';
@@ -128,14 +130,108 @@ async function availability(year: number) {
  *
  * A line an agent recorded by hand (`authoritative_manual`, D-024) is not read: duty comes only from
  * official sources the system reads itself, or a labelled estimate (owner, 30 Oct 2026, D-037).
+ *
+ * D-045: where the HS6 splits into national lines with different duties, the line is chosen from
+ * the answers on file for the product and market, then from the product's own words
+ * (`national-line.ts`); the chosen lines' official duty is scored. Otherwise the market keeps its
+ * estimate and names the question that would settle it.
  */
-async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate>; score_india_preference?: boolean }) {
+interface SplitLineChoice {
+  snapshot_id: string;
+  source_authority: string;
+  outcome: NationalLineOutcome;
+  /** India's own preference on every chosen line, when the source publishes one for India on each. */
+  india_preference: { duty_expression: string; is_quota: boolean } | null;
+}
+
+/** The candidates a snapshot preserved (`persistMarketAccessIngest`), in the refinement module's shape. */
+function storedCandidates(detail: unknown): CandidateLine[] {
+  const raw = detail && typeof detail === 'object' ? (detail as { declarable_candidates?: unknown }).declarable_candidates : null;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const row = entry as Record<string, unknown>;
+    if (typeof row.code !== 'string' || typeof row.description !== 'string') return [];
+    return [{
+      national_tariff_code: row.code,
+      description: row.description,
+      description_path: Array.isArray(row.description_path) ? row.description_path.filter((part): part is string => typeof part === 'string') : [],
+      duty_expression: typeof row.duty === 'string' ? row.duty : null,
+      duty_kind: typeof row.duty_kind === 'string' ? row.duty_kind : null,
+      effective_from: typeof row.effective_from === 'string' ? row.effective_from : null,
+      effective_to: typeof row.effective_to === 'string' ? row.effective_to : null,
+    }];
+  });
+}
+
+/**
+ * D-045: for each market whose newest tariff snapshot splits the HS6 into national lines, the line
+ * the answers on file and the product's own words choose, or the question still open. India's
+ * preference on the chosen lines is read from the snapshot's own line measures: a measure published
+ * for India itself, current, not excluding India, the same on every chosen line.
+ */
+async function splitLineChoices(args: {
+  snapshots: readonly { id: string; country_code: string; classification_resolution: string | null; retrieved_at: Date; source_authority: string; resolution_detail: unknown }[];
+  as_of: Date;
+  product: { id: string | null; text: string } | null;
+}): Promise<Map<string, SplitLineChoice>> {
+  const newest = new Map<string, (typeof args.snapshots)[number]>();
+  for (const snapshot of args.snapshots) {
+    if (snapshot.classification_resolution !== 'classification_refinement_required') continue;
+    const held = newest.get(snapshot.country_code);
+    if (!held || snapshot.retrieved_at > held.retrieved_at || (snapshot.retrieved_at.getTime() === held.retrieved_at.getTime() && snapshot.id > held.id)) newest.set(snapshot.country_code, snapshot);
+  }
+  const result = new Map<string, SplitLineChoice>();
+  if (!newest.size || !args.product) return result;
+  const refinements = args.product.id
+    ? await prisma.productClassificationRefinement.findMany({
+        where: { product_id: args.product.id, destination_country: { in: [...newest.keys()] }, created_at: { lte: args.as_of }, OR: [{ superseded_at: null }, { superseded_at: { gt: args.as_of } }] },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        select: { destination_country: true, deciding_attributes: true },
+      })
+    : [];
+  const answers = new Map<string, Record<string, unknown>>();
+  for (const refinement of refinements) {
+    if (!answers.has(refinement.destination_country) && refinement.deciding_attributes && typeof refinement.deciding_attributes === 'object') {
+      answers.set(refinement.destination_country, refinement.deciding_attributes as Record<string, unknown>);
+    }
+  }
+  for (const [market, snapshot] of [...newest].sort(([a], [b]) => a.localeCompare(b))) {
+    const candidates = currentCandidates(storedCandidates(snapshot.resolution_detail), args.as_of);
+    if (!candidates.length) continue;
+    const outcome = chooseNationalLines({ candidates, product_text: args.product.text, answers: answers.get(market) ?? null });
+    let indiaPreference: SplitLineChoice['india_preference'] = null;
+    if (outcome.status === 'chosen') {
+      const codes = outcome.lines.map((line) => line.national_tariff_code);
+      const measures = await prisma.marketAccessTariffLine.findMany({
+        where: { snapshot_id: snapshot.id, national_tariff_code: { in: codes }, applies_to_origin_country: 'IN', measure_kind: { in: ['tariff_preference', 'tariff_quota'] } },
+        select: { national_tariff_code: true, measure_kind: true, duty_expression: true, conditions: true, effective_from: true, effective_to: true },
+      });
+      const current = measures.filter((measure) => (measure.effective_from == null || measure.effective_from <= args.as_of) && (measure.effective_to == null || measure.effective_to > args.as_of)
+        && !((measure.conditions as { excludes_india?: unknown } | null)?.excludes_india === true) && (measure.duty_expression ?? '').trim());
+      // A preference that is not a quota, the same on every chosen line; failing that, a quota on every line, shown and not scored.
+      const onEvery = (kind: string) => {
+        const byLine = codes.map((code) => current.filter((measure) => measure.national_tariff_code === code && measure.measure_kind === kind).map((measure) => measure.duty_expression!.trim()));
+        const first = byLine[0]?.[0];
+        return first && byLine.every((duties) => duties.length > 0 && duties.every((duty) => duty === first)) ? first : null;
+      };
+      const preference = onEvery('tariff_preference');
+      const quota = preference ? null : onEvery('tariff_quota');
+      indiaPreference = preference ? { duty_expression: preference, is_quota: false } : quota ? { duty_expression: quota, is_quota: true } : null;
+    }
+    result.set(market, { snapshot_id: snapshot.id, source_authority: snapshot.source_authority, outcome, india_preference: indiaPreference });
+  }
+  return result;
+}
+
+export async function officialDuties(args: { markets: readonly string[]; hs6: string; as_of: Date; exporter_org_id: string; hs_revision: string; minimum_confidence: number; usd: (currency: string) => Promise<UsdRate>; score_india_preference?: boolean; product?: { id: string | null; text: string } }) {
   const origins = allowedEvidenceOrigins();
   const snapshots = await prisma.marketAccessEvidenceSnapshot.findMany({
     where: { country_code: { in: [...args.markets] }, OR: [{ hs_code_scope: args.hs6 }, { hs6_code: args.hs6 }], retrieved_at: { lte: args.as_of }, evidence_origin: { in: origins }, provider: { not: AGENT_RECORDED_PROVIDER } },
-    select: { id: true, country_code: true, provider: true, source_dataset: true, classification_resolution: true, evidence_origin: true },
+    select: { id: true, country_code: true, provider: true, source_dataset: true, classification_resolution: true, evidence_origin: true, retrieved_at: true, source_authority: true, resolution_detail: true },
     orderBy: { id: 'asc' },
   });
+  const lines = await splitLineChoices({ snapshots, as_of: args.as_of, product: args.product ?? null });
   const evidence = snapshots.length
     ? await prisma.marketAccessEvidence.findMany({
         where: {
@@ -154,6 +250,14 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     const parsed = storedDuty(row) ?? parseDutyExpression(row.duty_expression);
     if (parsed.kind === 'specific' && parsed.specific_currency) currencies.add(parsed.specific_currency);
   }
+  // D-045: a chosen line's duty, and India's preference on it, may be in another currency.
+  for (const choice of lines.values()) {
+    if (choice.outcome.status !== 'chosen') continue;
+    for (const expression of [choice.outcome.lines[0]!.duty_expression, choice.india_preference?.duty_expression ?? null]) {
+      const parsed = parseDutyExpression(expression);
+      if (parsed.kind === 'specific' && parsed.specific_currency) currencies.add(parsed.specific_currency);
+    }
+  }
   const fx = new Map<string, UsdRate>();
   for (const currency of [...currencies].sort()) fx.set(currency, await args.usd(currency));
 
@@ -169,7 +273,18 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
       evidence: rows,
     });
     let resolution = resolveOfficialDuty({ as_of: args.as_of, tariffs: selected.tariffs, rows: new Map(rows.map((row) => [row.id, row])), minimum_confidence: args.minimum_confidence, usd_per_unit: (currency) => fx.get(currency)?.rate ?? null, score_india_preference: args.score_india_preference ?? false });
-    if (resolution.status === 'none' && marketSnapshots.some((snapshot) => snapshot.classification_resolution === 'classification_refinement_required')) {
+    const split = lines.get(market);
+    if (resolution.status === 'none' && split) {
+      if (split.outcome.status === 'chosen') {
+        resolution = resolveChosenLineDuty({
+          lines: split.outcome.lines, choice: split.outcome.choice, source_authority: split.source_authority, snapshot_id: split.snapshot_id,
+          india_preference: split.india_preference, usd_per_unit: (currency) => fx.get(currency)?.rate ?? null, score_india_preference: args.score_india_preference ?? false,
+        });
+      } else {
+        const ask = split.outcome.question ? ` Answering "${split.outcome.question}" on the tariff-line questions settles it, and the next run uses the official duty.` : '';
+        resolution = { status: 'none', reason: `This HS6 splits into national lines with different duties in this market; the official duty needs the product's declarable line.${ask}`, line_question: split.outcome.question };
+      }
+    } else if (resolution.status === 'none' && marketSnapshots.some((snapshot) => snapshot.classification_resolution === 'classification_refinement_required')) {
       resolution = { status: 'none', reason: "This HS6 splits into national lines with different duties in this market; the official duty needs the product's declarable line." };
     }
     if (resolution.status !== 'none') {
@@ -193,6 +308,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
         basis: resolution.basis, ...(resolution.standard ? { standard: resolution.standard } : {}),
         ...(resolution.quota ? { quota: resolution.quota } : {}),
         ...(resolution.recorded_by_agent ? { recorded_by_agent: true } : {}),
+        ...(resolution.line_choice ? { line_choice: resolution.line_choice } : {}),
         ...(resolution.common_tariff ? { common_tariff: resolution.common_tariff } : {}),
         ...(resolution.schedule_read ? { schedule_read: resolution.schedule_read } : {}),
         ...(resolution.status === 'percent' ? { duty_percent: resolution.duty_percent } : resolution.status === 'specific' ? { usd_per_kg: resolution.usd_per_kg, expression: resolution.expression, fx: resolution.fx } : { reason: resolution.reason, expression: resolution.expression }),
@@ -217,6 +333,11 @@ export async function loadRunInputs(args: {
   /** The job doing the run: acquired tariff snapshots name it as their source run. */
   job_id?: string;
   correlation_id?: string;
+  /**
+   * D-045: the product the run is for and its own words (name and description, as frozen into the
+   * run), which settle a split HS6's national line with the answers on file.
+   */
+  line_product?: { id: string | null; text: string };
 }): Promise<LoadedRunInputs> {
   const { config } = args;
   const policy = config.policy;
@@ -314,7 +435,7 @@ export async function loadRunInputs(args: {
     if (summary.degraded) degraded = true;
     notes.push(...summary.notes);
   }
-  const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd, score_india_preference: policy.duty.score_india_preference });
+  const official = await officialDuties({ markets, hs6: args.hs6, as_of: tariffAsOf, exporter_org_id: args.exporter_org_id, hs_revision: args.hs_revision, minimum_confidence: policy.duty.official_minimum_confidence, usd: rates.usd, score_india_preference: policy.duty.score_india_preference, product: args.line_product });
   for (const origin of official.origins) origins.add(origin);
   if (!official.official_count) {
     notes.push(config.tariff_acquisition
