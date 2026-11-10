@@ -86,6 +86,20 @@ function currentAsAt(html: string) {
   return match[1]!;
 }
 
+/** The six reviewed public pages a Singapore bundle retains, by file name, role and official URL. */
+const SINGAPORE_SOURCES = [
+  ['customs-duties-order-current.html', 'official_current_consolidated_first_schedule', SINGAPORE_ORDER_URL],
+  ['s49-2026.html', 'official_amendment_provenance', SINGAPORE_S49_URL],
+  ['s67-2026.html', 'official_tariff_amendment_provenance', SINGAPORE_S67_URL],
+  ['terms-of-use.html', 'official_reuse_and_automation_terms', SINGAPORE_TERMS_URL],
+  ['classification.html', 'singapore_customs_8_digit_classification_evidence', SINGAPORE_CLASSIFICATION_URL],
+  ['dutiable-goods.html', 'singapore_customs_blank_and_duty_category_evidence', SINGAPORE_DUTIABLE_GOODS_URL],
+] as const;
+export const SINGAPORE_SAVED_PAGES: readonly { file: string; url: string }[] = SINGAPORE_SOURCES.map(([file, , url]) => ({ file, url }));
+
+/** How the pages were obtained: the nightly window (D-029), or saved by a person in a browser (E-067). */
+export type SingaporeAcquisitionRoute = 'sso_automation_window' | 'saved_copy';
+
 export async function acquireSingaporeAuthorityBundle(args: {
   release_identifier: string;
   now?: Date;
@@ -97,28 +111,50 @@ export async function acquireSingaporeAuthorityBundle(args: {
   assertSingaporeSsoAcquisitionWindow(now);
   const fetchImpl = args.fetch_impl ?? fetch;
   const attempts = args.attempts ?? 2;
-  const sources = [
-    ['customs-duties-order-current.html', 'official_current_consolidated_first_schedule', SINGAPORE_ORDER_URL],
-    ['s49-2026.html', 'official_amendment_provenance', SINGAPORE_S49_URL],
-    ['s67-2026.html', 'official_tariff_amendment_provenance', SINGAPORE_S67_URL],
-    ['terms-of-use.html', 'official_reuse_and_automation_terms', SINGAPORE_TERMS_URL],
-    ['classification.html', 'singapore_customs_8_digit_classification_evidence', SINGAPORE_CLASSIFICATION_URL],
-    ['dutiable-goods.html', 'singapore_customs_blank_and_duty_category_evidence', SINGAPORE_DUTIABLE_GOODS_URL],
-  ] as const;
   // Deliberately sequential and bounded: one small request per reviewed public artifact.
-  const artifacts: Array<{ name: string; role: string; url: string; bytes: Buffer; size_bytes: number; sha256: string }> = [];
-  for (const [name, role, url] of sources) {
-    const bytes = await fetchBytes(url, fetchImpl, attempts);
-    artifacts.push({ name, role, url, bytes, size_bytes: bytes.length, sha256: sha256(bytes) });
-  }
+  const pages: Array<{ name: string; role: string; url: string; bytes: Buffer }> = [];
+  for (const [name, role, url] of SINGAPORE_SOURCES) pages.push({ name, role, url, bytes: await fetchBytes(url, fetchImpl, attempts) });
+  return assembleSingaporeAuthorityBundle({ ...args, acquired_at: now, pages, route: 'sso_automation_window' });
+}
+
+/**
+ * D-029's saved-copy route (E-067, D-040): the six official pages as a person saved them in a
+ * browser. SSO refuses scripts (HTTP 403) from Railway and from the owner's machine alike, inside
+ * its 03:00–07:00 window too; a person viewing and saving the pages is ordinary use, not automated
+ * extraction, so no window applies here. Network-free: the pages are read from the caller's files,
+ * then bundled, parsed and checked exactly as an acquisition is.
+ */
+export async function buildSingaporeSavedCopyBundle(args: {
+  release_identifier: string;
+  /** When the pages were saved; recorded as the acquisition time. */
+  saved_at: Date;
+  /** Page bytes by file name (`SINGAPORE_SAVED_PAGES`). */
+  pages: Readonly<Record<string, Buffer | undefined>>;
+  qualification_minimum_rows?: number;
+}) {
+  if (Number.isNaN(args.saved_at.getTime())) throw new Error('A saved Singapore copy needs a valid save time.');
+  const missing = SINGAPORE_SOURCES.filter(([name]) => !args.pages[name]?.length).map(([name]) => name);
+  if (missing.length) throw new Error(`Saved Singapore pages are missing or empty: ${missing.join(', ')}.`);
+  const pages = SINGAPORE_SOURCES.map(([name, role, url]) => ({ name, role, url, bytes: args.pages[name]! }));
+  return assembleSingaporeAuthorityBundle({ ...args, acquired_at: args.saved_at, pages, route: 'saved_copy' });
+}
+
+async function assembleSingaporeAuthorityBundle(args: {
+  release_identifier: string;
+  acquired_at: Date;
+  pages: readonly { name: string; role: string; url: string; bytes: Buffer }[];
+  route: SingaporeAcquisitionRoute;
+  qualification_minimum_rows?: number;
+}) {
+  const artifacts = args.pages.map((page) => ({ ...page, size_bytes: page.bytes.length, sha256: sha256(page.bytes) }));
   const order = artifacts[0]!.bytes.toString('utf8');
   const lines = parseSingaporeScheduleHtml(order, { minimum_rows: args.qualification_minimum_rows ?? SINGAPORE_QUALIFICATION_MINIMUM_ROWS });
   const normalized = serializeSingaporeLines(lines);
   artifacts.push({ name: 'normalized-lines.json', role: 'deterministic_canonical_tariff_artifact', url: SINGAPORE_ORDER_URL, bytes: normalized, size_bytes: normalized.length, sha256: sha256(normalized) });
   const attribution = 'Singapore legislation is subject to copyright of the Singapore Government and is used/reproduced with the permission of the Attorney-General’s Chambers of Singapore. Check Singapore Statutes Online for the latest version. ClearTrade is not associated with, affiliated with or endorsed by AGC or SSO.';
   const manifest = {
-    acquisition_version: SINGAPORE_ACQUISITION_VERSION, release_identifier: args.release_identifier.trim(),
-    acquired_at: now.toISOString(), consolidated_as_at: currentAsAt(order), consolidated_effective_version: '2026-02-12T17:00:00+08:00',
+    acquisition_version: SINGAPORE_ACQUISITION_VERSION, acquisition_route: args.route, release_identifier: args.release_identifier.trim(),
+    acquired_at: args.acquired_at.toISOString(), consolidated_as_at: currentAsAt(order), consolidated_effective_version: '2026-02-12T17:00:00+08:00',
     artifacts: artifacts.map(({ bytes: _bytes, ...artifact }) => artifact),
     amendments: [
       { instrument: 'S 49/2026', effective_from: '2026-02-01T00:00:00+08:00', url: SINGAPORE_S49_URL },

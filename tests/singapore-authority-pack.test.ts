@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import { DESTINATION_ADAPTERS } from '@/lib/job-handlers/market-access';
 import {
-  acquireSingaporeAuthorityBundle, assertSingaporeSsoAcquisitionWindow, SingaporeAcquisitionWindowError,
-  SINGAPORE_CLASSIFICATION_URL, SINGAPORE_DUTIABLE_GOODS_URL, SINGAPORE_ORDER_URL, SINGAPORE_S49_URL, SINGAPORE_S67_URL, SINGAPORE_TERMS_URL,
+  acquireSingaporeAuthorityBundle, assertSingaporeSsoAcquisitionWindow, buildSingaporeSavedCopyBundle, SingaporeAcquisitionWindowError,
+  SINGAPORE_CLASSIFICATION_URL, SINGAPORE_DUTIABLE_GOODS_URL, SINGAPORE_ORDER_URL, SINGAPORE_S49_URL, SINGAPORE_S67_URL, SINGAPORE_SAVED_PAGES, SINGAPORE_TERMS_URL,
 } from '@/lib/market-access/providers/singapore-acquisition';
 import { parseSingaporeDutyCell, parseSingaporeScheduleHtml, readSingaporeAuthorityBundle } from '@/lib/market-access/providers/singapore-bundle';
 import { aggregateSingaporeImportDuty, buildSingaporeMarketAccess } from '@/lib/market-access/providers/singapore-parser';
@@ -34,6 +34,31 @@ const pages: Record<string, string> = {
   [SINGAPORE_CLASSIFICATION_URL]: '<html>Singapore extends HS codes to 8-digit codes under the AHTN and STCCED.</html>',
   [SINGAPORE_DUTIABLE_GOODS_URL]: '<html>Dutiable categories: intoxicating liquor; tobacco products; motor vehicles; petroleum products and biodiesel blends. Other goods are non-dutiable.</html>',
 };
+
+/** SSO's real First Schedule (saved 11 Nov 2026): anchored at Sc1, nested tables, Heading/Subheading, Full/Pref. */
+type RealRow = readonly [string, string, string, string, string, string, string];
+const realRows: readonly RealRow[] = [
+  ['', '0910.30.00', '- Turmeric (curcuma)', 'KGM', '', '', ''],
+  ['10.06', '1006.30', '- Semi-milled or wholly milled rice:', '', '', '', ''],
+  ['', '1006.30.50', '- - Basmati rice', 'TNE', '', '', ''],
+  ['', '2203.00.11', '- - Of an alcoholic strength by volume not exceeding 5.8% vol.', 'LTR', '$16.00 per litre of alcohol', 'Free', '$60.00 per litre of alcohol'],
+  ['', '2402.20.10', '- - Beedies', 'KGM', '', '', '$454.00 per kgm'],
+  ['', '2402.20.90', '- - Other', 'KGM', '', '', '58.9 cents for every gram or part thereof of each stick of cigarette'],
+  ['', '8703.21.11', '- - - - Go-karts', 'NMB', '', '', ''],
+  ['', '2106.90.99', '- - - Other', 'KGM', '', '', '20 cents per kgm'],
+];
+function realLayoutHtml(rows: readonly RealRow[] = realRows, scheduleNote = '<div class="amendNote">[S 67/2026 wef 12/02/2026]</div>') {
+  const cell = (value: string, colspan = 1) => `<td colspan="${colspan}"><div class="fs">${value.replace(/ /g, '&nbsp;')}</div></td>`;
+  return `<html><body><div class="prov1"><table width="100%"><tr><td class="prov1Txt">Customs (Duties) Order. Current version as at 11 Nov 2026.
+  <strong>4.</strong> Where a preferential rate of duty is specified in column (6) of the First Schedule <table><tr><td>(i)</td><td>India;</td></tr></table></td></tr></table></div>
+  <div class="schedule"><table width="100%"><tbody><tr><td class="sHdr" id="Sc1-">FIRST SCHEDULE</td></tr></tbody></table>${scheduleNote}
+  <div class="table-responsive"><table width="100%"><tbody><tr><td class="tbl" id="Sc1-ta-oc1-"><div><table class="t table"><thead>
+  <tr><th>Heading</th><th>Subheading</th><th colspan="2">Description</th><th>Unit of Quantity</th><th colspan="2">Customs Duty</th><th>Excise Duty</th><th>&nbsp;</th></tr>
+  <tr><th>&nbsp;</th><th>&nbsp;</th><th colspan="2">&nbsp;</th><th>&nbsp;</th><th>Full</th><th>Pref</th><th>&nbsp;</th><th>&nbsp;</th></tr></thead><tbody>
+  <tr><td></td><td></td><td colspan="2">Chapter 9 <table><tr><td>Note.</td><td>A note with its own table.</td></tr></table></td><td></td><td></td><td></td><td></td></tr>
+  ${rows.map(([heading, code, description, unit, full, pref, excise]) => `<tr>${cell(heading)}${cell(code)}${cell(description, 2)}${cell(unit)}${cell(full)}${cell(pref)}${cell(excise)}</tr>`).join('\n  ')}
+  </tbody></table></div></td></tr></tbody></table></div></div></body></html>`;
+}
 
 async function fixtureBundle() {
   const fetchImpl = vi.fn(async (input: string | URL | Request) => {
@@ -92,7 +117,46 @@ describe('Singapore First Schedule semantics', () => {
     expect(blank).toMatchObject({ kind: 'none', ad_valorem_rate_percent: null });
     const zero = aggregateSingaporeImportDuty(blank, parseSingaporeDutyCell('', 'KGM', 'excise'), true);
     expect(zero).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 0, expression: 'NON-DUTIABLE' });
-    expect(() => parseSingaporeScheduleHtml(orderHtml([['1', '2401.10.10', 'Tobacco', 'KGM', '', '', '']]), { minimum_rows: 1 })).toThrow(/all duty cells are blank/);
+    // A blank line inside a dutiable category is never zero: it stays on the schedule, not proven
+    // non-dutiable, so its duty is unknown and the rest of the release is still read (E-067).
+    const tobacco = parseSingaporeScheduleHtml(orderHtml([['1', '2401.10.10', 'Tobacco', 'KGM', '', '', '']]), { minimum_rows: 1 }).get('24011010')!;
+    expect(tobacco).toMatchObject({ non_dutiable: false });
+    expect(aggregateSingaporeImportDuty(tobacco.full_customs_duty, tobacco.excise_duty, tobacco.non_dutiable)).toMatchObject({ kind: 'unparsed' });
+  });
+
+  test('reads SSO’s real layout: Heading and Subheading columns, Full and Pref, nested tables, cents (E-067)', () => {
+    const lines = parseSingaporeScheduleHtml(realLayoutHtml(), { minimum_rows: 6 });
+    expect([...lines.keys()]).toEqual(['09103000', '10063050', '22030011', '24022010', '24022090', '87032111', '21069099']);
+    expect(lines.get('10063050')).toMatchObject({ description: '- - Basmati rice', unit: 'TNE', non_dutiable: true });
+    expect(lines.get('22030011')).toMatchObject({
+      full_customs_duty: { kind: 'specific', specific_amount: 16, specific_unit: 'litre of alcohol' },
+      preferential_customs_duty: { kind: 'ad_valorem', ad_valorem_rate_percent: 0 }, excise_duty: { kind: 'specific', specific_amount: 60 },
+    });
+    expect(lines.get('24022010')!.excise_duty).toMatchObject({ kind: 'specific', specific_amount: 454, specific_unit: 'kgm' });
+    // Cigarettes' excise is per stick and gram: kept unparsed on its line, never a release failure.
+    expect(lines.get('24022090')!.excise_duty).toMatchObject({ kind: 'unparsed', expression: '58.9 cents for every gram or part thereof of each stick of cigarette' });
+    // Go-karts: blank inside the motor-car heading, so unknown rather than zero.
+    expect(lines.get('87032111')).toMatchObject({ non_dutiable: false, excise_duty: { kind: 'none' } });
+    // "20 cents per kgm" is a specific duty in Singapore dollars.
+    expect(lines.get('21069099')!.excise_duty).toMatchObject({ kind: 'specific', specific_amount: 0.2, specific_currency: 'SGD', specific_unit: 'kgm' });
+    // A customs duty the parser cannot read still stops the release.
+    expect(() => parseSingaporeScheduleHtml(realLayoutHtml([['', '2203.00.19', '- - Other', 'LTR', 'about $16', 'Free', '']]), { minimum_rows: 1 })).toThrow(/unparsed customs duty/);
+    // A schedule amended after the reviewed S 67/2026 is not read under that version.
+    expect(() => parseSingaporeScheduleHtml(realLayoutHtml([], '<div class="amendNote">[S 120/2027 wef 01/03/2027]</div>'), { minimum_rows: 1 })).toThrow(/newer than the reviewed S 67\/2026/);
+  });
+
+  test('a copy saved in a browser builds the same bundle without the automated window (D-029, E-067)', async () => {
+    const saved = Object.fromEntries(SINGAPORE_SAVED_PAGES.map(({ file, url }) => [file, Buffer.from(pages[url]!)]));
+    // 14:00 Singapore Time, outside the 03:00–07:00 window that binds scripts only.
+    const bytes = await buildSingaporeSavedCopyBundle({ release_identifier: 'sso-saved-2026-11-11', saved_at: new Date('2026-11-11T06:00:00.000Z'), pages: saved, qualification_minimum_rows: 5 });
+    const bundle = await readSingaporeAuthorityBundle({ bytes, release_identifier: 'sso-saved-2026-11-11', minimum_rows: 5 });
+    expect(bundle).toMatchObject({ acquisition_route: 'saved_copy', consolidated_as_at: '21 September 2026' });
+    expect(bundle.lines.size).toBe(5);
+    expect(bundle.files.find((file) => file.name === 'customs-duties-order-current.html')).toMatchObject({ url: SINGAPORE_ORDER_URL });
+    // The nightly acquisition records its own route.
+    expect((await readSingaporeAuthorityBundle({ bytes: (await fixtureBundle()).bytes, release_identifier: RELEASE, minimum_rows: 5 })).acquisition_route).toBe('sso_automation_window');
+    const { 'terms-of-use.html': _terms, ...missing } = saved;
+    await expect(buildSingaporeSavedCopyBundle({ release_identifier: 'sso-saved-2026-11-11', saved_at: new Date(), pages: missing, qualification_minimum_rows: 5 })).rejects.toThrow(/missing or empty: terms-of-use.html/);
   });
 
   test('layout/source failure fails closed instead of treating missing extraction as zero', () => {

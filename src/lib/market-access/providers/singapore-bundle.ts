@@ -3,7 +3,13 @@ import JSZip from 'jszip';
 import type { ParsedDuty } from '@/lib/market-access/tariff-semantics';
 
 export const SINGAPORE_BUNDLE_READER_VERSION = 'sg-sso-customs-duties-bundle-reader-v1' as const;
-export const SINGAPORE_TABLE_PARSER_VERSION = 'sg-sso-first-schedule-html-table-v1' as const;
+/**
+ * v2 (E-067): reads SSO's real First Schedule as a browser saves it (11 Nov 2026), whose columns are
+ * Heading | Subheading | Description | Unit | Customs Duty Full | Pref | Excise Duty. v1 was built from
+ * a mock-up with an "H.S. Code" column and stopped the whole release at the 104 blank lines inside
+ * the dutiable chapters and at the 4 excise rates written in cents.
+ */
+export const SINGAPORE_TABLE_PARSER_VERSION = 'sg-sso-first-schedule-html-table-v2' as const;
 export const SINGAPORE_QUALIFICATION_MINIMUM_ROWS = 8_000;
 
 export class SingaporeBundleError extends Error {
@@ -27,6 +33,7 @@ export interface SingaporeTariffLine {
 
 interface SingaporeManifest {
   acquisition_version?: string;
+  acquisition_route?: string;
   release_identifier?: string;
   consolidated_as_at?: string;
   consolidated_effective_version?: string;
@@ -43,6 +50,8 @@ export interface SingaporeAuthorityBundle {
   release_identifier: string;
   consolidated_as_at: string;
   consolidated_effective_version: string;
+  /** How the pages were obtained (E-067): the nightly SSO window, or saved by a person in a browser. */
+  acquisition_route: 'sso_automation_window' | 'saved_copy';
   source_url: string;
   files: readonly { name: string; role: string; url: string; size_bytes: number; sha256: string }[];
   amendments: readonly { instrument: string; effective_from: string; url: string }[];
@@ -69,13 +78,15 @@ function decodeCell(html: string) {
     .replace(/&mdash;/gi, '—'));
 }
 
+/**
+ * Row by row, not table by table: SSO nests tables inside the schedule's table, and a table-level
+ * match ends at the first inner `</table>`, which lost 9,600 of the real schedule's 11,423 lines.
+ */
 function tableRows(html: string) {
   const rows: string[][] = [];
-  for (const table of html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
-    for (const row of table[1]!.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
-      const cells = [...row[1]!.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => decodeCell(match[1]!));
-      if (cells.length) rows.push(cells);
-    }
+  for (const row of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row[1]!.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => decodeCell(match[1]!));
+    if (cells.length) rows.push(cells);
   }
   return rows;
 }
@@ -106,6 +117,13 @@ export function parseSingaporeDutyCell(raw: string, scheduleUnit: string, compon
     kind: 'specific', specific_amount: number(specific[1]!), specific_currency: 'SGD',
     specific_unit_quantity: specific[2] ? number(specific[2]) : 1,
     specific_unit: unitName(specific[3] || scheduleUnit), note: null,
+  });
+  // "20 cents per kgm": the same specific form in Singapore cents.
+  const cents = /^(\d[\d,]*(?:\.\d+)?)\s*cents?\s*(?:per|\/\s*)(?:(\d+(?:\.\d+)?)\s*)?(.+)$/i.exec(value);
+  if (cents) return parsedDuty(value, {
+    kind: 'specific', specific_amount: number(cents[1]!) / 100, specific_currency: 'SGD',
+    specific_unit_quantity: cents[2] ? number(cents[2]) : 1,
+    specific_unit: unitName(cents[3] || scheduleUnit), note: 'Published in cents; the amount is in Singapore dollars.',
   });
 
   const percentage = /(\d+(?:\.\d+)?)%/.exec(value);
@@ -142,27 +160,41 @@ export function parseSingaporeScheduleHtml(html: string, options: { minimum_rows
   if (!/Customs\s*\(Duties\)\s*Order/i.test(plain) || !/FIRST\s+SCHEDULE/i.test(plain)) {
     throw new SingaporeBundleError('wrong_instrument', 'The retained page is not the Customs (Duties) Order First Schedule.');
   }
-  if (!/H\.?\s*S\.?\s*Code/i.test(plain) || !/Preferential/i.test(plain) || !/Excise\s+Duty/i.test(plain)) {
+  // The code column is "H.S. Code" in the reviewed mock-up and "Heading" + "Subheading" on SSO itself;
+  // the customs columns are "Full" and "Preferential" or "Pref".
+  const codeColumn = /H\.?\s*S\.?\s*Code/i.test(plain) || (/\bHeading\b/.test(plain) && /\bSubheading\b/.test(plain));
+  if (!codeColumn || !/\bPref(?:erential)?\b/i.test(plain) || !/Excise\s+Duty/i.test(plain)) {
     throw new SingaporeBundleError('unexpected_first_schedule_layout', 'The SSO First Schedule tariff headings changed or are missing.');
   }
+  // The bundle states the schedule's effective version as S 67/2026 (12 Feb 2026). A later amendment
+  // of the schedule itself must be reviewed before it is read, never labelled with that version.
+  const schedule = html.search(/id="Sc1-"/);
+  for (const note of (schedule >= 0 ? html.slice(schedule) : '').matchAll(/\bS\s*(\d+)\/(\d{4})\s+wef\s+(\d{2})\/(\d{2})\/(\d{4})/g)) {
+    const wef = Date.UTC(Number(note[5]), Number(note[4]) - 1, Number(note[3]));
+    if (wef > Date.UTC(2026, 1, 12)) throw new SingaporeBundleError('newer_schedule_amendment', `The First Schedule carries S ${note[1]}/${note[2]} (in force ${note[3]}/${note[4]}/${note[5]}), newer than the reviewed S 67/2026.`);
+  }
   const lines = new Map<string, SingaporeTariffLine>();
-  for (const cells of tableRows(html)) {
+  // On SSO's page the schedule starts at its anchor; the paragraphs before it hold no tariff lines.
+  for (const cells of tableRows(schedule >= 0 ? html.slice(schedule) : html)) {
     const row = dataCells(cells);
     if (!row) continue;
     const full = parseSingaporeDutyCell(row.full, row.unit, 'full_customs');
     const preferential = parseSingaporeDutyCell(row.preferential, row.unit, 'preferential_customs');
     const excise = parseSingaporeDutyCell(row.excise, row.unit, 'excise');
-    if ([full, preferential, excise].some((duty) => duty.kind === 'unparsed')) {
-      throw new SingaporeBundleError('unparsed_duty_expression', `SSO line ${row.code} contains an unparsed duty expression.`);
+    // A customs duty the parser cannot read stops the release. An excise rate it cannot read (SSO's
+    // cigarettes: "58.9 cents for every gram or part thereof of each stick") stays unparsed on its
+    // line, so that line has no official rate and every other line still does.
+    if ([full, preferential].some((duty) => duty.kind === 'unparsed')) {
+      throw new SingaporeBundleError('unparsed_duty_expression', `SSO line ${row.code} contains an unparsed customs duty expression.`);
     }
     const allBlank = [full, preferential, excise].every((duty) => duty.kind === 'none');
-    if (allBlank && couldBeDutiable(row.code)) {
-      throw new SingaporeBundleError('ambiguous_blank_dutiable_line', `SSO line ${row.code} is within a Singapore Customs dutiable category but all duty cells are blank.`);
-    }
+    // A blank line inside Singapore Customs' dutiable categories (go-karts, e-cigarette liquid) is
+    // never read as zero: it stays not proven non-dutiable, so its duty is unknown (no official
+    // rate), while the release stays usable for every other line.
     const line: SingaporeTariffLine = {
       code: row.code, description: stableText(row.description), unit: stableText(row.unit),
       full_customs_duty: full, preferential_customs_duty: preferential, excise_duty: excise,
-      non_dutiable: allBlank, source_row: [...cells],
+      non_dutiable: allBlank && !couldBeDutiable(row.code), source_row: [...cells],
     };
     const prior = lines.get(line.code);
     if (prior && JSON.stringify(prior) !== JSON.stringify(line)) throw new SingaporeBundleError('conflicting_duplicate_line', `SSO line ${line.code} is duplicated with different treatment.`);
@@ -237,6 +269,7 @@ export async function readSingaporeAuthorityBundle(args: { bytes: Buffer; releas
     checksum: sha256(args.bytes), canonical_tariff_checksum: sha256(canonical), size_bytes: args.bytes.length,
     release_identifier: args.release_identifier, consolidated_as_at: manifest.consolidated_as_at ?? '',
     consolidated_effective_version: manifest.consolidated_effective_version, source_url: source.url,
+    acquisition_route: manifest.acquisition_route === 'saved_copy' ? 'saved_copy' : 'sso_automation_window',
     files, amendments: (manifest.amendments ?? []) as Array<{ instrument: string; effective_from: string; url: string }>,
     lines, reader_version: SINGAPORE_BUNDLE_READER_VERSION, table_parser_version: SINGAPORE_TABLE_PARSER_VERSION,
     attribution: manifest.rights.required_attribution,

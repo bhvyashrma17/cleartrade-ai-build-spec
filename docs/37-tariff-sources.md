@@ -246,6 +246,16 @@ minutes; outside the window the sweep reads nothing):
   (`scripts/authority-refresh.ts --acquire-only --out=<file>`), and the file is imported with
   `scripts/import-retained-authority-release.ts --family=SG` — the "saved copy" route the owner allowed
   for other markets too (D-029).
+- **SSO refuses scripts outright** (HTTP 403 from Railway, and from the owner's machine at 03:33 SGT
+  on 11 Nov 2026, inside the window). The route that works (E-067): a person saves the six pages in a
+  browser and `scripts/build-singapore-saved-bundle.ts --dir=<folder> --out=<file.zip>` bundles them
+  with no network and no window, after the same qualification checks; the file is then imported as
+  above. In Chrome: open each page, "Save Page As" → "Webpage, Complete", with the file names in the
+  script's header; for the Order and the two amending instruments, click "Select All" then
+  "Print - HTML" first and save the page that opens. The release records `acquisition_route:
+  saved_copy`. On the real page (11 Nov 2026) the reader finds 11,423 lines, 10,722 not dutiable;
+  104 blank lines inside the dutiable categories and 3 cigarette excise rates per stick have no
+  official rate, so those lines fall back to the estimate.
 
 ## 6. Licences and permissions
 

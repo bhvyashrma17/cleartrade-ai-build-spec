@@ -28,6 +28,7 @@ export async function importSingaporeRelease(args: { actor: Principal; bytes: Bu
       per_artifact_sha256_validated: true, deterministic_normalization_replayed: true,
       consolidated_as_at: bundle.consolidated_as_at, consolidated_effective_version: bundle.consolidated_effective_version,
       amendments: bundle.amendments, rights_and_attribution_retained: true, automated_extraction_window_sgt: '03:00-07:00',
+      acquisition_route: bundle.acquisition_route,
       customs_and_excise_components_separate: true, india_origin_proof_required: true,
       tariff_treatment_complete: true, regulatory_coverage_complete: false,
     } };
