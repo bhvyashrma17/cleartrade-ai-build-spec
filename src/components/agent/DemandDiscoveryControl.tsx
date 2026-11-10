@@ -27,19 +27,23 @@ const fmtDate = (d: Date | null) =>
 
 const V5_STATUS: Record<string, { label: string; tone: 'positive' | 'neutral' | 'critical' }> = {
   ranked: { label: 'Ranked', tone: 'positive' },
-  not_enough_data: { label: 'Not ranked: not enough data', tone: 'neutral' },
+  not_enough_data: { label: 'Not enough data', tone: 'neutral' },
   no_recorded_demand: { label: 'No recorded imports', tone: 'neutral' },
   excluded: { label: 'Excluded by policy', tone: 'critical' },
 };
 
-/** The model's score as stored. A v5 market that is not ranked shows its partial score as partial. */
+/**
+ * The model's score as stored. A v5 market short of data says how much data it had: ranked last
+ * from policy v9 (D-044), each measure without data counting as zero; before v9, unranked with a
+ * partial score.
+ */
 function AiScoreCell({ row }: { row: MarketControlRow }) {
   if (row.v5 && row.v5.market_status !== 'ranked') {
     if (row.v5.overall_score == null) return <span className="text-[var(--color-text-muted)]">—</span>;
     return (
       <div>
         <span className="text-primary">{row.v5.overall_score}</span>
-        <div className="text-xs text-[var(--color-text-muted)]">partial · {row.v5.live_points ?? 0} of 100 points</div>
+        <div className="text-xs text-[var(--color-text-muted)]">{row.v5.rank != null ? `${row.v5.live_points ?? 0} of 100 points have data` : `partial · ${row.v5.live_points ?? 0} of 100 points`}</div>
       </div>
     );
   }

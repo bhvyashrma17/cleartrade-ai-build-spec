@@ -54,6 +54,7 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-041 | 2026-11-10 | Scope until further notice: Demand Discovery production-ready, with its hand-off into regional demand and buyer discovery working; no new regional or buyer work. Owner's words: "I just want demand discovery to be production ready, that's all. And the pipeline carrying from demand discovery to the regional and buyer to work fine." Canada's importer list (R-45) is deferred | Owner | E-056 |
 | D-042 | 2026-11-10 | Quota duties (R-46): where a tariff-rate quota gives a cheaper rate for a volume or a channel, Demand Discovery scores the rate an ordinary exporter pays outside the quota and says the quota's rate beside it, never scoring it, as China's reader already did; first for Korea and Japan. Owner's answer: "Score outside-quota (Recommended)" | Owner | E-058 |
 | D-043 | 2026-11-10 | Korea's applied rate (R-47): read Korea's rate priority (Customs Act Art. 50) from the stored rows, so the WTO rate applies where it is lower than the basic rate; to be done right after the quota release. Owner's answer: "Yes, right after (Recommended)" | Owner | E-058 |
+| D-044 | 2026-11-10 | Rank every market (policy v9). Markets without enough data rank after every fully scored market, by a score in which each measure without data counts as zero; markets with no recorded imports rank last. North Korea stays excluded (UN sanctions), and only fully scored markets are handed on. Owner's words: "Countries, all countries should be ranked. If there is an issue, we should fix that." Answer: "Rank them last (Recommended)" | Owner | E-062 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2575,6 +2576,42 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 - `tsc --noEmit` and ESLint: clean.
 - `agent-v5-market-views`: 7 new tests on a v5 run shaped like production's: Vatican City and Martinique at 93 and 92, not ranked; North Korea excluded; the United States first with an official duty although its line splits; the United Kingdom handed on with an estimated duty.
 - The 44 test files that touch discovery code: 472 of 473 tests pass. The one failure is `market-scan-requests`, which fails the same way on `staging/railway` without this change in the agent's local harness. CI is the check of record for it.
+
+### E-062 · 2026-11-10 · Every market is ranked: policy v9 (D-044) (in review)
+
+**Why.** On production, the basmati run's "Not ranked" section held North Korea, Vatican City (93 on 20 of 100 points), Martinique (92 on 20) and the Faroe Islands (52 on 60). The owner: all countries should be ranked.
+
+**Built (`demand-discovery-v5-policy-v9`, `ranking.rank_incomplete_last`).**
+- **Scorer** (`score.ts`):
+  - a market without enough data is scored over all 100 points, so each measure without data counts as zero. Vatican City's 93 becomes 19. Its measures stay unavailable, each with its reason;
+  - ranks run in three tiers: the fully scored markets, then markets without enough data by that score, then markets with no recorded imports, unscored, by ISO code;
+  - excluded markets are never ranked;
+  - the hand-off takes only fully scored markets, however few there are;
+  - the run summary counts `ranked_last`.
+- **Reasons** (`explain.ts`): "Ranked after the fully scored markets: market size and growth have no data, and each measure without data counts as zero", "Ranked last: none of the measures has data for this market", and "No imports of this product were recorded in 2019–2024, so it ranks after every market with imports".
+- **Database:** migration `20261110180000` replaces `MarketAssessment_rank_only_when_ranked` with `MarketAssessment_rank_by_status`.
+  - A fully scored market must hold a positive rank. A market short of data or with no recorded imports may. An excluded market, or an earlier engine's row, may not.
+  - It is written NULL-safe; the old constraint let a NULL comparison pass.
+  - It is added `NOT VALID`, so the release cannot stop on stored rows. No row changes.
+- **Phase 1 gate:** the rank invariants follow each run's own stored policy. Under v9 these markets must hold a rank (`not_enough_data_without_rank`, `no_recorded_demand_without_rank`); under v8 they must not. The scoring replay already recomputes every rank.
+- **Pages:**
+  - Markets lists every ranked market, the ranked-last ones labelled "Not enough data" ("20 of 100 points have data") or "No recorded imports" ("No score"). "Not ranked" now holds only excluded markets.
+  - The market page says "Ranked #216 of 217" and why.
+  - The agent's control table and Demand Discovery tab show the rank and score, labelled the same way.
+  - Runs from before v9 keep their own presentation.
+- **Ops:** the Demand Discovery panel says how many markets ranked last.
+
+**Effect.** The next run of each product ranks every market but North Korea (217 of 218 for basmati). The fully scored markets, their order, their scores and the top 10 handed on do not change. No product is re-run by this release: the next run starts as runs do (a new code, new data, or "Run again").
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- Tests:
+  - `demand-discovery-v5-score`: the tiers, the zero-counted score, the hand-off and the reasons, with v8's behaviour kept beside them.
+  - `demand-discovery-v5-assess`: the 300-world property now checks the overall per status.
+  - `demand-discovery-v5-run`: a real run ranks 217 of 218.
+  - `phase-1-gate`: the v9 and v8 rank rules.
+  - `market-assessment-delete-guard`: the new constraint.
+  - `demand-discovery-v5-rank-all`: 4 new tests on the pages.
 
 ## Risk register
 

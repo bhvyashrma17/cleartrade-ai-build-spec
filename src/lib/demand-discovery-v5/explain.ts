@@ -241,22 +241,27 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
  * that is not ranked leads with why.
  */
 export function marketReasons(market: ScoredMarket, facts: MarketFacts, policy: DemandDiscoveryV5Policy): MarketReason[] {
+  // v9 (D-044): a market short of data is ranked after every fully scored market, and says so.
+  const rankedLast = policy.ranking.rank_incomplete_last === true && market.rank != null;
   if (market.status === 'excluded') return [{ metric: null, effect: 'status', text: `Excluded: ${market.excluded_reason}.` }];
   if (market.status === 'no_recorded_demand') {
     const span = facts.window.length ? `${facts.window[0]}–${facts.window[facts.window.length - 1]}` : 'the period checked';
-    return [{ metric: null, effect: 'status', text: `No imports of this product were recorded in ${span}.` }];
+    return [{ metric: null, effect: 'status', text: `No imports of this product were recorded in ${span}${rankedLast ? ', so it ranks after every market with imports' : ''}.` }];
   }
   const live = market.metrics.filter((result) => result.score != null);
-  if (!live.length) return [{ metric: null, effect: 'status', text: 'Not ranked: none of the measures has data for this market.' }];
+  if (!live.length) return [{ metric: null, effect: 'status', text: rankedLast ? 'Ranked last: none of the measures has data for this market.' : 'Not ranked: none of the measures has data for this market.' }];
   const reasons: MarketReason[] = [];
   let adds = 2;
   if (market.status === 'not_enough_data' && market.shortfall) {
     const missing = market.shortfall.missing_required.map((key) => METRIC_NAMES[key]);
+    const gap = missing.length
+      ? `${missing.join(' and ')} ${missing.length > 1 ? 'have' : 'has'} no data`
+      : `only ${market.live_points} of 100 points have data`;
     reasons.push({
       metric: null, effect: 'status',
-      text: missing.length
-        ? `Not ranked: ${missing.join(' and ')} ${missing.length > 1 ? 'have' : 'has'} no data.`
-        : `Not ranked: only ${market.live_points} of 100 points have data; ranking needs ${market.shortfall.minimum_live_points}.`,
+      text: rankedLast
+        ? `Ranked after the fully scored markets: ${gap}${missing.length ? '' : ` (a full score needs ${market.shortfall.minimum_live_points})`}, and each measure without data counts as zero.`
+        : missing.length ? `Not ranked: ${gap}.` : `Not ranked: ${gap}; ranking needs ${market.shortfall.minimum_live_points}.`,
     });
     adds = 1;
   }

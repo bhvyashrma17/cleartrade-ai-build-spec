@@ -256,9 +256,13 @@ export function isV5Assessment(row: Pick<AssessmentRecord, 'model_version'>): bo
   return row.model_version === V5_MODEL_VERSION;
 }
 
-/** A v5 market is rankable only when the engine ranked it; its partial score is not a rank (docs/36 §5.2). */
+/**
+ * A v5 market shows its score only when the engine ranked it (docs/36 §5.2). Before policy v9 a
+ * market short of data held a partial score and no rank; from v9 (D-044) it is ranked last, its
+ * score counting each measure without data as zero.
+ */
 function isRankable(row: AssessmentRecord): boolean {
-  return isV5Assessment(row) ? row.market_status === 'ranked' : row.country_truth_assessment_state !== 'not_rankable';
+  return isV5Assessment(row) ? row.rank != null : row.country_truth_assessment_state !== 'not_rankable';
 }
 
 function baseRow(row: AssessmentRecord, rank: number): MarketRowView {

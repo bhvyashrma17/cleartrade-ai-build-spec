@@ -4,7 +4,11 @@
  * - overall = Σ(score × points) / Σ live points. An unavailable metric drops out and its points are
  *   shared among the rest; it is never scored as zero.
  * - Ranked only with ≥ `ranking.minimum_live_points` live points and every required metric live;
- *   otherwise `not_enough_data`, shown with its partial score and never ranked.
+ *   otherwise `not_enough_data`. Until policy v9 such a market was shown with its partial score and
+ *   never ranked. From v9 (`ranking.rank_incomplete_last`, D-044) its score counts each measure
+ *   without data as zero (Σ score × points / 100), and it ranks after every fully scored market;
+ *   markets with no recorded imports rank after those, unscored. Excluded markets are never ranked.
+ *   Each measure without data stays unavailable either way: only the overall counts it as zero.
  * - confidence = (live points / 100) × evidence quality × decay^lag.
  * - Gates run before scoring: sanctioned markets are `excluded`, markets without any recorded imports
  *   are `no_recorded_demand`, and restricted ECGC cover is a flag on an otherwise normal result.
@@ -69,6 +73,19 @@ export interface MarketScoreInput {
 
 const round = (value: number, digits = 4) => Number(value.toFixed(digits));
 
+const totalPoints = (policy: DemandDiscoveryV5Policy) => Object.values(policy.points).reduce((sum, points) => sum + points, 0);
+
+/**
+ * The ranking tier: fully scored markets first; from v9 (D-044) markets without enough data, then
+ * markets with no recorded imports. Null is never ranked: excluded markets, and before v9 every
+ * market that is not fully scored.
+ */
+function rankingTier(market: ScoredMarket, policy: DemandDiscoveryV5Policy): number | null {
+  if (market.status === 'ranked') return 0;
+  if (policy.ranking.rank_incomplete_last !== true) return null;
+  return market.status === 'not_enough_data' ? 1 : market.status === 'no_recorded_demand' ? 2 : null;
+}
+
 function partScores(metrics: ReadonlyMap<MetricKey, MetricResult>, policy: DemandDiscoveryV5Policy): PartScore[] {
   return (Object.entries(policy.parts) as [PartKey, MetricKey[]][]).map(([part, keys]) => {
     let points = 0;
@@ -114,7 +131,10 @@ export function scoreMarket(input: MarketScoreInput, policy: DemandDiscoveryV5Po
   }
   const missingRequired = policy.ranking.required_metrics.filter((key) => byKey.get(key)?.score == null);
   const rankable = live >= policy.ranking.minimum_live_points && missingRequired.length === 0;
-  const exact = live > 0 ? round(weighted / live) : null;
+  // v9 (D-044): a market short of data is scored over all the policy's points, so each measure
+  // without data counts as zero in its overall; a fully scored market shares those points out.
+  const over = !rankable && policy.ranking.rank_incomplete_last === true ? totalPoints(policy) : live;
+  const exact = live > 0 ? round(weighted / over) : null;
   return {
     ...base,
     status: rankable ? 'ranked' : 'not_enough_data',
@@ -128,8 +148,10 @@ export function scoreMarket(input: MarketScoreInput, policy: DemandDiscoveryV5Po
 }
 
 /**
- * Adds lag, confidence, rank and the hand-off to regional discovery. Ties on the exact score go to
- * the higher confidence, then to the ISO code, so the same inputs always give the same order.
+ * Adds lag, confidence, rank and the hand-off to regional discovery. Within a tier, ties on the
+ * exact score go to the higher confidence, then to the ISO code, so the same inputs always give the
+ * same order; a market without a score follows the scored ones of its tier. Only fully scored
+ * markets are handed on.
  */
 export function rankMarkets(markets: readonly ScoredMarket[], policy: DemandDiscoveryV5Policy): ScoredMarket[] {
   const scored = markets.filter((market) => market.status === 'ranked' || market.status === 'not_enough_data');
@@ -144,18 +166,24 @@ export function rankMarkets(markets: readonly ScoredMarket[], policy: DemandDisc
     return { ...market, lag, confidence };
   });
   const order = withConfidence
-    .filter((market) => market.status === 'ranked')
-    .sort((a, b) => (b.overall_exact! - a.overall_exact!) || ((b.confidence ?? 0) - (a.confidence ?? 0)) || (a.market < b.market ? -1 : a.market > b.market ? 1 : 0));
+    .filter((market) => rankingTier(market, policy) != null)
+    .sort((a, b) => (rankingTier(a, policy)! - rankingTier(b, policy)!)
+      || ((b.overall_exact ?? -1) - (a.overall_exact ?? -1))
+      || ((b.confidence ?? 0) - (a.confidence ?? 0))
+      || (a.market < b.market ? -1 : a.market > b.market ? 1 : 0));
   const ranks = new Map(order.map((market, index) => [market.market, index + 1]));
   return withConfidence.map((market) => {
     const rank = ranks.get(market.market) ?? null;
-    return { ...market, rank, handed_off: rank != null && rank <= policy.ranking.handoff_count };
+    return { ...market, rank, handed_off: market.status === 'ranked' && rank != null && rank <= policy.ranking.handoff_count };
   });
 }
 
 export interface RunSummary {
   markets: number;
+  /** Fully scored markets. */
   ranked: number;
+  /** v9 (D-044): markets ranked after them, short of data or with no recorded imports. */
+  ranked_last: number;
   not_enough_data: number;
   no_recorded_demand: number;
   excluded: number;
@@ -170,6 +198,7 @@ export function summarizeRun(markets: readonly ScoredMarket[]): RunSummary {
   return {
     markets: markets.length,
     ranked: count('ranked'),
+    ranked_last: markets.filter((market) => market.status !== 'ranked' && market.rank != null).length,
     not_enough_data: count('not_enough_data'),
     no_recorded_demand: count('no_recorded_demand'),
     excluded: count('excluded'),

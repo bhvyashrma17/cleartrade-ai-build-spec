@@ -301,8 +301,11 @@ describe('Demand Discovery v5 runs', () => {
     expect(by.get('KP')).toMatchObject({ market_status: 'excluded', eligibility_status: 'ineligible', overall_score: null, rank: null });
     expect(by.get('NP')).toMatchObject({ market_status: 'ranked' });
     expect((by.get('NP')!.labels as { key: string }[]).map((label) => label.key)).toContain('estimated_from_partners');
-    // No trade dataset covers Tuvalu here; only its ECGC grade (C1, 40) is live: a partial score, never ranked.
-    expect(by.get('TV')).toMatchObject({ market_status: 'not_enough_data', live_points: 10, overall_score: 40, rank: null });
+    // No trade dataset covers Tuvalu here; only its ECGC grade (C1, 40) is live. From policy v9
+    // (D-044) it ranks after every fully scored market, the 90 points without data counting as zero.
+    const fullyScored = assessments.filter((row) => row.market_status === 'ranked').length;
+    expect(by.get('TV')).toMatchObject({ market_status: 'not_enough_data', live_points: 10, overall_score: 4, handed_off: false });
+    expect(by.get('TV')!.rank).toBeGreaterThan(fullyScored);
     expect((by.get('US')!.reasons as unknown[]).length).toBe(3);
     const duty = (by.get('US')!.score_breakdown as unknown as Breakdown).metrics.find((metric) => metric.key === 'duty');
     expect(duty).toMatchObject({ estimated: true, inputs: { duty_percent: 4, basis: 'estimate', agreement_scope: 'none' } });
@@ -312,7 +315,9 @@ describe('Demand Discovery v5 runs', () => {
     expect(tariffLookups[0]).toBe('AE/100890');
     const ranks = assessments.filter((row) => row.rank != null).map((row) => row.rank!).sort((a, b) => a - b);
     expect(ranks).toEqual(Array.from({ length: ranks.length }, (_, index) => index + 1));
-    expect(closed.summary).toMatchObject({ markets: 218, excluded: 1, ranked: ranks.length, handed_off: expect.arrayContaining([expect.objectContaining({ market: 'US', rank: 1 })]) });
+    // D-044 (policy v9): every market but North Korea holds a rank, the fully scored ones first.
+    expect(ranks).toHaveLength(217);
+    expect(closed.summary).toMatchObject({ markets: 218, excluded: 1, ranked: fullyScored, ranked_last: 217 - fullyScored, handed_off: expect.arrayContaining([expect.objectContaining({ market: 'US', rank: 1 })]) });
     // E-042: the run stored how its top 10 compares with India's own top destinations.
     const calibration = (closed.summary as { calibration?: { top: number; overlap: number; verdict: string; india_top: string[]; missed: { market: string }[] } }).calibration!;
     const top10 = new Set(assessments.filter((row) => row.rank != null && row.rank <= 10).map((row) => row.country_code));

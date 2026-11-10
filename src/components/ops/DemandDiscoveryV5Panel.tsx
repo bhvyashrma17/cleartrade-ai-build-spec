@@ -166,7 +166,7 @@ export function DemandDiscoveryV5Panel({ overview }: { overview: DemandDiscovery
                   <span className="text-[var(--color-text-secondary)]">{run.exporter}</span>
                   <span className="text-xs text-[var(--color-text-muted)]">{run.trigger?.replaceAll('_', ' ') ?? 'manual'} · started {fmt(run.created_at)}{run.completed_at ? ` · finished ${fmt(run.completed_at)}` : ''}</span>
                 </div>
-                {run.ranked != null ? <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{run.ranked} markets ranked{run.top_markets.length ? ` · top: ${run.top_markets.join(', ')}` : ''}</p> : null}
+                {run.ranked != null ? <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{run.ranked} markets ranked{run.ranked_last ? ` and ${run.ranked_last} ranked last for too little data` : ''}{run.top_markets.length ? ` · top: ${run.top_markets.join(', ')}` : ''}</p> : null}
                 {run.calibration && run.calibration.verdict !== 'no_india_exports' ? (
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-secondary)]">
                     <StatusChip label={run.calibration.verdict === 'pass' ? 'Calibration pass' : 'Calibration failure'} tone={run.calibration.verdict === 'pass' ? 'positive' : 'warning'} icon={run.calibration.verdict === 'pass' ? 'check' : 'alert'} size="sm" />

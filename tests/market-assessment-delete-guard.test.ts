@@ -28,14 +28,23 @@ describe('MarketAssessment delete guard', () => {
     expect(await prisma.marketAssessment.count({ where: { run_id: run.id } })).toBe(0);
   });
 
-  test('a v5 row must say which status it has, and only a ranked row may hold a rank', async () => {
+  test('a v5 row must say which status it has; a ranked row holds a rank, and only a fully scored one is handed on', async () => {
     const run = await prisma.discoveryRun.create({ data: { exporter_org_id: orgId } });
-    await expect(prisma.marketAssessment.create({ data: { ...assessment(run.id, 'US', 'market-opportunity-v5'), market_status: null } })).rejects.toThrow(/v5_has_status/);
-    await expect(prisma.marketAssessment.create({ data: { ...assessment(run.id, 'US', 'market-opportunity-v5'), rank: 1 } })).rejects.toThrow(/rank_only_when_ranked/);
-    await expect(prisma.marketAssessment.create({ data: { ...assessment(run.id, 'US', 'market-opportunity-v5'), market_status: 'ranked', rank: 0 } })).rejects.toThrow(/rank_only_when_ranked/);
-    await expect(prisma.marketAssessment.create({ data: { ...assessment(run.id, 'US', 'market-opportunity-v5'), handed_off: true } })).rejects.toThrow(/handoff_is_ranked/);
-    await prisma.marketAssessment.create({ data: { ...assessment(run.id, 'US', 'market-opportunity-v5'), market_status: 'ranked', rank: 1, handed_off: true } });
-    await expect(prisma.marketAssessment.create({ data: { ...assessment(run.id, 'DE', 'market-opportunity-v5'), market_status: 'ranked', rank: 1 } })).rejects.toThrow(/run_rank_key|Unique constraint/);
+    const v5 = (country: string) => assessment(run.id, country, 'market-opportunity-v5');
+    await expect(prisma.marketAssessment.create({ data: { ...v5('US'), market_status: null } })).rejects.toThrow(/v5_has_status/);
+    await expect(prisma.marketAssessment.create({ data: { ...v5('US'), market_status: 'ranked' } })).rejects.toThrow(/rank_by_status/);
+    await expect(prisma.marketAssessment.create({ data: { ...v5('US'), market_status: 'ranked', rank: 0 } })).rejects.toThrow(/rank_by_status/);
+    await expect(prisma.marketAssessment.create({ data: { ...v5('KP'), market_status: 'excluded', rank: 3 } })).rejects.toThrow(/rank_by_status/);
+    await expect(prisma.marketAssessment.create({ data: { ...v5('US'), handed_off: true } })).rejects.toThrow(/handoff_is_ranked/);
+    await prisma.marketAssessment.create({ data: { ...v5('US'), market_status: 'ranked', rank: 1, handed_off: true } });
+    await expect(prisma.marketAssessment.create({ data: { ...v5('DE'), market_status: 'ranked', rank: 1 } })).rejects.toThrow(/run_rank_key|Unique constraint/);
+    // D-044 (policy v9): a market short of data, or with no recorded imports, ranks after the fully
+    // scored ones; runs from before v9 left it unranked, which stays valid. Neither is handed on.
+    await prisma.marketAssessment.create({ data: { ...v5('VA'), rank: 2 } });
+    await prisma.marketAssessment.create({ data: { ...v5('TV'), market_status: 'no_recorded_demand', rank: 3 } });
+    await prisma.marketAssessment.create({ data: { ...v5('FO') } });
+    await expect(prisma.marketAssessment.create({ data: { ...v5('MQ'), rank: 4, handed_off: true } })).rejects.toThrow(/handoff_is_ranked/);
+    await expect(prisma.marketAssessment.create({ data: { ...v5('MQ'), rank: -1 } })).rejects.toThrow(/rank_by_status/);
     await prisma.discoveryRun.delete({ where: { id: run.id } });
   });
 

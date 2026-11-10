@@ -32,13 +32,28 @@ const METRIC_NAMES: Record<string, string> = {
 };
 
 function StatusLine({ detail }: { detail: V5Detail }) {
-  if (detail.market_status === 'ranked') {
+  if (detail.rank != null) {
+    // v9 (D-044): a market short of data, or with no recorded imports, ranks after every fully scored one.
+    const last = detail.market_status === 'not_enough_data' ? 'Not enough data' : detail.market_status === 'no_recorded_demand' ? 'No recorded imports' : null;
     return (
-      <p className="text-sm text-[var(--color-text-secondary)]">
-        Ranked <span className="font-semibold text-primary">#{detail.rank}</span> of {detail.total_ranked} · {detail.overall_score}/100 · confidence {detail.confidence_score}%
-        {detail.data_year ? ` · data to ${detail.data_year}` : ''}
-        {detail.handed_off ? ' · goes on to buyer search' : ''}
-      </p>
+      <div className="space-y-2">
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          Ranked <span className="font-semibold text-primary">#{detail.rank}</span> of {detail.total_ranked}
+          {detail.overall_score != null ? ` · ${detail.overall_score}/100 · confidence ${detail.confidence_score}%` : ''}
+          {detail.data_year ? ` · data to ${detail.data_year}` : ''}
+          {detail.handed_off ? ' · goes on to buyer search' : ''}
+        </p>
+        {last ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+            <StatusChip label={last} tone="neutral" icon="dot" size="sm" />
+            <span>
+              {detail.market_status === 'not_enough_data'
+                ? `Ranked after the fully scored markets: ${detail.live_points ?? 0} of 100 points have data, and each measure without data counts as zero.`
+                : 'Ranked after every market with recorded imports.'}
+            </span>
+          </div>
+        ) : null}
+      </div>
     );
   }
   const label = detail.market_status === 'excluded' ? 'Excluded' : detail.market_status === 'no_recorded_demand' ? 'No recorded imports' : 'Not ranked — not enough data';
@@ -99,7 +114,10 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
             </div>
           ))}
           <p className="text-xs text-[var(--color-text-muted)]">
-            Measures without data are left out and their points shared among the rest; a gap is never counted as zero.
+            {detail.market_status === 'not_enough_data' && detail.rank != null
+              // D-044 (policy v9): a market short of data counts each measure without data as zero.
+              ? 'This market is short of data: each measure without data counts as zero in its score, so it ranks after the fully scored markets. Each measure itself is still shown without data, never as zero.'
+              : 'Measures without data are left out and their points shared among the rest; a gap is never counted as zero.'}
           </p>
         </div>
       ) : null}
