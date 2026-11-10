@@ -237,21 +237,22 @@ describe('Korea tariff-unit registry (korea-tariff-units.ts, built from dataset 
 });
 
 describe('Korean national line resolution', () => {
-  test('a single resolvable item uses code A as the general duty', async () => {
+  test('a single resolvable item takes the rate Customs Act Art. 50 applies: here C 5%, lower than A 8% (D-043)', async () => {
     const result = await ingest('010121');
     expect(result.resolution.resolution).toBe('exact');
-    expect(result.general_duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 8 });
+    expect(result.general_duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 5 });
+    expect(result.general_duty!.note).toMatch(/^Korea's applied rate: the WTO concession rate \(C, WTO협정세율\), which Customs Act Art\. 50\(3\) applies because it is lower than the basic rate \(A, 기본세율\) \(8%\)\./);
     expect(result.national_code_system).toBe('KR_TARIFF_ITEM');
   });
 
-  test('code C (WTO bound) is preserved as its own line, distinct from and not folded into general duty', async () => {
+  test('code C (WTO concession) is preserved as its own line, and A stays as published beside it', async () => {
     const result = await ingest('010121');
     const other = result.lines.find((l) => l.origin_geographic_area_id === 'C');
     expect(other).toBeDefined();
     expect(other!.measure_kind).toBe('other');
     expect(other!.duty.ad_valorem_rate_percent).toBe(5);
     expect(other!.applies_to_origin_country).toBeNull();
-    expect(result.general_duty?.ad_valorem_rate_percent).toBe(8);
+    expect(result.lines.find((l) => l.origin_geographic_area_id === 'A')!.duty.ad_valorem_rate_percent).toBe(8);
   });
 
   test('non-equivalent children under one HS6 force refinement rather than an arbitrary pick', async () => {
@@ -408,7 +409,7 @@ describe('farm-goods tariff quotas (D-042)', () => {
 
   test('rice: the out-of-quota W2 513% is the general duty, and W1 5% is said as the quota', () => {
     const result = build({ '1006301000': RICE, '1006302000': RICE }, '100630');
-    expect(result.parser_version).toBe('kcs-tariff-parser-v3');
+    expect(result.parser_version).toBe('kcs-tariff-parser-v4');
     expect(result.resolution.resolution).toBe('all_children_equivalent');
     expect(result.general_duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 513 });
     expect(result.general_duty!.note).toMatch(/out-of-quota rate, W2 \(농림축산물양허관세\(미추천\).*Art\. 50\(3\) applies it ahead of the basic rate \(A\)/);
@@ -433,11 +434,50 @@ describe('farm-goods tariff quotas (D-042)', () => {
     const cattle = build({ '0102291000': [r('A', 20), r('W2', 40)] }, '010229');
     expect(cattle.general_duty).toMatchObject({ ad_valorem_rate_percent: 40 });
     expect(cattle.general_duty_quota).toBeNull();
-    const plain = build({ '0101211000': [r('A', 8), r('C', 5)] }, '010121');
+    const plain = build({ '0101211000': [r('A', 8), r('C', 9)] }, '010121');
     expect(plain.general_duty).toMatchObject({ ad_valorem_rate_percent: 8 });
     expect(plain.general_duty_quota).toBeNull();
     // A W2 row no longer in force does not count.
     const expired = build({ '1006301000': [r('A', 5), r('W1', 5), r('W2', 513, { effective_to: '20251231' })] }, '100630');
     expect(expired.general_duty).toMatchObject({ ad_valorem_rate_percent: 5 });
+  });
+});
+
+/**
+ * D-043 (R-47): Korea's applied rate outside the farm quotas, by Customs Act Art. 50. Shapes from
+ * production's 2026-02-11 release (E-058, branch data/e057-kr-quota-rows, e058/kr-rate-priority.csv).
+ */
+describe("Korea's rate priority (D-043)", () => {
+  type Row = import('@/lib/market-access/providers/korea-bundle').KoreaRateRow;
+  const r = (rate_type_code: string, rate_value: number | null, extra: Partial<Row> = {}): Row => ({
+    rate_type_code, rate_value, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231', ...extra,
+  });
+  const build = (rows: Row[], item = '0901110000') => buildKoreaMarketAccess({
+    bundle: { checksum: 'test', size_bytes: 1, release_identifier: '2026-02-11', item_rates: new Map([[item, rows]]), distinct_rate_type_codes: new Set(rows.map((row) => row.rate_type_code)), canonical_sheet: '2.12' as const, canonical_sheet_row_count: rows.length, reader_version: 'kcs-tariff-xlsx-reader-v3' as const },
+    release_id: 'release-kr-p', release_reference_date: AT, retrieved_at: AT, hs6: item.slice(0, 6), at: AT, origin_country: 'IN',
+  });
+
+  test('an allocation tariff for all imports (P3) comes ahead of A, and C only where it is lower still', () => {
+    // Coffee, not roasted: A 2, C 54, P3 0.
+    const coffee = build([r('A', 2), r('C', 54), r('P3', 0), r('FIN1', 0, { country_scope: '2' })]);
+    expect(coffee.general_duty).toMatchObject({ ad_valorem_rate_percent: 0 });
+    expect(coffee.general_duty!.note).toMatch(/^Korea's applied rate: the allocation tariff for all imports \(P3, 할당관세\(수입전량\), Customs Act Art\. 71\), ahead of the basic rate\./);
+    expect(build([r('A', 8), r('C', 1), r('P3', 3)]).general_duty).toMatchObject({ ad_valorem_rate_percent: 1 });
+  });
+
+  test('a provisional rate (B) comes ahead of A; none is in force in the 2026 release', () => {
+    expect(build([r('A', 8), r('B', 6)]).general_duty).toMatchObject({ ad_valorem_rate_percent: 6 });
+    expect(build([r('A', 8), r('B', 6), r('C', 4)]).general_duty).toMatchObject({ ad_valorem_rate_percent: 4 });
+  });
+
+  test('never swapped in: a C held for a declared end use, a rate with an amount per unit, or a C above the base', () => {
+    expect(build([r('A', 20), r('C', 14, { purpose_code: 'C' })], '0306143090').general_duty).toMatchObject({ ad_valorem_rate_percent: 20 });
+    expect(build([r('A', 30), r('C', 40.5, { unit_amount: 1570 })], '0709517000').general_duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 30 });
+    expect(build([r('A', 30, { unit_amount: 134 }), r('C', 10)], '0706101000').general_duty).toMatchObject({ kind: 'compound', specific_amount: 134 });
+    expect(build([r('A', 8), r('C', 8)]).general_duty!.note ?? null).toBeNull();
+  });
+
+  test('a farm-goods quota item keeps W2 whatever C and P3 say', () => {
+    expect(build([r('A', 5), r('C', 1), r('P3', 0), r('W1', 5), r('W2', 513)], '1006301000').general_duty).toMatchObject({ ad_valorem_rate_percent: 513 });
   });
 });
