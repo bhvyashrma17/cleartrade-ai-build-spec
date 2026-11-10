@@ -234,8 +234,11 @@ export interface DutyPreferenceNote { applicability: string; duty_expression: st
 /** D-026: the ordinary (MFN) rate that a scored preference stands in for, as published. */
 export interface StandardDutyNote { duty_percent: number | null; expression: string | null }
 
+/** D-042 (R-46): the official duty is a tariff-rate quota's out-of-quota rate; the quota's own rate, said and never scored. */
+export interface DutyQuotaNote { duty_expression: string; percent: number | null; basis: string; out_of_quota_floor?: boolean }
+
 /** Which rate an official duty carries: India's published preference, or the ordinary rate. */
-type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string }; schedule_read?: { schedule: string; label: string } };
+type OfficialRate = { rate_basis?: 'india_preference' | 'standard'; standard?: StandardDutyNote | null; common_tariff?: { union: string; label: string }; schedule_read?: { schedule: string; label: string }; quota?: DutyQuotaNote | null };
 
 /** §4.7: the sector average times the agreement factor. `official_note` says why an official duty was not usable. */
 export interface EstimatedDuty {
@@ -294,12 +297,15 @@ export function scoreDuty(input: DutyInput, policy: DemandDiscoveryV5Policy, qua
   // D-031: a market's own tariff read from a retained schedule scores like an agent's reading and names itself.
   const schedule = (input.kind === 'official' || input.kind === 'official_specific') ? input.schedule_read ?? null : null;
   const officialQuality = byAgent ? quality.agent_recorded ?? quality.official : union ? quality.common_tariff ?? quality.official : schedule ? quality.schedule_read ?? quality.official : quality.official;
+  // D-042: an out-of-quota duty says the quota's own rate.
+  const quotaNote = (input.kind === 'official' || input.kind === 'official_specific') ? input.quota ?? null : null;
   const official = (percent: number, extra: Record<string, string | number>, preference: DutyPreferenceNote | null | undefined): MetricResult => ({
     key: 'duty', score: round(100 * (1 - Math.min(percent, ceiling) / ceiling), 4), quality: officialQuality, reason: null,
     inputs: {
       duty_percent: round(percent, 4), basis: 'official', ...extra, ...(byAgent ? { recorded_by_agent: 'yes' } : {}), ...(union ? { common_tariff: union.label } : {}), ...(schedule ? { schedule_read: schedule.label } : {}),
       ...(preferred ? { rate: 'india_preference', standard_percent: standardNote?.duty_percent == null ? null : round(standardNote.duty_percent, 4), standard_duty: standardNote?.expression ?? null } : {}),
       ...(preference ? { preference_applicability: preference.applicability, preference_duty: preference.duty_expression, preference_percent: preference.percent == null ? null : round(preference.percent, 4), ...(preference.quota ? { preference_quota: 'yes' } : {}) } : {}),
+      ...(quotaNote ? { quota_duty: quotaNote.duty_expression, quota_percent: quotaNote.percent == null ? null : round(quotaNote.percent, 4), quota_basis: quotaNote.basis, ...(quotaNote.out_of_quota_floor ? { duty_floor: 'yes' } : {}) } : {}),
     },
   });
   if (input.kind === 'official') return official(input.duty_percent, { source: input.source }, input.preference);

@@ -192,7 +192,13 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
         const preferential = duty === 0 ? "Indian goods enter duty-free at India's preferential rate" : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific} at India's preferential rate`;
         return `${preferential}${read}${standard ? ` (standard rate ${standard})` : ''}; claiming it needs proof of Indian origin.`;
       }
-      const sentence = duty === 0 ? `Indian goods enter duty-free${estimated}` : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific}${estimated}`;
+      // D-042: an out-of-quota rate that also charges an amount per unit is a floor.
+      const sentence = duty === 0 ? `Indian goods enter duty-free${estimated}` : `Duty on Indian goods is ${inputs.duty_floor === 'yes' ? 'at least ' : specific ? 'about ' : ''}${formatPercent(duty)}${specific}${estimated}`;
+      // D-042: the scored duty is a tariff-rate quota's out-of-quota rate; the quota's own rate is said.
+      if (typeof inputs.quota_duty === 'string') {
+        const inQuota = num(inputs.quota_percent);
+        return `${sentence}${read}, outside the tariff quota; ${inQuota === 0 ? 'duty-free entry' : inQuota != null ? formatPercent(inQuota) : inputs.quota_duty} applies only within the quota.`;
+      }
       const preference = num(inputs.preference_percent);
       if (preference != null && preference < duty && inputs.preference_quota === 'yes') return `${sentence}${read}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} applies only within a tariff quota.`;
       if (preference != null && preference < duty) return `${sentence}${read}; ${preference === 0 ? 'duty-free entry' : formatPercent(preference)} may apply with proof of Indian origin.`;

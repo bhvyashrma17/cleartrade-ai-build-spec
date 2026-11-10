@@ -248,6 +248,19 @@ describe('v5 access, risk and exporter-fit metrics', () => {
     expect(metricSentence(quota)).toBe('Duty on Indian goods is 10%; duty-free entry applies only within a tariff quota.');
   });
 
+  // D-042 (R-46): the out-of-quota rate is scored; the quota's own rate is said.
+  test('duty: an out-of-quota rate is scored, and the quota’s cheaper rate is said, never scored', () => {
+    const basis = 'Statistical code 100630010 is the tariff-quota line.';
+    const rice = { kind: 'official_specific' as const, usd_per_kg: 2.2, expression: '341 yen/kg', source: 'Japan Customs 100630090', estimate: null, quota: { duty_expression: 'Free', percent: 0, basis } };
+    const scored = scoreDuty(rice, POLICY, duty, 1.6);
+    expect(scored).toMatchObject({ score: 0, inputs: { duty_percent: 137.5, basis: 'official', duty_expression: '341 yen/kg', quota_duty: 'Free', quota_percent: 0, quota_basis: basis } });
+    expect(metricSentence(scored)).toBe('Duty on Indian goods is about 138% (341 yen/kg at this market\'s prices), outside the tariff quota; duty-free entry applies only within the quota.');
+    const korea = scoreDuty({ kind: 'official', duty_percent: 513, source: 'Korea Customs Service 1006301000', quota: { duty_expression: '5% (관세율)', percent: 5, basis: 'W1' } }, POLICY, duty);
+    expect(metricSentence(korea)).toBe('Duty on Indian goods is 513%, outside the tariff quota; 5% applies only within the quota.');
+    // Without a quota, the sentence is unchanged.
+    expect(metricSentence(scoreDuty({ kind: 'official', duty_percent: 5, source: 'atlas' }, POLICY, duty))).toBe('Duty on Indian goods is 5%.');
+  });
+
   test('distance fit is 100 when India is no farther than the usual supplier, else e^−Δ in log distance', () => {
     const coordinates = new Map([['DE', { lat: 0, lon: 0 }], ['IN', { lat: 0, lon: 10 }], ['CN', { lat: 0, lon: 20 }], ['VN', { lat: 0, lon: 5 }]]);
     const far = buildMarketSeries([flow(2024, 'CN', 'DE', 100)], ['DE']).get('DE')!;

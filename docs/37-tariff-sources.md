@@ -165,6 +165,23 @@ serve. Four releases, each pinned to the official files read on 19 Oct 2026
   --family=<GCC|MERCOSUR|CN|BR>` imports it. Until a release is active, a run records its markets as
   `no_release`.
 
+## 4c. Tariff-rate quotas: the out-of-quota rate is scored (D-042)
+
+The owner decided (10 Nov 2026, R-46) that where a tariff-rate quota sets a cheaper rate for a volume
+or a channel, v5 scores the rate an ordinary exporter pays outside the quota and says the quota's rate
+beside it, never scoring it. For Korea and Japan the explanation reads, for example, "Duty on Indian
+goods is 513%, outside the tariff quota; 5% applies only within the quota", and the stored tariff row
+keeps the quota's own rate and what entitles an import to it (`raw_evidence.quota`, `contract.ts`).
+China and Viet Nam already scored the out-of-quota rate; their quota stays in the evidence (a note,
+or a "within tariff quota" line), not in the sentence.
+
+| Market | How the tariff shows the quota | What is scored |
+|---|---|---|
+| China | A footnote beside the MFN rate (§4b) | The out-of-quota MFN rate (rice 65%) |
+| Viet Nam | Decree 26/2023 Annex IV | The Annex IV out-of-quota rate |
+| South Korea | 농림축산물양허관세 rows: `W1` (with an import recommendation, the in-quota rate) and `W2` (without one). Customs Act Art. 50(3) applies both ahead of the basic rate `A`. 278 items in the 2026-02-11 release, all with `W2`, 232 also with `W1`. | `W2` (rice 513% against `A` 5%). Where `W2` also charges an amount per unit (46 items, e.g. sesame 630% and ₩6,660), its rate is scored as a floor and the sentence says "at least". |
+| Japan | A Government line (state trading under the WTO quota; rice `1006.30-010`, Free) beside an "Other" line | The "Other" line. On rice, wheat and barley its asterisked WTO figure is what an import outside the Government's quota pays in all: the Temporary duty plus the levy under the Staple Food Act (rice: 49 + 292 = 341 yen/kg). |
+
 ## 5. Automation order (D-030)
 
 Clusters of researched national sources, largest Indian export markets first, each completed — sources,

@@ -44,6 +44,16 @@ export interface OfficialPreferenceNote {
   quota?: boolean;
 }
 
+/** D-042 (R-46): the ordinary duty is a tariff-rate quota's out-of-quota rate; this is the quota's own rate, said and never scored. */
+export interface OfficialQuotaNote {
+  duty_expression: string;
+  /** The in-quota rate when it is ad valorem. */
+  percent: number | null;
+  basis: string;
+  /** The scored out-of-quota rate is a floor: that duty also charges an amount per unit. */
+  out_of_quota_floor?: boolean;
+}
+
 /** D-026: which rate a usable resolution carries — India's published preference, or the ordinary rate. */
 export type OfficialRateBasis = 'india_preference' | 'standard';
 
@@ -61,6 +71,8 @@ interface Resolved {
   basis?: OfficialRateBasis;
   /** When the preference is scored: the ordinary rate it stands in for, as published. */
   standard?: { duty_percent: number | null; expression: string | null };
+  /** D-042: the ordinary rate is out-of-quota; the quota's own rate. */
+  quota?: OfficialQuotaNote;
   fact_ids: string[];
   snapshot_ids: string[];
 }
@@ -94,8 +106,14 @@ function current(fact: ScopedFact<TariffFactValue>, asOf: number, minimumConfide
   return Number.isFinite(from) && from <= asOf && (to == null || to > asOf);
 }
 
+/**
+ * Newest retrieval first. One retrieval read more than once (a retained release read again by a
+ * newer reader, as Korea's and Japan's were for D-042) keeps its retrieval time, so the latest
+ * reading wins the tie: evidence row ids rise with creation time. Until E-058 the oldest reading won,
+ * so a corrected reader never reached a run for a release already read.
+ */
 const newestFirst = <T extends { id: string; provenance: { retrieved_at: string } }>(facts: T[]) =>
-  facts.sort((a, b) => Date.parse(b.provenance.retrieved_at) - Date.parse(a.provenance.retrieved_at) || a.id.localeCompare(b.id));
+  facts.sort((a, b) => Date.parse(b.provenance.retrieved_at) - Date.parse(a.provenance.retrieved_at) || b.id.localeCompare(a.id));
 
 type RateOutcome =
   | { status: 'percent'; duty_percent: number }
@@ -131,6 +149,15 @@ function rateOf(ratePercent: number | null | undefined, expression: string | nul
     return { status: 'specific', usd_per_kg: (parsed.specific_amount * rate) / kilograms, expression: parsed.expression, fx: { currency: parsed.specific_currency, usd_per_unit: rate } };
   }
   return { status: 'unusable', reason: `The ${name} (${parsed.expression || 'not stated'}) cannot be reduced to one rate: ${parsed.note ?? parsed.kind}`, expression: parsed.expression || null };
+}
+
+/** D-042: the in-quota rate stored beside an out-of-quota ordinary duty (`persistMarketAccessIngest`), if any. */
+export function storedQuota(row: Pick<OfficialTariffRow, 'raw_evidence'> | undefined): OfficialQuotaNote | null {
+  const quota = row?.raw_evidence && typeof row.raw_evidence === 'object' ? (row.raw_evidence as { quota?: unknown }).quota : null;
+  if (!quota || typeof quota !== 'object') return null;
+  const { in_quota_duty: duty, basis, out_of_quota_floor: floor } = quota as { in_quota_duty?: ParsedDuty; basis?: unknown; out_of_quota_floor?: unknown };
+  if (!duty || typeof duty !== 'object' || typeof duty.expression !== 'string' || typeof basis !== 'string') return null;
+  return { duty_expression: duty.expression, percent: duty.kind === 'ad_valorem' ? duty.ad_valorem_rate_percent : null, basis, ...(floor === true ? { out_of_quota_floor: true } : {}) };
 }
 
 /** A preference that is a tariff quota, from the stored flag or, for rows stored before it, the determination's own words. */
@@ -172,10 +199,12 @@ export function resolveOfficialDuty(args: {
       }
     : null;
 
+  const quota = storedQuota(row);
   const resolved = {
     source: [row.source_authority, row.national_tariff_code].filter(Boolean).join(' '),
     national_line: row.national_tariff_code,
     preference,
+    ...(quota ? { quota } : {}),
     fact_ids: [ordinary.id, ...(preference ? [preferenceFact!.id] : [])],
     snapshot_ids: [...new Set([row.snapshot_id, ...(preference && preferenceRow ? [preferenceRow.snapshot_id] : [])])].sort(),
   };
