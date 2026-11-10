@@ -11,19 +11,27 @@ import { prisma } from '../src/lib/prisma';
 const HEADER = 'KEY,FREQ,CURRENCY,CURRENCY_DENOM,EXR_TYPE,EXR_SUFFIX,TIME_PERIOD,OBS_VALUE,OBS_STATUS,TITLE';
 const csv = (currency: string, rows: [string, string][]) => [HEADER, ...rows.map(([date, value]) => `EXR.D.${currency}.EUR.SP00.A,D,${currency},EUR,SP00,A,${date},${value},A,"ECB reference exchange rate, ${currency}/Euro"`)].join('\n');
 
-/** A stand-in for the ECB SDMX service: `series` maps a currency to its CSV, or to an HTTP status. */
-function ecb(series: Record<string, string | number>) {
+/**
+ * A stand-in for the ECB SDMX service: `series` maps a currency to its CSV, to an HTTP status, or to
+ * a list of those answered in turn (the last one repeats).
+ */
+function ecb(series: Record<string, string | number | (string | number)[]>) {
   const calls: URL[] = [];
+  const asked = new Map<string, number>();
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url);
     calls.push(url);
     const currency = url.pathname.split('/').pop()!.split('.')[1]!;
-    const body = series[currency];
-    if (body == null) throw new Error(`unexpected ECB request ${url}`);
+    const answers = series[currency];
+    if (answers == null) throw new Error(`unexpected ECB request ${url}`);
+    const turn = asked.get(currency) ?? 0;
+    asked.set(currency, turn + 1);
+    const body = Array.isArray(answers) ? answers[Math.min(turn, answers.length - 1)]! : answers;
     return typeof body === 'number' ? new Response('', { status: body }) : new Response(body, { status: 200, headers: { 'content-type': 'text/csv' } });
   });
   return calls;
 }
+const asked = (calls: URL[], currency: string) => calls.filter((url) => url.pathname.endsWith(ecbSeriesKey(currency))).length;
 
 describe('v5 exchange rates', () => {
   test('fetches the missing ECB series over the lookback window, stores them, and derives the cross rate', async () => {
@@ -61,25 +69,40 @@ describe('v5 exchange rates', () => {
     expect(calls.map((url) => url.pathname.split('/').pop())).toEqual([ecbSeriesKey('USD')]);
   });
 
-  test('a failed request leaves the rate unavailable and is recorded as failed; an ECB 404 is a fact, not a failure', async () => {
-    ecb({ JPY: 503, USD: csv('USD', [['2032-03-01', '1.2']]), XAU: 404 });
-    const resolver = createUsdRateResolver({ as_of: new Date('2032-03-02T09:00:00Z'), lookback_days: 7, fetch_missing: true });
+  test('a request that fails twice leaves the rate unavailable and is recorded as failed; an ECB 404 is a fact, asked once', async () => {
+    const calls = ecb({ JPY: 503, USD: csv('USD', [['2032-03-01', '1.2']]), XAU: 404 });
+    const resolver = createUsdRateResolver({ as_of: new Date('2032-03-02T09:00:00Z'), lookback_days: 7, fetch_missing: true, retry_delay_ms: 0 });
     expect(await resolver.usd('JPY')).toMatchObject({ rate: null, frozen: { currency: 'JPY', status: 'unavailable' } });
     expect(await resolver.usd('XAU')).toMatchObject({ rate: null, frozen: { currency: 'XAU', status: 'unavailable' } });
     expect(await resolver.fetches()).toMatchObject([
-      { currency: 'JPY', status: 'failed', http_status: 503, reason: 'ECB SDMX returned 503.' },
-      { currency: 'USD', status: 'stored', observations: 1 },
-      { currency: 'XAU', status: 'unavailable', http_status: 404, reason: expect.stringContaining('no reference-rate series for XAU') },
+      { currency: 'JPY', status: 'failed', http_status: 503, reason: 'ECB SDMX returned 503.', attempts: 2 },
+      { currency: 'USD', status: 'stored', observations: 1, attempts: 1 },
+      { currency: 'XAU', status: 'unavailable', http_status: 404, reason: expect.stringContaining('no reference-rate series for XAU'), attempts: 1 },
     ]);
+    expect([asked(calls, 'JPY'), asked(calls, 'USD'), asked(calls, 'XAU')]).toEqual([2, 1, 1]);
 
     vi.restoreAllMocks();
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('getaddrinfo ENOTFOUND data-api.ecb.europa.eu'));
-    const offline = createUsdRateResolver({ as_of: new Date('2033-01-05T09:00:00Z'), lookback_days: 7, fetch_missing: true });
+    const offline = createUsdRateResolver({ as_of: new Date('2033-01-05T09:00:00Z'), lookback_days: 7, fetch_missing: true, retry_delay_ms: 0 });
     expect((await offline.usd('GBP')).rate).toBeNull();
-    expect((await offline.fetches()).map((item) => [item.currency, item.status, item.reason])).toEqual([
-      ['GBP', 'failed', 'getaddrinfo ENOTFOUND data-api.ecb.europa.eu'],
-      ['USD', 'failed', 'getaddrinfo ENOTFOUND data-api.ecb.europa.eu'],
+    expect((await offline.fetches()).map((item) => [item.currency, item.status, item.reason, item.attempts])).toEqual([
+      ['GBP', 'failed', 'getaddrinfo ENOTFOUND data-api.ecb.europa.eu', 2],
+      ['USD', 'failed', 'getaddrinfo ENOTFOUND data-api.ecb.europa.eu', 2],
     ]);
+  });
+
+  test('a failed request is tried once more after the wait, and a second answer that works is used (E-056)', async () => {
+    // On 9 Nov 2026 one ECB 504 for IDR left a production run partial.
+    const calls = ecb({ IDR: [504, csv('IDR', [['2037-05-04', '17500']])], USD: csv('USD', [['2037-05-04', '1.10']]) });
+    const resolver = createUsdRateResolver({ as_of: new Date('2037-05-05T09:00:00Z'), lookback_days: 7, fetch_missing: true, retry_delay_ms: 25 });
+    const started = Date.now();
+    expect((await resolver.usd('IDR')).rate).toBeCloseTo(1.10 / 17500, 12);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(20);
+    expect(await resolver.fetches()).toMatchObject([
+      { currency: 'IDR', status: 'stored', http_status: 200, observations: 1, attempts: 2 },
+      { currency: 'USD', status: 'stored', attempts: 1 },
+    ]);
+    expect([asked(calls, 'IDR'), asked(calls, 'USD')]).toEqual([2, 1]);
   });
 
   test('a pegged currency the ECB does not publish converts through its anchor, with no request for its own series (D-025)', async () => {
@@ -92,7 +115,7 @@ describe('v5 exchange rates', () => {
       authority: 'Fixture authority', basis: 'Fixture parity for the test.', source_url: 'https://example.test/peg', source_kind: 'official' as const,
     });
     const pegs = [peg('SAR', 'USD', { units_per_anchor: '3.75' }), peg('OMR', 'USD', { anchor_per_unit: '2.6008' }), peg('XOF', 'EUR', { units_per_anchor: '655.957' }), peg('NPR', 'INR', { units_per_anchor: '1.6' }), peg('ZZZ', 'GBP', { units_per_anchor: '2' })];
-    const resolver = createUsdRateResolver({ as_of: new Date('2035-04-11T09:00:00Z'), lookback_days: 7, fetch_missing: true, pegs });
+    const resolver = createUsdRateResolver({ as_of: new Date('2035-04-11T09:00:00Z'), lookback_days: 7, fetch_missing: true, pegs, retry_delay_ms: 0 });
 
     expect(await resolver.usd('SAR')).toMatchObject({ rate: expect.closeTo(1 / 3.75, 12), frozen: { currency: 'SAR', derivation: 'peg', peg: { anchor: 'USD', units_per_anchor: '3.75', source_kind: 'official' }, anchor_rate: { derivation: 'identity' } } });
     expect((await resolver.usd('OMR')).rate).toBeCloseTo(2.6008, 12);

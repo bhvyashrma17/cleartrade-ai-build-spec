@@ -3,6 +3,9 @@ import { acquireJapanChapterBytes } from '@/lib/market-access/providers/japan-ac
 import { readJapanAuthorityBundle } from '@/lib/market-access/providers/japan-bundle';
 import { buildJapanMarketAccess, parseJapanDuty } from '@/lib/market-access/providers/japan-parser';
 import { runTechnicalQualification } from '@/lib/market-access/vendor-qualification';
+import { persistMarketAccessIngest } from '@/lib/market-access/contract';
+import { storedQuota } from '@/lib/demand-discovery-v5/official-duty';
+import { prisma } from '@/lib/prisma';
 
 const AT = new Date('2026-09-02T00:00:00.000Z');
 
@@ -66,19 +69,71 @@ describe('Japan Customs tariff semantics from real page shapes', () => {
     expect(specific.note).toMatch(/preserved verbatim/);
   });
 
-  test('a real rice shape (heading blank, Temporary supersedes General) requires refinement across two non-equivalent quota/non-quota lines', () => {
+  // The rows of 1006.30 as Japan Customs publishes them on 8 Aug 2026 (e_10.htm), descriptions shortened.
+  const RICE = [
+    { code: '1006.30', suffix: '', desc: 'Semi-milled or wholly milled rice, whether or not polished or glazed', rates: { General: '(402 yen/kg)' } },
+    { code: '', suffix: '010', desc: '- Imported by Japanese Government according to Article 30 of "The Law for Stabilization of Supply-Demand and Price of Staple Food"', rates: { Temporary: 'Free', WTO: '(Free)', CPTPP: 'For the tariff rate quota in Japan\'s Schedule to the WTO Agreement Free Other (For the Pooled Quota (Treatment for Australia)) Free' } },
+    { code: '', suffix: '090', desc: '- Other', rates: { Temporary: '49 yen/kg', WTO: '*(341yen /kg)', CPTPP: '49 yen/kg' } },
+  ];
+
+  test('rice (D-042): the quota line is said, and the other line scores the out-of-quota 341 yen/kg, duty plus levy', () => {
+    const result = ingest(RICE, '100630');
+    expect(result.parser_version).toBe('jp-customs-tariff-parser-v2');
+    expect(result.resolution).toMatchObject({ resolution: 'exact', resolved_line: { national_tariff_code: '100630090' } });
+    expect(result.general_duty).toMatchObject({ kind: 'specific', specific_amount: 341, specific_currency: 'JPY', specific_unit: 'kg', expression: '341 yen/kg' });
+    expect(result.general_duty!.note).toMatch(/Temporary duty \(49 yen\/kg\) plus the levy Japan collects under its Staple Food Act, 341 yen\/kg in all/);
+    expect(result.general_duty_quota).toMatchObject({ in_quota_duty: { kind: 'ad_valorem', ad_valorem_rate_percent: 0, expression: 'Free' } });
+    expect(result.general_duty_quota!.basis).toMatch(/^Statistical code 100630010 is the tariff-quota line \("Imported by Japanese Government.*Free applies only within Japan's tariff quota\. Every other import pays the out-of-quota rate\.$/);
+    // The published rows stay as published: the quota line is a quota, the other line keeps its Temporary duty.
+    expect(result.lines.find((line) => line.national_tariff_code === '100630010')).toMatchObject({ measure_kind: 'tariff_quota', conditions: expect.objectContaining({ unconditional_rate: false }) });
+    expect(result.lines.find((line) => line.national_tariff_code === '100630090' && line.origin_geographic_area_id === 'MFN')).toMatchObject({
+      measure_kind: 'third_country_duty', duty: { kind: 'specific', specific_amount: 49, specific_currency: 'JPY' }, conditions: expect.objectContaining({ out_of_quota_rate: '341 yen/kg' }),
+    });
+    // The Japan–India CEPA column is empty for this line.
+    expect(result.india_preference.applicability).toBe('not_applicable');
+    expect(result.raw_evidence).toMatchObject({ quota_split: { quota_lines: ['100630010'], scored_among: ['100630090'] } });
+  });
+
+  test('rice (D-042): the stored tariff row carries the out-of-quota duty and the quota beside it, which v5 reads', async () => {
+    const result = ingest(RICE, '100630');
+    // No retained release row backs this fixture, so the snapshot is persisted without one.
+    const snapshot = await persistMarketAccessIngest({ ...result, source_release_id: null }, { evidence_origin: 'fixture' });
+    const tariff = await prisma.marketAccessEvidence.findFirstOrThrow({ where: { snapshot_id: snapshot.id, rule_type: 'destination_tariff' } });
+    expect(tariff).toMatchObject({ national_tariff_code: '100630090', duty_expression: '341 yen/kg', duty_kind: 'specific', tariff_rate_percent: null });
+    expect(storedQuota(tariff)).toEqual({ duty_expression: 'Free', percent: 0, basis: result.general_duty_quota!.basis });
+  });
+
+  test('wheat has the same shape: 9.80 yen/kg duty, 55 yen/kg out of quota', () => {
     const result = ingest([
-      { code: '1006.30', suffix: '', desc: 'Semi-milled or wholly milled rice', rates: { General: '(402 yen/kg)' } },
-      { code: '', suffix: '010', desc: 'Government-imported quota rice', rates: { Temporary: 'Free', WTO: '(Free)', CPTPP: 'For the tariff rate quota in Japan\'s Schedule to the WTO Agreement Free' } },
-      { code: '', suffix: '090', desc: 'Other', rates: { Temporary: '49 yen/kg', WTO: '*(341yen /kg)' } },
-    ], '100630');
+      { code: '1001.99', suffix: '', desc: 'Other', rates: { General: '(65 yen/kg)' } },
+      { code: '', suffix: '010', desc: '- Imported by Japanese Government', rates: { Temporary: 'Free', WTO: '(Free)', CPTPP: 'For the tariff rate quota in Japan\'s Schedule to the WTO Agreement Free' } },
+      { code: '', suffix: '090', desc: '- Other', rates: { Temporary: '9.80 yen/kg', WTO: '*(55 yen/kg)', GSP: 'Free' } },
+    ], '100199');
+    expect(result.general_duty).toMatchObject({ kind: 'specific', specific_amount: 55, expression: '55 yen/kg' });
+  });
+
+  test('a quota only one EPA partner grants never splits the HS6: the lines still need refinement', () => {
+    const result = ingest([
+      { code: '0406.10', suffix: '', desc: 'Fresh cheese', rates: {} },
+      { code: '', suffix: '010', desc: '- Whey cheese', rates: { General: '29.8%', WTO: '29.8%', EU: 'For the tariff rate quota under the Japan-EU EPA 14.9%' } },
+      { code: '', suffix: '090', desc: '- Other', rates: { General: '22.4%', WTO: '22.4%' } },
+    ], '040610', '04');
     expect(result.resolution.resolution).toBe('classification_refinement_required');
     expect(result.general_duty).toBeNull();
-    expect(result.lines.find((line) => line.national_tariff_code === '100630010')).toMatchObject({
-      measure_kind: 'tariff_quota',
-      conditions: expect.objectContaining({ unconditional_rate: false }),
-    });
-    expect(result.lines.find((line) => line.national_tariff_code === '100630090')).toMatchObject({ measure_kind: 'third_country_duty', duty: { kind: 'specific', specific_amount: 49, specific_currency: 'JPY' } });
+    expect(result.general_duty_quota).toBeNull();
+  });
+
+  test('without a quota line, or with a WTO figure that is unmarked, lower or in another unit, the applicable duty is kept', () => {
+    // No quota sibling: the asterisked WTO figure stays a bound ceiling.
+    const alone = ingest([{ code: '1006.30', suffix: '', desc: 'Rice', rates: {} }, { code: '', suffix: '090', desc: '- Other', rates: { Temporary: '49 yen/kg', WTO: '*(341yen /kg)' } }], '100630');
+    expect(alone.general_duty).toMatchObject({ kind: 'specific', specific_amount: 49 });
+    expect(alone.general_duty_quota).toBeNull();
+    const quota = { code: '', suffix: '010', desc: '- Imported by Japanese Government', rates: { Temporary: 'Free', CPTPP: 'For the tariff rate quota in Japan\'s Schedule to the WTO Agreement Free' } };
+    for (const wto of ['(341yen /kg)', '*(20 yen/kg)', '*(30%)']) {
+      const result = ingest([{ code: '1006.30', suffix: '', desc: 'Rice', rates: {} }, quota, { code: '', suffix: '090', desc: '- Other', rates: { Temporary: '49 yen/kg', WTO: wto } }], '100630');
+      expect(result.general_duty, wto).toMatchObject({ kind: 'specific', specific_amount: 49 });
+      expect(result.general_duty_quota, wto).toMatchObject({ in_quota_duty: { ad_valorem_rate_percent: 0 } });
+    }
   });
 
   test('a self-contained line (its own code, suffix and full rate set together) resolves exactly, with India requiring origin proof', () => {

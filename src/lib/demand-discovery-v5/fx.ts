@@ -11,7 +11,9 @@
  *
  * A fetch that fails never fails the run: the rate is unavailable, the metric that needed it says
  * why, and the run is marked degraded. An ECB 404 means the ECB publishes no series for that
- * currency — a fact about the source, recorded as unavailable rather than as a failure.
+ * currency — a fact about the source, recorded as unavailable rather than as a failure. A failed
+ * fetch (any other HTTP error, or no response) is tried once more after `retry_delay_ms` before it
+ * counts: on 9 Nov 2026 one ECB 504 for IDR left a production run partial (E-056).
  *
  * D-025: a currency the ECB does not publish but whose rate is fixed against one it does
  * (`curated:currency-pegs`) is converted through its peg — the anchor's ECB rate on the run date
@@ -46,6 +48,8 @@ export interface FxFetchRecord {
   provider?: 'us_treasury';
   /** `stored`: the series was fetched and kept; `unavailable`: the ECB publishes no such series; `failed`: the fetch did not complete. */
   status: 'stored' | 'unavailable' | 'failed';
+  /** Requests made: 2 when the first failed and was tried again. */
+  attempts: number;
   http_status: number | null;
   snapshot_id: string | null;
   observations: number;
@@ -66,6 +70,8 @@ export function createUsdRateResolver(args: {
   as_of: Date; lookback_days: number; fetch_missing: boolean; ingest?: Ingest; pegs?: readonly CurrencyPegRow[];
   /** D-028: the Treasury fallback for floating currencies the ECB does not publish. */
   treasury?: { enabled: boolean; lookback_days: number; ingest?: typeof ingestTreasuryRates };
+  /** The wait before a failed fetch is tried again (default 3 s; tests pass 0). */
+  retry_delay_ms?: number;
 }) {
   const ingest = args.ingest ?? ingestEcbSeries;
   const pegs = new Map((args.pegs ?? []).map((peg) => [peg.currency, peg] as const));
@@ -75,6 +81,15 @@ export function createUsdRateResolver(args: {
   const fetches = new Map<string, Promise<FxFetchRecord>>();
   const treasuryEarliest = new Date(args.as_of.getTime() - (args.treasury?.lookback_days ?? 0) * 86_400_000);
   let treasuryFetch: Promise<FxFetchRecord> | null = null;
+  const retryDelay = args.retry_delay_ms ?? 3_000;
+
+  /** One attempt, then one more if it failed; never a second try for a series the ECB does not publish. */
+  async function twice(attempt: () => Promise<Omit<FxFetchRecord, 'attempts'>>): Promise<FxFetchRecord> {
+    const first = await attempt();
+    if (first.status !== 'failed') return { ...first, attempts: 1 };
+    if (retryDelay > 0) await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    return { ...(await attempt()), attempts: 2 };
+  }
 
   async function derive(code: string) {
     const observations = await prisma.authoritativeFxObservation.findMany({
@@ -88,8 +103,8 @@ export function createUsdRateResolver(args: {
   function fetchSeries(currency: string): Promise<FxFetchRecord> {
     let pending = fetches.get(currency);
     if (!pending) {
-      pending = (async (): Promise<FxFetchRecord> => {
-        const base = { currency, series_key: ecbSeriesKey(currency), window };
+      const base = { currency, series_key: ecbSeriesKey(currency), window };
+      pending = twice(async () => {
         try {
           const result = await ingest(currency, { start_date: window.start_date, end_date: window.end_date });
           if (result.status === 'available') {
@@ -99,7 +114,7 @@ export function createUsdRateResolver(args: {
         } catch (error) {
           return { ...base, status: 'failed', http_status: null, snapshot_id: null, observations: 0, reason: error instanceof Error ? error.message : 'The ECB request failed.' };
         }
-      })();
+      });
       fetches.set(currency, pending);
     }
     return pending;
@@ -133,7 +148,7 @@ export function createUsdRateResolver(args: {
     if (!treasuryFetch) {
       const treasuryWindow = { start_date: day(treasuryEarliest), end_date: day(args.as_of) };
       const base = { currency: 'ALL', series_key: 'rates_of_exchange', provider: 'us_treasury' as const, window: treasuryWindow };
-      treasuryFetch = (async (): Promise<FxFetchRecord> => {
+      treasuryFetch = twice(async () => {
         try {
           const result = await (args.treasury?.ingest ?? ingestTreasuryRates)({ since: treasuryWindow.start_date });
           const unrecognised = result.unrecognised.length ? `Unrecognised descriptions skipped: ${result.unrecognised.join(', ')}.` : null;
@@ -141,7 +156,7 @@ export function createUsdRateResolver(args: {
         } catch (error) {
           return { ...base, status: 'failed', http_status: null, snapshot_id: null, observations: 0, reason: error instanceof Error ? error.message : 'The Treasury request failed.' };
         }
-      })();
+      });
     }
     return treasuryFetch;
   }

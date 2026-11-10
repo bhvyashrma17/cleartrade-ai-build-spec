@@ -6,9 +6,10 @@
  * Every 관세율구분 (rate-type) code this parser has ever observed in a real KCS release resolves
  * against `korea-rate-programs.ts` — a registry built verbatim from Korea Customs Service's own
  * 관세법령정보포털 CLIP portal (see that file's header). `A` (기본세율) is the confirmed general
- * statutory rate; `C` (WTO협정세율) is the confirmed WTO-bound rate, kept distinct — the legal
- * interaction between the two (e.g. whichever binds lower) is not documented in this dataset and is
- * not assumed. `FIN1`-`FIN4` are the CONFIRMED Korea-India FTA/CEPA rate codes (CLIP's own label:
+ * statutory rate; `C` (WTO협정세율) is the confirmed WTO concession rate, kept as its own line. Which
+ * of them applies follows Customs Act Art. 50 (D-043, `koreaAppliedRate`): an allocation tariff for
+ * all imports (`P3`) and a provisional rate (`B`) come ahead of `A`, and `C` applies only where it is
+ * lower than those; farm goods under a tariff quota pay `W2` (D-042). `FIN1`-`FIN4` are the CONFIRMED Korea-India FTA/CEPA rate codes (CLIP's own label:
  * "한ㆍ인도 FTA협정세율"); `FCEPA1`-`FCEPA8`, despite the name, are CONFIRMED to be Korea-Central
  * America FTA, Panama's schedule ("한ㆍ중미 FTA협정세율_파나마") — NOT India, correcting this
  * parser's earlier (appropriately cautious, but now superseded) treatment of `FCEPA1` as an
@@ -16,7 +17,7 @@
  * still retained verbatim and flagged unresolved, never guessed from its letters.
  */
 import { MarketAccessRuleType } from '@prisma/client';
-import type { MarketAccessIngestResult, MarketAccessLineRecord, MarketAccessRequirementRecord } from '@/lib/market-access/contract';
+import type { GeneralDutyQuota, MarketAccessIngestResult, MarketAccessLineRecord, MarketAccessRequirementRecord } from '@/lib/market-access/contract';
 import {
   determineIndiaPreference,
   resolveNationalTariffLine,
@@ -32,7 +33,11 @@ import {
 } from './korea-rate-programs';
 import { resolveKoreaTariffUnit } from './korea-tariff-units';
 
-export const KOREA_PARSER_VERSION = 'kcs-tariff-parser-v2' as const;
+/**
+ * v3 (D-042): an item under a farm-goods tariff quota scores its out-of-quota rate (W2), not the basic rate.
+ * v4 (D-043): any other item's general duty is its applied rate under Customs Act Art. 50 (`koreaAppliedRate`).
+ */
+export const KOREA_PARSER_VERSION = 'kcs-tariff-parser-v4' as const;
 export const KOREA_PROVIDER = 'kr_kcs_customs_tariff' as const;
 export const KOREA_SOURCE_AUTHORITY = 'Korea Customs Service (관세청)' as const;
 export const KOREA_SOURCE_DATASET = '관세청_품목번호별 관세율표 (data.go.kr dataset 15051179)' as const;
@@ -133,6 +138,73 @@ export function parseKoreaDuty(item: string, row: KoreaRateRow): ParsedDuty {
   };
 }
 
+/**
+ * D-042 (R-46): Korea's tariff quotas on farm goods. KCS publishes them as 농림축산물양허관세 rows:
+ * `W1` (추천 — with an import recommendation from the body managing the quota: the in-quota rate)
+ * and `W2` (미추천 — without one: the out-of-quota rate). Customs Act Art. 50(3) applies these
+ * concession rates ahead of the basic rate (`A`), even where they are higher, so an ordinary import,
+ * without a recommendation, pays `W2`: rice 513% against `A`'s 5%. In production's 2026-02-11
+ * release (E-057) 278 items carry W rows, every one a `W2`, 232 also a `W1`, none a `W3`.
+ */
+export const QUOTA_IN_RATE_CODE = 'W1';
+export const QUOTA_OUT_RATE_CODE = 'W2';
+
+/**
+ * The out-of-quota rate as the duty to score. 46 `W2` rows publish both a rate and an amount per
+ * unit (sesame: 630% and ₩6,660). Whether the two apply together or the higher applies, the duty is
+ * at least the rate, so the rate is scored as a floor and `floor` says so.
+ */
+export function koreaOutOfQuotaDuty(item: string, row: KoreaRateRow): { duty: ParsedDuty; floor: boolean } {
+  const parsed = parseKoreaDuty(item, row);
+  const label = `${QUOTA_OUT_RATE_CODE} (농림축산물양허관세(미추천), an import without a recommendation)`;
+  if (parsed.kind === 'compound' && row.rate_value !== null) {
+    return {
+      floor: true,
+      duty: {
+        kind: 'ad_valorem', ad_valorem_rate_percent: row.rate_value, specific_amount: null, specific_currency: null, specific_unit: null, specific_unit_quantity: null,
+        expression: `${row.rate_value}% or more`,
+        note: `Korea's out-of-quota rate, ${label}, publishes ${parsed.expression}. Whether the two apply together or the higher applies, the duty is at least ${row.rate_value}%, so that rate is scored as a floor.`,
+      },
+    };
+  }
+  return { floor: false, duty: { ...parsed, note: [`Korea's out-of-quota rate, ${label}; Customs Act Art. 50(3) applies it ahead of the basic rate (${GENERAL_RATE_CODE}).`, parsed.note].filter(Boolean).join(' ') } };
+}
+
+/** D-043: the allocation tariff for all imports (할당관세(수입전량)), the provisional rate and the WTO concession rate. */
+export const ALLOCATION_ALL_IMPORTS_RATE_CODE = 'P3';
+export const PROVISIONAL_RATE_CODE = 'B';
+export const WTO_CONCESSION_RATE_CODE = 'C';
+
+/**
+ * D-043 (R-47): the rate an item outside a farm-goods quota pays from every origin, by Customs Act
+ * Art. 50. Of the ranks that can apply to any import, an allocation tariff for all imports (`P3`,
+ * Art. 71) comes ahead of the provisional rate (`B`), which comes ahead of the basic rate (`A`). The
+ * WTO concession rate (`C`, Art. 73) applies only where it is lower than the rate those give. Only
+ * plain percentages are compared; a rate with an amount per unit, or a `C` held for a declared end
+ * use (용도세율), is never swapped in. In production's 2026-02-11 release: no `B` rows, 127 `P3`
+ * items (each below `A`, and below `C` where there is one), `C` below `A` on 3,176 items (E-058).
+ */
+export function koreaAppliedRate(rowsInForce: (code: string) => KoreaRateRow | null): { code: string; row: KoreaRateRow; basis: string } | null {
+  const plain = (row: KoreaRateRow | null) => (row && row.unit_amount === null && row.rate_value !== null ? row.rate_value : null);
+  const basic = rowsInForce(GENERAL_RATE_CODE);
+  const provisional = rowsInForce(PROVISIONAL_RATE_CODE);
+  const allocation = rowsInForce(ALLOCATION_ALL_IMPORTS_RATE_CODE);
+  const base = allocation
+    ? { code: ALLOCATION_ALL_IMPORTS_RATE_CODE, row: allocation, basis: `the allocation tariff for all imports (${ALLOCATION_ALL_IMPORTS_RATE_CODE}, 할당관세(수입전량), Customs Act Art. 71), ahead of the ${provisional ? 'provisional and ' : ''}basic rate` }
+    : provisional
+      ? { code: PROVISIONAL_RATE_CODE, row: provisional, basis: `the provisional rate (${PROVISIONAL_RATE_CODE}, 잠정세율), ahead of the basic rate` }
+      : basic
+        ? { code: GENERAL_RATE_CODE, row: basic, basis: 'the basic rate (A, 기본세율)' }
+        : null;
+  const wto = rowsInForce(WTO_CONCESSION_RATE_CODE);
+  const wtoRate = wto && wto.purpose_code === null ? plain(wto) : null;
+  const baseRate = base ? plain(base.row) : null;
+  if (wto && wtoRate !== null && baseRate !== null && wtoRate < baseRate) {
+    return { code: WTO_CONCESSION_RATE_CODE, row: wto, basis: `the WTO concession rate (${WTO_CONCESSION_RATE_CODE}, WTO협정세율), which Customs Act Art. 50(3) applies because it is lower than ${base!.basis.replace(/, ahead of .*$/, '')} (${baseRate}%)` };
+  }
+  return base;
+}
+
 function effectiveRowsFor(bundle: KoreaAuthorityBundle, item: string, code: string, at: Date): KoreaRateRow[] {
   return (bundle.item_rates.get(item) ?? []).filter((row) => row.rate_type_code === code && isEffective(row, at));
 }
@@ -194,6 +266,8 @@ export function buildKoreaMarketAccess(args: {
     candidate: CandidateTariffLine;
     generalRow: KoreaRateRow | null;
     indiaRows: Array<{ code: string; row: KoreaRateRow }>;
+    /** D-042: the item's farm-goods tariff quota, when it has one. */
+    quota: { in_row: KoreaRateRow | null; out_row: KoreaRateRow; floor: boolean } | null;
   }> = [];
 
   for (const item of items) {
@@ -220,6 +294,12 @@ export function buildKoreaMarketAccess(args: {
       rows.filter((row) => row.rate_type_code !== GENERAL_RATE_CODE && isEffective(row, at)).map((row) => row.rate_type_code),
     )].sort();
 
+    // D-042: under a farm-goods tariff quota the out-of-quota rate (W2) is the general duty.
+    const outRow = effectiveRowsFor(bundle, item, QUOTA_OUT_RATE_CODE, at)[0] ?? null;
+    const outOfQuota = outRow ? koreaOutOfQuotaDuty(item, outRow) : null;
+    // D-043: outside a farm-goods quota, the rate Customs Act Art. 50 applies.
+    const applied = outOfQuota ? null : koreaAppliedRate((code) => effectiveRowsFor(bundle, item, code, at)[0] ?? null);
+
     const anyRowForValidity = generalRow ?? rows[0]!;
     built.push({
       candidate: {
@@ -228,14 +308,19 @@ export function buildKoreaMarketAccess(args: {
         declarable: true,
         effective_from: parseYyyymmdd(anyRowForValidity.effective_from),
         effective_to: parseYyyymmdd(anyRowForValidity.effective_to),
-        general_duty: generalRow
-          ? parseKoreaDuty(item, generalRow)
-          : EMPTY('none', '', `KCS publishes no currently-effective ${GENERAL_RATE_CODE} (기본세율) row for this item at the assessment date.`),
+        general_duty: outOfQuota
+          ? outOfQuota.duty
+          : applied
+            ? applied.code === GENERAL_RATE_CODE
+              ? parseKoreaDuty(item, applied.row)
+              : { ...parseKoreaDuty(item, applied.row), note: [`Korea's applied rate: ${applied.basis}.`, parseKoreaDuty(item, applied.row).note].filter(Boolean).join(' ') }
+            : EMPTY('none', '', `KCS publishes no currently-effective ${GENERAL_RATE_CODE} (기본세율) row for this item at the assessment date.`),
         control_codes: [],
         preference_area_ids: preferenceAreas,
       },
       generalRow,
       indiaRows,
+      quota: outRow && outOfQuota ? { in_row: effectiveRowsFor(bundle, item, QUOTA_IN_RATE_CODE, at)[0] ?? null, out_row: outRow, floor: outOfQuota.floor } : null,
     });
   }
 
@@ -255,7 +340,8 @@ export function buildKoreaMarketAccess(args: {
         origin_geographic_area_id: GENERAL_RATE_CODE,
         origin_scope: 'erga_omnes',
         applies_to_origin_country: null,
-        duty: entry.candidate.general_duty,
+        // The basic rate as published; under a farm-goods quota the general duty is W2 instead (D-042).
+        duty: parseKoreaDuty(item, entry.generalRow),
         conditions: conditionsFor(entry.generalRow, program.resolved ? program.program : null),
         effective_from: entry.candidate.effective_from ?? null,
         effective_to: entry.candidate.effective_to ?? null,
@@ -311,6 +397,16 @@ export function buildKoreaMarketAccess(args: {
     ? built.find((entry) => entry.candidate.national_tariff_code === resolution.resolved_line!.national_tariff_code)
     : null;
 
+  // D-042: the quota's own rate, said beside the out-of-quota duty and never scored.
+  const quota = resolvedEntry?.quota;
+  const generalDutyQuota: GeneralDutyQuota | null = quota?.in_row
+    ? {
+        in_quota_duty: parseKoreaDuty(resolvedEntry!.candidate.national_tariff_code, quota.in_row),
+        basis: `Korea's tariff quota on ${resolvedEntry!.candidate.national_tariff_code}: an import with an import recommendation (추천) from the body managing the quota pays ${parseKoreaDuty(resolvedEntry!.candidate.national_tariff_code, quota.in_row).expression} (${QUOTA_IN_RATE_CODE}); one without pays ${parseKoreaDuty(resolvedEntry!.candidate.national_tariff_code, quota.out_row).expression} (${QUOTA_OUT_RATE_CODE}), the rate scored. Customs Act Art. 50(3) applies both ahead of the basic rate${resolvedEntry!.generalRow ? ` (${GENERAL_RATE_CODE}, ${parseKoreaDuty(resolvedEntry!.candidate.national_tariff_code, resolvedEntry!.generalRow).expression})` : ''}.`,
+        ...(quota.floor ? { out_of_quota_floor: true } : {}),
+      }
+    : null;
+
   // India-India CEPA: FIN1-4 are CONFIRMED (korea-rate-programs.ts, sourced from CLIP) to be the
   // Korea-India FTA/CEPA rate. A published FIN-row is therefore a direct India measure — but
   // determineIndiaPreference's own rule still caps this at
@@ -361,6 +457,7 @@ export function buildKoreaMarketAccess(args: {
     recorded_by_id: null,
     resolution,
     general_duty: resolution.resolved_line ? resolution.resolved_line.general_duty : null,
+    general_duty_quota: generalDutyQuota,
     india_preference: indiaPreference,
     lines,
     requirements,

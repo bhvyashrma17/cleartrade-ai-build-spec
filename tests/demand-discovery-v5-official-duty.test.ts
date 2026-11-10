@@ -86,6 +86,22 @@ describe('official duty on Indian goods (v5)', () => {
     expect((resolution as { usd_per_kg: number }).usd_per_kg).toBeCloseTo(0.1573, 6);
   });
 
+  test('an out-of-quota ordinary duty keeps the quota’s own rate beside it, never scored (D-042)', () => {
+    const outOfQuota = { kind: 'specific', ad_valorem_rate_percent: null, specific_amount: 341, specific_currency: 'JPY', specific_unit: 'kg', specific_unit_quantity: 1, expression: '341 yen/kg', note: 'duty plus levy' };
+    const free = { kind: 'ad_valorem', ad_valorem_rate_percent: 0, specific_amount: null, specific_currency: null, specific_unit: null, specific_unit_quantity: null, expression: 'Free', note: null };
+    const basis = 'Statistical code 100630010 is the tariff-quota line: Free applies only within Japan\'s tariff quota.';
+    const jp = row('jp-mfn', { country_code: 'JP', source_authority: 'Ministry of Finance — Japan Customs', duty_expression: '341 yen/kg', duty_kind: 'specific', national_tariff_code: '100630090', raw_evidence: { resolution: 'exact', duty: outOfQuota, quota: { in_quota_duty: free, basis } } });
+    FX.JPY = 0.0065;
+    try {
+      const { resolution } = resolve('JP', [jp], [{ id: 'snap-1', provider: 'japan_customs_tariff_schedule', source_dataset: null }]);
+      expect(resolution).toMatchObject({ status: 'specific', usd_per_kg: expect.closeTo(341 * 0.0065, 9), expression: '341 yen/kg', quota: { duty_expression: 'Free', percent: 0, basis } });
+      // Without the stored quota, nothing is said.
+      expect(resolve('JP', [{ ...jp, raw_evidence: { resolution: 'exact', duty: outOfQuota } }], [{ id: 'snap-1', provider: 'japan_customs_tariff_schedule', source_dataset: null }]).resolution).not.toHaveProperty('quota');
+    } finally {
+      delete FX.JPY;
+    }
+  });
+
   test('an ordinary duty published in words is read from the pack’s own parsed duty (EAEU euro per kilogram)', () => {
     const eaeu = { kind: 'specific', ad_valorem_rate_percent: null, specific_amount: 0.03, specific_currency: 'EUR', specific_unit: 'kg', specific_unit_quantity: 1, expression: '0,03 евро за 1 кг', note: null };
     const words = { country_code: 'KZ', source_authority: 'EEC Council Decision No. 80', duty_expression: '0,03 евро за 1 кг', duty_kind: 'specific', national_tariff_code: '1006300000' };
@@ -121,6 +137,13 @@ describe('official duty on Indian goods (v5)', () => {
       row('weak', { tariff_rate_percent: 1, retrieved_at: new Date('2026-10-10T00:00:00Z'), confidence: 0.3 }),
     ]);
     expect(resolution).toMatchObject({ status: 'percent', duty_percent: 6, fact_ids: ['market_access_tariff:newer'] });
+  });
+
+  test('one retrieval read twice: the latest reading wins (E-058)', () => {
+    // The same release, read by the old reader and then by a newer one: same retrieval time, later row id.
+    const read = (id: string, rate: number) => row(id, { country_code: 'KR', source_authority: 'Korea Customs Service (관세청)', tariff_rate_percent: rate, duty_expression: `${rate}% (관세율)`, duty_kind: 'ad_valorem', national_tariff_code: '1006301000', retrieved_at: new Date('2026-09-03T00:00:00Z') });
+    const { resolution } = resolve('KR', [read('cmw00000000000000000000aa', 5), read('cmw00000000000000000000bb', 513)], [{ id: 'snap-1', provider: 'kr_kcs_customs_tariff', source_dataset: null }]);
+    expect(resolution).toMatchObject({ status: 'percent', duty_percent: 513, fact_ids: ['market_access_tariff:cmw00000000000000000000bb'] });
   });
 
   test('duty units: mass only, by definition', () => {

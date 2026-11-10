@@ -1,4 +1,4 @@
-import type { MarketAccessIngestResult, MarketAccessLineRecord } from '@/lib/market-access/contract';
+import type { GeneralDutyQuota, MarketAccessIngestResult, MarketAccessLineRecord } from '@/lib/market-access/contract';
 import {
   determineIndiaPreference,
   parseDutyExpression,
@@ -8,7 +8,8 @@ import {
 } from '@/lib/market-access/tariff-semantics';
 import type { JapanAuthorityBundle, JapanTariffRow } from './japan-bundle';
 
-export const JAPAN_PARSER_VERSION = 'jp-customs-tariff-parser-v1' as const;
+/** v2 (D-042): an HS6 split into a tariff-quota line and other lines scores the out-of-quota rate. */
+export const JAPAN_PARSER_VERSION = 'jp-customs-tariff-parser-v2' as const;
 export const JAPAN_PROVIDER = 'japan_customs_tariff_schedule' as const;
 export const JAPAN_SOURCE_AUTHORITY = 'Ministry of Finance — Japan Customs' as const;
 export const JAPAN_SOURCE_DATASET = "Japan's Tariff Schedule (Statistical Code for Import)" as const;
@@ -125,6 +126,40 @@ function isQuotaConditioned(rates: Record<string, string>): boolean {
   return Object.values(rates).some((value) => /tariff rate quota|access commitment/i.test(value));
 }
 
+/**
+ * D-042: a line that is Japan's WTO tariff quota — the Government's minimum-access channel (rice
+ * 1006.30-010: "For the tariff rate quota in Japan's Schedule to the WTO Agreement Free"). A quota
+ * that only one EPA partner's column grants is not this, and never splits an HS6.
+ */
+function isWtoQuotaLine(rates: Record<string, string>): boolean {
+  return Object.values(rates).some((value) => /Schedule to the WTO Agreement|access commitment/i.test(value));
+}
+
+/**
+ * D-042 (R-46): what an import outside Japan's quota pays on a state-traded staple. Beside the
+ * Government's quota line, the "Other" line of rice, wheat and barley publishes a low Temporary
+ * duty and an asterisked WTO figure (rice, 2026: Temporary 49 yen/kg, WTO *(341yen /kg)). An
+ * import outside the Government's channel pays that WTO figure in all: the customs duty plus the
+ * levy Japan collects under its Staple Food Act (rice: 49 + 292 = 341 yen/kg). So where the same
+ * HS6 publishes a quota line, an asterisked WTO figure above the applicable duty, in the same unit,
+ * is the out-of-quota rate. Anything else keeps the applicable duty.
+ */
+export function outOfQuotaCharge(rates: Record<string, string>, applicable: { label: string; duty: ParsedDuty }): ParsedDuty {
+  const wto = rates.WTO?.trim();
+  const applied = applicable.duty;
+  if (!wto || !wto.startsWith('*')) return applied;
+  const bound = parseJapanDuty(wto);
+  if (bound.kind !== 'specific' || applied.kind !== 'specific' || bound.specific_amount == null || applied.specific_amount == null) return applied;
+  const sameUnit = bound.specific_currency === applied.specific_currency && bound.specific_unit === applied.specific_unit
+    && (bound.specific_unit_quantity ?? 1) === (applied.specific_unit_quantity ?? 1);
+  if (!sameUnit || !(bound.specific_amount > applied.specific_amount)) return applied;
+  return {
+    ...bound,
+    expression: `${bound.specific_amount} yen/${bound.specific_unit}`,
+    note: `Japan's out-of-quota rate, from its WTO schedule (${wto}): an import outside the Government's quota pays the ${applicable.label} duty (${applied.expression}) plus the levy Japan collects under its Staple Food Act, ${bound.specific_amount} yen/${bound.specific_unit} in all.`,
+  };
+}
+
 export function buildJapanMarketAccess(args: {
   bundle: JapanAuthorityBundle;
   release_id: string;
@@ -165,7 +200,23 @@ export function buildJapanMarketAccess(args: {
     });
   }
 
-  const resolution = resolveNationalTariffLine(built.map((item) => item.candidate));
+  // D-042 (R-46): an HS6 split into the quota line(s) and other lines is resolved among the other
+  // lines. Their out-of-quota rate is what an ordinary exporter pays and is scored; the quota line's
+  // rate is said beside it, never scored.
+  const quotaItems = built.filter((item) => item.quota && isWtoQuotaLine(item.entry.row.rates));
+  const openItems = built.filter((item) => !item.quota);
+  const splitByQuota = quotaItems.length > 0 && openItems.length > 0;
+  if (splitByQuota) {
+    for (const item of openItems) item.candidate = { ...item.candidate, general_duty: outOfQuotaCharge(item.entry.row.rates, item.applicable!) };
+  }
+  const resolution = resolveNationalTariffLine((splitByQuota ? openItems : built).map((item) => item.candidate));
+  const quotaLine = splitByQuota && resolution.resolved_line ? quotaItems[0]! : null;
+  const generalDutyQuota: GeneralDutyQuota | null = quotaLine
+    ? {
+        in_quota_duty: quotaLine.applicable!.duty,
+        basis: `Statistical code ${quotaLine.candidate.national_tariff_code} is the tariff-quota line ("${quotaLine.entry.description.replace(/^-\s*/, '').slice(0, 120)}${quotaLine.entry.description.length > 122 ? '…' : ''}"): ${quotaLine.applicable!.duty.expression} applies only within Japan's tariff quota${quotaItems.length > 1 ? ` (${quotaItems.length} quota lines)` : ''}. Every other import pays the out-of-quota rate.`,
+      }
+    : null;
   const lines: MarketAccessLineRecord[] = [];
   for (const item of built) {
     const common = {
@@ -183,7 +234,11 @@ export function buildJapanMarketAccess(args: {
       origin_scope: 'erga_omnes',
       applies_to_origin_country: origin,
       duty: item.applicable!.duty,
-      conditions: { applicable_rate_column: item.applicable!.label, all_published_columns: item.entry.row.rates, unconditional_rate: !item.quota },
+      conditions: {
+        applicable_rate_column: item.applicable!.label, all_published_columns: item.entry.row.rates, unconditional_rate: !item.quota,
+        // D-042: beside a quota line, what an import outside the quota pays in all.
+        ...(splitByQuota && !item.quota ? { out_of_quota_rate: item.candidate.general_duty.expression } : {}),
+      },
       raw_measure: { rates: item.entry.row.rates, applicable_column: item.applicable!.label },
     });
     const indiaRate = item.entry.row.rates.India;
@@ -242,6 +297,7 @@ export function buildJapanMarketAccess(args: {
     general_duty: resolution.resolved_line && !resolution.resolved_line.control_codes.includes('TARIFF_QUOTA:JP_ACCESS_COMMITMENT')
       ? resolution.resolved_line.general_duty
       : null,
+    general_duty_quota: generalDutyQuota,
     india_preference: indiaPreference,
     lines,
     requirements: [],
@@ -257,6 +313,7 @@ export function buildJapanMarketAccess(args: {
       origin_country: origin,
       column_labels: args.bundle.column_labels,
       candidate_lines: built.map((item) => ({ code: item.candidate.national_tariff_code, applicable_column: item.applicable!.label, rates: item.entry.row.rates })),
+      ...(splitByQuota ? { quota_split: { quota_lines: quotaItems.map((item) => item.candidate.national_tariff_code), scored_among: openItems.map((item) => item.candidate.national_tariff_code) } } : {}),
     },
   };
 }

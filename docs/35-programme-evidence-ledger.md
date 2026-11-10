@@ -52,6 +52,8 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-039 | 2026-11-09 | Every tool runs for paid members only. Owner's words: "the only way to do it is being a paid user", and for visitors and free accounts "it shouldn't burn actual credits, it should just be with static data to show the sample of workflow … and make that accurate. but don't exhaust our resources." The owner's own test account becomes a member through an audited fee waiver ("I register, you mark it paid"). | Owner | Product access (docs/14 §3c), E-052 |
 | D-040 | 2026-11-10 | Singapore's tariff: switch the nightly refresh off on production and staging (Singapore Statutes Online refuses it from Railway with HTTP 403) and load the customs duties order once from the owner's machine inside SSO's 03:00–07:00 SGT automation window (`authority-refresh.ts --acquire-only`, then `import-retained-authority-release.ts --family=SG`). Chosen from three options: this, refresh off with no Singapore tariff, or leaving the refresh on | Owner | Market access (R-43), E-054 |
 | D-041 | 2026-11-10 | Scope until further notice: Demand Discovery production-ready, with its hand-off into regional demand and buyer discovery working; no new regional or buyer work. Owner's words: "I just want demand discovery to be production ready, that's all. And the pipeline carrying from demand discovery to the regional and buyer to work fine." Canada's importer list (R-45) is deferred | Owner | E-056 |
+| D-042 | 2026-11-10 | Quota duties (R-46): where a tariff-rate quota gives a cheaper rate for a volume or a channel, Demand Discovery scores the rate an ordinary exporter pays outside the quota and says the quota's rate beside it, never scoring it, as China's reader already did; first for Korea and Japan. Owner's answer: "Score outside-quota (Recommended)" | Owner | E-058 |
+| D-043 | 2026-11-10 | Korea's applied rate (R-47): read Korea's rate priority (Customs Act Art. 50) from the stored rows, so the WTO rate applies where it is lower than the basic rate; to be done right after the quota release. Owner's answer: "Yes, right after (Recommended)" | Owner | E-058 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2383,6 +2385,151 @@ or leave the 31 markets on estimated duties. Awaiting the owner's choice.
 **Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files;
 `buyers-page` 2, `paid-only-tools` 3, `buyer-discovery` 8: all pass.
 
+
+### E-057 · 2026-11-10 · R-44 closed: tariff files restored, and production's basmati run completes with official EU and Korean duties; plain run states; one retry for a failed rate fetch (in review)
+
+**Restore (the owner chose the recommended option in E-056; the owner's Claude Code ran it).**
+98 of 98 files are back in production's bucket under production's keys: EU TARIC
+`cmtigku9y0001ue5ogg0d6y3t` (27,363,502 bytes; the EU 27, San Marino, Martinique), Japan's 96
+chapter releases (`2026_08_08-ch01` … `ch97`) and Korea `cmtln05uv0001uelwl3ptnl1n` (22,425,953
+bytes).
+- Each file was read from staging's object with the same SHA-256.
+- Before anything was written, the bytes' SHA-256 and size had to equal production's row. This was checked on the staging read and again against the production row at write time.
+- Each file was written with a do-not-overwrite condition, with the app's content type, SHA-256 label and encryption, then read back.
+- 0 files were skipped.
+- A read-only recheck of all 223 active tariff releases (33 families) found 223 present, with sizes and SHA-256 labels matching: 0 missing.
+- No database write was made, and staging was only read. The Singapore timer was not touched.
+
+**Corrections.**
+- To E-055: the 98 files were never in staging's bucket. They came from releases imported 1–3 Sep 2026, before the launch, and were restored from staging's own 11 Oct copies of the same bytes. R-13 played no part.
+- To E-056: the 06:37 run was `partial` for two reasons. The tariff look-ups failed, and the ECB rate for IDR could not be fetched (ECB SDMX 504).
+
+**Second production run** (QA member; run `cmwamh93f0001qi0ei1nfy0f9`, 11:44:23–11:46:49 UTC).
+- The note "The official tariff look-up failed for AT … SM" is gone.
+- The 27 EU markets now carry TARIC's official duty, €175 per tonne. At each market's own prices that is about 13.5% (SE) to 26.3% (ES): DE 13.6%, FR 13.7%, NL 17.4%, IT 19.2%.
+- The estimates had ranked several EU markets far too high. Old and new ranks: ES 33 → 76, PL 32 → 75, IT 29 → 51, BE 18 → 39, SE 12 → 24.
+- Korea: "Duty on Indian goods is 5%", with the source given as "Official tariff: Korea Customs Service (관세청) 1006301000" (rank 121 → 108). See R-46.
+- Japan is still estimated: "3.6% (estimated)", from the World Bank average applied tariff (2022) with India's India–Japan CEPA. See R-46.
+- San Marino is still estimated; Martinique is still unranked (no market-size data).
+- The run was still `partial`: "ECB exchange rates for IDR could not be fetched (ECB SDMX returned 504.)".
+  - At 11:48 UTC, the same IDR request from a browser in India got the ECB Data Portal's 504 page ("We are experiencing some problems at the moment"), while the USD series answered.
+  - By 11:51 UTC, IDR answered 200 with 5 rows (latest 9 Nov, 20234.31).
+  - So this was an outage on the ECB's side, covering that one series for at least five hours.
+
+**Third production run** (run `cmwamt8bj0007qi0e86c6xk3e`, job `cmwamt8cj000bqi0ei4960s1e`, 11:53:42–11:55:09 UTC): `completed`.
+- 214 of 218 markets ranked. The top 10 is unchanged and all ten were handed off: US 85, SA 84, GB 81, QA 81, KW 80, AE 80, AU 79, BJ 78, CA 78, SG 78.
+- The only notes left are the expected ones:
+  - World Bank figures more than 10 years old are not used;
+  - logistics for 32 markets is estimated from UNCTAD;
+  - no Singapore release yet (R-43);
+  - Andorra is not covered by the connected source.
+- Indonesia's duty is now compared ("Low duty for India", no longer estimated).
+- The hand-off asked for regional demand for US, GB and CA, and for buyers for GB and CA.
+- On the second run, regional demand for US and GB completed four seconds after the run, and GB showed "184 importers … were found in the HMRC importer details". Canada read "No Canadian Importers Database … list has been imported on this environment yet" (R-45, deferred).
+
+**Found: quota duties on farm goods (R-46).**
+- Korea's 5% for rice is the in-quota rate. Since 2015, out-of-quota rice has paid 513%.
+- Japan's tariff splits 1006.30 by use. Rice bought and sold by the Japanese government (state trading under the minimum access) is free; the general rate is ¥402/kg, and private imports outside the minimum access pay ¥341/kg. These lines disagree, so v5 falls back to the World Bank average.
+- China's reader already scores the out-of-quota rate and says the quota (E-025: China's rice 65%, out-of-quota).
+- How to score quota duties for Korea and Japan changes rankings, so it waits for the owner's decision.
+
+**Built (this PR).**
+- The Markets page's "Your recent searches" list printed the raw run state ("partial") to the QA member. It now shows the run chip's own words, such as "Ranked, with gaps" (`runStatusLabel`, `src/lib/discovery-run-labels.ts`).
+- When a run's ECB or US Treasury rate fetch fails, it is tried once more after 3 s before the run counts it as failed. A failure here means an HTTP error other than the ECB's 404, or no response. An ECB 404 (no such series) is never retried. Each fetch record keeps `attempts`.
+- This covers short blips, but it would not have saved the two IDR runs today, because that series was down for hours.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint on the changed files: clean.
+- The 20 Demand Discovery and exchange-rate test files (159 tests, now including a 504-then-200 retry and the attempt counts) and `discovery-run-labels` (2): all pass.
+
+
+### E-058 · 2026-11-10 · Quota duties on farm goods scored outside the quota in Korea and Japan (D-042, R-46) (in review)
+
+**Decision (D-042).** The owner chose to score the out-of-quota rate and say the quota (options in E-057).
+
+**Korea's rows (read-only; the owner's Claude Code, branch `data/e057-kr-quota-rows`, commit `aab14f46`).**
+- Source: production's active release `cmtln05uv0001uelwl3ptnl1n` (2026-02-11), read from production's bucket. Its SHA-256 and size match the release row.
+- Decoded with `readKoreaAuthorityBundle`: 11,326 items, 380,216 rows. Nothing was written to a database or a bucket.
+- Rice's six items (1006100000 … 1006400000) carry the same rows:
+  - `A` 5;
+  - `W1` 5 (농림축산물양허관세(추천): with an import recommendation, the in-quota rate);
+  - `W2` 513 (미추천: without one);
+  - `T1` 684 and `T2` 513 (special safeguards; `T2` reference price 145);
+  - `FKH1` and `FPH1` 513 (partner-only);
+  - `U` 0.
+  - There is no `C` row.
+- 278 items carry W rows: every one has a `W2`, 232 also have a `W1`, and none has a `W3`.
+- 46 `W2` rows publish both a rate and an amount per unit (sesame 630% and ₩6,660).
+
+**Japan's lines (Japan Customs' own schedule as of 8 Aug 2026, chapter 10, read in the browser).**
+- `1006.30-010`: rice imported by or through the Government under the Staple Food Act. Temporary Free; WTO (Free); CPTPP "For the tariff rate quota in Japan's Schedule to the WTO Agreement Free".
+- `1006.30-090` Other: Temporary 49 yen/kg; WTO *(341yen /kg).
+- An import outside the Government's channel pays 49 yen/kg duty plus a 292 yen/kg levy (調整金) under the Staple Food Act, 341 yen/kg in all (hunade.com, "米の輸入制度を完全解説").
+- Wheat (9.80 yen/kg, WTO *(55 yen/kg)) and barley (10.40, *(39)) have the same shape.
+
+**Built.**
+- `contract.ts`: an ingest may carry `general_duty_quota`: the in-quota rate, what entitles an import to it, and whether the out-of-quota rate is a floor. It is stored on the tariff row as `raw_evidence.quota`.
+- Korea (`kcs-tariff-parser-v3`):
+  - an item with a `W2` row in force scores `W2`, and its `W1` is said;
+  - a `W2` that also charges an amount per unit scores its rate as a floor;
+  - the `A` line stays as published.
+- Japan (`jp-customs-tariff-parser-v2`):
+  - an HS6 split into a quota line and other lines resolves among the other lines;
+  - there, an asterisked WTO figure above the applicable duty, in the same unit, is the out-of-quota rate;
+  - the quota line's rate is said.
+- v5:
+  - `storedQuota` reads `raw_evidence.quota` into the official resolution, the duty input and the metric inputs (`quota_duty`, `quota_percent`, `quota_basis`, `duty_floor`);
+  - the reason reads "Duty on Indian goods is 513%, outside the tariff quota; 5% applies only within the quota", or "at least 630%" for a floor.
+- docs/37 §4c and docs/36 are updated.
+- **Also fixed:** a run reads every stored reading of a market's tariff and takes the newest retrieval (`official-duty.ts`). A retained release read again by a newer reader keeps its retrieval time, and the tie went to the oldest reading. So a corrected reader would never have reached a run for a release already read; production holds Korea readings from today's runs. The latest reading now wins the tie.
+
+**What changes, from the stored rates** (production's next run confirms it after the release):
+- Korea:
+  - rice: 5% → 513%;
+  - soybeans: 3% → at least 487%;
+  - sesame: 40% → at least 630%;
+  - red pepper: 50% → at least 270%;
+  - garlic: 50% → at least 360%.
+- Japan's rice: an estimated 3.6% → 341 yen/kg.
+
+**Found (R-47).** Claude Code's counts:
+- 9,943 of Korea's 11,326 items carry both `A` and `C`;
+- `C` is below `A` on 3,178 of them, equal on 1,372 and above on 5,393.
+
+Korea's Customs Act Art. 50 applies the WTO rate (`C`) where it is lower than the basic rate. It also puts a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) apply under their own conditions. The reader uses `A` for every item outside the farm quotas, so Korea's duty may be overstated on up to 3,178 items. Not changed here: the owner chose to fix it right after this release (D-043).
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- The 42 tariff, Customs Atlas, Country Truth and Demand Discovery test files: 513 tests pass. These include `korea-authority-pack` (43), `japan-authority-pack` (12, including the stored row v5 reads), `demand-discovery-v5-metrics` and `-official-duty` (49, including the latest reading winning).
+- Full suite: 2,380 tests pass, 5 are skipped, and 3 fail. The 3 failures are `market-scan-requests`, `pilot-e2e` and `staff-provisioning`. The same 3 fail on `staging/railway` without this change in the agent's local harness. CI is the check of record for them.
+
+
+### E-059 · 2026-11-10 · Korea's applied rate follows Customs Act Art. 50 (D-043, R-47) (in review)
+
+**Data (read-only; the owner's Claude Code, branch `data/e057-kr-quota-rows`, commit `394da3f6`).**
+- Source: the same Korea release, `cmtln05uv0001uelwl3ptnl1n`. 357,439 of its 380,216 rows are in force on 10 Nov 2026, and no item has two rows in force for one code.
+- `B` (provisional rate): 0 items.
+- `P1`: 51 items (within a quantity, with a recommendation). `P2` and `P4`: 0.
+- `P3` (allocation tariff for all imports): 127 items. Every one is below `A`, and the 121 with a `C` row are below `C` too.
+- `D`: 14 items. `G1`/`G2`: 30. Any `E1*`: 2,838. `FIN1`: 10,303 items, 32 of which also have `FIN2`.
+- Numerically, `C` is below `A` on 3,176 items. Only 2 of them have no `FIN1` row, and on none is `FIN1` above `C`.
+- So the scored rate, which is India's CEPA rate wherever one is published (D-026), changes on few items. What changes widely is the "standard rate" shown beside it.
+
+**Built (`kcs-tariff-parser-v4`, `koreaAppliedRate`).** Outside the farm quotas (D-042), an item's general duty is the rate Customs Act Art. 50 applies:
+- `P3` comes ahead of `B`, which comes ahead of `A`;
+- `C` applies only where it is lower than the rate those give.
+
+Only plain percentages are compared. A rate with an amount per unit, or a `C` held for a declared end use, is never swapped in. The `A` and `C` lines stay as published, and the general duty's note says which rate applies and why.
+
+**Not changed:**
+- `D`, `G1`/`G2` and `E1*` are origin-specific programmes that may cover Indian goods (the WTO developing-country protocol, GSTP and APTA). Only the Korea–India CEPA (`FIN1`–`FIN4`) is read as India's preference.
+- Claude Code also found that the release's Korea–EU and Korea–UK FTA rates ended on 30 Jun 2026. That does not touch Indian goods.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `korea-authority-pack`: 47 tests pass, including 4 new rate-priority tests on the release's own shapes (coffee `P3` 0 against `A` 2 and `C` 54).
+- The 42 tariff, Customs Atlas, Country Truth and Demand Discovery files: 517 tests pass.
+
 ## Risk register
 
 
@@ -2431,5 +2578,7 @@ or leave the 31 markets on estimated duties. Awaiting the owner's choice.
 | R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
 | R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
 | R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
-| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Open (E-055): 98 files missing; restore from staging's bucket by SHA-256 proposed, awaiting the owner (E-056) | CC restores each file from staging's bucket where its SHA-256 matches the row; a new production run shows official duties for those markets |
+| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
+| R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Decided (D-042) and built (E-058): Korea scores `W2` and says `W1`; Japan scores the out-of-quota line and says the Government's quota | A production rice run after the release shows Korea 513% and Japan 341 yen/kg, each with the quota said |
+| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Decided (D-043) and built (E-059): `P3`, then `B`, then `A`, with `C` where it is lower | A production run after the release shows a Korean line's standard rate from Art. 50 |

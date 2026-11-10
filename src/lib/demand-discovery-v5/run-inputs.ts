@@ -191,6 +191,7 @@ async function officialDuties(args: { markets: readonly string[]; hs6: string; a
     : {
         status: resolution.status, source: resolution.source, national_line: resolution.national_line, fact_ids: resolution.fact_ids, snapshot_ids: resolution.snapshot_ids, preference: resolution.preference,
         basis: resolution.basis, ...(resolution.standard ? { standard: resolution.standard } : {}),
+        ...(resolution.quota ? { quota: resolution.quota } : {}),
         ...(resolution.recorded_by_agent ? { recorded_by_agent: true } : {}),
         ...(resolution.common_tariff ? { common_tariff: resolution.common_tariff } : {}),
         ...(resolution.schedule_read ? { schedule_read: resolution.schedule_read } : {}),
