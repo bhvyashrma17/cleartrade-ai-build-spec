@@ -29,6 +29,7 @@ import { MarketTable, SummaryHeader, WorkSummaryPanel, type MarketRow } from '@/
 import { ApiClientError, apiGet } from '@/lib/api-client';
 import type { AgentProductView } from '@/lib/country-discovery/service';
 import { CATEGORY_LABELS, PRIORITY_LABELS, type WorkCategory, type WorkPriority, type WorkTask } from '@/lib/country-discovery/work-queue';
+import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/model';
 
 const PRIORITY_TONE: Record<WorkPriority, { tone: 'positive' | 'info' | 'neutral'; icon: 'check' | 'clock' | 'dot' }> = {
   selected: { tone: 'positive', icon: 'check' },
@@ -73,6 +74,8 @@ export function CountryTruthWork({ exporterOrgId }: { exporterOrgId: string }) {
 function ProductPanel({ view, basePath }: { view: AgentProductView; basePath: string }) {
   const [showQueue, setShowQueue] = useState(false);
   const { summary, queue_summary: work } = view;
+  // E-061: a v5 run's numbers are its score and confidence, as on the exporter's Markets page.
+  const v5 = view.model_version === DEMAND_DISCOVERY_V5_MODEL;
 
   const marketRows: MarketRow[] = view.top_markets.map((market) => ({
     ...market,
@@ -97,7 +100,9 @@ function ProductPanel({ view, basePath }: { view: AgentProductView; basePath: st
             ? {
                 label: 'Top market',
                 value: summary.top_market.country,
-                hint: `Attractiveness ${summary.top_market.attractiveness ?? '—'} · ${summary.top_market.confidence}% evidence coverage`,
+                hint: v5
+                  ? `Score ${summary.top_market.attractiveness ?? '—'} · confidence ${summary.top_market.confidence}%`
+                  : `Attractiveness ${summary.top_market.attractiveness ?? '—'} · ${summary.top_market.confidence}% evidence coverage`,
               }
             : { label: 'Top market', value: '—' },
         ]}
@@ -130,7 +135,7 @@ function ProductPanel({ view, basePath }: { view: AgentProductView; basePath: st
             description="The leading markets from the latest analysis, with what each still needs."
           />
           <div className="mt-3">
-            <MarketTable rows={marketRows} caption={`Top markets for ${view.product.name}`} />
+            <MarketTable rows={marketRows} caption={`Top markets for ${view.product.name}`} variant={v5 ? 'v5' : 'country_truth'} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {summary.markets_analysed > marketRows.length ? (

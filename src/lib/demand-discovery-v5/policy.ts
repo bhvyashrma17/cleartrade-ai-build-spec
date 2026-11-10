@@ -4,8 +4,9 @@
  * values a past run was computed with.
  */
 import { createHash } from 'node:crypto';
+import { DEMAND_DISCOVERY_V5_MODEL } from './model';
 
-export const DEMAND_DISCOVERY_V5_MODEL = 'market-opportunity-v5';
+export { DEMAND_DISCOVERY_V5_MODEL };
 
 export type MetricKey =
   | 'market_size' | 'growth' | 'stability'

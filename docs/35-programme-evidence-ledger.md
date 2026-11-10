@@ -2548,6 +2548,34 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 
 **R-47** shipped in the same release. It is checked by tests on the release's own rows (E-059). Basmati is a farm-quota item, so it does not show the change; a production run on a product where `C` is below `A` has not been observed yet.
 
+### E-061 · 2026-11-10 · The agent's Demand Discovery views read v5 runs (in review)
+
+**Found on production** (10 Nov, signed in as the agent assigned to Lappu Exports, basmati run of 13:49 UTC). The exporter's Markets page and the agent's market control table had the United States first (85, confidence 82%). Every other agent view read the v5 run as Country Truth v4:
+- **Demand Discovery tab** (Exporter 360):
+  - the top market was Vatican City, "Attractiveness 93 · 0% evidence coverage". 93 is a partial score over 20 of 100 points, and the engine did not rank it;
+  - the top five were Vatican City, Martinique, the United States, Saudi Arabia and the United Kingdom, sorted by stored score;
+  - every row's status was a v4 pillar reading;
+  - the work queue held 872 tasks: four Country Truth tasks (tariff line, freight quotes, certifications, route) for each of 218 markets. v5 reads none of them.
+- **All markets** and **one market** (`/agent/…/markets`, `/agent/…/markets/US`): v4 pillars ("Not established") and v4 positions ("Rank #3" for the United States).
+- **Market control table and tariff-line questions:** correct ("Is the rice parboiled?").
+
+**Built.**
+- **Order** (`market-view.ts`): a v5 run keeps the engine's order. Ranked markets come by stored rank, then markets without enough data by score, then no recorded imports, then excluded markets. A market the engine did not rank shows no score.
+- **Statuses** (`v5-work.ts`): "Tariff line needs N answers", "Needs ClearTrade classification", "Handed on to buyer search", "Ranked", "Not ranked" or "Excluded". A market whose stored score used an official duty or a published rule is never sent to its tariff line.
+- **Work:** only the markets handed on to buyer search get work, and only "Answer N tariff-line questions", where the score used an estimated duty. Such a task is due with the top-ranked markets wherever the market ranks. Lappu Exports' queue goes from 872 tasks to at most one per handed-on market.
+- **Wording:** the tab and its table say "Score" and "Confidence", as the exporter's Markets page does.
+- **Pages:**
+  - the agent's market page shows the exporter's own v5 breakdown, with the engine's rank and links to the tariff-line questions and the market control table;
+  - for a v5 run, the agent's all-markets page opens the market control table;
+  - the exporter's old per-product pages open Markets and the v5 market page.
+  - Runs from the earlier engines keep their Country Truth views.
+- **One model identity:** `demand-discovery-v5/model.ts` holds it, so client views read it without the policy's server-only imports.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `agent-v5-market-views`: 7 new tests on a v5 run shaped like production's: Vatican City and Martinique at 93 and 92, not ranked; North Korea excluded; the United States first with an official duty although its line splits; the United Kingdom handed on with an estimated duty.
+- The 44 test files that touch discovery code: 472 of 473 tests pass. The one failure is `market-scan-requests`, which fails the same way on `staging/railway` without this change in the agent's local harness. CI is the check of record for it.
+
 ## Risk register
 
 

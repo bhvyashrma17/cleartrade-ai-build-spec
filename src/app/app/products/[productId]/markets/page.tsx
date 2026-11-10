@@ -6,7 +6,8 @@
  * the working. The universe count is stated so the shortlist is understood as a selection
  * rather than as everything that exists.
  */
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
+import { V5_MODEL_VERSION } from '@/lib/country-discovery/market-view';
 import { requireDiscoveryPrincipal } from '@/lib/country-discovery/page-auth';
 import { marketResults, productDiscoveryState } from '@/lib/country-discovery/service';
 import { isNotFound } from '@/lib/errors';
@@ -25,6 +26,8 @@ export default async function MarketsPage({ params }: { params: Promise<{ produc
     if (isNotFound(error)) notFound();
     throw error;
   });
+  // E-061: a v5 run's results live on Markets, in the engine's own order with its reasons.
+  if (results.run?.model_version === V5_MODEL_VERSION) redirect('/app/markets');
 
   return (
     <>
