@@ -2383,6 +2383,63 @@ or leave the 31 markets on estimated duties. Awaiting the owner's choice.
 **Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files;
 `buyers-page` 2, `paid-only-tools` 3, `buyer-discovery` 8: all pass.
 
+
+### E-057 · 2026-11-10 · R-44 closed: tariff files restored, and production's basmati run completes with official EU and Korean duties; plain run states; one retry for a failed rate fetch (in review)
+
+**Restore (the owner chose the recommended option in E-056; the owner's Claude Code ran it).**
+98 of 98 files are back in production's bucket under production's keys: EU TARIC
+`cmtigku9y0001ue5ogg0d6y3t` (27,363,502 bytes; the EU 27, San Marino, Martinique), Japan's 96
+chapter releases (`2026_08_08-ch01` … `ch97`) and Korea `cmtln05uv0001uelwl3ptnl1n` (22,425,953
+bytes).
+- Each file was read from staging's object with the same SHA-256.
+- Before anything was written, the bytes' SHA-256 and size had to equal production's row. This was checked on the staging read and again against the production row at write time.
+- Each file was written with a do-not-overwrite condition, with the app's content type, SHA-256 label and encryption, then read back.
+- 0 files were skipped.
+- A read-only recheck of all 223 active tariff releases (33 families) found 223 present, with sizes and SHA-256 labels matching: 0 missing.
+- No database write was made, and staging was only read. The Singapore timer was not touched.
+
+**Corrections.**
+- To E-055: the 98 files were never in staging's bucket. They came from releases imported 1–3 Sep 2026, before the launch, and were restored from staging's own 11 Oct copies of the same bytes. R-13 played no part.
+- To E-056: the 06:37 run was `partial` for two reasons. The tariff look-ups failed, and the ECB rate for IDR could not be fetched (ECB SDMX 504).
+
+**Second production run** (QA member; run `cmwamh93f0001qi0ei1nfy0f9`, 11:44:23–11:46:49 UTC).
+- The note "The official tariff look-up failed for AT … SM" is gone.
+- The 27 EU markets now carry TARIC's official duty, €175 per tonne. At each market's own prices that is about 13.5% (SE) to 26.3% (ES): DE 13.6%, FR 13.7%, NL 17.4%, IT 19.2%.
+- The estimates had ranked several EU markets far too high. Old and new ranks: ES 33 → 76, PL 32 → 75, IT 29 → 51, BE 18 → 39, SE 12 → 24.
+- Korea: "Duty on Indian goods is 5%", with the source given as "Official tariff: Korea Customs Service (관세청) 1006301000" (rank 121 → 108). See R-46.
+- Japan is still estimated: "3.6% (estimated)", from the World Bank average applied tariff (2022) with India's India–Japan CEPA. See R-46.
+- San Marino is still estimated; Martinique is still unranked (no market-size data).
+- The run was still `partial`: "ECB exchange rates for IDR could not be fetched (ECB SDMX returned 504.)".
+  - At 11:48 UTC, the same IDR request from a browser in India got the ECB Data Portal's 504 page ("We are experiencing some problems at the moment"), while the USD series answered.
+  - By 11:51 UTC, IDR answered 200 with 5 rows (latest 9 Nov, 20234.31).
+  - So this was an outage on the ECB's side, covering that one series for at least five hours.
+
+**Third production run** (run `cmwamt8bj0007qi0e86c6xk3e`, job `cmwamt8cj000bqi0ei4960s1e`, 11:53:42–11:55:09 UTC): `completed`.
+- 214 of 218 markets ranked. The top 10 is unchanged and all ten were handed off: US 85, SA 84, GB 81, QA 81, KW 80, AE 80, AU 79, BJ 78, CA 78, SG 78.
+- The only notes left are the expected ones:
+  - World Bank figures more than 10 years old are not used;
+  - logistics for 32 markets is estimated from UNCTAD;
+  - no Singapore release yet (R-43);
+  - Andorra is not covered by the connected source.
+- Indonesia's duty is now compared ("Low duty for India", no longer estimated).
+- The hand-off asked for regional demand for US, GB and CA, and for buyers for GB and CA.
+- On the second run, regional demand for US and GB completed four seconds after the run, and GB showed "184 importers … were found in the HMRC importer details". Canada read "No Canadian Importers Database … list has been imported on this environment yet" (R-45, deferred).
+
+**Found: quota duties on farm goods (R-46).**
+- Korea's 5% for rice is the in-quota rate. Since 2015, out-of-quota rice has paid 513%.
+- Japan's tariff splits 1006.30 by use. Rice bought and sold by the Japanese government (state trading under the minimum access) is free; the general rate is ¥402/kg, and private imports outside the minimum access pay ¥341/kg. These lines disagree, so v5 falls back to the World Bank average.
+- China's reader already scores the out-of-quota rate and says the quota (E-025: China's rice 65%, out-of-quota).
+- How to score quota duties for Korea and Japan changes rankings, so it waits for the owner's decision.
+
+**Built (this PR).**
+- The Markets page's "Your recent searches" list printed the raw run state ("partial") to the QA member. It now shows the run chip's own words, such as "Ranked, with gaps" (`runStatusLabel`, `src/lib/discovery-run-labels.ts`).
+- When a run's ECB or US Treasury rate fetch fails, it is tried once more after 3 s before the run counts it as failed. A failure here means an HTTP error other than the ECB's 404, or no response. An ECB 404 (no such series) is never retried. Each fetch record keeps `attempts`.
+- This covers short blips, but it would not have saved the two IDR runs today, because that series was down for hours.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint on the changed files: clean.
+- The 20 Demand Discovery and exchange-rate test files (159 tests, now including a 504-then-200 retry and the attempt counts) and `discovery-run-labels` (2): all pass.
+
 ## Risk register
 
 
@@ -2431,5 +2488,6 @@ or leave the 31 markets on estimated duties. Awaiting the owner's choice.
 | R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
 | R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
 | R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
-| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Open (E-055): 98 files missing; restore from staging's bucket by SHA-256 proposed, awaiting the owner (E-056) | CC restores each file from staging's bucket where its SHA-256 matches the row; a new production run shows official duties for those markets |
+| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
+| R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Open (E-057): waits for the owner's decision on how to score quota duties | The owner's choice; then Korea's and Japan's readers score the out-of-quota rate and say the quota, as China's does, with a rice run showing it |

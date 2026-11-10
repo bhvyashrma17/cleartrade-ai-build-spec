@@ -131,7 +131,7 @@ and each market page says the same. Contacts arrive through the agent.
 | US Census | US regional demand "unavailable" with the reason | — | Check `CENSUS_API_KEY`; retry later |
 | HMRC | UK buyers stay at the last imported month | — | Import the next month when published |
 | Singapore Statutes Online | Singapore's tariff stays on its last good copy | Nightly refresh 03:00–07:00 SGT; failures recorded, the active release untouched (R-26) | None unless the copy passes 7 days old |
-| ECB rates | A run note | Runs read rates when missing | Start the run again |
+| ECB rates | A run note; the run is "Ranked, with gaps" | Runs read rates when missing and try a failed fetch once more after 3 s (E-057) | Start the run again once the ECB answers (on 10 Nov 2026 its IDR series was down for hours) |
 | Resend | Emails delayed | Notification jobs retry | Resend status page |
 | Razorpay | Checkout fails | Razorpay retries webhooks | Razorpay status page; §3.5 |
 
