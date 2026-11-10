@@ -261,6 +261,11 @@ points each missing figure's measure carries and the run's own reason for each (
 `frozen_inputs.exporter`), and links to the product's details; the exporter then runs Demand Discovery
 again. A ranked card whose score used fewer than 100 points says how many.
 
+Price and capacity on Add product (11 Nov 2026, E-068). A run freezes the product's facts when it
+starts, and confirming the code on Add product starts the first run, so Add product asks for both,
+optionally: a FOB price per kg (INR, USD or EUR) and a monthly capacity (tonnes or kg). They are saved
+through the same exporter-declared path as the details page, before the code is confirmed.
+
 Source lines (30 Oct 2026, E-037; stage 1, item 8). Under each measure with data, the market page (the
 exporter's, and the agent's, which renders the same component) names where the figure comes from and
 for which years:

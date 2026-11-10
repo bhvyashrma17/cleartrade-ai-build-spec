@@ -14,6 +14,12 @@
  *      classification route also requires), which auto-starts Demand Discovery v5;
  *   4. if auto-start is switched off, the run is started the way `POST /api/v1/discovery-runs` does.
  *
+ * Optionally, before step 2, the exporter's FOB price per kg and monthly capacity (E-068). Price fit
+ * and volume fit (docs/36 §4 #11, #12) are 10 of the 100 points, and a run freezes the product's
+ * facts when it starts, so a product's first run can use them only if they come in with the product.
+ * They are written through `declareProductOperationalFacts`, the same path as the product's details
+ * page, so they stay `exporter_declared`.
+ *
  * Paid members only, like every tool (docs/14 §3c): 401 without a session, 402 below paid, before
  * anything is read or written.
  */
@@ -24,6 +30,7 @@ import { AUDIT_ACTIONS, writeAuditEvent } from '@/lib/audit';
 import { requirePrincipal } from '@/lib/auth';
 import { demandDiscoveryV5Availability, startDemandDiscoveryV5 } from '@/lib/demand-discovery-v5/service';
 import { errorResponse, newCorrelationId, single, validationError } from '@/lib/errors';
+import { declareProductOperationalFacts, validateProductOperationalFacts, type ProductOperationalFactsInput } from '@/lib/exporter-facts/service';
 import { loadHsIndex } from '@/lib/hs-finder/catalogue';
 import { assertCan } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -38,8 +45,43 @@ const bodySchema = z
     confirm_hs_code: z.literal(true, { errorMap: () => ({ message: 'Confirm that this code describes your product.' }) }),
     /** Where the code came from when it was picked in the code finder, e.g. "CEPII BACI product codes HS22". */
     code_list: z.string().trim().max(200).optional(),
+    /** Optional: the exporter's FOB price for one kg, in any ISO 4217 currency (converted at the run's ECB rate). */
+    fob_price_per_kg: z
+      .object({
+        amount: z.string().trim().regex(/^\d+(\.\d+)?$/, 'Enter the price as a number, like 95 or 1.25.'),
+        currency: z.string().trim().regex(/^[A-Za-z]{3}$/, 'Use a 3-letter currency code, like INR or USD.'),
+      })
+      .strict()
+      .optional(),
+    /** Optional: how much the exporter can supply each month, in kg or tonnes. */
+    monthly_capacity: z
+      .object({
+        value: z.string().trim().regex(/^\d+(\.\d+)?$/, 'Enter the quantity as a number, like 20 or 2.5.'),
+        unit: z.enum(['kg', 'tonne'], { errorMap: () => ({ message: 'Choose kg or tonnes.' }) }),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
+
+type Body = z.infer<typeof bodySchema>;
+
+/** The two optional figures as product facts: a FOB price per kg, and a capacity per month. */
+function factsFrom(input: Body): ProductOperationalFactsInput {
+  return {
+    ...(input.fob_price_per_kg
+      ? { price_target_amount: input.fob_price_per_kg.amount, price_target_currency: input.fob_price_per_kg.currency.toUpperCase(), price_target_quantity_unit: 'kg', price_target_incoterm: 'FOB' }
+      : {}),
+    ...(input.monthly_capacity ? { capacity_value: input.monthly_capacity.value, capacity_unit: input.monthly_capacity.unit, capacity_period: 'month' } : {}),
+  };
+}
+
+/** The facts validator names product fields; the request names its two groups. */
+const REQUEST_FIELD: Readonly<Record<string, string>> = {
+  price_target_amount: 'fob_price_per_kg.amount', price_target_currency: 'fob_price_per_kg.currency',
+  price_target_quantity_unit: 'fob_price_per_kg.amount', price_target_incoterm: 'fob_price_per_kg.amount',
+  capacity_value: 'monthly_capacity.value', capacity_unit: 'monthly_capacity.unit', capacity_period: 'monthly_capacity.value',
+};
 
 export async function POST(request: NextRequest) {
   const correlationId = newCorrelationId();
@@ -52,6 +94,15 @@ export async function POST(request: NextRequest) {
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw validationError(zodFieldErrors(parsed.error));
     const input = parsed.data;
+
+    // Checked before anything is written, so a bad figure never leaves a half-saved product.
+    const facts = factsFrom(input);
+    const hasFacts = Object.keys(facts).length > 0;
+    if (hasFacts) {
+      assertCan(principal, 'exporter_master_data.edit');
+      const problems = validateProductOperationalFacts(facts);
+      if (problems.length) throw validationError(problems.map((problem) => ({ ...problem, field: REQUEST_FIELD[problem.field] ?? problem.field })));
+    }
 
     const list = await loadHsIndex();
     if (!list) throw validationError([{ field: 'hs_code', code: 'list_unavailable', message: 'The official code list is not loaded yet, so the code cannot be checked. Try again later.' }]);
@@ -69,6 +120,8 @@ export async function POST(request: NextRequest) {
       await writeAuditEvent({ db: tx, actor: principal, action: AUDIT_ACTIONS.create, object_type: 'product', object_id: row.id, exporter_org_id: orgId, after_summary: { name: input.name, hs_code: input.hs_code }, correlation_id: correlationId });
       return row;
     });
+    // Before the code is confirmed: confirmation starts the run, and the run freezes these facts.
+    if (hasFacts) await declareProductOperationalFacts({ actor: principal, exporter_org_id: orgId, product_id: product.id, facts, correlation_id: correlationId });
 
     const source = input.code_list ?? list.version;
     const candidate = await proposeClassification(
