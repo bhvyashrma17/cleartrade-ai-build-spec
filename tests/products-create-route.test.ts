@@ -19,10 +19,19 @@ vi.mock('../src/lib/auth', async () => {
     }),
   };
 });
-const v5 = vi.hoisted(() => ({ started: [] as string[] }));
+const v5 = vi.hoisted(() => ({ started: [] as string[], factsAtConfirm: new Map<string, Record<string, unknown>>() }));
 vi.mock('../src/lib/demand-discovery-v5/service', () => ({
-  // Auto-start off, so the route's own start is what runs.
-  autoStartDemandDiscoveryV5: vi.fn(async () => ({ started: false, reason: 'Auto-start is switched off in config.' })),
+  // Auto-start off, so the route's own start is what runs. Confirmation calls this, and a real
+  // auto-start freezes the product's facts here, so it records what the product held at that moment.
+  autoStartDemandDiscoveryV5: vi.fn(async (args: { product_id: string }) => {
+    const { prisma: db } = await import('../src/lib/prisma');
+    const facts = await db.product.findUniqueOrThrow({
+      where: { id: args.product_id },
+      select: { price_target_amount: true, price_target_currency: true, price_target_quantity_unit: true, price_target_incoterm: true, capacity_value: true, capacity_unit: true, capacity_period: true },
+    });
+    v5.factsAtConfirm.set(args.product_id, { ...facts, price_target_amount: facts.price_target_amount?.toString() ?? null, capacity_value: facts.capacity_value?.toString() ?? null });
+    return { started: false, reason: 'Auto-start is switched off in config.' };
+  }),
   demandDiscoveryV5Availability: vi.fn(async () => ({ available: true })),
   startDemandDiscoveryV5: vi.fn(async (args: { product_id: string }) => {
     v5.started.push(args.product_id);
@@ -43,7 +52,10 @@ async function member(tier: OrgTier) {
   return { org, principal: { id: user.id, email: user.email, name: 'Owner', role: UserRole.exporter_owner, exporter_org_id: org.id, tier } };
 }
 
+let codeListLoaded = false;
 async function loadCodeList() {
+  if (codeListLoaded) return;
+  codeListLoaded = true;
   const ops = await prisma.user.create({ data: { email: `codes-${randomUUID().slice(0, 8)}@t.test`, name: 'Ops', role: UserRole.ops_supervisor }, select: { id: true, email: true, name: true } });
   const lines = ['code,description', '100630,"Cereals; rice, semi-milled or wholly milled, whether or not polished or glazed"', '330741,"Agarbatti and other odoriferous preparations which operate by burning"', '091030,"Spices; turmeric (curcuma)"', ...Array.from({ length: 4_100 }, (_, i) => `${String(400000 + i)},"Filler product ${i} ${randomUUID().slice(0, 4)}"`)];
   await importReferenceDataset({
@@ -87,5 +99,74 @@ describe('POST /api/v1/products', () => {
     expect(await prisma.auditEvent.count({ where: { object_type: 'product', object_id: productId, action: 'create' } })).toBe(1);
 
     expect((await ask({ ...rice, name: 'basmati rice, 1121 SELLA' })).body.error.fields[0]).toMatchObject({ field: 'name', code: 'duplicate' });
+    // No price or capacity given: none written, and the run starts without them as before.
+    expect(v5.factsAtConfirm.get(productId)).toMatchObject({ price_target_amount: null, capacity_value: null });
+    expect(await prisma.auditEvent.count({ where: { object_type: 'product_operational_facts', object_id: productId } })).toBe(0);
+  });
+
+  test('E-068: a FOB price per kg and a monthly capacity are on the product before the code is confirmed', async () => {
+    await loadCodeList();
+    const paid = await member(OrgTier.paid);
+    auth.caller = paid.principal;
+
+    const saved = await ask({ ...rice, fob_price_per_kg: { amount: '95.50', currency: 'inr' }, monthly_capacity: { value: '20', unit: 'tonne' } });
+    expect(saved.status).toBe(201);
+    const productId = saved.body.data.product_id as string;
+    // Confirmation is what starts a run, and the run freezes the facts there: they were already in place.
+    expect(v5.factsAtConfirm.get(productId)).toEqual({
+      price_target_amount: '95.5', price_target_currency: 'INR', price_target_quantity_unit: 'kg', price_target_incoterm: 'FOB',
+      capacity_value: '20', capacity_unit: 'tonne', capacity_period: 'month',
+    });
+    expect(v5.started).toContain(productId);
+    const audit = await prisma.auditEvent.findFirstOrThrow({ where: { object_type: 'product_operational_facts', object_id: productId } });
+    expect(audit.after_summary).toMatchObject({ provenance: 'exporter_declared' });
+
+    // What the run reads from them: 95.50 INR per kg FOB, and 20 tonnes a month = 240,000 kg a year.
+    const { exporterUsdPerKg, exporterYearlyKg } = await import('../src/lib/demand-discovery-v5/exporter-inputs');
+    const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    expect(exporterYearlyKg({ capacity_value: Number(product.capacity_value), capacity_unit: product.capacity_unit, capacity_period: product.capacity_period })).toMatchObject({ value: 240_000 });
+    expect(exporterUsdPerKg({ price_target_amount: Number(product.price_target_amount), price_target_currency: product.price_target_currency, price_target_quantity_unit: product.price_target_quantity_unit, price_target_incoterm: product.price_target_incoterm, unit_net_weight_value: null, unit_net_weight_unit: null }, 0.0119)).toMatchObject({ basis: { currency: 'INR', quantity_unit: 'kg', incoterm: 'FOB' } });
+
+    // Only one of the two is fine.
+    const priceOnly = await ask({ ...rice, name: 'Basmati rice, 1509 steam', fob_price_per_kg: { amount: '1.25', currency: 'USD' } });
+    expect(priceOnly.status).toBe(201);
+    expect(v5.factsAtConfirm.get(priceOnly.body.data.product_id)).toMatchObject({ price_target_amount: '1.25', price_target_currency: 'USD', capacity_value: null, capacity_period: null });
+  });
+
+  test('E-068: a bad price or capacity is named beside its field, and nothing is saved', async () => {
+    await loadCodeList();
+    const paid = await member(OrgTier.paid);
+    auth.caller = paid.principal;
+
+    const zero = await ask({ ...rice, fob_price_per_kg: { amount: '0', currency: 'INR' } });
+    expect(zero).toMatchObject({ status: 422, body: { error: { code: 'VALIDATION_ERROR' } } });
+    expect(zero.body.error.fields).toEqual([expect.objectContaining({ field: 'fob_price_per_kg.amount', code: 'invalid' })]);
+    const words = await ask({ ...rice, monthly_capacity: { value: 'twenty', unit: 'tonne' } });
+    expect(words.body.error.fields[0]).toMatchObject({ field: 'monthly_capacity.value' });
+    const pieces = await ask({ ...rice, monthly_capacity: { value: '20', unit: 'carton' } });
+    expect(pieces.body.error.fields[0]).toMatchObject({ field: 'monthly_capacity.unit', message: 'Choose kg or tonnes.' });
+    const extra = await ask({ ...rice, fob_price_per_kg: { amount: '95', currency: 'INR', incoterm: 'CIF' } });
+    expect(extra.status).toBe(422);
+
+    expect(await prisma.product.count({ where: { exporter_org_id: paid.org.id } })).toBe(0);
+  });
+});
+
+describe('declareProductOperationalFacts: capacity period', () => {
+  test('E-068: a period sent with production capacity alone is kept', async () => {
+    const paid = await member(OrgTier.paid);
+    const product = await prisma.product.create({ data: { exporter_org_id: paid.org.id, name: 'Turmeric fingers', description: 'Turmeric fingers', evidence_origin: EvidenceOrigin.manually_entered_real } });
+    const { declareProductOperationalFacts } = await import('../src/lib/exporter-facts/service');
+    const declare = (facts: Record<string, unknown>) => declareProductOperationalFacts({ actor: paid.principal as never, exporter_org_id: paid.org.id, product_id: product.id, facts, correlation_id: randomUUID() });
+
+    await declare({ capacity_value: '120', capacity_unit: 'tonne', capacity_period: 'year' });
+    expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({ capacity_unit: 'tonne', capacity_period: 'year' });
+    // Unchanged: available capacity without a period still clears it, as the details form sends both.
+    await declare({ available_capacity_value: '10', available_capacity_unit: 'tonne' });
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).capacity_period).toBeNull();
+    // And a change that touches neither leaves it alone.
+    await declare({ capacity_period: 'month' });
+    await declare({ lead_time_days: 21 });
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).capacity_period).toBe('month');
   });
 });

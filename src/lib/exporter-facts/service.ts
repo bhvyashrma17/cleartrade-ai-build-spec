@@ -228,7 +228,10 @@ export async function declareProductOperationalFacts(args: {
       ...(facts.price_target_amount !== undefined ? { price_target_amount: decimal(facts.price_target_amount), price_target_currency: facts.price_target_currency?.toUpperCase() ?? null, price_target_quantity_unit: unit(facts.price_target_quantity_unit), price_target_incoterm: facts.price_target_incoterm?.toUpperCase() ?? null } : {}),
       ...(facts.commercial_quantity_unit !== undefined ? { commercial_quantity_unit: unit(facts.commercial_quantity_unit), piece_unit_name: facts.piece_unit_name ?? null } : {}),
       ...(facts.capacity_value !== undefined ? { capacity_value: decimal(facts.capacity_value), capacity_unit: unit(facts.capacity_unit) } : {}),
-      ...(facts.available_capacity_value !== undefined ? { available_capacity_value: decimal(facts.available_capacity_value), available_capacity_unit: unit(facts.available_capacity_unit), capacity_period: facts.capacity_period ?? null } : {}),
+      ...(facts.available_capacity_value !== undefined ? { available_capacity_value: decimal(facts.available_capacity_value), available_capacity_unit: unit(facts.available_capacity_unit) } : {}),
+      // The period belongs to both capacities. It used to be written only alongside available
+      // capacity, so a period sent with production capacity alone was dropped (E-068).
+      ...(facts.capacity_period !== undefined || facts.available_capacity_value !== undefined ? { capacity_period: facts.capacity_period ?? null } : {}),
       ...(facts.moq_value !== undefined ? { moq_value: decimal(facts.moq_value), moq_unit: unit(facts.moq_unit) } : {}),
       ...(facts.desired_order_size_amount !== undefined ? { desired_order_size_amount: decimal(facts.desired_order_size_amount), desired_order_size_currency: facts.desired_order_size_currency?.toUpperCase() ?? null } : {}),
       ...(facts.desired_order_quantity_value !== undefined ? { desired_order_quantity_value: decimal(facts.desired_order_quantity_value), desired_order_quantity_unit: unit(facts.desired_order_quantity_unit) } : {}),
