@@ -46,6 +46,12 @@ product" and press "Save product and find markets". The product is saved, the co
 exporter's own confirmed classification, and Demand Discovery starts. Members only (D-039). Products
 also has an "Add a product" button that leads there. "Add another product" on Markets adds more.
 
+### 3.1b "Where are my buyers? Can I search them?"
+Members don't search buyers themselves: their ClearTrade agent finds and vets importers in the
+markets Demand Discovery hands on (docs/11 §7). Buyers shows, per product, those markets and how
+many importers an official list holds there (UK: HMRC; Canada: the Canadian Importers Database),
+and each market page says the same. Contacts arrive through the agent.
+
 ### 3.2 "The product code is wrong"
 - The product code finder opens under every HS code field and asks the separating question.
 - An agent, ops supervisor or admin confirms the classification; confirming a different code starts a

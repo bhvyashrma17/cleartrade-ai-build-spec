@@ -191,6 +191,11 @@ instead, so that nothing they do spends our resources (ledger E-052). Concretely
   page, `/app/readiness` and the Enablement Center show the notice and read nothing.
 - A visitor's next step is "Create an account" (registration lands on the plans page); a free
   account's is "See plans". Signing up stays free; using the tools does not.
+- The sample is one real run, frozen and dated (basmati rice, HS 100630, 10 Nov 2026; E-055):
+  its top markets with the engine's labels and reasons, US regional demand and UK importers by
+  region. No business is named and nothing in it updates.
+- Members' `/app/buyers` is agent-curated, as buyer discovery is (docs/11 §7): each product's
+  handed-off markets with the official importer counts, linking to the market page.
 
 To reopen anything, move its capability down in that one map; `src/lib/billing/plans.ts`
 derives the pricing table from the same map, and `tests/paid-only-tools.test.ts` names the

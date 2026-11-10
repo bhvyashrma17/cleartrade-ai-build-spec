@@ -2293,6 +2293,50 @@ it and it is online.
 **Railway billing.** On 10 Nov the Railway dashboard showed "Your subscription is past due"; the owner
 was told, since production runs there. Paying is the owner's.
 
+### E-055 · 2026-11-10 · Production Demand Discovery checked as a paid member; the sample is now that run (in review)
+
+**Release #43 live** (merged 06:31 UTC after a re-run of its check: the first attempt failed only
+because `next/font` could not fetch a Google font inside the Docker build). Signed out, `POST
+/api/v1/products` answers 401.
+
+**The check, on production, as the owner's QA member** (`lappusasachin625`, org of E-054):
+- Markets: "This becomes your saved product", the code finder (HS 2022 list, 5,609 codes) gave
+  100630 for "Basmati rice 1121 sella, semi-milled"; with the box ticked, "Save product and find
+  markets" returned 201: product saved, classification `exporter_supplied` confirmed, run queued.
+- The v5 run (job `cmwabi0l3000fp00emf9d9x8s`) took 2 min 10 s: 214 of 218 markets ranked, 3 without
+  enough data, 1 excluded. Top 10: US 85, SA 84, GB 81, QA 81, KW 80, AE 80, AU 79, BJ 78, CA 78,
+  SG 78, each with labels and reasons. Calibration `pass`: 4 of India's top 10 in the run's top 10,
+  4 more explained by restricted ECGC cover (IR, IQ, GN, YE). Status `partial`, for two reasons:
+  the fit inputs (FOB price, capacity) are not on the product, by design, and the official tariff
+  look-up **failed for 31 markets** (the EU 27, San Marino, Martinique, Japan, Korea): the worker
+  log says "The specified key does not exist." for `eu_taric`, `japan_customs_tariff_schedule` and
+  `kr_kcs_customs_tariff`. Their release rows exist but their stored files are not in production's
+  bucket, most likely written while production still used staging's (R-13). Singapore had no
+  release (R-43). (R-44)
+- Hand-off: regional demand ran by itself for the handed-off markets. US: Census, Oct 2025 – Sep
+  2026, $314.2 million from India (23.4% of imports, 99.5% containerised), by state and port. GB:
+  HMRC importer list (Aug 2026), 184 importers in 11 regions; the GB market page reads "184
+  importers … were found". CA: "No Canadian Importers Database … list has been imported on this
+  environment yet" (R-45).
+- Buyers page: it rendered a search screen that every member call is refused by ("Tell us which
+  exporter this buyer search is for"; with an exporter, 403, because `buyer_discovery.run` denies
+  exporter roles by design, docs/11 §7).
+
+**Built (this PR).**
+- `/app/buyers` for members: per product, its latest run's handed-off markets with rank, score
+  and the official importer count where a list covers the market (GB, CA), linking to the market
+  page; counts only, as on the market page. `BuyersExplorer.tsx` removed. Plans copy describes
+  buyer discovery, contacts and leads as the agent's work.
+- The sample (`src/lib/billing/preview.ts`) is now that run, frozen: top 5 markets with the
+  engine's labels and reasons, 214 ranked, US regional demand (top 5 states of 47), GB importers by
+  region (top 5 of 11, 184 in all); no business named, no contact. The document panel lists what
+  the engine renders (`DocType`); the bill of lading and the invented statuses are gone. Disclaimer:
+  a real result, dated, not your data, not live.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files;
+`membership` 62, `paid-only-tools` 3 (members' Buyers page guard added), `products-create-route`
+2: all pass.
+
 ## Risk register
 
 
@@ -2341,3 +2385,5 @@ was told, since production runs there. Paying is the owner's.
 | R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
 | R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
 | R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
+| R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Open (E-055) | CC restores each file from staging's bucket where its SHA-256 matches the row; a new production run shows official duties for those markets |
+| R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Open (E-055) | CC imports staging's edition into production; Canada's market page shows the count |
