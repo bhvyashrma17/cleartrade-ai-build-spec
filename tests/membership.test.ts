@@ -26,7 +26,7 @@ import {
 import { minTierFor } from '../src/lib/permissions';
 import { exporterFeeConfirmationProblem } from '../src/lib/state-machines/commitment-fee';
 import { databaseIdentityFingerprint, directDatabaseIdentityFingerprint, validateRuntimeEnvironment } from '../src/lib/runtime-config';
-import { PREVIEW_BUYERS, PREVIEW_MARKETS, SAMPLE_DISCLAIMER } from '../src/lib/billing/preview';
+import { SAMPLE_BUYERS, SAMPLE_DISCLAIMER, SAMPLE_MARKETS, SAMPLE_RUN } from '../src/lib/billing/preview';
 import { prisma } from '../src/lib/prisma';
 
 afterAll(() => prisma.$disconnect());
@@ -401,28 +401,28 @@ describe('the webhook handles every event production subscribes to', () => {
 });
 
 describe('the free-tier demo spends nothing and claims nothing', () => {
-  test('preview fixtures are labelled as preview evidence', () => {
+  test('sample rows are labelled as preview evidence', () => {
     // `evidence-environment.ts` already classifies `preview` as non-real, so these values
     // are excluded from real-workflow queries by machinery that predates this feature.
-    for (const market of PREVIEW_MARKETS) expect(market.evidence_origin).toBe('preview');
-    for (const buyer of PREVIEW_BUYERS) expect(buyer.evidence_origin).toBe('preview');
+    for (const market of SAMPLE_MARKETS) expect(market.evidence_origin).toBe('preview');
+    for (const buyer of SAMPLE_BUYERS?.rows ?? []) expect(buyer.evidence_origin).toBe('preview');
   });
 
-  test('the disclaimer says it is neither the reader’s data nor live data', () => {
+  test('the disclaimer says what the sample is: a dated real run, not the reader’s data, not live (D-039)', () => {
     expect(SAMPLE_DISCLAIMER).toMatch(/not your data/i);
-    expect(SAMPLE_DISCLAIMER).toMatch(/not live trade data/i);
+    expect(SAMPLE_DISCLAIMER).toMatch(/not live/i);
+    expect(SAMPLE_DISCLAIMER).toContain(SAMPLE_RUN.run_on);
+    expect(SAMPLE_RUN.run_on).toMatch(/^\d{1,2} [A-Z][a-z]+ 20\d\d$/);
   });
 
-  test('sample buyers carry no contact details at all', () => {
-    // A plausible-looking fake email someone tries to mail is worse than a locked state.
-    for (const buyer of PREVIEW_BUYERS) {
-      expect(JSON.stringify(buyer)).not.toMatch(/@/);
+  test('sample buyers carry no contact details and no names', () => {
+    // A real importer named beside a fit score on a public page is a defamation and
+    // data-protection problem; a contact detail anyone could try to use is worse.
+    for (const buyer of SAMPLE_BUYERS?.rows ?? []) {
+      expect(JSON.stringify(buyer)).not.toMatch(/@|https?:|www\./);
       expect(buyer).not.toHaveProperty('contacts');
+      expect(buyer.label).toMatch(/^Importer [A-Z]$/);
     }
-  });
-
-  test('sample buyer names are visibly samples, not real importers', () => {
-    for (const buyer of PREVIEW_BUYERS) expect(buyer.display_name).toMatch(/^Sample /);
   });
 
   test('the preview module imports no data source', async () => {
