@@ -4,9 +4,11 @@
  * Demand Discovery v5 results (docs/36 §5–§6): every screening market, ranked where the data
  * allows, each with its labels and the reasons behind its score.
  *
- * The ranked list leads with the markets handed on to buyer search. Markets that could not be
- * ranked are listed apart with why — "not enough data" is a gap, not a low score, and is never
- * mixed into the ranking. Labels carry text and an icon; colour is never the only cue (docs/10 §4).
+ * The ranked list leads with the markets handed on to buyer search. From policy v9 (D-044) every
+ * market but an excluded one is ranked: a market short of data follows every fully scored market,
+ * says so on its card, and is never handed on; a market with no recorded imports comes last. Runs
+ * from before v9 left those markets unranked, and they are listed apart with why, as excluded markets
+ * always are. Labels carry text and an icon; colour is never the only cue (docs/10 §4).
  *
  * When the exporter's FOB price or capacity is missing, fit with their business is left out of every
  * score; the page says so, names each missing figure, and links to the product's details. A card whose
@@ -82,7 +84,14 @@ export function V5Reasons({ reasons }: { reasons: V5Reason[] }) {
   );
 }
 
+/** v9 (D-044): a ranked market that is not fully scored says why it follows the others. */
+const RANKED_LAST: Partial<Record<NonNullable<V5Row['market_status']>, string>> = {
+  not_enough_data: 'Not enough data',
+  no_recorded_demand: 'No recorded imports',
+};
+
 function RankedCard({ row }: { row: V5Row }) {
+  const last = row.market_status ? RANKED_LAST[row.market_status] : undefined;
   return (
     <Link
       href={`/app/markets/${row.id}`}
@@ -97,14 +106,19 @@ function RankedCard({ row }: { row: V5Row }) {
           {row.data_year ? <span className="ml-2 text-xs text-[var(--color-text-muted)]">data to {row.data_year}</span> : null}
         </div>
         <div className="shrink-0 text-right">
-          <span className="text-sm font-bold text-primary">
-            {row.overall_score}
-            <span className="text-xs font-normal text-[var(--color-text-secondary)]">/100</span>
-          </span>
+          {row.overall_score != null ? (
+            <span className="text-sm font-bold text-primary">
+              {row.overall_score}
+              <span className="text-xs font-normal text-[var(--color-text-secondary)]">/100</span>
+            </span>
+          ) : <span className="text-sm text-[var(--color-text-secondary)]">No score</span>}
           <p className="text-xs text-[var(--color-text-secondary)]">Confidence {row.confidence_score}%</p>
-          {row.live_points != null && row.live_points < 100 ? <p className="text-xs text-[var(--color-text-muted)]">on {row.live_points} of 100 points</p> : null}
+          {row.live_points != null && row.live_points < 100
+            ? <p className="text-xs text-[var(--color-text-muted)]">{last ? `${row.live_points} of 100 points have data` : `on ${row.live_points} of 100 points`}</p>
+            : null}
         </div>
       </div>
+      {last ? <div className="mt-2"><StatusChip label={last} tone="neutral" icon="dot" size="sm" /></div> : null}
       {row.flag_reasons.length ? (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {row.flag_reasons.map((reason) => <StatusChip key={reason} label={reason} tone="warning" icon="alert" size="sm" />)}
@@ -178,17 +192,26 @@ export function IndiaMarkets({ markets }: { markets: IndiaMarket[] }) {
 
 export function V5Results({ rows, notes, provenanceNote, exporterFit = null, productId = null, indiaMarkets = [] }: { rows: V5Row[]; notes: string[]; provenanceNote: string | null; exporterFit?: ExporterFitView | null; productId?: string | null; indiaMarkets?: IndiaMarket[] }) {
   const [showAll, setShowAll] = useState(false);
-  const ranked = rows.filter((row) => row.market_status === 'ranked').sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-  const notEnough = rows.filter((row) => row.market_status === 'not_enough_data');
-  const noDemand = rows.filter((row) => row.market_status === 'no_recorded_demand');
-  const excluded = rows.filter((row) => row.market_status === 'excluded');
+  // Every market with a rank, in rank order: from v9 (D-044) that includes the markets short of data.
+  const ranked = rows.filter((row) => row.rank != null).sort((a, b) => a.rank! - b.rank!);
+  const rankedLast = ranked.filter((row) => row.market_status !== 'ranked').length;
+  const unranked = rows.filter((row) => row.rank == null);
+  const notEnough = unranked.filter((row) => row.market_status === 'not_enough_data');
+  const noDemand = unranked.filter((row) => row.market_status === 'no_recorded_demand');
+  const excluded = unranked.filter((row) => row.market_status === 'excluded');
   const handedOff = ranked.filter((row) => row.handed_off);
   const visible = showAll ? ranked : ranked.slice(0, Math.max(HANDED_OFF_FIRST, handedOff.length));
+  const unrankedSummary = [
+    notEnough.length ? `${notEnough.length} without enough data` : null,
+    noDemand.length ? `${noDemand.length} with no recorded imports` : null,
+    excluded.length ? `${excluded.length} excluded` : null,
+  ].filter(Boolean).join(', ');
 
   return (
     <div>
       <p className="text-sm text-[var(--color-text-secondary)]">
         {ranked.length} of {rows.length} markets ranked.{' '}
+        {rankedLast ? `The last ${rankedLast} have too little data for a full score. ` : null}
         {handedOff.length ? `The top ${handedOff.length} go on to buyer search.` : null}
       </p>
       <div className="mt-1"><RupeeRateNote /></div>
@@ -215,10 +238,10 @@ export function V5Results({ rows, notes, provenanceNote, exporterFit = null, pro
 
       <IndiaMarkets markets={indiaMarkets} />
 
-      {notEnough.length || noDemand.length || excluded.length ? (
+      {unrankedSummary ? (
         <details className="mt-6 rounded-lg border border-[var(--color-border)] bg-surface p-4">
           <summary className="cursor-pointer text-sm font-semibold text-primary">
-            Not ranked: {notEnough.length} without enough data, {noDemand.length} with no recorded imports, {excluded.length} excluded
+            Not ranked: {unrankedSummary}
           </summary>
           <ul className="mt-3 space-y-2 text-sm text-[var(--color-text-secondary)]">
             {excluded.map((row) => (

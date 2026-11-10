@@ -140,6 +140,27 @@ products for HS chapters 01–27, manufactured otherwise) × agreement factor`. 
 `agreement.partial_scope_factor` (default 0.8) for a partial-scope agreement, else 1. With no WDI
 value the metric is unavailable. Estimates carry quality 0.5 and the label "Duty estimated".
 
+### 4.8 A code that splits into national lines (10 Nov 2026, D-045)
+
+A market's tariff can split the product's HS6 into national lines with different duties (the United
+States' 1006.30: parboiled 11.2%, other 1.4¢/kg). The source's own candidate lines are stored with
+the snapshot. The run chooses among them, in the order the owner chose
+(`national-line.ts`, `splitLineChoices` in `run-inputs.ts`):
+
+1. When every candidate carries the same duty, the split never mattered, and that duty is scored.
+2. The answers on file for the product and market come first. These are the exporter's, or its
+   agent's, answers on the tariff-line questions.
+3. Next, what the product's name and description state: "Basmati rice" is Basmati; "not
+   parboiled" and "non-basmati" are not. Nothing the words leave unsaid becomes an answer.
+
+The duty is settled only when every line still in scope carries one duty. That duty is the official
+rate, scored like a single line's, with India's own preference on those lines when the source
+publishes one for India itself (D-026). The measure says which way the line was chosen.
+
+Otherwise the market keeps its estimate (§4.7), and the market page asks the question that would
+settle the line. An answer recorded after a run that kept such an estimate re-runs the product on
+the hourly refresh (§7b).
+
 ## 5. The score
 
 ### 5.1 Parts
@@ -163,10 +184,24 @@ from 3 / 4 / 8 (rice, brassware, carpets) to 5 / 7 / 10; the staging rerun confi
 
 ### 5.2 Ranking and confidence
 
-- Ranked when live points ≥ `ranking.minimum_live_points` (60) and size and growth are both live.
-  Otherwise `not_enough_data`, shown with its partial score, never ranked. Ties on the exact
-  (unrounded) score go to the higher confidence, then to the ISO code, so the same inputs always give
-  the same order. A flagged market is ranked like any other; its flag is shown beside the rank.
+- Fully scored when live points ≥ `ranking.minimum_live_points` (60) and size and growth are both
+  live. Otherwise `not_enough_data`. Ties on the exact (unrounded) score go to the higher
+  confidence, then to the ISO code, so the same inputs always give the same order. A flagged market
+  is ranked like any other; its flag is shown beside the rank.
+- **Every market but an excluded one is ranked (policy v9, 10 Nov 2026, D-044).**
+  - The fully scored markets come first, in the order above.
+  - Markets with `not_enough_data` follow. Their score counts each measure without data as zero
+    (Σ score × points / 100), so Vatican City's 93 on 20 points becomes 19. The measures themselves
+    stay unavailable, each with its reason.
+  - Markets with no recorded imports come last, unscored, by ISO code. Excluded markets are never
+    ranked.
+  - Only fully scored markets are handed on (`handoff_count`).
+  - The reasons say why a market ranks last ("Ranked after the fully scored markets: market size and
+    growth have no data, and each measure without data counts as zero").
+  - Before v9, these markets were shown with a partial score over their live points and stayed
+    unranked. Runs stored then keep that, and the Phase 1 gate checks each run against its own
+    policy.
+  - The database allows a rank on these statuses from migration `20261110180000`.
 - Confidence = (live points / 100) × evidence quality × 0.8^lag. Evidence quality is the
   points-weighted mean of each live metric's quality: BACI where the market reported that year 1.0;
   BACI partner-only 0.85; Comtrade-reported fallback 0.9; chain-linked newest year 0.95; duty
@@ -213,7 +248,7 @@ Market-level fallback results carry "From the market's own customs reports".
 Reasons: three sentences per market from templates: the two metrics adding most points
 (`score × points`) and the one costing most (`(100 − score) × points`), each stating the observed
 value ("Imports averaged $32.0 million a year over the last three years"). A market that is not
-ranked leads with why; an excluded or no-demand market gets one status sentence. No sentence
+fully scored leads with why; an excluded or no-demand market gets one status sentence. No sentence
 projects earnings. The optional AI rationale (`RATIONALE_WRITER`) may rephrase; it never changes a
 number.
 
@@ -256,6 +291,11 @@ reads the frozen releases and passes their rows in).
   frozen release ids. The run's `summary` names the top 10 handed to regional discovery.
 - Agents act through the existing `AgentDecision` overlay: promote, flag or reject, shown beside the
   computed rank, never replacing it.
+- The agent's views read a v5 run as v5 (10 Nov 2026, E-061). The Demand Discovery tab and the
+  market page show the engine's order, statuses and breakdown, and the all-markets page opens the
+  market control table. The agent's work queue holds one kind of task: a handed-on market's
+  tariff-line questions, where the stored score used an estimated duty. Code:
+  `src/lib/country-discovery/v5-work.ts`.
 - Tier gates are unchanged (`demand_discovery.run` paid; docs/14). The guest market estimate moves to
   BACI under the same framing rule: observed values and price bands only, no ranking, no projection.
 

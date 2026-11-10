@@ -55,6 +55,7 @@ const countryName = (code: string) => {
 export function MarketDetail({
   tier,
   assessment,
+  buyerDiscoveryHref,
   productDescription,
   v5 = null,
   regional = null,
@@ -86,7 +87,12 @@ export function MarketDetail({
 
       {assessment.evidence_warning ? <p className="mt-4 rounded border border-warning bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm font-normal text-primary">Test evidence · {assessment.evidence_warning}</p> : null}
 
-      {v5 ? <V5Breakdown detail={v5} /> : null}
+      {v5 ? (
+        <V5Breakdown
+          detail={v5}
+          tariffLineHref={buyerDiscoveryHref.productId ? `/app/products/${buyerDiscoveryHref.productId}/markets/${assessment.country_code}/classification` : null}
+        />
+      ) : null}
 
       {regional ? (
         <section className="mt-6">

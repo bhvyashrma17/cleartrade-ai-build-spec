@@ -365,15 +365,20 @@ function storedPolicy(run: GateRunEvidence): DemandDiscoveryV5Policy | null {
 // Market-level findings, each reason prefixed with the market's code
 // ---------------------------------------------------------------------------
 
-/** No silent zeros: every value either rests on evidence or states why there is none. */
-function silentZeroProblems(market: GateMarketEvidence, expectedMetrics: string[], requireReason: boolean): string[] {
+/**
+ * No silent zeros: every value either rests on evidence or states why there is none.
+ * `incompleteLast`: the run's policy ranks markets short of data and with no recorded imports after
+ * the fully scored ones (v5 policy v9, D-044), so those must hold a rank; before it they must not.
+ */
+function silentZeroProblems(market: GateMarketEvidence, expectedMetrics: string[], requireReason: boolean, incompleteLast = false): string[] {
   const code = market.country_code;
   const problems: string[] = [];
   if (isScored(market)) {
     if (market.overall_score == null) problems.push(`${code}:scored_market_without_overall`);
     if (market.live_points == null) problems.push(`${code}:live_points_missing`);
     if (market.market_status === 'ranked' && market.rank == null) problems.push(`${code}:ranked_without_rank`);
-    if (market.market_status === 'not_enough_data' && market.rank != null) problems.push(`${code}:unranked_market_has_rank`);
+    if (market.market_status === 'not_enough_data' && market.rank != null && !incompleteLast) problems.push(`${code}:unranked_market_has_rank`);
+    if (market.market_status === 'not_enough_data' && market.rank == null && incompleteLast) problems.push(`${code}:not_enough_data_without_rank`);
     if (!market.breakdown) return [...problems, `${code}:score_breakdown_missing`];
     if (market.market_status === 'not_enough_data' && !market.breakdown.has_shortfall) problems.push(`${code}:not_enough_data_without_shortfall`);
     const seen = new Map<string, number>();
@@ -392,7 +397,9 @@ function silentZeroProblems(market: GateMarketEvidence, expectedMetrics: string[
     return problems;
   }
   if (market.overall_score != null) problems.push(`${code}:${market.market_status ?? 'unknown'}_market_scored`);
-  if (market.rank != null) problems.push(`${code}:${market.market_status ?? 'unknown'}_market_ranked`);
+  const rankedLast = incompleteLast && market.market_status === 'no_recorded_demand';
+  if (market.rank != null && !rankedLast) problems.push(`${code}:${market.market_status ?? 'unknown'}_market_ranked`);
+  if (market.rank == null && rankedLast) problems.push(`${code}:no_recorded_demand_without_rank`);
   if (market.market_status === 'excluded' && !market.excluded_reason?.trim()) problems.push(`${code}:excluded_without_reason`);
   return problems;
 }
@@ -639,7 +646,7 @@ function evaluateArchetype(
 
     // Actual data or labelled estimates; no silent zero (D-037).
     const expectedMetrics = snapshot ? Object.keys(snapshot.points).sort() : [];
-    const silent = markets.flatMap((market) => silentZeroProblems(market, expectedMetrics, policy.evidence_labels.value.unscored_metric_requires_reason));
+    const silent = markets.flatMap((market) => silentZeroProblems(market, expectedMetrics, policy.evidence_labels.value.unscored_metric_requires_reason, snapshot?.ranking.rank_incomplete_last === true));
     if (!snapshot) silent.unshift('metric_set_unknown_without_the_stored_policy');
     checks.push(passOrFail('evidence_labels.no_silent_zero', 'evidence_labels', note(silent), 'Every metric is scored from data or unscored with its reason; unscored markets carry no score.', 'A value is missing its evidence or its reason.'));
     checks.push(policy.evidence_labels.value.estimates_must_be_labelled

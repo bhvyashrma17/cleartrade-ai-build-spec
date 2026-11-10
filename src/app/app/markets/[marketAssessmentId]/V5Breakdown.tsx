@@ -7,6 +7,7 @@
  * it comes from and for which years, saying "Estimate" when it is one (item 8).
  */
 
+import Link from 'next/link';
 import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
 import { StatusChip } from '@/components/ui';
 import type { V5Detail } from '@/lib/demand-discovery-v5/detail';
@@ -32,13 +33,28 @@ const METRIC_NAMES: Record<string, string> = {
 };
 
 function StatusLine({ detail }: { detail: V5Detail }) {
-  if (detail.market_status === 'ranked') {
+  if (detail.rank != null) {
+    // v9 (D-044): a market short of data, or with no recorded imports, ranks after every fully scored one.
+    const last = detail.market_status === 'not_enough_data' ? 'Not enough data' : detail.market_status === 'no_recorded_demand' ? 'No recorded imports' : null;
     return (
-      <p className="text-sm text-[var(--color-text-secondary)]">
-        Ranked <span className="font-semibold text-primary">#{detail.rank}</span> of {detail.total_ranked} · {detail.overall_score}/100 · confidence {detail.confidence_score}%
-        {detail.data_year ? ` · data to ${detail.data_year}` : ''}
-        {detail.handed_off ? ' · goes on to buyer search' : ''}
-      </p>
+      <div className="space-y-2">
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          Ranked <span className="font-semibold text-primary">#{detail.rank}</span> of {detail.total_ranked}
+          {detail.overall_score != null ? ` · ${detail.overall_score}/100 · confidence ${detail.confidence_score}%` : ''}
+          {detail.data_year ? ` · data to ${detail.data_year}` : ''}
+          {detail.handed_off ? ' · goes on to buyer search' : ''}
+        </p>
+        {last ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+            <StatusChip label={last} tone="neutral" icon="dot" size="sm" />
+            <span>
+              {detail.market_status === 'not_enough_data'
+                ? `Ranked after the fully scored markets: ${detail.live_points ?? 0} of 100 points have data, and each measure without data counts as zero.`
+                : 'Ranked after every market with recorded imports.'}
+            </span>
+          </div>
+        ) : null}
+      </div>
     );
   }
   const label = detail.market_status === 'excluded' ? 'Excluded' : detail.market_status === 'no_recorded_demand' ? 'No recorded imports' : 'Not ranked — not enough data';
@@ -50,7 +66,28 @@ function StatusLine({ detail }: { detail: V5Detail }) {
   );
 }
 
-export function V5Breakdown({ detail }: { detail: V5Detail }) {
+/**
+ * D-045: the market's tariff splits the product's code into lines with different duties, and
+ * nothing on file settles which, so the duty is an estimate. One question about the goods settles
+ * it; the next run uses the official duty.
+ */
+function TariffLineQuestion({ question, href }: { question: string; href: string | null | undefined }) {
+  return (
+    <div className="mt-1.5 rounded border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-2 text-xs text-[var(--color-text-secondary)]" role="note">
+      The official tariff splits this product&apos;s code into lines with different duties here, so the duty is estimated.{' '}
+      {href
+        ? <Link href={href} className="font-semibold text-primary underline underline-offset-2">Answer &ldquo;{question}&rdquo;</Link>
+        : <span className="font-medium text-primary">Answering &ldquo;{question}&rdquo;</span>}{' '}
+      {href ? 'to settle it; the next run uses the official duty.' : 'settles it, and the next run uses the official duty.'}
+    </div>
+  );
+}
+
+export function V5Breakdown({ detail, tariffLineHref }: {
+  detail: V5Detail;
+  /** D-045: where this market's tariff-line questions are answered, for the viewer's portal. */
+  tariffLineHref?: string | null;
+}) {
   const rupees = useRupees();
   const metrics = new Map(detail.metrics.map((metric) => [metric.key, metric]));
   return (
@@ -92,6 +129,7 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
                       </div>
                       <p className="mt-0.5 text-[var(--color-text-secondary)]">{metric.score == null ? metric.reason : rupees(metricSentence(metric))}</p>
                       {metric.score != null ? <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Source: {metricSource(metric, detail.data_context)}</p> : null}
+                      {key === 'duty' && typeof metric.inputs.line_question === 'string' ? <TariffLineQuestion question={metric.inputs.line_question} href={tariffLineHref} /> : null}
                     </li>
                   );
                 })}
@@ -99,7 +137,10 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
             </div>
           ))}
           <p className="text-xs text-[var(--color-text-muted)]">
-            Measures without data are left out and their points shared among the rest; a gap is never counted as zero.
+            {detail.market_status === 'not_enough_data' && detail.rank != null
+              // D-044 (policy v9): a market short of data counts each measure without data as zero.
+              ? 'This market is short of data: each measure without data counts as zero in its score, so it ranks after the fully scored markets. Each measure itself is still shown without data, never as zero.'
+              : 'Measures without data are left out and their points shared among the rest; a gap is never counted as zero.'}
           </p>
         </div>
       ) : null}

@@ -54,6 +54,8 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-041 | 2026-11-10 | Scope until further notice: Demand Discovery production-ready, with its hand-off into regional demand and buyer discovery working; no new regional or buyer work. Owner's words: "I just want demand discovery to be production ready, that's all. And the pipeline carrying from demand discovery to the regional and buyer to work fine." Canada's importer list (R-45) is deferred | Owner | E-056 |
 | D-042 | 2026-11-10 | Quota duties (R-46): where a tariff-rate quota gives a cheaper rate for a volume or a channel, Demand Discovery scores the rate an ordinary exporter pays outside the quota and says the quota's rate beside it, never scoring it, as China's reader already did; first for Korea and Japan. Owner's answer: "Score outside-quota (Recommended)" | Owner | E-058 |
 | D-043 | 2026-11-10 | Korea's applied rate (R-47): read Korea's rate priority (Customs Act Art. 50) from the stored rows, so the WTO rate applies where it is lower than the basic rate; to be done right after the quota release. Owner's answer: "Yes, right after (Recommended)" | Owner | E-058 |
+| D-044 | 2026-11-10 | Rank every market (policy v9). Markets without enough data rank after every fully scored market, by a score in which each measure without data counts as zero; markets with no recorded imports rank last. North Korea stays excluded (UN sanctions), and only fully scored markets are handed on. Owner's words: "Countries, all countries should be ranked. If there is an issue, we should fix that." Answer: "Rank them last (Recommended)" | Owner | E-062 |
+| D-045 | 2026-11-10 | A code that splits into national lines with different duties: use the line the product's own description names; otherwise the exporter or agent answers a question, and the next run uses the official duty. Answers on file come before the description, and a duty is settled only when every line still in scope carries it. Owner's answer: "Description, then a question (Recommended)" | Owner | E-063 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2530,6 +2532,138 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 - `korea-authority-pack`: 47 tests pass, including 4 new rate-priority tests on the release's own shapes (coffee `P3` 0 against `A` 2 and `C` 54).
 - The 42 tariff, Customs Atlas, Country Truth and Demand Discovery files: 517 tests pass.
 
+
+### E-060 · 2026-11-10 · Release #52 live: quota duties on production, the run completes (R-46 closed; R-47 released) (in review)
+
+**Release #52** (#48, #50, #51) was merged by the owner at 13:41 UTC as `d8a2e41`; master's CI passed. In Railway, both production web and the production worker show "Deployment successful" for #52. Release #49 (#47) went out at 12:41 UTC, eleven seconds before #48 reached `staging/railway`, so #48 ships here.
+
+**Production, signed in as the paid QA member:**
+- **Buyers page (#47):** Canada reads "Your agent finds and vets importers here", and nothing names the Canadian Importers Database.
+- **Markets page (#48):** "Your recent searches" shows "Markets ranked" and "Ranked, with gaps", where it used to show the raw run state.
+- **Basmati run, first after the deploy** (`cmwaqsrqc0001mw0eik4ej93z`, 13:45:19–13:47:55 UTC): `partial`. The UK look-up failed ("The official tariff look-up failed for GB"). The UK duty stayed the same estimate as before (1.6%, from the World Bank average with India–UK CETA), because the UK's 1006.30 lines need refinement either way. See R-48.
+- **Basmati run, second** (`cmwaqy7bg0007mw0edsd4r1f0`, job `cmwaqy7c0000bmw0emosyec98`, 13:49:32–13:51:09 UTC): `completed`.
+  - 214 of 218 markets ranked; the top 10 is unchanged and all ten were handed off.
+  - The only notes left are the expected ones: World Bank figures more than 10 years old, logistics estimated from UNCTAD for 32 markets, no Singapore release yet (R-43), and Andorra not covered.
+  - Korea: "Duty on Indian goods is 513%, outside the tariff quota; 5% applies only within the quota." Source: Korea Customs Service 1006301000. Rank 108 → 151, score 57 → 48.
+  - Japan: "Duty on Indian goods is about 263% (341 yen/kg at this market's prices), outside the tariff quota; duty-free entry applies only within the quota." Source: Japan Customs 100630090. The "Low duty for India (estimated)" label is gone. Rank 14 → 49, score 76 → 66.
+  - Hand-off: regional demand completed for US and GB. Canada is unavailable because no list is loaded (R-45, deferred).
+
+**R-47** shipped in the same release. It is checked by tests on the release's own rows (E-059). Basmati is a farm-quota item, so it does not show the change; a production run on a product where `C` is below `A` has not been observed yet.
+
+### E-061 · 2026-11-10 · The agent's Demand Discovery views read v5 runs (in review)
+
+**Found on production** (10 Nov, signed in as the agent assigned to Lappu Exports, basmati run of 13:49 UTC). The exporter's Markets page and the agent's market control table had the United States first (85, confidence 82%). Every other agent view read the v5 run as Country Truth v4:
+- **Demand Discovery tab** (Exporter 360):
+  - the top market was Vatican City, "Attractiveness 93 · 0% evidence coverage". 93 is a partial score over 20 of 100 points, and the engine did not rank it;
+  - the top five were Vatican City, Martinique, the United States, Saudi Arabia and the United Kingdom, sorted by stored score;
+  - every row's status was a v4 pillar reading;
+  - the work queue held 872 tasks: four Country Truth tasks (tariff line, freight quotes, certifications, route) for each of 218 markets. v5 reads none of them.
+- **All markets** and **one market** (`/agent/…/markets`, `/agent/…/markets/US`): v4 pillars ("Not established") and v4 positions ("Rank #3" for the United States).
+- **Market control table and tariff-line questions:** correct ("Is the rice parboiled?").
+
+**Built.**
+- **Order** (`market-view.ts`): a v5 run keeps the engine's order. Ranked markets come by stored rank, then markets without enough data by score, then no recorded imports, then excluded markets. A market the engine did not rank shows no score.
+- **Statuses** (`v5-work.ts`): "Tariff line needs N answers", "Needs ClearTrade classification", "Handed on to buyer search", "Ranked", "Not ranked" or "Excluded". A market whose stored score used an official duty or a published rule is never sent to its tariff line.
+- **Work:** only the markets handed on to buyer search get work, and only "Answer N tariff-line questions", where the score used an estimated duty. Such a task is due with the top-ranked markets wherever the market ranks. Lappu Exports' queue goes from 872 tasks to at most one per handed-on market.
+- **Wording:** the tab and its table say "Score" and "Confidence", as the exporter's Markets page does.
+- **Pages:**
+  - the agent's market page shows the exporter's own v5 breakdown, with the engine's rank and links to the tariff-line questions and the market control table;
+  - for a v5 run, the agent's all-markets page opens the market control table;
+  - the exporter's old per-product pages open Markets and the v5 market page.
+  - Runs from the earlier engines keep their Country Truth views.
+- **One model identity:** `demand-discovery-v5/model.ts` holds it, so client views read it without the policy's server-only imports.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `agent-v5-market-views`: 7 new tests on a v5 run shaped like production's: Vatican City and Martinique at 93 and 92, not ranked; North Korea excluded; the United States first with an official duty although its line splits; the United Kingdom handed on with an estimated duty.
+- The 44 test files that touch discovery code: 472 of 473 tests pass. The one failure is `market-scan-requests`, which fails the same way on `staging/railway` without this change in the agent's local harness. CI is the check of record for it.
+
+### E-062 · 2026-11-10 · Every market is ranked: policy v9 (D-044) (in review)
+
+**Why.** On production, the basmati run's "Not ranked" section held North Korea, Vatican City (93 on 20 of 100 points), Martinique (92 on 20) and the Faroe Islands (52 on 60). The owner: all countries should be ranked.
+
+**Built (`demand-discovery-v5-policy-v9`, `ranking.rank_incomplete_last`).**
+- **Scorer** (`score.ts`):
+  - a market without enough data is scored over all 100 points, so each measure without data counts as zero. Vatican City's 93 becomes 19. Its measures stay unavailable, each with its reason;
+  - ranks run in three tiers: the fully scored markets, then markets without enough data by that score, then markets with no recorded imports, unscored, by ISO code;
+  - excluded markets are never ranked;
+  - the hand-off takes only fully scored markets, however few there are;
+  - the run summary counts `ranked_last`.
+- **Reasons** (`explain.ts`): "Ranked after the fully scored markets: market size and growth have no data, and each measure without data counts as zero", "Ranked last: none of the measures has data for this market", and "No imports of this product were recorded in 2019–2024, so it ranks after every market with imports".
+- **Database:** migration `20261110180000` replaces `MarketAssessment_rank_only_when_ranked` with `MarketAssessment_rank_by_status`.
+  - A fully scored market must hold a positive rank. A market short of data or with no recorded imports may. An excluded market, or an earlier engine's row, may not.
+  - It is written NULL-safe; the old constraint let a NULL comparison pass.
+  - It is added `NOT VALID`, so the release cannot stop on stored rows. No row changes.
+- **Phase 1 gate:** the rank invariants follow each run's own stored policy. Under v9 these markets must hold a rank (`not_enough_data_without_rank`, `no_recorded_demand_without_rank`); under v8 they must not. The scoring replay already recomputes every rank.
+- **Pages:**
+  - Markets lists every ranked market, the ranked-last ones labelled "Not enough data" ("20 of 100 points have data") or "No recorded imports" ("No score"). "Not ranked" now holds only excluded markets.
+  - The market page says "Ranked #216 of 217" and why.
+  - The agent's control table and Demand Discovery tab show the rank and score, labelled the same way.
+  - Runs from before v9 keep their own presentation.
+- **Ops:** the Demand Discovery panel says how many markets ranked last.
+
+**Effect.** The next run of each product ranks every market but North Korea (217 of 218 for basmati). The fully scored markets, their order, their scores and the top 10 handed on do not change. No product is re-run by this release: the next run starts as runs do (a new code, new data, or "Run again").
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- Tests:
+  - `demand-discovery-v5-score`: the tiers, the zero-counted score, the hand-off and the reasons, with v8's behaviour kept beside them.
+  - `demand-discovery-v5-assess`: the 300-world property now checks the overall per status.
+  - `demand-discovery-v5-run`: a real run ranks 217 of 218.
+  - `phase-1-gate`: the v9 and v8 rank rules.
+  - `market-assessment-delete-guard`: the new constraint.
+  - `demand-discovery-v5-rank-all`: 4 new tests on the pages.
+
+### E-063 · 2026-11-10 · A code that splits into national lines: answers, then the description (D-045) (in review)
+
+**Why.** On production, 59 of the basmati run's 218 markets had estimated duties, the United States and the United Kingdom among the top 30. Many of them split HS 1006.30 into national lines with different duties, and the run stopped at the split. The United States' lines are parboiled 11.2% and other 1.4¢/kg; the agent's questions page asks "Is the rice parboiled?". The owner chose: the product's description, then a question.
+
+**Built.**
+- **`national-line.ts` (pure):**
+  - when every candidate line carries one duty, the split never mattered;
+  - otherwise the answers on file decide first, then what the product's own words state (`answersNamedIn`: "Basmati rice" is Basmati; "not parboiled" and "non-basmati" are not);
+  - a duty is settled only when every line still in scope carries it;
+  - otherwise the first question that would narrow the lines is named.
+- **Run inputs** (`splitLineChoices`, `officialDuties`):
+  - for each market whose newest snapshot needs refinement, the run reads the stored candidates in force on its date, the product's answers on file and its frozen name and description;
+  - `resolveChosenLineDuty` scores the chosen lines' official rate. India's own preference on every chosen line, read from the snapshot's line measures, is scored as for a single line (D-026); a quota is shown, not scored;
+  - currencies are converted as for any official duty;
+  - the frozen inputs record the choice: how, the lines, and the answers used.
+- **Open splits:** the market keeps its estimate, and the duty measure names the open question.
+  - The market page (member and agent) says the code splits into lines with different duties and links to "Answer 'Is the rice parboiled?'".
+  - The questions page says the next run uses the official duty.
+- **Refresh:** an answer recorded after a run that kept such an estimate is a reason to re-run the product on the hourly refresh. This also covers runs from before this change, by their stored reason. It uses the existing daily budget and the `refresh_on_new_data` switch.
+- **Explanation:** "Duty on Indian goods is about 1% (1.4¢/kg at this market's prices) on the tariff line the answers about the goods point to." The description and one-duty cases say so in the same way.
+
+**Not changed:**
+- No policy version; the official quality applies to a chosen line.
+- Agent-entered tariffs stay retired (D-037): the lines and duties are the source's own.
+- The questions page still narrows to one line where the answers allow.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `demand-discovery-v5-national-line`: 10 new tests, among them a stored-evidence run read.
+  - The description settles a UK-shaped split, with India's 0% preference on the Basmati lines.
+  - The United States asks "Is the rice parboiled?". After the assigned agent answers through the real questions service, the next read scores 1.4¢/kg on 1006.30.90.
+- 52 discovery, gate, refinement, refresh and provider test files: 543 of 544 pass. The one failure is `market-scan-requests`, as on `staging/railway`.
+
+### E-064 · 2026-11-10 · A failed tariff look-up is asked once more (R-48) (in review)
+
+**Why (R-48).** On 10 Nov, the first production run after a deploy lost the UK look-up while the worker read retained releases from cold, and a run two minutes later completed. One lost look-up leaves its market on the estimate and the whole run "Ranked, with gaps".
+
+**Built** (`tariff-step.ts`):
+- After every source has been asked, each look-up that failed or timed out is asked once more, after a 3-second pause (`retry_delay_ms`).
+- The second asking goes source by source, as the first does. The second answer stands.
+- A retried market records both attempts (`attempts: 2`, `first_attempt`) in the run's frozen tariff step.
+- A run is degraded only when the second asking fails too, and its note says "failed twice".
+- A timed-out live fetch has persisted nothing, so asking again cannot duplicate evidence.
+- Worst case, a run takes one more live timeout per failing live market (60 s each).
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `demand-discovery-v5-tariff-step`: 6 tests, 1 new. The UK times out once and is acquired on the second asking; Canada fails twice and degrades the run. One snapshot is stored.
+- `demand-discovery-v5-run` passes.
+
 ## Risk register
 
 
@@ -2580,5 +2714,6 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 | R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
 | R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
-| R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Decided (D-042) and built (E-058): Korea scores `W2` and says `W1`; Japan scores the out-of-quota line and says the Government's quota | A production rice run after the release shows Korea 513% and Japan 341 yen/kg, each with the quota said |
-| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Decided (D-043) and built (E-059): `P3`, then `B`, then `A`, with `C` where it is lower | A production run after the release shows a Korean line's standard rate from Art. 50 |
+| R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
+| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
+| R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated in code (E-064, in review): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate | A production run after the release whose tariff step shows a second attempt, or no lost look-up after a deploy |

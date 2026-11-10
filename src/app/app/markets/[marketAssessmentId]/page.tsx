@@ -59,7 +59,7 @@ export default async function MarketDetailPage({
 
   // Demand Discovery v5 rows carry their own rank, status and five-part breakdown (docs/36).
   const v5: V5Detail | null = isV5Assessment(assessment)
-    ? v5Detail(assessment, await prisma.marketAssessment.count({ where: { run_id: assessment.run_id, market_status: 'ranked' } }))
+    ? v5Detail(assessment, await prisma.marketAssessment.count({ where: { run_id: assessment.run_id, rank: { not: null } } }))
     : null;
 
   // D-033: where inside the market the product arrives (v5 markets with an official regional source).

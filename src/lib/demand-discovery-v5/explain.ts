@@ -180,11 +180,17 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
       // An official specific duty is shown with what it is per kilogram: the percentage is derived.
       const specific = typeof inputs.duty_expression === 'string' ? ` (${inputs.duty_expression} at this market's prices)` : '';
       // D-024: a rate an agent read from the official tariff says so.
-      const read = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
+      const source = inputs.recorded_by_agent === 'yes' ? ' (read from the official tariff by a ClearTrade agent)'
         // D-028: a customs union's common external tariff names itself; the member's own exceptions are not checked.
         : typeof inputs.common_tariff === 'string' ? ` under the ${inputs.common_tariff}; this market's own exceptions are not checked`
         // D-031: a market's own tariff read from a retained schedule names itself; trade remedies are not checked.
         : typeof inputs.schedule_read === 'string' ? ` (read from ${inputs.schedule_read}; trade remedies are not checked)` : '';
+      // D-045: the code splits into tariff lines here; the scored line says how it was chosen.
+      const line = inputs.line_choice === 'description' ? " on the tariff line the product's description names"
+        : inputs.line_choice === 'answers' ? ' on the tariff line the answers about the goods point to'
+          : inputs.line_choice === 'description_and_answers' ? ' on the tariff line the description and the answers about the goods point to'
+            : inputs.line_choice === 'one_duty' ? ', the same on every tariff line under this code' : '';
+      const read = `${source}${line}`;
       // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
       if (inputs.rate === 'india_preference') {
         const standardPercent = num(inputs.standard_percent);
@@ -241,22 +247,27 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
  * that is not ranked leads with why.
  */
 export function marketReasons(market: ScoredMarket, facts: MarketFacts, policy: DemandDiscoveryV5Policy): MarketReason[] {
+  // v9 (D-044): a market short of data is ranked after every fully scored market, and says so.
+  const rankedLast = policy.ranking.rank_incomplete_last === true && market.rank != null;
   if (market.status === 'excluded') return [{ metric: null, effect: 'status', text: `Excluded: ${market.excluded_reason}.` }];
   if (market.status === 'no_recorded_demand') {
     const span = facts.window.length ? `${facts.window[0]}–${facts.window[facts.window.length - 1]}` : 'the period checked';
-    return [{ metric: null, effect: 'status', text: `No imports of this product were recorded in ${span}.` }];
+    return [{ metric: null, effect: 'status', text: `No imports of this product were recorded in ${span}${rankedLast ? ', so it ranks after every market with imports' : ''}.` }];
   }
   const live = market.metrics.filter((result) => result.score != null);
-  if (!live.length) return [{ metric: null, effect: 'status', text: 'Not ranked: none of the measures has data for this market.' }];
+  if (!live.length) return [{ metric: null, effect: 'status', text: rankedLast ? 'Ranked last: none of the measures has data for this market.' : 'Not ranked: none of the measures has data for this market.' }];
   const reasons: MarketReason[] = [];
   let adds = 2;
   if (market.status === 'not_enough_data' && market.shortfall) {
     const missing = market.shortfall.missing_required.map((key) => METRIC_NAMES[key]);
+    const gap = missing.length
+      ? `${missing.join(' and ')} ${missing.length > 1 ? 'have' : 'has'} no data`
+      : `only ${market.live_points} of 100 points have data`;
     reasons.push({
       metric: null, effect: 'status',
-      text: missing.length
-        ? `Not ranked: ${missing.join(' and ')} ${missing.length > 1 ? 'have' : 'has'} no data.`
-        : `Not ranked: only ${market.live_points} of 100 points have data; ranking needs ${market.shortfall.minimum_live_points}.`,
+      text: rankedLast
+        ? `Ranked after the fully scored markets: ${gap}${missing.length ? '' : ` (a full score needs ${market.shortfall.minimum_live_points})`}, and each measure without data counts as zero.`
+        : missing.length ? `Not ranked: ${gap}.` : `Not ranked: ${gap}; ranking needs ${market.shortfall.minimum_live_points}.`,
     });
     adds = 1;
   }
