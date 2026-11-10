@@ -1,163 +1,208 @@
 /**
- * The free-tier DEMO — a labelled sample of what a membership buys.
+ * The SAMPLE shown to visitors and free accounts — what a membership produces, without running it.
  *
- * THE RULE, and the reason this file has no imports from Prisma, the discovery engine, the
- * warehouse, or any provider client:
+ * THE RULE, and the reason this file has no imports from Prisma, the engine, the warehouse or any
+ * provider client: a visitor or a free account must be able to SEE the product without any part
+ * of the real pipeline running on their behalf (D-039, docs/14 §3c). No request, no token, no run
+ * row, no job, no warehouse query. Every value below is a constant.
  *
- *   A free tenant must be able to SEE the premium product without any part of the real
- *   pipeline running on their behalf. Not a trial, not a reduced-quality real run, not a
- *   cached real result belonging to somebody else — a fixture. No Comtrade request, no
- *   Anthropic token, no `DiscoveryRun` row, no job enqueued, no warehouse query.
+ * WHAT THE CONSTANTS ARE (owner, 9 Nov 2026: "make that accurate"). Not invented figures any more:
+ * one real result, frozen. The owner's QA member ran it on production on the date in `SAMPLE_RUN`,
+ * and the values were copied here from that run's own answers (ledger E-055). They are a
+ * snapshot: they never update, and every surface says what they are and when they were produced.
  *
- * That is a cost control and a correctness control at once. Cost, because a free signup
- * that spends provider credits is an unbounded liability at the exact moment acquisition
- * works. Correctness, because a sample computed from real data is indistinguishable from
- * the member's OWN data on screen, and someone will eventually act on it commercially.
+ * WHAT IS WITHHELD. Importer names are replaced by letters: a real company named beside a fit
+ * score on a public page is a defamation and data-protection problem. No contact detail of any
+ * kind is included. The product is one the reader probably does not make, stated everywhere, so
+ * the sample reads as an example and not as advice about their own goods.
  *
- * WHICH IS WHY EVERY ROW IS TAGGED `EvidenceOrigin.preview` and every surface renders the
- * sample banner. `evidence-environment.ts` already classifies `preview` as non-real, so
- * these values are excluded from real-workflow queries by machinery that predates this
- * feature — the labelling is not decorative, it is the same guard the fixture data uses.
- *
- * The numbers below are plausible but invented, and are deliberately for a product
- * (handmade cotton textiles, HS 630260) that is generic enough to read as an illustration
- * rather than as advice about the reader's own goods. `SAMPLE_DISCLAIMER` must accompany
- * them everywhere and must never be dropped for space.
+ * Every row is still tagged `EvidenceOrigin.preview`, so `evidence-environment.ts` keeps these
+ * values out of real-workflow queries, and `SAMPLE_DISCLAIMER` goes with them everywhere.
  */
 
 import { EvidenceOrigin } from '@prisma/client';
 
-export const SAMPLE_DISCLAIMER =
-  'This is a sample built from illustrative figures, not your data and not live trade data. Upgrade to run this on your own product.';
-
 /** Named so a grep for the tag finds the rule, not just the value. */
 export const PREVIEW_EVIDENCE_ORIGIN = EvidenceOrigin.preview;
 
-export interface PreviewMarket {
+/** The run the sample was taken from. */
+export const SAMPLE_RUN = {
+  product: 'Basmati rice, 1121 sella, semi-milled',
+  hs_code: '100630',
+  hs_description: 'Rice, semi-milled or wholly milled, whether or not polished or glazed',
+  run_on: '10 Nov 2026',
+} as const;
+
+export const SAMPLE_DISCLAIMER = `A real result for basmati rice (HS ${SAMPLE_RUN.hs_code}), run on ${SAMPLE_RUN.run_on} and frozen here. It is not your data and not live: members get this for their own products, with current figures.`;
+
+export interface SampleLabel { key: string; text: string; tone: 'positive' | 'caution' | 'info'; estimated?: boolean }
+export interface SampleReason { metric: string | null; effect: 'adds' | 'costs' | 'status'; text: string }
+
+export interface SampleMarket {
   rank: number;
   country_code: string;
-  country_name: string;
-  /** 0–100, matching the shape `MarketAssessment.score` uses. Invented. */
   score: number;
-  /** The qualitative line the real rationale writer produces. No figures, same as live. */
-  rationale: string;
-  /** Component bands, in the same vocabulary the real scoring engine reports. */
-  components: { label: string; band: 'strong' | 'moderate' | 'weak' | 'unknown' }[];
+  confidence: number;
+  data_year: number | null;
+  labels: readonly SampleLabel[];
+  reasons: readonly SampleReason[];
   evidence_origin: EvidenceOrigin;
 }
 
-/**
- * Four ranked markets — enough to show that ranking, scoring and reasoning are what the
- * member is buying, and short enough that nobody mistakes it for a full result set. The
- * real surface returns far more, which the CTA says explicitly.
- */
-export const PREVIEW_MARKETS: readonly PreviewMarket[] = [
+/** The run's top markets, as the member saw them (labels and reasons in the engine's own words). */
+export const SAMPLE_MARKETS: readonly SampleMarket[] = [
   {
-    rank: 1,
-    country_code: 'DE',
-    country_name: 'Germany',
-    score: 87,
-    rationale:
-      'Import demand here is large and has been growing steadily, and the incumbent supplier base is spread across many countries rather than dominated by one. That combination usually means a new supplier can win a first order on merit rather than on price alone.',
-    components: [
-      { label: 'Import demand', band: 'strong' },
-      { label: 'Demand trend', band: 'strong' },
-      { label: 'Supplier concentration', band: 'moderate' },
-      { label: 'India-origin presence', band: 'moderate' },
+    rank: 1, country_code: 'US', score: 85, confidence: 82, data_year: 2025,
+    labels: [
+      { key: 'big_and_growing', text: 'Big and growing', tone: 'positive' },
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India (estimated)', tone: 'positive', estimated: true },
+      { key: 'trading_hub', text: 'Trading hub', tone: 'info' },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $1.4 billion a year over the last three years.' },
+      { metric: 'country_risk', effect: 'adds', text: 'Low payment risk: ECGC rates the country A1.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 5.5% a year over 5 years.' },
     ],
     evidence_origin: EvidenceOrigin.preview,
   },
   {
-    rank: 2,
-    country_code: 'AE',
-    country_name: 'United Arab Emirates',
-    score: 81,
-    rationale:
-      'A strong existing India-origin trade lane makes logistics and payment terms easier to arrange than the raw demand figure alone would suggest. Demand is moderate but stable, so this reads as a lower-friction first market rather than the biggest one.',
-    components: [
-      { label: 'Import demand', band: 'moderate' },
-      { label: 'Demand trend', band: 'moderate' },
-      { label: 'Supplier concentration', band: 'strong' },
-      { label: 'India-origin presence', band: 'strong' },
+    rank: 2, country_code: 'SA', score: 84, confidence: 87, data_year: 2025,
+    labels: [
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India', tone: 'positive' },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $1.7 billion a year over the last three years.' },
+      { metric: 'duty', effect: 'adds', text: 'Indian goods enter duty-free.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 3.2% a year over 5 years.' },
     ],
     evidence_origin: EvidenceOrigin.preview,
   },
   {
-    rank: 3,
-    country_code: 'GB',
-    country_name: 'United Kingdom',
-    score: 74,
-    rationale:
-      'Demand is substantial but has been flat, and a small number of established suppliers hold most of it. Expect a longer qualification process here, with buyers asking for certification and a sample before they move.',
-    components: [
-      { label: 'Import demand', band: 'strong' },
-      { label: 'Demand trend', band: 'weak' },
-      { label: 'Supplier concentration', band: 'weak' },
-      { label: 'India-origin presence', band: 'moderate' },
+    rank: 3, country_code: 'GB', score: 81, confidence: 82, data_year: 2025,
+    labels: [
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India (estimated)', tone: 'positive', estimated: true },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $353.3 million a year over the last three years.' },
+      { metric: 'country_risk', effect: 'adds', text: 'Low payment risk: ECGC rates the country A1.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 4.3% a year over 5 years.' },
     ],
     evidence_origin: EvidenceOrigin.preview,
   },
   {
-    rank: 4,
-    country_code: 'NL',
-    country_name: 'Netherlands',
-    score: 69,
-    rationale:
-      'Much of what arrives here is re-exported onward into the rest of Europe, so buyers tend to be distributors rather than end users. That means larger orders but tighter margins, and the data on final destination is not available.',
-    components: [
-      { label: 'Import demand', band: 'moderate' },
-      { label: 'Demand trend', band: 'moderate' },
-      { label: 'Supplier concentration', band: 'moderate' },
-      { label: 'India-origin presence', band: 'unknown' },
+    rank: 4, country_code: 'QA', score: 81, confidence: 72, data_year: 2024,
+    labels: [
+      { key: 'big_and_growing', text: 'Big and growing', tone: 'positive' },
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India', tone: 'positive' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $172.7 million a year over the last three years.' },
+      { metric: 'duty', effect: 'adds', text: 'Indian goods enter duty-free.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 5.7% a year over 5 years.' },
+    ],
+    evidence_origin: EvidenceOrigin.preview,
+  },
+  {
+    rank: 5, country_code: 'KW', score: 80, confidence: 87, data_year: 2025,
+    labels: [
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India', tone: 'positive' },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $273.1 million a year over the last three years.' },
+      { metric: 'duty', effect: 'adds', text: 'Indian goods enter duty-free.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports fell 0.7% a year over 5 years.' },
     ],
     evidence_origin: EvidenceOrigin.preview,
   },
 ];
 
-/** How many further ranked markets the real run returns — shown as locked rows. */
-export const PREVIEW_LOCKED_MARKET_COUNT = 38;
+/** How many markets the run ranked in all (of 218 compared). */
+export const SAMPLE_RANKED_TOTAL = 214;
 
-export interface PreviewBuyer {
-  display_name: string;
+export interface SampleRegions {
   country_code: string;
-  buyer_type: string;
-  fit_score: number;
-  /** Contacts are the paid asset (docs/14 §4) — the sample shows a count, never a person. */
-  contacts_total: number;
+  basis: string;
+  rows: readonly { name: string; value: string }[];
+  more: number;
+}
+
+/** Regional demand for one of the run's markets, from the official source the run read. */
+export const SAMPLE_REGIONS: SampleRegions | null = {
+  country_code: 'US',
+  basis: 'U.S. Census Bureau imports by destination state, HS 100630, Oct 2025 – Sep 2026: $314.2 million came from India, 23.4% of all imports, 99.5% of it in containers by sea.',
+  rows: [
+    { name: 'New Jersey', value: '$112.6 million from India · 53.0% of the state’s imports' },
+    { name: 'California', value: '$50.7 million · 12.8%' },
+    { name: 'Georgia', value: '$45.0 million · 36.5%' },
+    { name: 'Texas', value: '$38.0 million · 32.9%' },
+    { name: 'New York', value: '$37.6 million · 30.3%' },
+  ],
+  more: 42,
+};
+
+export interface SampleImporterArea {
+  /** A region, never a business: the sample names no importer. */
+  label: string;
+  importers: number;
   evidence_origin: EvidenceOrigin;
 }
 
+export interface SampleBuyers {
+  country_name: string;
+  basis: string;
+  total: number;
+  rows: readonly SampleImporterArea[];
+}
+
 /**
- * Sample buyers use invented company names.
- *
- * Naming a real importer here would put an unverified fit score against an identifiable
- * business — a defamation and data-protection problem, and exactly the kind of thing the
- * `preview` evidence tag exists to keep out of real-workflow surfaces. Contact details are
- * never sampled at all, not even fake ones, because a fake email that someone tries to
- * mail is worse than a locked state.
+ * Importers the run found in one market, counted by region from the official list — the same
+ * counts a member sees (buyer discovery is agent-curated, docs/11 §7: the agent reviews the list
+ * and contacts the right ones). No business is named.
  */
-export const PREVIEW_BUYERS: readonly PreviewBuyer[] = [
-  { display_name: 'Sample Importer GmbH', country_code: 'DE', buyer_type: 'Distributor', fit_score: 91, contacts_total: 3, evidence_origin: EvidenceOrigin.preview },
-  { display_name: 'Sample Trading LLC', country_code: 'AE', buyer_type: 'Wholesaler', fit_score: 85, contacts_total: 2, evidence_origin: EvidenceOrigin.preview },
-  { display_name: 'Sample Retail Group Ltd', country_code: 'GB', buyer_type: 'Retail chain', fit_score: 78, contacts_total: 4, evidence_origin: EvidenceOrigin.preview },
-];
+export const SAMPLE_BUYERS: SampleBuyers | null = {
+  country_name: 'United Kingdom',
+  basis: '184 importers of HS 100630 in HMRC’s importer details (UK Trade Info), August 2026 list, placed by the postcode HMRC publishes.',
+  total: 184,
+  rows: [
+    { label: 'London', importers: 85, evidence_origin: EvidenceOrigin.preview },
+    { label: 'South East', importers: 21, evidence_origin: EvidenceOrigin.preview },
+    { label: 'East of England', importers: 15, evidence_origin: EvidenceOrigin.preview },
+    { label: 'North West', importers: 14, evidence_origin: EvidenceOrigin.preview },
+    { label: 'West Midlands', importers: 14, evidence_origin: EvidenceOrigin.preview },
+  ],
+};
 
-export const PREVIEW_LOCKED_BUYER_COUNT = 126;
-
-/** The product the sample is computed for, stated so it is never read as the member's own. */
-export const PREVIEW_PRODUCT_LABEL = 'Handmade cotton textiles · HS 630260';
-
-export interface PreviewDocument {
+export interface SampleDocument {
   label: string;
   technical_label: string;
-  status: string;
+  /** What happens to it, in a few words — a description, never a status of a real shipment. */
+  how: string;
 }
 
-/** What the document engine produces for one shipment — shown as a list, never generated. */
-export const PREVIEW_DOCUMENTS: readonly PreviewDocument[] = [
-  { label: 'Commercial invoice', technical_label: 'Commercial Invoice', status: 'Approved' },
-  { label: 'Packing list', technical_label: 'Packing List', status: 'Approved' },
-  { label: 'Certificate of origin', technical_label: 'Certificate of Origin (Form A)', status: 'Awaiting chamber' },
-  { label: 'Bill of lading', technical_label: 'Bill of Lading', status: 'Draft' },
-  { label: 'Shipping bill', technical_label: 'Shipping Bill (ICEGATE)', status: 'Filed' },
+/**
+ * The documents the document engine renders from one set of deal facts (`DocType`,
+ * `src/lib/document-generation/legacy/capabilities.ts`: PDF, Word and HTML for each). The bill of
+ * lading is not here because the carrier issues it.
+ */
+export const SAMPLE_DOCUMENTS: readonly SampleDocument[] = [
+  { label: 'Commercial invoice', technical_label: 'Commercial Invoice (or Proforma)', how: 'Generated from the deal facts' },
+  { label: 'Packing list', technical_label: 'Packing List', how: 'Generated from the deal facts' },
+  { label: 'Shipping bill', technical_label: 'Shipping Bill (draft for ICEGATE)', how: 'Drafted for your customs broker to file' },
+  { label: 'Certificate of origin', technical_label: 'Certificate of Origin (draft)', how: 'Drafted for the issuing body' },
+  { label: 'Shipping instructions and VGM', technical_label: 'Shipping Instructions, VGM Declaration', how: 'Generated for the carrier' },
+  { label: 'Bill of exchange and bank letter', technical_label: 'Bill of Exchange, Bank Collection Letter', how: 'For documentary-collection terms' },
 ];

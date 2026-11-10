@@ -99,6 +99,12 @@ describe('paid-only tools', () => {
       expect(source.indexOf('prisma.'), file).toBeGreaterThan(gateEnd);
     }
     expect(existsSync('src/app/app/markets/MarketEstimate.tsx')).toBe(false);
+    // E-055: buyer discovery is agent-curated (docs/11 §7) and the API refuses buyer search to
+    // exporter roles, so members get the curated view, never a search screen.
+    expect(existsSync('src/app/app/buyers/BuyersExplorer.tsx')).toBe(false);
+    const buyersPage = readFileSync('src/app/app/buyers/page.tsx', 'utf8');
+    expect(buyersPage).toContain('<AgentCuratedBuyers');
+    expect(buyersPage).not.toMatch(/api\/v1\/buyers/);
     for (const file of ['src/app/app/buyers/[buyerId]/page.tsx', 'src/app/app/readiness/page.tsx', 'src/app/app/readiness/tasks/page.tsx']) {
       const source = readFileSync(file, 'utf8');
       expect(source.indexOf('upgradeTierFor('), file).toBeGreaterThan(0);

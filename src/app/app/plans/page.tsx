@@ -239,7 +239,7 @@ export default async function PlansPage() {
             },
             {
               q: 'Is the sample built from my data?',
-              a: 'No. Samples use illustrative figures for a generic product and are labelled as such on every screen. Nothing in a sample is a fact about your product, your buyers or any real company — and running one costs you nothing.',
+              a: 'No. The sample is one real result for basmati rice (HS 100630), run on 10 Nov 2026 and frozen, with every importer’s name withheld. It is labelled on every screen, and nothing in it is about your product. Members get the same for their own products, with current figures.',
             },
             {
               q: 'How is the payment taken?',

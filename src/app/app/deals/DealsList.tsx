@@ -101,7 +101,7 @@ export function DealsList({ initialFilters = {} }: { initialFilters?: DealsListI
   // Initial state comes from the SERVER-read searchParams (passed down as a prop), not
   // from the `useSearchParams()` client hook — that hook forces the route into a
   // Suspense boundary at build time, which nothing else in this codebase uses
-  // (BuyersExplorer takes the same prop-from-server-page approach). `router.replace`
+  // (the server page passes the props in). `router.replace`
   // below still keeps the URL in sync as filters change client-side.
   const [stage, setStage] = useState(initialFilters.stage ?? '');
   const [risk, setRisk] = useState(initialFilters.risk ?? '');
