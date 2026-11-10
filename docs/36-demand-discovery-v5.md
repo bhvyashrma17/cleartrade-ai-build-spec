@@ -347,8 +347,9 @@ reads the frozen releases and passes their rows in).
   observations first; when no single published day within `fx_max_lookback_days` carries every leg,
   and `fx_fetch_missing` allows it, it fetches the missing series over exactly that window, stores
   them (`ingestEcbSeries`: immutable, raw response kept) and derives again (`fx.ts`). One fetch per
-  series per run; every fetch is frozen in `fx_fetches`. A failed fetch leaves the rate unavailable
-  with its reason and makes the run `partial`; an ECB 404 (no such series) is recorded, not a failure.
+  series per run; every fetch is frozen in `fx_fetches`. A failed fetch is tried once more after 3 s
+  (E-057; `attempts` on the record); if it fails again it leaves the rate unavailable with its reason
+  and makes the run `partial`. An ECB 404 (no such series) is recorded, not a failure, and not retried.
 - **World Bank age limit (policy v3, D-021).** A logistics score or tariff average more than
   `world_bank.max_age_years` (10) old on the run's date counts as missing, and the market's metric
   says so. Against the files imported on 14 Oct this drops logistics for AZ (2014) and TL (2007) and

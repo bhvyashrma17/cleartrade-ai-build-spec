@@ -21,6 +21,7 @@ import {ProductClassificationForm} from '@/components/agent/ProductClassificatio
 import { HsFinder } from '@/components/hs-finder/HsFinder';
 import type { ExporterFitView } from '@/lib/demand-discovery-v5/exporter-inputs';
 import type { IndiaMarket } from '@/lib/demand-discovery-v5/india-markets';
+import { runStatusLabel } from '@/lib/discovery-run-labels';
 import { V5Results, type V5Row } from './V5Results';
 
 type Tier = 'guest' | 'free' | 'paid';
@@ -366,7 +367,7 @@ export function DemandDiscovery({
             {recentRuns.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <span className="text-primary">{r.label}</span>
-                <span className="text-xs text-[var(--color-text-secondary)]">{r.status}</span>
+                <span className="text-xs text-[var(--color-text-secondary)]">{runStatusLabel(r.status)}</span>
               </li>
             ))}
           </ul>
