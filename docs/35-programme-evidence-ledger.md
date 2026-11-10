@@ -2503,6 +2503,33 @@ Korea's Customs Act Art. 50 applies the WTO rate (`C`) where it is lower than th
 - The 42 tariff, Customs Atlas, Country Truth and Demand Discovery test files: 513 tests pass. These include `korea-authority-pack` (43), `japan-authority-pack` (12, including the stored row v5 reads), `demand-discovery-v5-metrics` and `-official-duty` (49, including the latest reading winning).
 - Full suite: 2,380 tests pass, 5 are skipped, and 3 fail. The 3 failures are `market-scan-requests`, `pilot-e2e` and `staff-provisioning`. The same 3 fail on `staging/railway` without this change in the agent's local harness. CI is the check of record for them.
 
+
+### E-059 · 2026-11-10 · Korea's applied rate follows Customs Act Art. 50 (D-043, R-47) (in review)
+
+**Data (read-only; the owner's Claude Code, branch `data/e057-kr-quota-rows`, commit `394da3f6`).**
+- Source: the same Korea release, `cmtln05uv0001uelwl3ptnl1n`. 357,439 of its 380,216 rows are in force on 10 Nov 2026, and no item has two rows in force for one code.
+- `B` (provisional rate): 0 items.
+- `P1`: 51 items (within a quantity, with a recommendation). `P2` and `P4`: 0.
+- `P3` (allocation tariff for all imports): 127 items. Every one is below `A`, and the 121 with a `C` row are below `C` too.
+- `D`: 14 items. `G1`/`G2`: 30. Any `E1*`: 2,838. `FIN1`: 10,303 items, 32 of which also have `FIN2`.
+- Numerically, `C` is below `A` on 3,176 items. Only 2 of them have no `FIN1` row, and on none is `FIN1` above `C`.
+- So the scored rate, which is India's CEPA rate wherever one is published (D-026), changes on few items. What changes widely is the "standard rate" shown beside it.
+
+**Built (`kcs-tariff-parser-v4`, `koreaAppliedRate`).** Outside the farm quotas (D-042), an item's general duty is the rate Customs Act Art. 50 applies:
+- `P3` comes ahead of `B`, which comes ahead of `A`;
+- `C` applies only where it is lower than the rate those give.
+
+Only plain percentages are compared. A rate with an amount per unit, or a `C` held for a declared end use, is never swapped in. The `A` and `C` lines stay as published, and the general duty's note says which rate applies and why.
+
+**Not changed:**
+- `D`, `G1`/`G2` and `E1*` are origin-specific programmes that may cover Indian goods (the WTO developing-country protocol, GSTP and APTA). Only the Korea–India CEPA (`FIN1`–`FIN4`) is read as India's preference.
+- Claude Code also found that the release's Korea–EU and Korea–UK FTA rates ended on 30 Jun 2026. That does not touch Indian goods.
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `korea-authority-pack`: 47 tests pass, including 4 new rate-priority tests on the release's own shapes (coffee `P3` 0 against `A` 2 and `C` 54).
+- The 42 tariff, Customs Atlas, Country Truth and Demand Discovery files: 517 tests pass.
+
 ## Risk register
 
 
@@ -2554,4 +2581,4 @@ Korea's Customs Act Art. 50 applies the WTO rate (`C`) where it is lower than th
 | R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
 | R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Decided (D-042) and built (E-058): Korea scores `W2` and says `W1`; Japan scores the out-of-quota line and says the Government's quota | A production rice run after the release shows Korea 513% and Japan 341 yen/kg, each with the quota said |
-| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Decided (D-043): fixed right after the quota release | Korea's rate priority (Art. 50) read from the stored rows, with counts of `B` and `P` rows (owner's Claude Code, branch `data/e057-kr-quota-rows`) |
+| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Decided (D-043) and built (E-059): `P3`, then `B`, then `A`, with `C` where it is lower | A production run after the release shows a Korean line's standard rate from Art. 50 |
