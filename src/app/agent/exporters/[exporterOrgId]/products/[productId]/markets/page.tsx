@@ -3,7 +3,9 @@
  * markets. Reuses the exact exporter-facing `MarketResults` component with a `basePath` so
  * every link stays inside the agent route tree.
  */
+import { redirect } from 'next/navigation';
 import { requireAgentDiscoveryPrincipal, loadOrNotFound } from '@/lib/country-discovery/agent-page-auth';
+import { V5_MODEL_VERSION } from '@/lib/country-discovery/market-view';
 import { marketResults, productDiscoveryState } from '@/lib/country-discovery/service';
 import { PageHeader } from '@/components/ui';
 import { MarketResults } from '@/app/app/products/[productId]/markets/MarketResults';
@@ -17,6 +19,9 @@ export default async function AgentMarketsPage({ params }: { params: Promise<{ e
     marketResults(principal, exporterOrgId, productId),
     productDiscoveryState(principal, exporterOrgId, productId),
   ]));
+  // E-061: a v5 run is read on the market control table, which orders by the engine's own rank
+  // and opens its five-part breakdown; the Country Truth list below cannot represent it.
+  if (results.run?.model_version === V5_MODEL_VERSION) redirect(`/agent/exporters/${exporterOrgId}/products/${productId}/markets/manage`);
   return (
     <>
       <PageHeader

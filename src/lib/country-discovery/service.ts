@@ -10,6 +10,8 @@
  * frozen rows and projects them (see `market-view.ts`).
  */
 import { assertEarlierEnginesRetired } from '@/lib/demand-discovery-v5/earlier-engines';
+import { v5Detail } from '@/lib/demand-discovery-v5/detail';
+import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/policy';
 import { JobStatus, JobType, TradeSourceMode, UserRole } from '@prisma/client';
 import { enqueueGlobalCountryScreening } from '@/lib/job-handlers/country-screening';
 import { globalCountryScreeningShortlist } from '@/lib/country-screening/service';
@@ -27,10 +29,14 @@ import {
   type AssessmentRecord,
   type MarketDetailView,
   type MarketRowView,
+  isV5Assessment,
 } from './market-view';
 import { assessProductReadiness, type ProductReadiness } from './readiness';
 import { buildWorkQueue, summariseWork, TOP_RANKED_CUTOFF, type MarketWorkInput, type WorkSummary, type WorkTask } from './work-queue';
+import { v5AgentActions, v5DutyIsOfficial, v5MarketStatus } from './v5-work';
 import { buildConfidenceGapLedger, type ConfidenceGapLedger } from './confidence-ledger';
+
+export { v5MarketStatus } from './v5-work';
 
 /**
  * A market's one-line status for the summary table.
@@ -117,6 +123,8 @@ export const SCREENING_PRINCIPALS: readonly UserRole[] = [UserRole.agent, UserRo
 
 const ASSESSMENT_SELECT = {
   id: true, country_code: true, overall_score: true, confidence_score: true,
+  // E-061: a v5 run is ordered by its own stored rank and status, never re-ranked by score.
+  model_version: true, market_status: true, rank: true, handed_off: true,
   country_truth_assessment_state: true, country_truth_period_set: true, country_truth_as_of_date: true,
   generated_at: true, rationale: true, field_provenance: true, is_selected: true, saved_at: true,
   country_trade_metrics: { select: { metrics_payload: true } },
@@ -312,7 +320,7 @@ export async function startMarketDiscovery(actor: Principal, exporterOrgId: stri
 export interface MarketResultsView {
   product: { id: string; name: string; hs6: string | null };
   /** Null when no deep analysis has produced assessments yet. */
-  run: { id: string; generated_at: string; status: string } | null;
+  run: { id: string; generated_at: string; status: string; model_version: string | null } | null;
   markets: Array<MarketRowView & { stands_out: string | null; can_improve: string | null }>;
   /** Markets the screen shortlisted but which have no deep assessment yet. */
   awaiting_analysis: Array<{ country_code: string; country: string }>;
@@ -346,11 +354,36 @@ export async function marketResults(actor: Principal, exporterOrgId: string, pro
 
   return {
     product: { id: product.id, name: product.name, hs6: classification?.hs6_code ?? null },
-    run: run ? { id: run.id, generated_at: run.created_at.toISOString(), status: run.status } : null,
+    run: run ? { id: run.id, generated_at: run.created_at.toISOString(), status: run.status, model_version: run.model_version } : null,
     markets,
     awaiting_analysis: awaiting,
     screening_run_id: screeningRun?.id ?? null,
   };
+}
+
+/**
+ * E-061: one market of a product's latest v5 run — the same five-part breakdown the exporter's
+ * Markets page shows (`v5Detail`), or null when the latest run is another engine's (its Country
+ * Truth view still applies). Tenancy as every read here: `loadProduct` admits the exporter's own
+ * members and an agent only through an active assignment.
+ */
+export async function v5Market(actor: Principal, exporterOrgId: string, productId: string, country: string) {
+  const { product } = await loadProduct(actor, exporterOrgId, productId);
+  const run = await prisma.discoveryRun.findFirst({
+    where: { exporter_org_id: exporterOrgId, product_id: productId, status: { in: [JobStatus.completed, JobStatus.partial] } },
+    orderBy: { created_at: 'desc' },
+    select: { id: true, model_version: true, created_at: true },
+  });
+  if (!run || run.model_version !== DEMAND_DISCOVERY_V5_MODEL) return null;
+  const code = country.trim().toUpperCase();
+  const [assessment, totalRanked] = await Promise.all([
+    prisma.marketAssessment.findFirst({ where: { run_id: run.id, country_code: code } }),
+    prisma.marketAssessment.count({ where: { run_id: run.id, rank: { not: null } } }),
+  ]);
+  if (!assessment) throw notFound('That market is not in this product\'s latest run.');
+  const detail = v5Detail(assessment, totalRanked);
+  if (!detail) return null;
+  return { product: { id: product.id, name: product.name }, run: { id: run.id, generated_at: run.created_at.toISOString() }, country_code: code, assessment_id: assessment.id, detail };
 }
 
 export interface CountryDetailView {
@@ -477,6 +510,8 @@ export interface AgentProductView {
   deep_analysis: ProductDiscoveryState['deep_analysis'];
   /** Non-null when a completed screen exists and deep Country Truth can be requested. */
   deep_request_ready: boolean;
+  /** E-061: the engine of the latest run, so the surface words its numbers for it (v5: score and confidence). */
+  model_version: string | null;
   tasks: AgentCountryTask[];
   /** The prioritised ClearTrade work queue for this product. */
   queue: WorkTask[];
@@ -526,15 +561,35 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
     if (run) {
       const rows = await prisma.marketAssessment.findMany({ where: { run_id: run.id }, select: ASSESSMENT_SELECT });
       const ranked = rankMarkets(rows as AssessmentRecord[]);
+      // E-061: a v5 run carries the engine's own rank and hand-off. Its rows have none of the
+      // Country Truth pillars, so v4 plans asked for every pillar in all 218 markets (872 tasks on
+      // Lappu Exports' basmati run). A v5 market's work is its tariff line, for the markets handed
+      // on, and only where the stored score used no official duty (`v5-work.ts`).
+      const v5Run = rows.some((row) => isV5Assessment(row as AssessmentRecord));
+      const officialDuty = new Set<string>();
+      if (v5Run) {
+        const handed = await prisma.marketAssessment.findMany({ where: { run_id: run.id, handed_off: true }, select: { id: true, score_breakdown: true } });
+        for (const row of handed) if (v5DutyIsOfficial(row.score_breakdown)) officialDuty.add(row.id);
+      }
       // One read of the agent decisions for the whole run, so a 20-market product does not issue
       // twenty queries to discover which markets a human has already ruled on.
       const decisions = await currentMarketDecisions(ranked.map((row) => row.id));
       const readiness = assessProductReadiness(product, product.classification_history[0] ?? null);
       for (const [index, row] of ranked.entries()) {
         const detail = projectMarketDetail(row, index + 1);
-        const plan = buildImprovementPlan(detail.pillars, detail.evidence_confidence, {
-          product_id: product.id, country_code: row.country_code, open_classification_questions: 0, readiness,
-        });
+        const handedOff = v5Run && (row as AssessmentRecord & { handed_off?: boolean }).handed_off === true;
+        // The real refinement state, not a generic placeholder — bounded to the leading markets
+        // (and a v5 run's handed-on markets) since each lookup is a DB read.
+        const classificationDetail = index < TOP_RANKED_CUTOFF || handedOff
+          ? await classificationQuestions(actor, exporterOrgId, product.id, row.country_code).catch(() => null)
+          : null;
+        // A v5 market scored with an official duty is not waiting on its tariff line.
+        const tariffLine = v5Run && officialDuty.has(row.id) ? null : classificationDetail;
+        const plan = v5Run
+          ? { actions: handedOff ? v5AgentActions(tariffLine) : [] }
+          : buildImprovementPlan(detail.pillars, detail.evidence_confidence, {
+              product_id: product.id, country_code: row.country_code, open_classification_questions: 0, readiness,
+            });
         for (const action of plan.actions) {
           if (action.owner !== 'cleartrade') continue;
           tasks.push({
@@ -553,17 +608,13 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
           is_selected: row.is_selected,
           is_marked: decision?.marked ?? false,
           is_excluded: decision?.excluded ?? false,
+          is_handed_off: handedOff,
           actions: plan.actions,
         });
-        // The real refinement state, not a generic placeholder — bounded to the leading markets
-        // since each lookup is a DB read and only the top few are ever shown in the summary.
-        const classificationDetail = index < TOP_RANKED_CUTOFF
-          ? await classificationQuestions(actor, exporterOrgId, product.id, row.country_code).catch(() => null)
-          : null;
         topMarkets.push({
           country_code: row.country_code, country: detail.country, rank: index + 1,
           attractiveness: detail.attractiveness, confidence: detail.evidence_confidence,
-          ...marketStatus(detail, classificationDetail),
+          ...(v5Run ? v5MarketStatus(row as AssessmentRecord & { handed_off?: boolean }, tariffLine) : marketStatus(detail, classificationDetail)),
         });
       }
     }
@@ -573,6 +624,7 @@ export async function agentCountryTruthWork(actor: Principal, exporterOrgId: str
       screening: state.screening,
       deep_analysis: state.deep_analysis,
       deep_request_ready: Boolean(state.screening.screening_run_id) && state.screening.state === 'completed',
+      model_version: run?.model_version ?? null,
       tasks,
       queue,
       queue_summary: summariseWork(queue),

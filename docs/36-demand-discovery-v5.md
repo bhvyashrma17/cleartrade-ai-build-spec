@@ -256,6 +256,11 @@ reads the frozen releases and passes their rows in).
   frozen release ids. The run's `summary` names the top 10 handed to regional discovery.
 - Agents act through the existing `AgentDecision` overlay: promote, flag or reject, shown beside the
   computed rank, never replacing it.
+- The agent's views read a v5 run as v5 (10 Nov 2026, E-061). The Demand Discovery tab and the
+  market page show the engine's order, statuses and breakdown, and the all-markets page opens the
+  market control table. The agent's work queue holds one kind of task: a handed-on market's
+  tariff-line questions, where the stored score used an estimated duty. Code:
+  `src/lib/country-discovery/v5-work.ts`.
 - Tier gates are unchanged (`demand_discovery.run` paid; docs/14). The guest market estimate moves to
   BACI under the same framing rule: observed values and price bands only, no ranking, no projection.
 

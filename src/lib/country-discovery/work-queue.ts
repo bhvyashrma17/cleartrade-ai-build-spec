@@ -45,6 +45,8 @@ export interface WorkTask {
 
 const CATEGORY_OF: Record<string, WorkCategory> = {
   confirm_tariff_line: 'classification',
+  // E-061: a v5 market's tariff-line questions (`v5-work.ts`).
+  answer_tariff_line_questions: 'classification',
   collect_cost_quotes: 'quotes',
   verify_certifications: 'certification',
   establish_route: 'route',
@@ -79,13 +81,15 @@ export interface MarketWorkInput {
   is_marked: boolean;
   /** Rejected or marked not-selected — produces no work at all. */
   is_excluded: boolean;
+  /** E-061: a v5 run handed this market on to buyer search; its work is due with the top-ranked. */
+  is_handed_off?: boolean;
   actions: readonly ImprovementAction[];
 }
 
 function priorityFor(market: MarketWorkInput): WorkPriority {
   if (market.is_selected) return 'selected';
   if (market.is_marked) return 'marked';
-  if (market.rank > 0 && market.rank <= TOP_RANKED_CUTOFF) return 'top_ranked';
+  if (market.rank > 0 && (market.rank <= TOP_RANKED_CUTOFF || market.is_handed_off)) return 'top_ranked';
   return 'backlog';
 }
 

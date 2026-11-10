@@ -22,6 +22,7 @@
  * preserve the distinction — see `PillarView.state`.
  */
 import type { Prisma } from '@prisma/client';
+import { DEMAND_DISCOVERY_V5_MODEL } from '@/lib/demand-discovery-v5/model';
 import { countryName } from './country-names';
 import { periodRange, sharePercent, signedPercent, usdCompact } from './format';
 
@@ -241,13 +242,31 @@ export interface AssessmentRecord {
   is_selected: boolean;
   saved_at: Date | null;
   country_trade_metrics: { metrics_payload: Prisma.JsonValue } | null;
+  /** v5 (E-061): the engine's own model, status and stored rank. Absent on rows read before them. */
+  model_version?: string | null;
+  market_status?: string | null;
+  rank?: number | null;
+}
+
+/** The v5 engine's model identity (`demand-discovery-v5/model.ts`). */
+export const V5_MODEL_VERSION = DEMAND_DISCOVERY_V5_MODEL;
+
+/** A Demand Discovery v5 assessment: ranked by the engine itself, never re-ranked here. */
+export function isV5Assessment(row: Pick<AssessmentRecord, 'model_version'>): boolean {
+  return row.model_version === V5_MODEL_VERSION;
+}
+
+/** A v5 market is rankable only when the engine ranked it; its partial score is not a rank (docs/36 §5.2). */
+function isRankable(row: AssessmentRecord): boolean {
+  return isV5Assessment(row) ? row.market_status === 'ranked' : row.country_truth_assessment_state !== 'not_rankable';
 }
 
 function baseRow(row: AssessmentRecord, rank: number): MarketRowView {
   const metrics = readMetrics(row.country_trade_metrics?.metrics_payload);
   // `not_rankable` means the scorer refused to produce an overall score. Rendering the stored
-  // number anyway would present a score the engine declined to stand behind.
-  const rankable = row.country_truth_assessment_state !== 'not_rankable';
+  // number anyway would present a score the engine declined to stand behind. For v5 the same holds
+  // for a market the engine did not rank: its partial score is not an attractiveness.
+  const rankable = isRankable(row);
   return {
     assessment_id: row.id,
     country_code: row.country_code,
@@ -294,6 +313,17 @@ export function projectMarketDetail(row: AssessmentRecord, rank: number): Market
  * result the exporter is entitled to see, and hiding it would silently shrink the shortlist.
  */
 export function rankMarkets<T extends AssessmentRecord>(rows: readonly T[]): T[] {
+  // E-061: a v5 run is in the engine's own order — its stored rank — and the markets it did not
+  // rank follow, by status. Sorting v5 rows by score put Vatican City's partial 93 (20 of 100
+  // points) above the United States' ranked 85 on every agent view.
+  if (rows.some(isV5Assessment)) {
+    const STATUS_ORDER: Record<string, number> = { ranked: 0, not_enough_data: 1, no_recorded_demand: 2, excluded: 3 };
+    return [...rows].sort((left, right) =>
+      (STATUS_ORDER[left.market_status ?? ''] ?? 4) - (STATUS_ORDER[right.market_status ?? ''] ?? 4)
+      || (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER)
+      || (right.overall_score ?? -1) - (left.overall_score ?? -1)
+      || left.country_code.localeCompare(right.country_code));
+  }
   return [...rows].sort((left, right) => {
     const leftRankable = left.country_truth_assessment_state !== 'not_rankable';
     const rightRankable = right.country_truth_assessment_state !== 'not_rankable';

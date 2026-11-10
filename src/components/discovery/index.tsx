@@ -157,12 +157,20 @@ export interface MarketRow {
  * columns on mobile would mean the phone user is shown a different analysis. The table scrolls
  * inside its own container so the page body never scrolls sideways.
  */
-export function MarketTable({ rows, href, caption }: {
+export function MarketTable({ rows, href, caption, variant = 'country_truth' }: {
   rows: readonly MarketRow[];
   /** Builds the destination for a market; omit to render the name as plain text. */
   href?: (row: MarketRow) => string;
   caption: string;
+  /**
+   * E-061: what the two numbers are. A v5 run's are its score and confidence, the words the
+   * exporter's Markets page uses; Country Truth's are attractiveness and evidence coverage.
+   */
+  variant?: 'country_truth' | 'v5';
 }) {
+  const v5 = variant === 'v5';
+  const scoreLabel = v5 ? 'Score' : 'Attractiveness';
+  const unscored = v5 ? 'Not ranked' : 'Not rankable';
   const name = (row: MarketRow) =>
     href ? <Link href={href(row)} className="font-medium text-bone hover:underline">{row.country}</Link>
       : <span className="font-medium text-bone">{row.country}</span>;
@@ -176,8 +184,8 @@ export function MarketTable({ rows, href, caption }: {
             <tr className="border-b border-line-strong">
               <th scope="col" className="w-16 py-2.5 text-left text-xs font-medium text-muted">Rank</th>
               <th scope="col" className="py-2.5 text-left text-xs font-medium text-muted">Market</th>
-              <th scope="col" className="w-32 py-2.5 text-right text-xs font-medium text-muted">Attractiveness</th>
-              <th scope="col" className="w-32 py-2.5 text-right text-xs font-medium text-muted">Evidence coverage</th>
+              <th scope="col" className="w-32 py-2.5 text-right text-xs font-medium text-muted">{scoreLabel}</th>
+              <th scope="col" className="w-32 py-2.5 text-right text-xs font-medium text-muted">{v5 ? 'Confidence' : 'Evidence coverage'}</th>
               <th scope="col" className="py-2.5 text-left text-xs font-medium text-muted">Status</th>
               <th scope="col" className="w-24 py-2.5 text-right text-xs font-medium text-muted">
                 <span className="sr-only">Actions</span>
@@ -194,10 +202,10 @@ export function MarketTable({ rows, href, caption }: {
                 </td>
                 <td className="py-3 text-right align-middle">
                   {row.attractiveness == null
-                    ? <span className="text-sm text-slate">Not rankable</span>
+                    ? <span className="text-sm text-slate">{unscored}</span>
                     : <span className="text-lg font-medium text-bone">{row.attractiveness}</span>}
                 </td>
-                <td className="py-3 text-right align-middle text-sm text-slate">{row.confidence}% coverage</td>
+                <td className="py-3 text-right align-middle text-sm text-slate">{row.confidence}%{v5 ? '' : ' coverage'}</td>
                 <td className="py-3 align-middle"><MarketStatus status={row.status} tone={row.status_tone} /></td>
                 <td className="py-3 text-right align-middle">{row.action}</td>
               </tr>
@@ -218,9 +226,9 @@ export function MarketTable({ rows, href, caption }: {
                 </div>
                 <div className="shrink-0 text-right">
                   {row.attractiveness == null
-                    ? <p className="text-sm text-slate">Not rankable</p>
+                    ? <p className="text-sm text-slate">{unscored}</p>
                     : <p className="text-xl font-medium text-bone">{row.attractiveness}</p>}
-                  <p className="text-xs text-muted">{row.confidence}% evidence coverage</p>
+                  <p className="text-xs text-muted">{v5 ? `Confidence ${row.confidence}%` : `${row.confidence}% evidence coverage`}</p>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
