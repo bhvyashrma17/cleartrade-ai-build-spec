@@ -112,6 +112,17 @@ describe('Japan Customs tariff semantics from real page shapes', () => {
     expect(result.general_duty).toMatchObject({ kind: 'specific', specific_amount: 55, expression: '55 yen/kg' });
   });
 
+  test('a quota only one EPA partner grants never splits the HS6: the lines still need refinement', () => {
+    const result = ingest([
+      { code: '0406.10', suffix: '', desc: 'Fresh cheese', rates: {} },
+      { code: '', suffix: '010', desc: '- Whey cheese', rates: { General: '29.8%', WTO: '29.8%', EU: 'For the tariff rate quota under the Japan-EU EPA 14.9%' } },
+      { code: '', suffix: '090', desc: '- Other', rates: { General: '22.4%', WTO: '22.4%' } },
+    ], '040610', '04');
+    expect(result.resolution.resolution).toBe('classification_refinement_required');
+    expect(result.general_duty).toBeNull();
+    expect(result.general_duty_quota).toBeNull();
+  });
+
   test('without a quota line, or with a WTO figure that is unmarked, lower or in another unit, the applicable duty is kept', () => {
     // No quota sibling: the asterisked WTO figure stays a bound ceiling.
     const alone = ingest([{ code: '1006.30', suffix: '', desc: 'Rice', rates: {} }, { code: '', suffix: '090', desc: '- Other', rates: { Temporary: '49 yen/kg', WTO: '*(341yen /kg)' } }], '100630');
