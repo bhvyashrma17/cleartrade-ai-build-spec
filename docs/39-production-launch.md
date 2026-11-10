@@ -190,8 +190,8 @@ delete that bucket copy in Railway.
 - Staging gets its own Resend and Comtrade keys and its other secrets rotated (R-36), and its
   worker moves to Singapore (R-37).
 - docs/33 §5's hazards are resolved by §2–§3; the ledger records each check with its result.
-- Before 1 Dec 2026 (R-41): every service's build, start, pre-deploy, health check and restart settings
-  entered as the service's own settings, matching `deploy/railway/*.railway.json`, and the config file
-  path cleared, on staging and production.
-- Delete `tmp/rw/production.env` on the owner's machine.
+- Done 9 Nov 2026 (R-41, E-054): every service's build, start, pre-deploy, health check and restart
+  settings are the service's own, matching `deploy/railway/*.railway.json`, and no service reads a
+  config file, on staging and production. Change them in each service's Settings from now on.
+- Done 9 Nov 2026 (E-054): `tmp/rw/production.env` deleted on the owner's machine.
 - Support from day one: `docs/40-support-guide.md`.

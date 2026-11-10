@@ -50,6 +50,7 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-037 | 2026-10-30 | Demand Discovery uses actual data or labelled estimates only; agents neither read nor record tariffs. Owner's words: "we don't want agents reading, either have labeled estimates or actual data in demand discovery." | Owner | Demand Discovery v5, Customs Atlas (docs/36, docs/37) |
 | D-038 | 2026-10-30 | Build order: finish Demand Discovery first, then regional demand for all its markets, then buyers for the same markets, with source research and tariff work alongside; tariff automation for every market (D-030) resumes as part of finishing stage 1. Owner's words: "Ideate well about what to build in demand discovery first to finish it once and for all, then covering the region for all the countries covered in it, and then the buyer discovery for the same countries. It's a simultaneous project, I guess." and "The completion of the demand discovery first, right? If yes, then let's proceed with it." | Owner | Programme |
 | D-039 | 2026-11-09 | Every tool runs for paid members only. Owner's words: "the only way to do it is being a paid user", and for visitors and free accounts "it shouldn't burn actual credits, it should just be with static data to show the sample of workflow … and make that accurate. but don't exhaust our resources." The owner's own test account becomes a member through an audited fee waiver ("I register, you mark it paid"). | Owner | Product access (docs/14 §3c), E-052 |
+| D-040 | 2026-11-10 | Singapore's tariff: switch the nightly refresh off on production and staging (Singapore Statutes Online refuses it from Railway with HTTP 403) and load the customs duties order once from the owner's machine inside SSO's 03:00–07:00 SGT automation window (`authority-refresh.ts --acquire-only`, then `import-retained-authority-release.ts --family=SG`). Chosen from three options: this, refresh off with no Singapore tariff, or leaving the refresh on | Owner | Market access (R-43), E-054 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -2240,6 +2241,51 @@ unconfirmed code is refused, the run starts once, a duplicate name is refused),
 `paid-only-tools` 3, `hs-finder-route` 3, `demand-discovery-v5-exporter-fit` 6,
 `country-truth-discovery-request` 9, `agent-ux-polish` 23: all pass.
 
+### E-054 · 2026-11-09 · Production close-out part 3; members-only live; Railway settings off config files
+
+**Owner's QA member (D-039).** The owner signed up with Google; the account's organisation is
+`cmt7efsaf0000mt0e8uadsij1`. CC ran `waive-commitment-fee.ts` with the only active admin as actor:
+dry run, then `fee due → waived, tier free → paid` and `commitment_fee_waived` audited. (A first dry
+run on a mistyped address refused, writing nothing.)
+
+**CC, part 3 (owner's machine, `--confirm-production`).**
+- `staging-pilot.ts retire --include-reserved-test-domains`: 5 accounts matched, 5 logins switched
+  off, audited; the QA account stays active and paid.
+- Tariffs: Canada's 2026-11-09 edition from the two documented URLs (qualified, 22,461 rows,
+  active); Iceland and Sri Lanka through their canaries, identical to staging. Production and staging
+  each hold 223 active releases in 33 families; 23 families are byte-identical, 10 (AL, AU, BT, CA,
+  IL, MU, NO, NP, OM, PE) differ because production fetched them later.
+- Reference auto-import and re-runs on new data: on, admin as actor. Singapore refresh: on, admin as
+  actor; its first window opens 19:00 UTC 9 Nov (R-43).
+- `dd5-health-check.ts --top=100`: 100 compared, 0 failed, 94 passed, 6 below the calibration bar
+  (R-42), median overlap 7 of 10; `writes: none`. Readiness 200 ready; scanner 6/6 (401 without and
+  with a wrong token); storage 9/9 with "bucket is private" skipped (no public base URL).
+- `tmp/rw/production.env` deleted.
+
+**CC, part 4 (10 Nov).** The official tariff look-up is on in production and staging (the default;
+no stored row overrides it). Bucket privacy, the skipped storage check: an existing production object
+requested with no credentials answers 403 AccessDenied in both URL styles. The three old copies of
+production variables in `tmp/rw/` (3 Nov and 9 Oct) are deleted. Singapore: production's first
+window made three attempts (19:07, 19:37 and 20:07 UTC on 9 Nov); each got HTTP 403 from Singapore
+Statutes Online, and no Singapore release is active (R-43).
+
+**Members-only live (E-052).** Release #41 deployed. Signed out on production: the estimate,
+the code finder and buyer search answer 401; Markets and Buyers show the members notice and the
+sample; Readiness shows the notice; the homepage makes no free claim. Before the deploy finished, the
+agent's own signed-out check reached the old code once (one estimate, one code lookup; at most one
+guest minted); disclosed to the owner.
+
+**Railway settings (R-41, closed).** Staging web and worker and production's worker already carried
+their own settings. Staging's scanner and production's web and scanner read
+`deploy/railway/*.railway.json`; their file paths were cleared and deployed. The scanners' own
+settings matched the files. Production web's did not: its pre-deploy was `npx prisma migrate
+deploy` (no identity check), with no start command and no health check. These were set to
+`npm run migrate:deploy`, `npm start` and `/api/health/ready` (timeout left at Railway's 300 s, the
+file had 120 s), and deployed: "Database identity validation passed for production migration
+tooling", no pending migrations, Ready. The two scanners answer `/health/ready` ready (ClamAV
+1.4.6). The staging deploy also applied the owner's staged staging `RESEND_API_KEY`. The JSON files
+stay in the repository as the record of these settings; Railway no longer reads them.
+
 ## Risk register
 
 
@@ -2285,4 +2331,6 @@ unconfirmed code is refused, the run starts once, a duplicate name is refused),
 | R-38 | `PATCH /api/v1/exporter-org/commitment-fee` accepted the staff sources (`manual_ops`, `bank_partner`, `AA`) from the exporter itself, even with Razorpay configured: any exporter could unlock paid tier without paying | Closed (E-049): `exporterFeeConfirmationProblem`; with the gateway configured every source is refused, without it only `exporter_update` | — |
 | R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Closed (E-050): reset by a one-time emailed link | — |
 | R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |
-| R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Open (E-051) | Every service's settings entered by hand before 1 Dec, on staging and production |
+| R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
+| R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
+| R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |

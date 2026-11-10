@@ -17,10 +17,12 @@ project: no staging service reads a production variable, database or bucket.
 | `Postgres` | — (production DB is external) | staging-only Railway Postgres; app uses the private network, operators use the TCP proxy |
 | Bucket | production bucket | `cleartrade-staging-env-*` (staging only) |
 
-Instance settings mirror `deploy/railway/{web,worker,scanner}.railway.json`. Those files are
-deliberately **not** at the repository root: Railway auto-applies a root `railway.json` to every
-service built from the repository, which is how the scanner once built and crashed with the
-application image.
+Instance settings mirror `deploy/railway/{web,worker,scanner}.railway.json`. Since 9 Nov 2026
+(R-41, E-054) no service reads those files — Railway ends config-as-code on 1 Dec 2026 — so the
+settings live on each service and the files are the written record of them; change both together.
+The files are deliberately **not** at the repository root: Railway auto-applies a root
+`railway.json` to every service built from the repository, which is how the scanner once built and
+crashed with the application image.
 
 Both public domains target port **3000** (`PORT=3000`). Railway generated them targeting 8080,
 which produced `502 Application failed to respond` while the internal health check — which uses
