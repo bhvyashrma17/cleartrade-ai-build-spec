@@ -93,6 +93,15 @@ export interface MarketAccessRequirementRecord {
   raw: unknown;
 }
 
+/** D-042: the cheaper rate a tariff-rate quota gives, and who may use it. */
+export interface GeneralDutyQuota {
+  in_quota_duty: ParsedDuty;
+  /** Plain words: what the quota is and what entitles an import to its rate. */
+  basis: string;
+  /** The out-of-quota duty also charges an amount per unit, so its rate is a floor: the duty is at least that. */
+  out_of_quota_floor?: boolean;
+}
+
 export interface MarketAccessIngestResult {
   jurisdiction: string;
   country_code: string;
@@ -115,6 +124,11 @@ export interface MarketAccessIngestResult {
   resolution: ClassificationResolutionResult;
   /** The general/third-country duty, only when a single line was actually established. */
   general_duty: ParsedDuty | null;
+  /**
+   * D-042 (R-46): the general duty is the out-of-quota rate of a tariff-rate quota. This is the
+   * rate inside the quota and what entitles an import to it: said beside the duty, never scored.
+   */
+  general_duty_quota?: GeneralDutyQuota | null;
   india_preference: IndiaPreferenceDetermination;
   lines: readonly MarketAccessLineRecord[];
   requirements: readonly MarketAccessRequirementRecord[];
@@ -194,7 +208,11 @@ export async function persistMarketAccessIngest(result: MarketAccessIngestResult
       national_tariff_code: resolved.national_tariff_code, national_code_system: result.national_code_system,
       duty_expression: result.general_duty.expression, duty_kind: result.general_duty.kind,
       verification_grade: grade,
-      raw_evidence: { resolution: result.resolution.resolution, duty: result.general_duty as unknown } as Prisma.InputJsonValue,
+      raw_evidence: {
+        resolution: result.resolution.resolution, duty: result.general_duty as unknown,
+        // D-042: the duty above is the out-of-quota rate; the quota's own rate is said, never scored.
+        ...(result.general_duty_quota ? { quota: { in_quota_duty: result.general_duty_quota.in_quota_duty as unknown, basis: result.general_duty_quota.basis, ...(result.general_duty_quota.out_of_quota_floor ? { out_of_quota_floor: true } : {}) } } : {}),
+      } as Prisma.InputJsonValue,
     });
   }
 

@@ -327,7 +327,11 @@ reads the frozen releases and passes their rows in).
   words (the EAEU's "0,03 евро за 1 кг", China's "1 元 / 千克") is converted too (E-025). Policy v7
   (D-031, 19 Oct 2026): a market's own tariff read automatically from a retained official schedule
   (China, Brazil; docs/37 §4b) scores at `quality.official_schedule_read` = 0.9 and its reason says
-  "read from <the tariff>; trade remedies are not checked".
+  "read from <the tariff>; trade remedies are not checked". D-042 (10 Nov 2026, R-46): under a
+  tariff-rate quota the ordinary duty is the out-of-quota rate, and the quota's own rate is said
+  beside it, never scored ("Duty on Indian goods is 513%, outside the tariff quota; 5% applies only
+  within the quota"); an out-of-quota rate that also charges an amount per unit is scored as a floor
+  ("at least"). Korea's and Japan's readers do this (docs/37 §4c).
 - **Tariff look-up inside each run (14 Oct 2026, D-020).** With `tariff_acquisition` on (the
   default), a run asks every market that has a Customs Atlas source for the product's HS6 before it
   reads tariff evidence (`tariff-step.ts`), through the deep run's own acquisition

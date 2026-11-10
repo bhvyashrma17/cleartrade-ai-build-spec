@@ -387,3 +387,57 @@ describe('KR is not a routing gap in the unconfigured-sources registry', () => {
     expect(source?.determination).toMatch(/no longer the only acquisition route/);
   });
 });
+
+/**
+ * D-042 (R-46): Korea's farm-goods tariff quotas. The rows below are as production's 2026-02-11
+ * release publishes them (E-057, branch data/e057-kr-quota-rows): rice's six items all carry these
+ * eight rows, and sesame's W2 carries a rate and an amount per unit.
+ */
+describe('farm-goods tariff quotas (D-042)', () => {
+  type Row = import('@/lib/market-access/providers/korea-bundle').KoreaRateRow;
+  const r = (rate_type_code: string, rate_value: number | null, extra: Partial<Row> = {}): Row => ({
+    rate_type_code, rate_value, unit_amount: null, reference_price: null, country_scope: '1', purpose_code: null, effective_from: '20260101', effective_to: '20261231', ...extra,
+  });
+  const RICE = [r('A', 5), r('FKH1', 513, { country_scope: '2' }), r('FPH1', 513, { country_scope: '2' }), r('T1', 684), r('T2', 513, { reference_price: 145 }), r('U', 0), r('W1', 5), r('W2', 513)];
+  const bundleOf = (items: Record<string, Row[]>) => ({
+    checksum: 'test', size_bytes: 1, release_identifier: '2026-02-11', item_rates: new Map(Object.entries(items)),
+    distinct_rate_type_codes: new Set(Object.values(items).flat().map((row) => row.rate_type_code)), canonical_sheet: '2.12' as const, canonical_sheet_row_count: Object.values(items).flat().length,
+    reader_version: 'kcs-tariff-xlsx-reader-v3' as const,
+  });
+  const build = (items: Record<string, Row[]>, hs6: string) => buildKoreaMarketAccess({ bundle: bundleOf(items), release_id: 'release-kr-q', release_reference_date: AT, retrieved_at: AT, hs6, at: AT, origin_country: 'IN' });
+
+  test('rice: the out-of-quota W2 513% is the general duty, and W1 5% is said as the quota', () => {
+    const result = build({ '1006301000': RICE, '1006302000': RICE }, '100630');
+    expect(result.parser_version).toBe('kcs-tariff-parser-v3');
+    expect(result.resolution.resolution).toBe('all_children_equivalent');
+    expect(result.general_duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 513 });
+    expect(result.general_duty!.note).toMatch(/out-of-quota rate, W2 \(농림축산물양허관세\(미추천\).*Art\. 50\(3\) applies it ahead of the basic rate \(A\)/);
+    expect(result.general_duty_quota).toMatchObject({ in_quota_duty: { kind: 'ad_valorem', ad_valorem_rate_percent: 5 } });
+    expect(result.general_duty_quota!.basis).toBe("Korea's tariff quota on 1006301000: an import with an import recommendation (추천) from the body managing the quota pays 5% (관세율) (W1); one without pays 513% (관세율) (W2), the rate scored. Customs Act Art. 50(3) applies both ahead of the basic rate (A, 5% (관세율)).");
+    expect(result.general_duty_quota).not.toHaveProperty('out_of_quota_floor');
+    // The published rows stay as published: A is still the third-country line, W1 and W2 are quota lines.
+    expect(result.lines.find((line) => line.origin_geographic_area_id === 'A')!.duty.ad_valorem_rate_percent).toBe(5);
+    expect(result.lines.filter((line) => line.national_tariff_code === '1006301000' && ['W1', 'W2'].includes(line.origin_geographic_area_id!)).map((line) => line.measure_kind)).toEqual(['tariff_quota', 'tariff_quota']);
+    // No Korea–India CEPA row for rice: unknown, as for any item without one (see above).
+    expect(result.india_preference.applicability).toBe('unknown');
+  });
+
+  test('a W2 with a rate and an amount per unit scores the rate as a floor, and says so', () => {
+    const result = build({ '1207400000': [r('A', 40), r('W1', 40), r('W2', 630, { unit_amount: 6660 })] }, '120740');
+    expect(result.general_duty).toMatchObject({ kind: 'ad_valorem', ad_valorem_rate_percent: 630, expression: '630% or more' });
+    expect(result.general_duty!.note).toMatch(/the duty is at least 630%, so that rate is scored as a floor/);
+    expect(result.general_duty_quota).toMatchObject({ in_quota_duty: { ad_valorem_rate_percent: 40 }, out_of_quota_floor: true });
+  });
+
+  test('a W2 without a W1 is still the duty, with no quota rate to say; an item without W rows keeps its basic rate', () => {
+    const cattle = build({ '0102291000': [r('A', 20), r('W2', 40)] }, '010229');
+    expect(cattle.general_duty).toMatchObject({ ad_valorem_rate_percent: 40 });
+    expect(cattle.general_duty_quota).toBeNull();
+    const plain = build({ '0101211000': [r('A', 8), r('C', 5)] }, '010121');
+    expect(plain.general_duty).toMatchObject({ ad_valorem_rate_percent: 8 });
+    expect(plain.general_duty_quota).toBeNull();
+    // A W2 row no longer in force does not count.
+    const expired = build({ '1006301000': [r('A', 5), r('W1', 5), r('W2', 513, { effective_to: '20251231' })] }, '100630');
+    expect(expired.general_duty).toMatchObject({ ad_valorem_rate_percent: 5 });
+  });
+});
