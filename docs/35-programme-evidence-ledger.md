@@ -2724,6 +2724,52 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - `demand-discovery-v5-national-line`: 11 tests, 1 new. Lappu's product name settles the US parboiled line; the HS heading answers nothing; an answer on file still wins.
 - `demand-discovery-v5-input-freshness`: 9 tests, 2 new. One covers the production-shaped China, EAC and TARIC releases. The other has the loader read `valid_until` from a stored release; one without it keeps the calendar date.
 
+**Release #60** (#59) was merged by the owner at 20:36 UTC as `4307078`.
+- The production worker deployed it.
+- Production web's build failed on Railway: "exit code: 1" during `npx prisma generate && npm run build`, with no error output in the build logs. Railway's diagnosis could not name a cause and advises a redeploy. The tree is identical to `0b26d75`, whose CI production build passed. Web keeps serving #58.
+- Lappu's next run (`cmwb5r6ar000xlm0ey4t0lgme`, worker on #60, 20:43–20:45 UTC) reads the US as "Duty on Indian goods is 11.2% on the tariff line the product's description names. Source: USITC — Harmonized Tariff Schedule 10063010". The US moves from #1 (85) to #2 (81), its confidence rises from 82% to 87%, and Saudi Arabia is #1.
+
+### E-067 · 2026-11-11 · Singapore's real First Schedule, read from a copy saved in a browser (R-43) (in review)
+
+**What happened (D-040).**
+- On 11 Nov at 03:33 SGT, inside SSO's window, the owner's Claude Code ran `authority-refresh.ts --acquire-only` on the owner's machine. SSO answered "non-retryable HTTP 403", as it does to Railway, so SSO refuses scripts, not one address.
+- The owner asked whether a manual copy would do. Research found:
+  - SSO's terms allow reproduction on an electronic platform with AGC's attribution, and automated extraction only 3–7 a.m.; a person browsing is ordinary use.
+  - Singapore Customs' "List of Dutiable Goods" PDF bars commercial reuse without written permission (customs.gov.sg terms).
+  - data.gov.sg holds only duty-revenue totals; STCCED has no rates.
+- The owner saved the six pages in Chrome at about 04:32 SGT ("Webpage, Complete"; for the three instruments, "Select All" then "Print - HTML").
+- A throwaway build from those files failed the reader's layout check: "The SSO First Schedule tariff headings changed or are missing." Nothing was imported.
+
+**Found on the real page** (read through the device bridge from the owner's Downloads folder; 29.6 MB):
+- The reader had only read fixtures built to the reviewed pack's shape (R-26). SSO's First Schedule is laid out `Heading | Subheading | Description | Unit | Customs Duty (Full, Pref) | Excise Duty`, under anchor `Sc1-`, inside nested tables; there is no "H.S. Code" column.
+- 11,423 eight-digit lines, "Current version as at 11 Nov 2026"; the schedule's newest amendment note is S 67/2026 (12 Feb 2026), as the bundle records.
+- 104 lines inside Singapore Customs' dutiable categories have three blank cells (go-karts and all-terrain vehicles, e-cigarette liquid, ethyl alcohol, some petroleum and biodiesel lines).
+- 4 excise cells are written in cents: three cigarette lines read "58.9 cents for every gram or part thereof of each stick of cigarette", and one reads "20 cents per kgm".
+- The table-level match ended at the first inner `</table>` and found 1,800 lines.
+
+**Built (table parser v2):**
+- **Reader (`singapore-bundle.ts`).** It accepts the real column headings beside the mock-up's and reads row by row from the schedule's anchor, so nested tables no longer cut it short. "N cents per unit" is now a specific duty in Singapore dollars.
+- **Lines it cannot rate stay on the schedule.** A blank line inside a dutiable category stays not proven non-dutiable. An excise cell it cannot read stays unparsed on its line. Either way that line has no official rate (its market falls back to the estimate), and the rest of the release is still read. A customs cell it cannot read still stops the release.
+- **Newer amendments stop the read.** An amendment note in the schedule dated after 12 Feb 2026 stops the read (`newer_schedule_amendment`), so a later schedule is never labelled with the reviewed S 67/2026 version.
+- **Saved-copy bundle (`singapore-acquisition.ts`).** `buildSingaporeSavedCopyBundle` bundles the six saved pages exactly as an acquisition does, minus the network and the window. The manifest and the release's validation record `acquisition_route` (`saved_copy` or `sso_automation_window`).
+- **Builder script.** `scripts/build-singapore-saved-bundle.ts --dir --out [--saved-on]` runs the nightly refresh's qualification checks (now pure, in `singapore-qualification.ts`). It writes the bundle only if they pass and prints the import command.
+- **Docs:** docs/37 §5.
+
+**Checks run (agent workspace).**
+- On the owner's saved pages, with no database variables set, the builder reports:
+  - 11,423 lines, 10,722 not dutiable, 107 without an official rate;
+  - every qualification check passes (93.9% not dutiable; 13 rice lines, none dutiable; beer and stout, tobacco, motor cars and petrol dutiable);
+  - the reader accepts the bundle (1.6 MB, built in 2.2 s, read in 1.3 s).
+- Rates read from the same bundle:
+  - rice 1006.30 (7 lines), turmeric, carpets 5701.10 and brass 7418.10: 0%, "NON-DUTIABLE";
+  - beer 2203.00: "$16.00 per litre of alcohol customs + $60.00 per litre of alcohol excise";
+  - cars 8703.21, cigarettes 2402.20 and petrol 2710.12: their lines differ, so no single official rate.
+- `singapore-authority-pack`: 11 tests, 2 new. These cover the real layout with nested tables, cents, the unread cigarette excise, go-karts, a customs cell that still stops the release, and a newer amendment; and the saved-copy bundle at 14:00 SGT, its route, and a missing page refused.
+- `singapore-refresh`, `market-access-*`, `demand-discovery-v5-tariff-step`, `-run` and `-input-freshness` pass: 123 tests across 8 files.
+- `tsc --noEmit` and ESLint: clean.
+
+**Order (production).** The worker must run reader v2 before the release is imported: it re-reads the bundle at every look-up, and v1 stops at the blank dutiable lines. So: merge, release, deploy. Then the owner's Claude Code runs `build-singapore-saved-bundle.ts` on the saved folder and imports with `--activate` (`railway run --environment production --service cleartrade-worker-production`). The new release then re-runs products on the hourly refresh.
+
 ## Risk register
 
 
@@ -2771,7 +2817,7 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |
 | R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
 | R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
-| R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
+| R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window. On 11 Nov SSO refused the owner's machine too (HTTP 403 at 03:33 SGT); the owner saved the six pages in a browser instead, and the reader now reads SSO's real layout from a saved copy (E-067, in review) | E-067 released; the saved copy imported and active on production (then staging) with the same SHA-256 |
 | R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
 | R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
