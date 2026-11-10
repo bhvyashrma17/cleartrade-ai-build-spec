@@ -1,0 +1,215 @@
+rate_type_code,item_count,label_ko,program_class
+A,11326,기본세율,basic
+FKH1,11326,한ㆍ캄보디아 FTA(선택1),fta_bilateral
+FPH1,11326,한ㆍ필리핀 FTA(선택1),fta_bilateral
+U,11326,북한산,origin_special
+FAU1,11310,한ㆍ호주 FTA협정세율(선택1),fta_bilateral
+FCA1,11310,한ㆍ캐나다 FTA협정세율(선택1),fta_bilateral
+FCN1,11310,한ㆍ중국 FTA협정세율(선택1),fta_bilateral
+FIL1,11310,한ㆍ이스라엘 FTA(선택1),fta_bilateral
+FNZ1,11310,한ㆍ뉴질랜드 FTA협정세율(선택1),fta_bilateral
+FTR1,11310,한ㆍ터키 FTA협정세율(선택1),fta_bilateral
+FVN1,11310,한ㆍ베트남 FTA협정세율(선택1),fta_bilateral
+FCO1,11309,한ㆍ콜롬비아FTA협정세율(선택1),fta_bilateral
+FPE1,11309,한ㆍ페루 FTA협정세율(선택1),fta_bilateral
+FUS1,11309,한ㆍ미 FTA 협정세율(선택1),fta_bilateral
+FAS1,11176,한ㆍ아세안 FTA협정세율(선택1),fta_regional
+FRCAS1,10881,RCEP협정세율_아세안(선택1),fta_regional
+FRCNZ1,10858,RCEP협정세율_뉴질랜드(선택1),fta_regional
+FRCAU1,10849,RCEP협정세율_호주(선택1),fta_regional
+FCENI1,10824,한ㆍ중미 FTA협정세율_니카라과(선택1),fta_regional
+FID1,10823,한ㆍ인도네시아 CEPA(선택1),fta_bilateral
+FCL1,10809,한ㆍ칠레FTA협정세율(선택1),fta_bilateral
+FCEPA1,10799,한ㆍ중미 FTA협정세율_파나마(선택1),fta_regional
+FCECR1,10794,한ㆍ중미 FTA협정세율_코스타리카(선택1),fta_regional
+FCEHN1,10781,한ㆍ중미 FTA협정세율_온두라스(선택1),fta_regional
+FCESV1,10775,한ㆍ중미 FTA협정세율_엘살바도르(선택1),fta_regional
+FIN1,10303,한ㆍ인도 FTA협정세율(선택1),fta_bilateral
+R,10113,최빈국특혜관세,preferential_other
+FSG1,10081,한ㆍ싱가포르FTA협정세율(선택1),fta_bilateral
+FEF1,9960,한ㆍEFTA FTA협정세율(선택1),fta_regional
+C,9943,WTO협정세율,wto
+FRCCN1,9696,RCEP협정세율_중국(선택1),fta_regional
+FRCJP1,9199,RCEP협정세율_일본(선택1),fta_regional
+E1,2733,아시아ㆍ태평양 협정세율(일반),apta
+E2,877,아시아ㆍ태평양 협정세율(방글라데시),apta
+E3,870,아시아ㆍ태평양 협정세율(라오스),apta
+FEFIS,512,한ㆍEFTA FTA협정세율(선택7),fta_regional
+FRCJP2,392,RCEP협정세율_일본(선택2),fta_regional
+FEFNO,324,한ㆍEFTA FTA협정세율(선택6),fta_regional
+FRCCN2,309,RCEP협정세율_중국(선택2),fta_regional
+FRCAS2,292,RCEP협정세율_아세안(선택2),fta_regional
+FRCAU2,292,RCEP협정세율_호주(선택2),fta_regional
+FRCNZ2,292,RCEP협정세율_뉴질랜드(선택2),fta_regional
+W2,278,농림축산물양허관세(미추천),agricultural_concession
+W1,234,농림축산물양허관세(추천),agricultural_concession
+F,192,국제협력관세,other
+FCN2,178,한ㆍ중국 FTA협정세율(선택2),fta_bilateral
+FEFCH,141,한ㆍEFTA FTA협정세율(선택5),fta_regional
+P3,127,할당관세(수입전량),quota
+FASPH1,124,한ㆍ아세안 FTA상호대응세율(필리핀1),fta_regional
+E1A1,104,아시아ㆍ태평양 협정세율(선택1),apta
+E1A2,104,아시아ㆍ태평양 협정세율(선택2),apta
+C1,97,WTO협정세율(선택1),wto
+FUS8,86,한ㆍ미 FTA 협정세율(선택8),fta_bilateral
+FAS2,81,한ㆍ아세안 FTA협정세율(선택2),fta_regional
+FPH2,80,한ㆍ필리핀 FTA(선택2),fta_bilateral
+FKH2,73,한ㆍ캄보디아 FTA(선택2),fta_bilateral
+FTR5,53,한ㆍ터키 FTA협정세율(선택5),fta_bilateral
+L,52,조정관세,other
+FTR2,51,한ㆍ터키 FTA협정세율(선택2),fta_bilateral
+P1,51,할당관세(물량이내추천)(선택1),quota
+FVN2,48,한ㆍ베트남 FTA협정세율(선택2),fta_bilateral
+FCEPA2,44,한ㆍ중미 FTA협정세율_파나마(선택2),fta_regional
+T2,40,특별긴급관세(가격기준),special_safeguard
+FRCJP3,39,RCEP협정세율_일본(선택3),fta_regional
+FCECR2,38,한ㆍ중미 FTA협정세율_코스타리카(선택2),fta_regional
+FCEHN2,38,한ㆍ중미 FTA협정세율_온두라스(선택2),fta_regional
+FCENI2,38,한ㆍ중미 FTA협정세율_니카라과(선택2),fta_regional
+FCESV2,38,한ㆍ중미 FTA협정세율_엘살바도르(선택2),fta_regional
+FRCCN3,38,RCEP협정세율_중국(선택3),fta_regional
+FRCAS3,35,RCEP협정세율_아세안(선택3),fta_regional
+FID2,33,한ㆍ인도네시아 CEPA(선택2),fta_bilateral
+FIL2,33,한ㆍ이스라엘 FTA(선택2),fta_bilateral
+FIN2,32,한ㆍ인도 FTA협정세율(선택2),fta_bilateral
+FRCAU3,31,RCEP협정세율_호주(선택3),fta_regional
+FRCNZ3,31,RCEP협정세율_뉴질랜드(선택3),fta_regional
+FCL5,29,한ㆍ칠레FTA협정세율(추천),fta_bilateral
+E1A3,26,아시아ㆍ태평양 협정세율(선택3),apta
+FUS6,26,한ㆍ미 FTA 협정세율(선택6),fta_bilateral
+FNZ9,25,한ㆍ뉴질랜드 FTA협정세율(선택9),fta_bilateral
+FAU8,24,한ㆍ호주 FTA협정세율(선택8),fta_bilateral
+G1,23,UN개도국협정세율,preferential_other
+FCN6,20,한ㆍ중국 FTA협정세율(선택6),fta_bilateral
+FCA8,19,한ㆍ캐나다 FTA협정세율(선택8),fta_bilateral
+FNZ2,19,한ㆍ뉴질랜드 FTA협정세율(선택2),fta_bilateral
+FAS4,18,한ㆍ아세안 FTA협정세율(선택4),fta_regional
+FCO2,18,한ㆍ콜롬비아FTA협정세율(선택2),fta_bilateral
+FAU2,17,한ㆍ호주 FTA협정세율(선택2),fta_bilateral
+FCN3,16,한ㆍ중국 FTA협정세율(선택3),fta_bilateral
+T1,16,특별긴급관세(물량기준),special_safeguard
+D,14,WTO개도국협정세율,wto_developing
+FKH3,13,한ㆍ캄보디아 FTA(선택3),fta_bilateral
+FPH3,13,한ㆍ필리핀 FTA(선택3),fta_bilateral
+FVN3,13,한ㆍ베트남 FTA협정세율(선택3),fta_bilateral
+C3,12,WTO협정세율(선택10),wto
+E1A4,12,아시아ㆍ태평양 협정세율(선택4),apta
+FASPH2,12,한ㆍ아세안 FTA상호대응세율(필리핀2),fta_regional
+FAU9,12,한ㆍ호주 FTA협정세율(선택9),fta_bilateral
+FRCJP4,12,RCEP협정세율_일본(선택4),fta_regional
+FTR3,12,한ㆍ터키 FTA협정세율(선택3),fta_bilateral
+FCA2,11,한ㆍ캐나다 FTA협정세율(선택2),fta_bilateral
+FEF2,11,한ㆍEFTA FTA협정세율(선택2),fta_regional
+E1A5,10,아시아ㆍ태평양 협정세율(선택5),apta
+FRCAS4,10,RCEP협정세율_아세안(선택4),fta_regional
+FRCAU4,10,RCEP협정세율_호주(선택4),fta_regional
+FRCNZ4,10,RCEP협정세율_뉴질랜드(선택4),fta_regional
+FASTH,9,한ㆍ아세안 FTA상호대응세율(태국),fta_regional
+FCA6,9,한ㆍ캐나다 FTA협정세율(선택6),fta_bilateral
+FNZ10,8,한ㆍ뉴질랜드 FTA협정세율(선택10),fta_bilateral
+FRCAS5,8,RCEP협정세율_아세안(선택5),fta_regional
+FRCAU5,8,RCEP협정세율_호주(선택5),fta_regional
+FRCCN4,8,RCEP협정세율_중국(선택4),fta_regional
+FRCNZ5,8,RCEP협정세율_뉴질랜드(선택5),fta_regional
+FVN4,8,한ㆍ베트남 FTA협정세율(선택4),fta_bilateral
+C4,7,WTO협정세율(선택11),wto
+E1A6,7,아시아ㆍ태평양 협정세율(선택6),apta
+E1A7,7,아시아ㆍ태평양 협정세율(선택7),apta
+E1A8,7,아시아ㆍ태평양 협정세율(선택8),apta
+E1A9,7,아시아ㆍ태평양 협정세율(선택9),apta
+FEF4,7,한ㆍEFTA FTA협정세율(선택4),fta_regional
+FRCJP5,7,RCEP협정세율_일본(선택5),fta_regional
+G2,7,UN개도국협정세율(최빈국),preferential_other
+FASID,6,한ㆍ아세안 FTA상호대응세율(인도네시아),fta_regional
+FUS2,6,한ㆍ미 FTA 협정세율(선택2),fta_bilateral
+E1A10,5,아시아ㆍ태평양 협정세율(선택10),apta
+FAS3,5,한ㆍ아세안 FTA협정세율(선택3),fta_regional
+FCECR3,5,한ㆍ중미 FTA협정세율_코스타리카(선택3),fta_regional
+FCEHN3,5,한ㆍ중미 FTA협정세율_온두라스(선택3),fta_regional
+FCENI3,5,한ㆍ중미 FTA협정세율_니카라과(선택3),fta_regional
+FCEPA3,5,한ㆍ중미 FTA협정세율_파나마(선택3),fta_regional
+FCESV3,5,한ㆍ중미 FTA협정세율_엘살바도르(선택3),fta_regional
+FCO7,5,한ㆍ콜롬비아FTA협정세율(선택7),fta_bilateral
+FCO8,5,한ㆍ콜롬비아FTA협정세율(선택8),fta_bilateral
+FRCCN5,5,RCEP협정세율_중국(선택5),fta_regional
+FRCJP6,5,RCEP협정세율_일본(선택6),fta_regional
+C5,4,WTO협정세율(선택12),wto
+FCN5,4,한ㆍ중국 FTA협정세율(선택5),fta_bilateral
+FCO3,4,한ㆍ콜롬비아FTA협정세율(선택3),fta_bilateral
+FIL3,4,한ㆍ이스라엘 FTA(선택3),fta_bilateral
+FPE4,4,한ㆍ페루 FTA협정세율(선택4),fta_bilateral
+C2,3,WTO협정세율(선택2),wto
+C2A1,3,WTO협정세율(선택14),wto
+C2A2,3,WTO협정세율(선택15),wto
+C2A3,3,WTO협정세율(선택16),wto
+C2A4,3,WTO협정세율(선택17),wto
+C2A5,3,WTO협정세율(선택18),wto
+C2A6,3,WTO협정세율(선택19),wto
+C2A7,3,WTO협정세율(선택20),wto
+C2A8,3,WTO협정세율(선택21),wto
+FCA3,3,한ㆍ캐나다 FTA협정세율(선택3),fta_bilateral
+FCN4,3,한ㆍ중국 FTA협정세율(선택4),fta_bilateral
+FEFIS1,3,한ㆍEFTA FTA협정세율(선택12),fta_regional
+FPE2,3,한ㆍ페루 FTA협정세율(선택2),fta_bilateral
+A1,2,기본세율(선택1),basic
+C6,2,WTO협정세율(선택13),wto
+E2A1,2,아시아ㆍ태평양 협정세율(방글라데시)(선택1),apta
+E2A2,2,아시아ㆍ태평양 협정세율(방글라데시)(선택2),apta
+E2A3,2,아시아ㆍ태평양 협정세율(방글라데시)(선택3),apta
+E3A1,2,아시아ㆍ태평양 협정세율(라오스)(선택1),apta
+E3A2,2,아시아ㆍ태평양 협정세율(라오스)(선택2),apta
+E3A3,2,아시아ㆍ태평양 협정세율(라오스)(선택3),apta
+FCECR4,2,한ㆍ중미 FTA협정세율_코스타리카(선택4),fta_regional
+FCEHN4,2,한ㆍ중미 FTA협정세율_온두라스(선택4),fta_regional
+FCEHN7,2,한ㆍ중미 FTA협정세율_온두라스(추천),fta_regional
+FCENI4,2,한ㆍ중미 FTA협정세율_니카라과(선택4),fta_regional
+FCENI7,2,한ㆍ중미 FTA협정세율_니카라과(추천),fta_regional
+FCEPA4,2,한ㆍ중미 FTA협정세율_파나마(선택4),fta_regional
+FCEPA5,2,한ㆍ중미 FTA협정세율_파나마(선택5),fta_regional
+FCEPA7,2,한ㆍ중미 FTA협정세율_파나마(추천),fta_regional
+FCESV4,2,한ㆍ중미 FTA협정세율_엘살바도르(선택4),fta_regional
+FCESV7,2,한ㆍ중미 FTA협정세율_엘살바도르(추천),fta_regional
+FEFCH1,2,한ㆍEFTA FTA협정세율(선택8),fta_regional
+FEFNO1,2,한ㆍEFTA FTA협정세율(선택10),fta_regional
+FID3,2,한ㆍ인도네시아 CEPA(선택3),fta_bilateral
+FIL4,2,한ㆍ이스라엘 FTA(선택4),fta_bilateral
+FKH4,2,한ㆍ캄보디아 FTA(선택4),fta_bilateral
+FNZ3,2,한ㆍ뉴질랜드 FTA협정세율(선택3),fta_bilateral
+FPH4,2,한ㆍ필리핀 FTA(선택4),fta_bilateral
+FVN5,2,한ㆍ베트남 FTA협정세율(선택5),fta_bilateral
+C2A9,1,WTO협정세율(선택22),wto
+E1B1,1,아시아ㆍ태평양 협정세율(선택1),apta
+E1B2,1,아시아ㆍ태평양 협정세율(선택2),apta
+E1B3,1,아시아ㆍ태평양 협정세율(선택3),apta
+E1B4,1,아시아ㆍ태평양 협정세율(선택4),apta
+FASPH3,1,한ㆍ아세안 FTA상호대응세율(필리핀3),fta_regional
+FAU3,1,한ㆍ호주 FTA협정세율(선택3),fta_bilateral
+FAU4,1,한ㆍ호주 FTA협정세율(선택4),fta_bilateral
+FCEPA6,1,한ㆍ중미 FTA협정세율_파나마(선택6),fta_regional
+FCN7,1,한ㆍ중국 FTA협정세율(선택7),fta_bilateral
+FCN8,1,한ㆍ중국 FTA협정세율(선택8),fta_bilateral
+FCN9,1,한ㆍ중국 FTA협정세율(선택9),fta_bilateral
+FEF3,1,한ㆍEFTA FTA협정세율(선택3),fta_regional
+FEFIS2,1,한ㆍEFTA FTA협정세율(선택13),fta_regional
+FIL5,1,한ㆍ이스라엘 FTA(선택5),fta_bilateral
+FNZ4,1,한ㆍ뉴질랜드 FTA협정세율(선택4),fta_bilateral
+FNZ8,1,한ㆍ뉴질랜드 FTA협정세율(선택8),fta_bilateral
+FPE3,1,한ㆍ페루 FTA협정세율(선택3),fta_bilateral
+FPH5,1,한ㆍ필리핀 FTA(선택5),fta_bilateral
+FRCAS6,1,RCEP협정세율_아세안(선택6),fta_regional
+FRCAS7,1,RCEP협정세율_아세안(선택7),fta_regional
+FRCAS8,1,RCEP협정세율_아세안(선택8),fta_regional
+FRCAU6,1,RCEP협정세율_호주(선택6),fta_regional
+FRCAU7,1,RCEP협정세율_호주(선택7),fta_regional
+FRCAU8,1,RCEP협정세율_호주(선택8),fta_regional
+FRCJP9,1,RCEP협정세율_일본(선택9),fta_regional
+FRCNZ6,1,RCEP협정세율_뉴질랜드(선택6),fta_regional
+FRCNZ7,1,RCEP협정세율_뉴질랜드(선택7),fta_regional
+FRCNZ8,1,RCEP협정세율_뉴질랜드(선택8),fta_regional
+FTR4,1,한ㆍ터키 FTA협정세율(선택4),fta_bilateral
+FTR6,1,한ㆍ터키 FTA협정세율(선택6),fta_bilateral
+FTR7,1,한ㆍ터키 FTA협정세율(선택7),fta_bilateral
+FVN6,1,한ㆍ베트남 FTA협정세율(선택6),fta_bilateral
+FVN7,1,한ㆍ베트남 FTA협정세율(선택7),fta_bilateral
+FVN8,1,한ㆍ베트남 FTA협정세율(선택8),fta_bilateral
+I,1,덤핑방지관세,trade_remedy
