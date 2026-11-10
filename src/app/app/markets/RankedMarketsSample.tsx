@@ -12,8 +12,19 @@
  */
 
 import { SamplePanel } from '@/components/ui';
-import { countryName, V5Labels, V5Reasons } from './V5Results';
+import { V5Labels, V5Reasons } from './V5Results';
 import { SAMPLE_DISCLAIMER, SAMPLE_MARKETS, SAMPLE_RANKED_TOTAL, SAMPLE_REGIONS, SAMPLE_RUN } from '@/lib/billing/preview';
+
+// A server-side copy of `V5Results`' helper: a function exported from a client module cannot be
+// called while rendering on the server.
+const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
+const countryName = (code: string) => {
+  try {
+    return REGION_NAMES.of(code) ?? code;
+  } catch {
+    return code;
+  }
+};
 
 export function RankedMarketsSample() {
   const more = SAMPLE_RANKED_TOTAL - SAMPLE_MARKETS.length;

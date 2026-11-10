@@ -415,14 +415,16 @@ describe('the free-tier demo spends nothing and claims nothing', () => {
     expect(SAMPLE_RUN.run_on).toMatch(/^\d{1,2} [A-Z][a-z]+ 20\d\d$/);
   });
 
-  test('sample buyers carry no contact details and no names', () => {
-    // A real importer named beside a fit score on a public page is a defamation and
-    // data-protection problem; a contact detail anyone could try to use is worse.
-    for (const buyer of SAMPLE_BUYERS?.rows ?? []) {
-      expect(JSON.stringify(buyer)).not.toMatch(/@|https?:|www\./);
-      expect(buyer).not.toHaveProperty('contacts');
-      expect(buyer.label).toMatch(/^Importer [A-Z]$/);
+  test('sample importers are counts by region: no business, no contact detail', () => {
+    // A real importer named on a public page is a defamation and data-protection problem;
+    // a contact detail anyone could try to use is worse.
+    for (const area of SAMPLE_BUYERS?.rows ?? []) {
+      expect(JSON.stringify(area)).not.toMatch(/@|https?:|www\./);
+      expect(area).not.toHaveProperty('contacts');
+      expect(area.label).not.toMatch(/\b(ltd|limited|llc|inc|plc|gmbh|pvt|private|corp|company|trading|foods?)\b/i);
+      expect(Number.isInteger(area.importers)).toBe(true);
     }
+    if (SAMPLE_BUYERS) expect(SAMPLE_BUYERS.rows.reduce((sum, area) => sum + area.importers, 0)).toBeLessThanOrEqual(SAMPLE_BUYERS.total);
   });
 
   test('the preview module imports no data source', async () => {

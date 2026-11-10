@@ -33,7 +33,7 @@ export interface SamplePanelProps {
   /** The disclaimer. Callers pass `SAMPLE_DISCLAIMER`; it is required, not defaulted, so
    *  a caller cannot omit the framing by forgetting a prop. */
   disclaimer: string;
-  /** The illustrative product the sample is computed for — stated so it reads as not-yours. */
+  /** The product the sample was run for, and when — stated so it reads as not-yours. */
   subject?: string;
   children: React.ReactNode;
   /** "and 38 more markets" — the honest size of what Premium returns. */

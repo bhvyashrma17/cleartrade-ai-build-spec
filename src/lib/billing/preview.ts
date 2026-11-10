@@ -27,13 +27,13 @@ export const PREVIEW_EVIDENCE_ORIGIN = EvidenceOrigin.preview;
 
 /** The run the sample was taken from. */
 export const SAMPLE_RUN = {
-  product: '__FILL__',
-  hs_code: '__FILL__',
-  hs_description: '__FILL__',
-  run_on: '__FILL__',
+  product: 'Basmati rice, 1121 sella, semi-milled',
+  hs_code: '100630',
+  hs_description: 'Rice, semi-milled or wholly milled, whether or not polished or glazed',
+  run_on: '10 Nov 2026',
 } as const;
 
-export const SAMPLE_DISCLAIMER = `__FILL__`;
+export const SAMPLE_DISCLAIMER = `A real result for basmati rice (HS ${SAMPLE_RUN.hs_code}), run on ${SAMPLE_RUN.run_on} and frozen here. It is not your data and not live: members get this for their own products, with current figures.`;
 
 export interface SampleLabel { key: string; text: string; tone: 'positive' | 'caution' | 'info'; estimated?: boolean }
 export interface SampleReason { metric: string | null; effect: 'adds' | 'costs' | 'status'; text: string }
@@ -49,11 +49,89 @@ export interface SampleMarket {
   evidence_origin: EvidenceOrigin;
 }
 
-/** The run's top markets, as the member saw them. */
-export const SAMPLE_MARKETS: readonly SampleMarket[] = [];
+/** The run's top markets, as the member saw them (labels and reasons in the engine's own words). */
+export const SAMPLE_MARKETS: readonly SampleMarket[] = [
+  {
+    rank: 1, country_code: 'US', score: 85, confidence: 82, data_year: 2025,
+    labels: [
+      { key: 'big_and_growing', text: 'Big and growing', tone: 'positive' },
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India (estimated)', tone: 'positive', estimated: true },
+      { key: 'trading_hub', text: 'Trading hub', tone: 'info' },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $1.4 billion a year over the last three years.' },
+      { metric: 'country_risk', effect: 'adds', text: 'Low payment risk: ECGC rates the country A1.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 5.5% a year over 5 years.' },
+    ],
+    evidence_origin: EvidenceOrigin.preview,
+  },
+  {
+    rank: 2, country_code: 'SA', score: 84, confidence: 87, data_year: 2025,
+    labels: [
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India', tone: 'positive' },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $1.7 billion a year over the last three years.' },
+      { metric: 'duty', effect: 'adds', text: 'Indian goods enter duty-free.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 3.2% a year over 5 years.' },
+    ],
+    evidence_origin: EvidenceOrigin.preview,
+  },
+  {
+    rank: 3, country_code: 'GB', score: 81, confidence: 82, data_year: 2025,
+    labels: [
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India (estimated)', tone: 'positive', estimated: true },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $353.3 million a year over the last three years.' },
+      { metric: 'country_risk', effect: 'adds', text: 'Low payment risk: ECGC rates the country A1.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 4.3% a year over 5 years.' },
+    ],
+    evidence_origin: EvidenceOrigin.preview,
+  },
+  {
+    rank: 4, country_code: 'QA', score: 81, confidence: 72, data_year: 2024,
+    labels: [
+      { key: 'big_and_growing', text: 'Big and growing', tone: 'positive' },
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India', tone: 'positive' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $172.7 million a year over the last three years.' },
+      { metric: 'duty', effect: 'adds', text: 'Indian goods enter duty-free.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports grew a modest 5.7% a year over 5 years.' },
+    ],
+    evidence_origin: EvidenceOrigin.preview,
+  },
+  {
+    rank: 5, country_code: 'KW', score: 80, confidence: 87, data_year: 2025,
+    labels: [
+      { key: 'india_already_sells', text: 'India already sells here', tone: 'positive' },
+      { key: 'pays_above_india_price', text: "Pays above India's price", tone: 'positive' },
+      { key: 'low_duty_for_india', text: 'Low duty for India', tone: 'positive' },
+      { key: 'newer_data_used', text: 'Newer data used', tone: 'info' },
+    ],
+    reasons: [
+      { metric: 'market_size', effect: 'adds', text: 'Imports averaged $273.1 million a year over the last three years.' },
+      { metric: 'duty', effect: 'adds', text: 'Indian goods enter duty-free.' },
+      { metric: 'growth', effect: 'costs', text: 'Imports fell 0.7% a year over 5 years.' },
+    ],
+    evidence_origin: EvidenceOrigin.preview,
+  },
+];
 
-/** How many markets the run ranked in all. */
-export const SAMPLE_RANKED_TOTAL = 0;
+/** How many markets the run ranked in all (of 218 compared). */
+export const SAMPLE_RANKED_TOTAL = 214;
 
 export interface SampleRegions {
   country_code: string;
@@ -62,14 +140,24 @@ export interface SampleRegions {
   more: number;
 }
 
-/** Regional demand for one of the run's markets, or null when the run had none to show. */
-export const SAMPLE_REGIONS: SampleRegions | null = null;
+/** Regional demand for one of the run's markets, from the official source the run read. */
+export const SAMPLE_REGIONS: SampleRegions | null = {
+  country_code: 'US',
+  basis: 'U.S. Census Bureau imports by destination state, HS 100630, Oct 2025 – Sep 2026: $314.2 million came from India, 23.4% of all imports, 99.5% of it in containers by sea.',
+  rows: [
+    { name: 'New Jersey', value: '$112.6 million from India · 53.0% of the state’s imports' },
+    { name: 'California', value: '$50.7 million · 12.8%' },
+    { name: 'Georgia', value: '$45.0 million · 36.5%' },
+    { name: 'Texas', value: '$38.0 million · 32.9%' },
+    { name: 'New York', value: '$37.6 million · 30.3%' },
+  ],
+  more: 42,
+};
 
-export interface SampleBuyer {
-  /** "Importer A", "Importer B"… — never the company's name. */
+export interface SampleImporterArea {
+  /** A region, never a business: the sample names no importer. */
   label: string;
-  detail: string;
-  fit_score: number;
+  importers: number;
   evidence_origin: EvidenceOrigin;
 }
 
@@ -77,11 +165,26 @@ export interface SampleBuyers {
   country_name: string;
   basis: string;
   total: number;
-  rows: readonly SampleBuyer[];
+  rows: readonly SampleImporterArea[];
 }
 
-/** Buyers the run found in one market, names withheld, or null when there were none. */
-export const SAMPLE_BUYERS: SampleBuyers | null = null;
+/**
+ * Importers the run found in one market, counted by region from the official list — the same
+ * counts a member sees (buyer discovery is agent-curated, docs/11 §7: the agent reviews the list
+ * and contacts the right ones). No business is named.
+ */
+export const SAMPLE_BUYERS: SampleBuyers | null = {
+  country_name: 'United Kingdom',
+  basis: '184 importers of HS 100630 in HMRC’s importer details (UK Trade Info), August 2026 list, placed by the postcode HMRC publishes.',
+  total: 184,
+  rows: [
+    { label: 'London', importers: 85, evidence_origin: EvidenceOrigin.preview },
+    { label: 'South East', importers: 21, evidence_origin: EvidenceOrigin.preview },
+    { label: 'East of England', importers: 15, evidence_origin: EvidenceOrigin.preview },
+    { label: 'North West', importers: 14, evidence_origin: EvidenceOrigin.preview },
+    { label: 'West Midlands', importers: 14, evidence_origin: EvidenceOrigin.preview },
+  ],
+};
 
 export interface SampleDocument {
   label: string;

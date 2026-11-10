@@ -19,7 +19,7 @@
  *   - 404 — src/app/not-found.tsx (Next's dedicated mechanism, not a thrown Error).
  *   - 409/429 — currently only ever produced by /api/v1/* route handlers, consumed
  *     by client components via src/lib/api-client.ts, which already catch
- *     `ApiClientError` inline (see BuyersExplorer.tsx / OutreachPipeline.tsx) — that
+ *     `ApiClientError` inline (see OutreachPipeline.tsx) — that
  *     catch also never crosses the RSC boundary, so it keeps the real `.code`.
  *
  * What lands here is the genuine 5xx case: an unexpected crash. `digest` is the
