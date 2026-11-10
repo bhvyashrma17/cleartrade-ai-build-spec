@@ -2530,6 +2530,24 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 - `korea-authority-pack`: 47 tests pass, including 4 new rate-priority tests on the release's own shapes (coffee `P3` 0 against `A` 2 and `C` 54).
 - The 42 tariff, Customs Atlas, Country Truth and Demand Discovery files: 517 tests pass.
 
+
+### E-060 · 2026-11-10 · Release #52 live: quota duties on production, the run completes (R-46 closed; R-47 released) (in review)
+
+**Release #52** (#48, #50, #51) was merged by the owner at 13:41 UTC as `d8a2e41`; master's CI passed. In Railway, both production web and the production worker show "Deployment successful" for #52. Release #49 (#47) went out at 12:41 UTC, eleven seconds before #48 reached `staging/railway`, so #48 ships here.
+
+**Production, signed in as the paid QA member:**
+- **Buyers page (#47):** Canada reads "Your agent finds and vets importers here", and nothing names the Canadian Importers Database.
+- **Markets page (#48):** "Your recent searches" shows "Markets ranked" and "Ranked, with gaps", where it used to show the raw run state.
+- **Basmati run, first after the deploy** (`cmwaqsrqc0001mw0eik4ej93z`, 13:45:19–13:47:55 UTC): `partial`. The UK look-up failed ("The official tariff look-up failed for GB"). The UK duty stayed the same estimate as before (1.6%, from the World Bank average with India–UK CETA), because the UK's 1006.30 lines need refinement either way. See R-48.
+- **Basmati run, second** (`cmwaqy7bg0007mw0edsd4r1f0`, job `cmwaqy7c0000bmw0emosyec98`, 13:49:32–13:51:09 UTC): `completed`.
+  - 214 of 218 markets ranked; the top 10 is unchanged and all ten were handed off.
+  - The only notes left are the expected ones: World Bank figures more than 10 years old, logistics estimated from UNCTAD for 32 markets, no Singapore release yet (R-43), and Andorra not covered.
+  - Korea: "Duty on Indian goods is 513%, outside the tariff quota; 5% applies only within the quota." Source: Korea Customs Service 1006301000. Rank 108 → 151, score 57 → 48.
+  - Japan: "Duty on Indian goods is about 263% (341 yen/kg at this market's prices), outside the tariff quota; duty-free entry applies only within the quota." Source: Japan Customs 100630090. The "Low duty for India (estimated)" label is gone. Rank 14 → 49, score 76 → 66.
+  - Hand-off: regional demand completed for US and GB. Canada is unavailable because no list is loaded (R-45, deferred).
+
+**R-47** shipped in the same release. It is checked by tests on the release's own rows (E-059). Basmati is a farm-quota item, so it does not show the change; a production run on a product where `C` is below `A` has not been observed yet.
+
 ## Risk register
 
 
@@ -2580,5 +2598,6 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 | R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window | A Singapore release active on production and staging with the same SHA-256 |
 | R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
-| R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Decided (D-042) and built (E-058): Korea scores `W2` and says `W1`; Japan scores the out-of-quota line and says the Government's quota | A production rice run after the release shows Korea 513% and Japan 341 yen/kg, each with the quota said |
-| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Decided (D-043) and built (E-059): `P3`, then `B`, then `A`, with `C` where it is lower | A production run after the release shows a Korean line's standard rate from Art. 50 |
+| R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
+| R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
+| R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Open (E-060), low: observed once | A second occurrence, or warming the readers' caches when the worker starts |
