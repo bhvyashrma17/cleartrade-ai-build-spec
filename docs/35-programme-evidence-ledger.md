@@ -2286,6 +2286,13 @@ tooling", no pending migrations, Ready. The two scanners answer `/health/ready` 
 1.4.6). The staging deploy also applied the owner's staged staging `RESEND_API_KEY`. The JSON files
 stay in the repository as the record of these settings; Railway no longer reads them.
 
+**Staging worker to Singapore (R-37, closed).** On 10 Nov the staging worker's region moved from EU West
+(Amsterdam) to Southeast Asia (Singapore), next to staging web and its database; the owner deployed
+it and it is online.
+
+**Railway billing.** On 10 Nov the Railway dashboard showed "Your subscription is past due"; the owner
+was told, since production runs there. Paying is the owner's.
+
 ## Risk register
 
 
@@ -2327,7 +2334,7 @@ stay in the repository as the record of these settings; Railway no longer reads 
 | R-34 | A failed Comtrade market-fallback step made a v5 run partial without a note saying so (`run-inputs.ts`), so the exporter saw no reason; the gate's notes check sees only whether a partial run has any note | Closed (E-034) — the step's outcome is now a note | — |
 | R-35 | Staging storage fails its readiness check (S3 answers HEAD with an error status the check does not show), so the web service cannot deploy and v5 runs cannot read BACI | Closed (E-039): the bucket variables are references, the region is the literal `auto`, and the round trip passed 9 of 9 | — |
 | R-36 | Railway recommends rotating every sensitive variable stored before its 21 Oct security incident. Staging's include `AUTH_SECRET`, `OPERATIONS_TOKEN`, the database credential, the Resend key and the Comtrade key shared with development (docs/33); production on Railway may hold the same kind | Open — decided (E-049): production rotates in the launch (docs/39 §2.3; Razorpay excepted by the owner); staging follows | The launch; then staging's rotation |
-| R-37 | The staging worker runs in Amsterdam and the database in Singapore: every query crosses continents, and a v5 results write took 5.2 s | Mitigated (E-039): a 120 s write timeout. Production's worker is created in Singapore, beside web and Neon (docs/39 §2.6) | The owner moves staging's worker to Singapore |
+| R-37 | The staging worker runs in Amsterdam and the database in Singapore: every query crosses continents, and a v5 results write took 5.2 s | Closed (E-054): the staging worker now runs in Southeast Asia (Singapore), beside staging web and the database; deployed 10 Nov and online | — |
 | R-38 | `PATCH /api/v1/exporter-org/commitment-fee` accepted the staff sources (`manual_ops`, `bank_partner`, `AA`) from the exporter itself, even with Razorpay configured: any exporter could unlock paid tier without paying | Closed (E-049): `exporterFeeConfirmationProblem`; with the gateway configured every source is refused, without it only `exporter_update` | — |
 | R-39 | No self-service password reset: a user who forgets a password cannot get back in without the owner | Closed (E-050): reset by a one-time emailed link | — |
 | R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |
