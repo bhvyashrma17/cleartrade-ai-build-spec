@@ -2211,6 +2211,35 @@ members-only branch reads nothing), `waive-commitment-fee` 5 (new), `hs-finder-r
 `pilot-e2e` fails one escalation test in this workspace with and without the change (local database
 only; it passes in CI).
 
+### E-053 · 2026-11-09 · Members can add a product; Demand Discovery starts from it (in review)
+
+**Found by the production check (9 Nov, as the owner's paid QA account).** After the fee waiver
+(E-052) the account was a member, but Demand Discovery could not start: a run needs a saved product
+with a confirmed HS code, and nothing let an exporter save one. The only path had been the guest
+registration hand-over, which D-039 removed and which a Google sign-up never had. The Markets form
+sent the description and code anyway; the server refused it (422 `classification_required` on
+`product_id`), and the form showed nothing because the error named a field it does not display.
+
+**Built.**
+- `POST /api/v1/products` (paid members, like every tool: 401 / 402 first): saves the product
+  (`manually_entered_real`), checks the code against the official HS 2022 list the code finder reads,
+  records it as the exporter's own classification (`exporter_supplied`, confidence 1), records the
+  exporter's confirmation (`confirm_hs_code: true`), and the run starts — by the existing auto-start
+  on confirmation, or, if that is switched off, the way `POST /api/v1/discovery-runs` starts it. A
+  second product with the same name is refused.
+- Markets: a member with no product sees "This becomes your saved product", a required HS code with
+  the code finder, the confirmation box, and "Save product and find markets"; members with products
+  have "Add another product". Errors on fields the form does not show now appear in its alert.
+- Products: "Add a product" (empty state and header) leads to Markets.
+- docs/39 §5, docs/40 §3.1a.
+
+**Checks run (agent workspace).** `tsc --noEmit` clean; ESLint clean on the changed files.
+`products-create-route` 2 tests (new: no session 401, free 402 with nothing saved; a member's
+product is saved with a confirmed `exporter_supplied` classification, an unknown code or an
+unconfirmed code is refused, the run starts once, a duplicate name is refused),
+`paid-only-tools` 3, `hs-finder-route` 3, `demand-discovery-v5-exporter-fit` 6,
+`country-truth-discovery-request` 9, `agent-ux-polish` 23: all pass.
+
 ## Risk register
 
 

@@ -40,6 +40,12 @@ Exporters see only their own organisation; agents only their assigned exporters;
 - A job left `processing` with `attempts: 0` is a worker started before a new job type: restart the
   worker (AGENTS.md). Stale jobs are also requeued automatically after `stale_after_seconds`.
 
+### 3.1a "Where do I add my product?"
+Markets → describe the product, pick its HS code (the code finder helps), tick "This code describes my
+product" and press "Save product and find markets". The product is saved, the code is recorded as the
+exporter's own confirmed classification, and Demand Discovery starts. Members only (D-039). Products
+also has an "Add a product" button that leads there. "Add another product" on Markets adds more.
+
 ### 3.2 "The product code is wrong"
 - The product code finder opens under every HS code field and asks the separating question.
 - An agent, ops supervisor or admin confirms the classification; confirming a different code starts a
