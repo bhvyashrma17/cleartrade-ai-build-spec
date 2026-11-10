@@ -47,6 +47,24 @@ describe('which national line', () => {
     expect(answersNamedIn('')).toEqual({});
   });
 
+  test('the trade’s own words count: "sella" is parboiled, "semi-milled" is not wholly milled', () => {
+    // Production, 10 Nov 2026: Lappu Exports' product, whose US line stayed open on "Is the rice parboiled?".
+    expect(answersNamedIn('Basmati rice, 1121 sella, semi-milled')).toEqual({ parboiled: 'yes', basmati: 'yes', wholly_milled: 'no' });
+    expect(answersNamedIn('1121 Golden Sella Basmati')).toEqual({ parboiled: 'yes', basmati: 'yes' });
+    expect(answersNamedIn('Semi milled rice')).toEqual({ wholly_milled: 'no' });
+    // The HS heading says both: nothing is answered. "Not semi-milled" does not say wholly milled.
+    expect(answersNamedIn('Semi-milled or wholly milled rice, whether or not polished or glazed')).toEqual({});
+    expect(answersNamedIn('Rice, not semi-milled')).toEqual({});
+    // Stated both ways across the trade word and the plain one: unanswered.
+    expect(answersNamedIn('1121 sella, not parboiled')).toEqual({});
+    // Only the product's words are read: official lines are never matched on the trade word.
+    expect(chooseNationalLines({ candidates: US_RICE, product_text: 'Basmati rice, 1121 sella, semi-milled' }))
+      .toMatchObject({ status: 'chosen', choice: { basis: 'description', codes: ['1006301000'], from_description: { parboiled: 'yes' }, from_answers: {} } });
+    // The exporter's answer still comes first.
+    expect(chooseNationalLines({ candidates: US_RICE, product_text: '1121 sella', answers: { parboiled: 'no' } }))
+      .toMatchObject({ status: 'chosen', choice: { basis: 'answers', codes: ['1006309000'] } });
+  });
+
   test('one duty on every line settles it before any question', () => {
     const same = UK_RICE.map((candidate) => ({ ...candidate, duty_expression: '121.00 GBP / 1000 kg' }));
     expect(chooseNationalLines({ candidates: same, product_text: 'Rice' })).toMatchObject({ status: 'chosen', choice: { basis: 'one_duty', codes: same.map((c) => c.national_tariff_code).sort() } });

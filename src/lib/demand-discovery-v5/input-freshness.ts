@@ -48,8 +48,11 @@ export interface FreshnessState {
   baci: { hs_revision: string; dataset_version: string; last_year: number; retrieved_at: Date }[];
   /** Active reference releases by dataset key. */
   reference: ReadonlyMap<string, { version: string; retrieved_at: Date }>;
-  /** Active tariff releases (`AuthorityRelease`). */
-  tariffs: { source_family: string; authority: string; label: string; release_identifier: string; reference_date: Date; retrieved_at: Date }[];
+  /**
+   * Active tariff releases (`AuthorityRelease`). `valid_until` is the last day the release states
+   * measures for, when its reader records one (`validation.valid_until`).
+   */
+  tariffs: { source_family: string; authority: string; label: string; release_identifier: string; reference_date: Date; retrieved_at: Date; valid_until?: Date | null }[];
   rule_rates: DemandDiscoveryV5Policy['rule_rates'];
   latest_usd_observation: Date | null;
   singapore_refresh_enabled: boolean;
@@ -151,18 +154,32 @@ function baciRow(state: FreshnessState, now: Date): InputFreshnessRow {
 }
 
 function tariffDueAt(rule: TariffRule, release: FreshnessState['tariffs'][number]): Date {
+  // A release that states its own last day is due the day after it. That beats the calendar guess,
+  // which reads the publication date: China's 2026 schedule was published on 31 Dec 2025 and the EAC's
+  // 2026/27 notice on 30 Jun 2026, and both looked overdue on the day they were read (10 Nov 2026).
+  const statedEnd = release.valid_until ? addDays(release.valid_until, 1) : null;
+  const earlier = (due: Date) => (statedEnd && statedEnd < due ? statedEnd : due);
   switch (rule.kind) {
     case 'max_age_days':
-      return addDays(release.reference_date, rule.days);
+      return earlier(addDays(release.reference_date, rule.days));
     case 'year_end':
-      return new Date(Date.UTC(release.reference_date.getUTCFullYear() + 1, 0, 1));
+      return statedEnd ?? new Date(Date.UTC(release.reference_date.getUTCFullYear() + 1, 0, 1));
     case 'until_30_june': {
+      if (statedEnd) return statedEnd;
       const year = release.reference_date.getUTCFullYear() + (release.reference_date.getUTCMonth() >= 6 ? 1 : 0);
       return new Date(Date.UTC(year, 6, 1));
     }
     case 'nightly':
       return addDays(release.retrieved_at, 7);
   }
+}
+
+/** `validation.valid_until` ("YYYY-MM-DD") as a date, or null when the release states none. */
+function statedValidUntil(validation: unknown): Date | null {
+  const value = validation && typeof validation === 'object' ? (validation as Record<string, unknown>).valid_until : null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /** One row per input, in a stable order: trade data, reference data, tariffs, rules, live inputs. */
@@ -238,7 +255,7 @@ export async function loadInputFreshness(now = new Date()): Promise<InputFreshne
     prisma.referenceDatasetRelease.findMany({ where: { environment, status: 'active' }, select: { dataset_key: true, version: true, retrieved_at: true } }),
     prisma.authorityRelease.findMany({
       where: { status: AuthorityReleaseStatus.active },
-      select: { source_family: true, authority: true, label: true, release_identifier: true, reference_date: true, retrieved_at: true },
+      select: { source_family: true, authority: true, label: true, release_identifier: true, reference_date: true, retrieved_at: true, validation: true },
     }),
     prisma.authoritativeFxObservation.findFirst({ where: { environment, base_currency: 'EUR', quote_currency: 'USD' }, orderBy: { observation_date: 'desc' }, select: { observation_date: true } }),
   ]);
@@ -247,7 +264,7 @@ export async function loadInputFreshness(now = new Date()): Promise<InputFreshne
   return assessInputFreshness({
     baci: newestPerRevision,
     reference: new Map(reference.map((release) => [release.dataset_key, { version: release.version, retrieved_at: release.retrieved_at }])),
-    tariffs,
+    tariffs: tariffs.map(({ validation, ...release }) => ({ ...release, valid_until: statedValidUntil(validation) })),
     rule_rates: config.policy.rule_rates,
     latest_usd_observation: usd?.observation_date ?? null,
     singapore_refresh_enabled: refresh.singapore.enabled,
