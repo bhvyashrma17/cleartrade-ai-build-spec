@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { AuthorityReleaseChange, AuthorityReleaseStatus, UserRole, type Prisma } from '@prisma/client';
 import { describe, expect, test } from 'vitest';
 import { assessInputFreshness, loadInputFreshness, needsAttention, type FreshnessState, type InputFreshnessRow } from '@/lib/demand-discovery-v5/input-freshness';
 import { DEMAND_DISCOVERY_V5_DEFAULT_POLICY } from '@/lib/demand-discovery-v5/policy';
+import { prisma } from '../src/lib/prisma';
 
 /**
  * docs/36 §7a: when each input Demand Discovery v5 reads stops being current. The rules are pure, so
@@ -76,6 +79,30 @@ describe('input freshness rules', () => {
     expect(row(eac, 'tariff:EAC_CET:EAC_CET authority')).toMatchObject({ status: 'due_soon', due_at: '2026-07-01T00:00:00.000Z' });
   });
 
+  test('a release that states its own last day is due the day after it, not on the calendar guess', () => {
+    // Production, 10 Nov 2026: both showed as overdue on the ops page the day they were checked.
+    const stated = (source_family: string, reference: string, valid_until: string) => ({
+      source_family, authority: `${source_family} authority`, label: `${source_family} release`, release_identifier: `${source_family}-1`,
+      reference_date: at(reference), retrieved_at: at('2026-10-19'), valid_until: at(valid_until),
+    });
+    const tariffs = [
+      // China's 2026 schedule, published 31 Dec 2025, in force 1 Jan – 31 Dec 2026.
+      stated('CN_CUSTOMS_TARIFF', '2025-12-31', '2026-12-31'),
+      // The EAC's notice of 30 Jun 2026 for the year 1 Jul 2026 – 30 Jun 2027.
+      stated('EAC_CET', '2026-06-30', '2027-06-30'),
+      // A monthly source whose release says it ends sooner than its age allows: the earlier date wins.
+      stated('EU_TARIC', '2026-11-01', '2026-11-20'),
+    ];
+    const rows = assessInputFreshness(state({ tariffs }), at('2026-11-10'));
+    expect(row(rows, 'tariff:CN_CUSTOMS_TARIFF:CN_CUSTOMS_TARIFF authority')).toMatchObject({ status: 'fresh', due_at: '2027-01-01T00:00:00.000Z' });
+    expect(row(rows, 'tariff:EAC_CET:EAC_CET authority')).toMatchObject({ status: 'fresh', due_at: '2027-07-01T00:00:00.000Z' });
+    expect(row(rows, 'tariff:EU_TARIC:EU_TARIC authority')).toMatchObject({ status: 'due_soon', due_at: '2026-11-21T00:00:00.000Z' });
+    // Without a stated end, the calendar rule stands (and still reads the publication date).
+    const unstated = tariffs.map(({ valid_until: _ignored, ...release }) => release);
+    expect(row(assessInputFreshness(state({ tariffs: unstated }), at('2026-11-10')), 'tariff:CN_CUSTOMS_TARIFF:CN_CUSTOMS_TARIFF authority')).toMatchObject({ status: 'overdue', due_at: '2026-01-01T00:00:00.000Z' });
+    expect(row(assessInputFreshness(state({ tariffs }), at('2027-01-01')), 'tariff:CN_CUSTOMS_TARIFF:CN_CUSTOMS_TARIFF authority').status).toBe('overdue');
+  });
+
   test('a published duty rule is due at its review date (R-22)', () => {
     const rule_rates = {
       XA: { duty_percent: 0, except_hs: [], rule: 'Free port', basis: 'Fixture', source_url: 'https://example.test/xa', checked_on: '2026-01-10', review_by: '2026-11-05' },
@@ -107,6 +134,24 @@ describe('where freshness shows', () => {
     expect(rows[0].key).toBe('cepii_baci');
     expect(rows.map((item) => item.key)).toEqual(expect.arrayContaining(['wdi:LP.LPI.OVRL.XQ', 'india:trade-agreements', 'curated:sanctions-programmes', 'ecb_fx']));
     expect(new Set(rows.map((item) => item.key)).size).toBe(rows.length);
+  });
+
+  test('the loader reads the last day a stored release states', async () => {
+    const marker = randomUUID();
+    const admin = await prisma.user.create({ data: { email: `freshness-${marker}@example.test`, name: 'Freshness importer', role: UserRole.admin } });
+    const release = (authority: string, validation: Prisma.InputJsonObject) => prisma.authorityRelease.create({ data: {
+      label: `China customs tariff ${marker}`, source_family: 'CN_CUSTOMS_TARIFF', authority, destination_scope: ['CN'],
+      source_url: 'https://example.test/cn', release_identifier: `cn-tariff-2026-${marker}`, reference_date: at('2025-12-31'),
+      source_distribution: 'test retained authority release', retrieved_at: at('2026-10-19'), source_format: 'zip',
+      checksum: `${authority}${marker}`.replace(/[^a-f0-9]/g, '').padEnd(64, 'b').slice(0, 64), size_bytes: 10, artifact_object_key: `test/${authority}/${marker}`,
+      file_manifest: [], reader_version: 'reader-v1', parser_version: 'parser-v1', validation, change_classification: AuthorityReleaseChange.NEW_RELEASE,
+      change_basis: { fixture: true }, imported_by_id: admin.id, status: AuthorityReleaseStatus.active, activated_at: at('2026-10-19'),
+    } });
+    await release(`stated ${marker}`, { effective_from: '2026-01-01', valid_until: '2026-12-31' });
+    await release(`unstated ${marker}`, { fixture: true });
+    const rows = await loadInputFreshness(at('2026-11-10'));
+    expect(row(rows, `tariff:CN_CUSTOMS_TARIFF:stated ${marker}`)).toMatchObject({ status: 'fresh', due_at: '2027-01-01T00:00:00.000Z' });
+    expect(row(rows, `tariff:CN_CUSTOMS_TARIFF:unstated ${marker}`)).toMatchObject({ status: 'overdue', due_at: '2026-01-01T00:00:00.000Z' });
   });
 
   test('the Control Tower counts inputs that need attention and links to the table; the worker logs them daily', () => {
