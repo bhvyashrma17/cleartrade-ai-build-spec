@@ -86,6 +86,13 @@ const PRODUCT_ATTRIBUTE_SIGNALS: ReadonlyArray<{
   positive: RegExp;
   positiveLabel: string;
   negativeLabel: string;
+  /**
+   * D-045: the trade's own words for an answer, read only from a product's text (`answersNamedIn`)
+   * and never matched against official lines. "1121 sella" states parboiled rice as plainly as
+   * "parboiled" does; "semi-milled" states that the rice is not wholly milled.
+   */
+  statesYes?: RegExp;
+  statesNo?: RegExp;
 }> = Object.freeze([
   // --- Cross-chapter: how the goods were made -------------------------------------------
   {
@@ -154,11 +161,12 @@ const PRODUCT_ATTRIBUTE_SIGNALS: ReadonlyArray<{
   // --- Chapter-specific: cereal processing states (HS chapter 10) ------------------------
   // Intentionally narrow. These words do not occur outside cereals, so the signals simply never
   // fire elsewhere; they are a domain policy, not an accidental rice dependency.
-  { attribute: 'parboiled', family: 'chapter_specific', question: 'Is the rice parboiled?', positive: /\bparboiled\b/i, positiveLabel: 'Yes — parboiled', negativeLabel: 'No — not parboiled' },
+  // "Sella" is the Indian and Pakistani rice trade's name for parboiled rice (golden sella, white sella).
+  { attribute: 'parboiled', family: 'chapter_specific', question: 'Is the rice parboiled?', positive: /\bparboiled\b/i, statesYes: /\bsella\b/i, positiveLabel: 'Yes — parboiled', negativeLabel: 'No — not parboiled' },
   { attribute: 'basmati', family: 'chapter_specific', question: 'Is this Basmati rice?', positive: /\bbasmati\b/i, positiveLabel: 'Yes — Basmati', negativeLabel: 'No — not Basmati' },
   { attribute: 'aromatic', family: 'chapter_specific', question: 'Is this an aromatic rice variety?', positive: /\baromatic\b/i, positiveLabel: 'Yes — aromatic', negativeLabel: 'No — not aromatic' },
   { attribute: 'husked_brown', family: 'chapter_specific', question: 'Is the rice husked (brown) rather than milled?', positive: /\bhusked\b|\bbrown rice\b/i, positiveLabel: 'Yes — husked/brown', negativeLabel: 'No — milled' },
-  { attribute: 'wholly_milled', family: 'chapter_specific', question: 'Is the rice wholly milled rather than semi-milled?', positive: /\bwholly milled\b/i, positiveLabel: 'Yes — wholly milled', negativeLabel: 'No — semi-milled' },
+  { attribute: 'wholly_milled', family: 'chapter_specific', question: 'Is the rice wholly milled rather than semi-milled?', positive: /\bwholly milled\b/i, statesNo: /\bsemi-?\s?milled\b/i, positiveLabel: 'Yes — wholly milled', negativeLabel: 'No — semi-milled' },
   { attribute: 'grain_length', family: 'chapter_specific', question: 'What is the grain length category?', positive: /\blong grain\b/i, positiveLabel: 'Long grain', negativeLabel: 'Round or medium grain' },
 ]);
 
@@ -169,18 +177,25 @@ const NEGATED_BEFORE = /\b(?:not|non|no|without)[\s-]*$/i;
 
 /**
  * D-045: the answers a product's own words already give — "Basmati rice" says it is Basmati,
- * "non-basmati" and "not parboiled" say it is not. Only words the product text states are read:
- * nothing it leaves unsaid becomes an answer ("Basmati rice" says nothing about parboiling), and a
- * term both stated and negated is left unanswered. The exporter's or agent's own answers always
- * come before these (`chooseNationalLines`).
+ * "non-basmati" and "not parboiled" say it is not, and the trade's own words count the same way
+ * ("1121 sella" is parboiled, "semi-milled" is not wholly milled). Only words the product text states
+ * are read: nothing it leaves unsaid becomes an answer ("Basmati rice" says nothing about
+ * parboiling), and a term both stated and negated, or stated both ways ("semi-milled or wholly
+ * milled"), is left unanswered. The exporter's or agent's own answers always come before these
+ * (`chooseNationalLines`).
  */
 export function answersNamedIn(text: string): Record<string, 'yes' | 'no'> {
   const answers: Record<string, 'yes' | 'no'> = {};
   if (!text.trim()) return answers;
+  const every = (pattern: RegExp) => new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+  const negated = (index: number | undefined) => NEGATED_BEFORE.test(text.slice(0, index));
   for (const signal of PRODUCT_ATTRIBUTE_SIGNALS) {
-    const pattern = new RegExp(signal.positive.source, signal.positive.flags.includes('g') ? signal.positive.flags : `${signal.positive.flags}g`);
     const readings = new Set<'yes' | 'no'>();
-    for (const match of text.matchAll(pattern)) readings.add(NEGATED_BEFORE.test(text.slice(0, match.index)) ? 'no' : 'yes');
+    for (const pattern of [signal.positive, signal.statesYes]) {
+      if (pattern) for (const match of text.matchAll(every(pattern))) readings.add(negated(match.index) ? 'no' : 'yes');
+    }
+    // A word that states "no", negated ("not semi-milled"), states nothing either way.
+    if (signal.statesNo) for (const match of text.matchAll(every(signal.statesNo))) if (!negated(match.index)) readings.add('no');
     if (readings.size === 1) answers[signal.attribute] = [...readings][0]!;
   }
   return answers;

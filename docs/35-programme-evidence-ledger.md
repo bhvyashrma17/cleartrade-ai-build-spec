@@ -2664,6 +2664,66 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 - `demand-discovery-v5-tariff-step`: 6 tests, 1 new. The UK times out once and is acquired on the second asking; Canada fails twice and degrades the run. One snapshot is stored.
 - `demand-discovery-v5-run` passes.
 
+### E-065 · 2026-11-10 · Release #58 live: every market ranked, split lines, agent views and the retry on production (in review)
+
+**Release #58** (#53–#57) was merged by the owner at 17:48 UTC as `ee3d0a2`. In Railway, production web and the production worker both show "Deployment successful" for #58. The new code was confirmed live first: the agent's Demand Discovery tab showed "Score 85 · confidence 82%" and the v5 statuses.
+
+**Configuration.** Signed in as the admin, `/ops/discovery` reads `policy demand-discovery-v5-policy-v9`. Production's stored `demand_discovery.v5` row carries no policy of its own, so the code's v9 applies.
+
+**Basmati run, first after the deploy**, started as the paid QA member (Lappu Exports): run `cmwazt9fo000flm0e0d18c0rt`, job `cmwazt9ge000jlm0eup5mjp7b`, 17:57:39–17:59:34 UTC, `completed`, policy v9.
+- **Ranking (D-044):**
+  - "217 of 218 markets ranked. The last 3 have too little data for a full score."
+  - Summary: 214 ranked, 3 ranked last, 0 with no recorded imports, 1 excluded.
+  - Faroe Islands is #215 (31, 60 points live), Vatican City #216 (19), Martinique #217 (18).
+  - Vatican City's page reads "Ranked #216 of 217 · 19/100 · confidence 0%" and "Not enough data. Ranked after the fully scored markets: 20 of 100 points have data, and each measure without data counts as zero."
+  - North Korea is the only market not ranked ("Not ranked: 1 excluded").
+  - The top 10 handed on are fully scored markets only: US, SA, QA, KW, AE, AU, BJ, CA, SG, CI.
+- **Split lines (D-045):**
+  - UK: now scores the official duty. "Duty on Indian goods is about 15.7% (121.00 GBP / 1000 kg at this market's prices), the same on every tariff line under this code; duty-free entry applies only within a tariff quota." Source: HMRC, 1006302110 and 107 more lines. All 108 lines carry one duty, so the split never mattered. Before, the UK stayed on a 1.6% estimate. It moves from #3 (81) to #15 (75). The rest of the old top 10 moves up one place, and Côte d'Ivoire enters at #10.
+  - US: stays on its estimate and asks: "The official tariff splits this product's code into lines with different duties here, so the duty is estimated. Answer 'Is the rice parboiled?' to settle it; the next run uses the official duty." The link leads to the market's tariff-line questions.
+- **R-48:** no look-up was lost. The only notes are the expected ones: World Bank figures more than 10 years old, logistics estimated for 32 markets, no Singapore release yet, and Andorra not covered.
+
+**Agent views (E-061), signed in as the agent assigned to Lappu Exports.**
+- On the run before the deploy (13:49 UTC), the tab showed:
+  - USA #1 "Tariff line needs 1 answer", the UK #3 "Tariff line needs 5 answers", and the rest "Handed on to buyer search";
+  - a work queue of **2** tasks (it was 872 before E-061): "Answer 1 tariff-line question" (USA, 2 national lines) and "Answer 5 tariff-line questions" (UK, 108 lines).
+- On the new run:
+  - **1** task, for the USA;
+  - the market table lists VA "Not enough data 216 19 — 20 of 100 points have data" and MQ 217, and KP "Excluded by policy … Not ranked";
+  - the US page reads "Rank #1 of 217 ranked markets", with "Answer 'Is the rice parboiled?'" linking to the agent's classification page. That page says "ClearTrade runs it again for this product within the hour."
+
+**Found:**
+- The product is named "Basmati rice, 1121 **sella**, semi-milled". "Sella" is the rice trade's word for parboiled, so the description already answers the US question. The reader knew only "parboiled". Fixed in E-066.
+- `/ops/discovery` showed China's and the EAC's tariffs as overdue on the day they were checked. Fixed in E-066.
+- Railway shows the workspace's subscription as past due (owner).
+
+### E-066 · 2026-11-10 · The trade's words answer tariff-line questions; tariff releases age from their stated end (in review)
+
+**Trade words (D-045, from E-065).** `answersNamedIn` also reads words that the product's own text uses for an answer. These words are never matched against official lines:
+- "sella" is parboiled, the Indian and Pakistani trade name (golden sella, white sella);
+- "semi-milled" (or "semi milled") is not wholly milled.
+
+How each word is read:
+- A negated trade word for "yes" reads as "no" ("non-sella").
+- A negated trade word for "no" reads as nothing ("not semi-milled" does not say wholly milled).
+- Text that says both, like the HS heading "Semi-milled or wholly milled rice", answers nothing.
+- Answers on file still come first.
+
+For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes and wholly milled = no. That settles the US on 1006.30.10 (parboiled) and its official duty, in place of the 2.5% estimate.
+
+**Freshness (`input-freshness.ts`).** A tariff release that states its own last day (`validation.valid_until`, written by the customs-union and tariff-schedule readers) is due the day after it:
+- China's 2026 schedule (published 31 Dec 2025, in force to 31 Dec 2026) is due 1 Jan 2027, not 1 Jan 2026.
+- The EAC's notice of 30 Jun 2026 (in force to 30 Jun 2027) is due 1 Jul 2027, not 1 Jul 2026 (R-27, R-29).
+- For a source aged by its rhythm, the earlier of the two dates applies.
+- Releases that state no end keep their calendar rule.
+
+**Not changed:** sources with no recorded rhythm are still re-checked a year after the edition's own date. GCC (Dubai Customs' 23 Jul 2025 update) and UEMOA (TEC 2022 v4) therefore stay "Overdue" on the ops page as re-check reminders. TARIC is overdue in earnest (an EU Login holder downloads it).
+
+**Checks run (agent workspace).**
+- `tsc --noEmit` and ESLint: clean.
+- `demand-discovery-v5-national-line`: 11 tests, 1 new. Lappu's product name settles the US parboiled line; the HS heading answers nothing; an answer on file still wins.
+- `demand-discovery-v5-input-freshness`: 9 tests, 2 new. One covers the production-shaped China, EAC and TARIC releases. The other has the loader read `valid_until` from a stored release; one without it keeps the calendar date.
+
 ## Risk register
 
 
@@ -2716,4 +2776,4 @@ Only plain percentages are compared. A rate with an amount per unit, or a `C` he
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
 | R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
-| R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated in code (E-064, in review): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate | A production run after the release whose tariff step shows a second attempt, or no lost look-up after a deploy |
+| R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |

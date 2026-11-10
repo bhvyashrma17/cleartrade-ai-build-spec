@@ -151,7 +151,10 @@ the snapshot. The run chooses among them, in the order the owner chose
 2. The answers on file for the product and market come first. These are the exporter's, or its
    agent's, answers on the tariff-line questions.
 3. Next, what the product's name and description state: "Basmati rice" is Basmati; "not
-   parboiled" and "non-basmati" are not. Nothing the words leave unsaid becomes an answer.
+   parboiled" and "non-basmati" are not. The trade's own words count the same way: "sella" is
+   parboiled, and "semi-milled" is not wholly milled (E-066). These words are read only from the
+   product, never matched against official lines. Nothing the words leave unsaid becomes an
+   answer, and words that say both ("semi-milled or wholly milled") answer nothing.
 
 The duty is settled only when every line still in scope carries one duty. That duty is the official
 rate, scored like a single line's, with India's own preference on those lines when the source
