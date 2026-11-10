@@ -140,6 +140,27 @@ products for HS chapters 01–27, manufactured otherwise) × agreement factor`. 
 `agreement.partial_scope_factor` (default 0.8) for a partial-scope agreement, else 1. With no WDI
 value the metric is unavailable. Estimates carry quality 0.5 and the label "Duty estimated".
 
+### 4.8 A code that splits into national lines (10 Nov 2026, D-045)
+
+A market's tariff can split the product's HS6 into national lines with different duties (the United
+States' 1006.30: parboiled 11.2%, other 1.4¢/kg). The source's own candidate lines are stored with
+the snapshot. The run chooses among them, in the order the owner chose
+(`national-line.ts`, `splitLineChoices` in `run-inputs.ts`):
+
+1. When every candidate carries the same duty, the split never mattered, and that duty is scored.
+2. The answers on file for the product and market come first. These are the exporter's, or its
+   agent's, answers on the tariff-line questions.
+3. Next, what the product's name and description state: "Basmati rice" is Basmati; "not
+   parboiled" and "non-basmati" are not. Nothing the words leave unsaid becomes an answer.
+
+The duty is settled only when every line still in scope carries one duty. That duty is the official
+rate, scored like a single line's, with India's own preference on those lines when the source
+publishes one for India itself (D-026). The measure says which way the line was chosen.
+
+Otherwise the market keeps its estimate (§4.7), and the market page asks the question that would
+settle the line. An answer recorded after a run that kept such an estimate re-runs the product on
+the hourly refresh (§7b).
+
 ## 5. The score
 
 ### 5.1 Parts

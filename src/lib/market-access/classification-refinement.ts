@@ -164,6 +164,28 @@ const PRODUCT_ATTRIBUTE_SIGNALS: ReadonlyArray<{
 
 const textOf = (line: CandidateLine) => [line.description, ...(line.description_path ?? [])].join(' | ');
 
+/** A negation just before a term: "not parboiled", "non-basmati", "without husk". */
+const NEGATED_BEFORE = /\b(?:not|non|no|without)[\s-]*$/i;
+
+/**
+ * D-045: the answers a product's own words already give — "Basmati rice" says it is Basmati,
+ * "non-basmati" and "not parboiled" say it is not. Only words the product text states are read:
+ * nothing it leaves unsaid becomes an answer ("Basmati rice" says nothing about parboiling), and a
+ * term both stated and negated is left unanswered. The exporter's or agent's own answers always
+ * come before these (`chooseNationalLines`).
+ */
+export function answersNamedIn(text: string): Record<string, 'yes' | 'no'> {
+  const answers: Record<string, 'yes' | 'no'> = {};
+  if (!text.trim()) return answers;
+  for (const signal of PRODUCT_ATTRIBUTE_SIGNALS) {
+    const pattern = new RegExp(signal.positive.source, signal.positive.flags.includes('g') ? signal.positive.flags : `${signal.positive.flags}g`);
+    const readings = new Set<'yes' | 'no'>();
+    for (const match of text.matchAll(pattern)) readings.add(NEGATED_BEFORE.test(text.slice(0, match.index)) ? 'no' : 'yes');
+    if (readings.size === 1) answers[signal.attribute] = [...readings][0]!;
+  }
+  return answers;
+}
+
 /**
  * Derive the smallest useful set of product questions from the candidate set.
  *

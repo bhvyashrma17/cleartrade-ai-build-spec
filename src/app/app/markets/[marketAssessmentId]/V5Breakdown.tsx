@@ -7,6 +7,7 @@
  * it comes from and for which years, saying "Estimate" when it is one (item 8).
  */
 
+import Link from 'next/link';
 import { RupeeRateNote, useRupees } from '@/components/fx/RupeeRate';
 import { StatusChip } from '@/components/ui';
 import type { V5Detail } from '@/lib/demand-discovery-v5/detail';
@@ -65,7 +66,28 @@ function StatusLine({ detail }: { detail: V5Detail }) {
   );
 }
 
-export function V5Breakdown({ detail }: { detail: V5Detail }) {
+/**
+ * D-045: the market's tariff splits the product's code into lines with different duties, and
+ * nothing on file settles which, so the duty is an estimate. One question about the goods settles
+ * it; the next run uses the official duty.
+ */
+function TariffLineQuestion({ question, href }: { question: string; href: string | null | undefined }) {
+  return (
+    <div className="mt-1.5 rounded border border-[color-mix(in_srgb,var(--info-fill)_25%,transparent)] bg-[var(--info-tint)] px-3 py-2 text-xs text-[var(--color-text-secondary)]" role="note">
+      The official tariff splits this product&apos;s code into lines with different duties here, so the duty is estimated.{' '}
+      {href
+        ? <Link href={href} className="font-semibold text-primary underline underline-offset-2">Answer &ldquo;{question}&rdquo;</Link>
+        : <span className="font-medium text-primary">Answering &ldquo;{question}&rdquo;</span>}{' '}
+      {href ? 'to settle it; the next run uses the official duty.' : 'settles it, and the next run uses the official duty.'}
+    </div>
+  );
+}
+
+export function V5Breakdown({ detail, tariffLineHref }: {
+  detail: V5Detail;
+  /** D-045: where this market's tariff-line questions are answered, for the viewer's portal. */
+  tariffLineHref?: string | null;
+}) {
   const rupees = useRupees();
   const metrics = new Map(detail.metrics.map((metric) => [metric.key, metric]));
   return (
@@ -107,6 +129,7 @@ export function V5Breakdown({ detail }: { detail: V5Detail }) {
                       </div>
                       <p className="mt-0.5 text-[var(--color-text-secondary)]">{metric.score == null ? metric.reason : rupees(metricSentence(metric))}</p>
                       {metric.score != null ? <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Source: {metricSource(metric, detail.data_context)}</p> : null}
+                      {key === 'duty' && typeof metric.inputs.line_question === 'string' ? <TariffLineQuestion question={metric.inputs.line_question} href={tariffLineHref} /> : null}
                     </li>
                   );
                 })}

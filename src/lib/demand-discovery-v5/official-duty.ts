@@ -57,8 +57,18 @@ export interface OfficialQuotaNote {
 /** D-026: which rate a usable resolution carries — India's published preference, or the ordinary rate. */
 export type OfficialRateBasis = 'india_preference' | 'standard';
 
+/** D-045: a market whose HS6 splits into national lines, settled by `national-line.ts`. */
+export interface ResolvedLineChoice {
+  basis: 'answers' | 'description' | 'description_and_answers' | 'one_duty';
+  codes: string[];
+  from_answers: Record<string, string>;
+  from_description: Record<string, string>;
+}
+
 interface Resolved {
   source: string;
+  /** D-045: the national line was chosen among a split HS6's candidates, and how. */
+  line_choice?: ResolvedLineChoice;
   /** D-024: the line was read from the official tariff by a ClearTrade agent (authoritative-manual evidence). */
   recorded_by_agent?: boolean;
   /** D-028: the line is a customs union's common external tariff, read for a member; national exceptions are not modelled. */
@@ -81,7 +91,8 @@ export type OfficialDutyResolution =
   | ({ status: 'percent'; duty_percent: number } & Resolved)
   | ({ status: 'specific'; usd_per_kg: number; expression: string; fx: { currency: string; usd_per_unit: number } } & Resolved)
   | ({ status: 'unusable'; reason: string; expression: string | null } & Resolved)
-  | { status: 'none'; reason: string };
+  /** D-045: `line_question` is set where the HS6 splits into lines with different duties and nothing settled which. */
+  | { status: 'none'; reason: string; line_question?: string | null };
 
 /** Mass units a specific duty may be stated per, in kilograms. Anything else is not converted. */
 const KG_PER_UNIT: Readonly<Record<string, number>> = {
@@ -218,6 +229,54 @@ export function resolveOfficialDuty(args: {
     const higher = preferred.status === 'percent' && standard.status === 'percent' && preferred.duty_percent > standard.duty_percent;
     if (preferred.status !== 'unusable' && !higher) {
       return { ...preferred, ...resolved, basis: 'india_preference', standard: { duty_percent: standard.status === 'percent' ? standard.duty_percent : null, expression: row.duty_expression } };
+    }
+  }
+  return { ...standard, ...resolved, basis: 'standard' };
+}
+
+/**
+ * D-045: the official duty on the national line(s) `national-line.ts` chose for a split HS6. Every
+ * chosen line carries the same ordinary duty (the third-country rate the source states for each
+ * candidate). India's preference is the one the source publishes for India on those lines
+ * (`india_preference`, read from the stored line measures). It is scored as for a single line
+ * (D-026): when it is not a quota and not above the ordinary rate.
+ */
+export function resolveChosenLineDuty(args: {
+  lines: readonly { national_tariff_code: string; duty_expression: string | null }[];
+  choice: ResolvedLineChoice;
+  source_authority: string;
+  snapshot_id: string;
+  india_preference: { duty_expression: string; is_quota: boolean } | null;
+  usd_per_unit: (currency: string) => number | null;
+  score_india_preference?: boolean;
+}): OfficialDutyResolution {
+  const first = args.lines[0];
+  if (!first) throw new Error('A chosen national line is required.');
+  const codes = args.lines.map((line) => line.national_tariff_code).sort();
+  const named = codes.length > 3 ? `${codes.slice(0, 3).join(', ')} and ${codes.length - 3} more lines` : codes.join(', ');
+  const parsedPreference = args.india_preference ? parseDutyExpression(args.india_preference.duty_expression) : null;
+  const preference: OfficialPreferenceNote | null = args.india_preference
+    ? {
+        applicability: 'potentially_applicable_requires_origin_proof',
+        duty_expression: args.india_preference.duty_expression,
+        percent: parsedPreference?.kind === 'ad_valorem' ? parsedPreference.ad_valorem_rate_percent : null,
+        ...(args.india_preference.is_quota ? { quota: true } : {}),
+      }
+    : null;
+  const resolved = {
+    source: `${args.source_authority} ${named}`,
+    national_line: codes.length === 1 ? codes[0]! : null,
+    preference,
+    line_choice: args.choice,
+    fact_ids: [] as string[],
+    snapshot_ids: [args.snapshot_id],
+  };
+  const standard = rateOf(null, first.duty_expression, args.usd_per_unit, 'official');
+  if (args.score_india_preference && args.india_preference && !args.india_preference.is_quota) {
+    const preferred = rateOf(null, args.india_preference.duty_expression, args.usd_per_unit, 'preferential');
+    const higher = preferred.status === 'percent' && standard.status === 'percent' && preferred.duty_percent > standard.duty_percent;
+    if (preferred.status !== 'unusable' && !higher) {
+      return { ...preferred, ...resolved, basis: 'india_preference', standard: { duty_percent: standard.status === 'percent' ? standard.duty_percent : null, expression: first.duty_expression } };
     }
   }
   return { ...standard, ...resolved, basis: 'standard' };

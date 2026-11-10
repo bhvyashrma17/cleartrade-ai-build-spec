@@ -41,7 +41,7 @@ export default async function AgentCountryPage({ params }: { params: Promise<{ e
             Manage market decisions
           </Link>
         </div>
-        <V5Breakdown detail={detail} />
+        <V5Breakdown detail={detail} tariffLineHref={`${basePath}/${v5.country_code}/classification`} />
       </RupeeRateProvider>
     );
   }

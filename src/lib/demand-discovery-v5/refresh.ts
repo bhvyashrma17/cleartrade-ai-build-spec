@@ -5,7 +5,9 @@
  * makes two batched Comtrade calls, and the free key allows 500 a day). Newer data is:
  * - a newer ready CEPII BACI release for a revision the run read (HS17, HS22), or one where it had none;
  * - a newer active release of a reference dataset the run froze, or one where it had none;
- * - an official tariff release activated after the run's date.
+ * - an official tariff release activated after the run's date;
+ * - D-045: answers to a market's tariff-line questions recorded after the run, where the run kept an
+ *   estimate because that market's tariff splits the product's code into lines with different duties.
  * A refresh starts like any run (`startDemandDiscoveryV5`, trigger `refresh`): the paid-tier rule, the
  * in-flight dedupe and the audit trail apply unchanged. Only a finished newest run under the
  * product's confirmed code is refreshed; one in flight, failed or under an old code is left alone.
@@ -27,14 +29,25 @@ export interface RefreshState {
   reference: ReadonlyMap<string, string>;
   /** Active official tariff releases, with when each was activated. */
   tariff_releases: readonly { id: string; authority: string; activated_at: Date }[];
+  /** D-045: each product's current tariff-line answers, by market, with when they were recorded. */
+  tariff_line_answers?: ReadonlyMap<string, readonly { country: string; recorded_at: Date }[]>;
 }
 
 type FrozenRelease = { release_id?: unknown } | null | undefined;
-type Frozen = { baci?: { hs17?: FrozenRelease; hs22?: FrozenRelease }; reference?: Record<string, FrozenRelease> };
+type Frozen = {
+  baci?: { hs17?: FrozenRelease; hs22?: FrozenRelease };
+  reference?: Record<string, FrozenRelease>;
+  official_duty?: { markets?: Record<string, { status?: unknown; reason?: unknown; line_question?: unknown } | null> };
+};
+
+/** The run kept an estimate for this market because its tariff splits the code into lines with different duties. */
+const SPLIT_REASON = /^This HS6 splits into national lines/;
+const splitOpen = (entry: { status?: unknown; reason?: unknown; line_question?: unknown } | null | undefined) =>
+  entry?.status === 'none' && (typeof entry.line_question === 'string' || (typeof entry.reason === 'string' && SPLIT_REASON.test(entry.reason)));
 const releaseId = (frozen: FrozenRelease) => (typeof frozen?.release_id === 'string' ? frozen.release_id : null);
 
 /** Why newer data would change a run: one plain line per input, empty when it is current. Pure. */
-export function refreshReasons(run: { frozen_inputs: unknown; as_of: Date }, state: RefreshState): string[] {
+export function refreshReasons(run: { frozen_inputs: unknown; as_of: Date; product_id?: string | null }, state: RefreshState): string[] {
   const frozen = (run.frozen_inputs ?? {}) as Frozen;
   const reasons: string[] = [];
   for (const [revision, used] of [['HS17', frozen.baci?.hs17], ['HS22', frozen.baci?.hs22]] as const) {
@@ -47,20 +60,29 @@ export function refreshReasons(run: { frozen_inputs: unknown; as_of: Date }, sta
   }
   const tariffs = [...new Set(state.tariff_releases.filter((release) => release.activated_at > run.as_of).map((release) => release.authority))].sort();
   if (tariffs.length) reasons.push(`Official tariffs released since the run: ${tariffs.join(', ')}.`);
+  const markets = frozen.official_duty?.markets ?? {};
+  const answered = [...new Set((run.product_id ? state.tariff_line_answers?.get(run.product_id) ?? [] : [])
+    .filter((answer) => answer.recorded_at > run.as_of && splitOpen(markets[answer.country]))
+    .map((answer) => answer.country))].sort();
+  if (answered.length) reasons.push(`Tariff-line answers recorded since the run: ${answered.join(', ')}.`);
   return reasons;
 }
 
 export async function loadRefreshState(): Promise<RefreshState> {
-  const [hs17, hs22, reference, tariffs] = await Promise.all([
+  const [hs17, hs22, reference, tariffs, answers] = await Promise.all([
     latestReadyTradeDatasetRelease(BACI_PROVIDER, 'HS17'),
     latestReadyTradeDatasetRelease(BACI_PROVIDER, 'HS22'),
     prisma.referenceDatasetRelease.findMany({ where: { environment: appEnvironment(), status: ReferenceDatasetReleaseStatus.active }, select: { id: true, dataset_key: true } }),
     prisma.authorityRelease.findMany({ where: { status: AuthorityReleaseStatus.active, activated_at: { not: null } }, select: { id: true, authority: true, activated_at: true } }),
+    prisma.productClassificationRefinement.findMany({ where: { superseded_at: null }, select: { product_id: true, destination_country: true, created_at: true } }),
   ]);
+  const tariffLineAnswers = new Map<string, { country: string; recorded_at: Date }[]>();
+  for (const answer of answers) tariffLineAnswers.set(answer.product_id, [...(tariffLineAnswers.get(answer.product_id) ?? []), { country: answer.destination_country, recorded_at: answer.created_at }]);
   return {
     baci: { HS17: hs17?.id ?? null, HS22: hs22?.id ?? null },
     reference: new Map(reference.map((release) => [release.dataset_key, release.id])),
     tariff_releases: tariffs.map((release) => ({ id: release.id, authority: release.authority, activated_at: release.activated_at! })),
+    tariff_line_answers: tariffLineAnswers,
   };
 }
 
@@ -107,7 +129,7 @@ export async function sweepV5Refresh(options: { now?: Date; state?: RefreshState
   const start = options.start ?? startDemandDiscoveryV5;
   for (const run of candidates) {
     const frozen = await prisma.discoveryRun.findUnique({ where: { id: run.id }, select: { frozen_inputs: true } });
-    const reasons = refreshReasons({ frozen_inputs: frozen?.frozen_inputs, as_of: run.as_of_date ?? run.created_at }, state);
+    const reasons = refreshReasons({ frozen_inputs: frozen?.frozen_inputs, as_of: run.as_of_date ?? run.created_at, product_id: run.product_id }, state);
     if (!reasons.length) continue;
     result.out_of_date += 1;
     if (budget === 0) {

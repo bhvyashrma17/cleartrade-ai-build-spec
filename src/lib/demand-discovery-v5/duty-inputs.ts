@@ -103,12 +103,14 @@ export function dutyInputs(args: {
     const schedule = official && official.status !== 'none' && official.schedule_read ? { schedule_read: official.schedule_read } : {};
     // D-042: an out-of-quota duty keeps the quota's own rate, to be said beside it.
     const quota = official && official.status !== 'none' && official.quota ? { quota: official.quota } : {};
+    // D-045: a line chosen for a split HS6 keeps how it was chosen.
+    const line = official && official.status !== 'none' && official.line_choice ? { line_choice: { basis: official.line_choice.basis, codes: official.line_choice.codes } } : {};
     if (official?.status === 'percent') {
-      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...union, ...schedule, ...quota, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official', duty_percent: official.duty_percent, source: official.source, preference: official.preference, ...rate, ...union, ...schedule, ...quota, ...line, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     if (official?.status === 'specific') {
-      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...union, ...schedule, ...quota, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
+      result.set(market, { kind: 'official_specific', usd_per_kg: official.usd_per_kg, expression: official.expression, source: official.source, preference: official.preference, estimate: estimateFor(market, null), ...rate, ...union, ...schedule, ...quota, ...line, ...(official.recorded_by_agent ? { recorded_by_agent: true } : {}) });
       continue;
     }
     // A rule (v5) stands in for a missing tariff line, never for official evidence that exists but yields no rate.
@@ -118,7 +120,10 @@ export function dutyInputs(args: {
       continue;
     }
     const note = official?.status === 'unusable' ? official.reason : null;
-    const estimate = estimateFor(market, note);
+    // D-045: a split HS6 nothing settled keeps its estimate and names the question that would.
+    const question = official?.status === 'none' ? official.line_question ?? null : null;
+    const estimated = estimateFor(market, note);
+    const estimate = estimated && question ? { ...estimated, line_question: question } : estimated;
     const staleYear = tooOld.get(market);
     const stale = staleYear != null ? tooOldReason('tariff average', staleYear, args.policy) : null;
     if (estimate) result.set(market, estimate);

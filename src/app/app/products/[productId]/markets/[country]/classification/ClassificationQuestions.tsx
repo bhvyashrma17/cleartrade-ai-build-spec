@@ -132,6 +132,11 @@ export function ClassificationQuestions({
           Leave anything you are unsure about unanswered. A wrong answer here changes the duty ClearTrade
           calculates, so an unanswered question is always better than a guess.
         </p>
+        {/* D-045: answers that settle the duty reach Demand Discovery; the hourly refresh re-runs the product. */}
+        <p className="mt-1 text-xs text-muted">
+          Once your answers leave only lines that carry the same duty, Demand Discovery uses that official
+          duty for this market. ClearTrade runs it again for this product within the hour.
+        </p>
         {error ? <p className="mt-3 text-sm text-[var(--crit)]" role="alert">{error}</p> : null}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="submit" disabled={busy || !Object.keys(answers).length}>
