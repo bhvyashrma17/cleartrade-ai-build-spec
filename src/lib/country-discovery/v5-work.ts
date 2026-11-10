@@ -42,6 +42,9 @@ export function v5MarketStatus(
   }
   if (classification?.state === 'agent_classification_required') return { status: 'Needs ClearTrade classification', status_tone: 'needs_classification' };
   if (row.market_status === 'excluded') return { status: 'Excluded', status_tone: 'incomplete' };
+  // Ranked last from policy v9 (D-044), unranked before it: the status says why either way.
+  if (row.market_status === 'not_enough_data') return { status: 'Not enough data', status_tone: 'incomplete' };
+  if (row.market_status === 'no_recorded_demand') return { status: 'No recorded imports', status_tone: 'incomplete' };
   if (row.market_status !== 'ranked') return { status: 'Not ranked', status_tone: 'incomplete' };
   return row.handed_off ? { status: 'Handed on to buyer search', status_tone: 'ready' } : { status: 'Ranked', status_tone: 'ready' };
 }

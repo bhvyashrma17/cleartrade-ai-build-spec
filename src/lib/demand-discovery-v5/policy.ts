@@ -69,7 +69,13 @@ export interface DemandDiscoveryV5Policy {
   rule_rates: Record<string, { duty_percent: number; except_hs: string[]; rule: string; basis: string; source_url: string; checked_on: string; review_by: string }>;
   risk: { grade_scores: Record<string, number>; restricted_group_i_cap: number; restricted_group_ii_cap: number };
   volume: { full_share: number; zero_share: number; minimum_quantity_coverage: number };
-  ranking: { minimum_live_points: number; required_metrics: MetricKey[]; handoff_count: number };
+  /**
+   * `rank_incomplete_last` (v9, D-044): every market but an excluded one gets a rank. Markets
+   * without enough data follow every fully scored market, ordered by their score with each measure
+   * that has no data counting as zero; markets with no recorded imports come last. Only fully
+   * scored markets are handed on. Absent on earlier policies: those markets stayed unranked.
+   */
+  ranking: { minimum_live_points: number; required_metrics: MetricKey[]; handoff_count: number; rank_incomplete_last?: boolean };
   confidence: { recency_decay_per_year: number };
   /** §5.3: a newest-year change beyond this factor either way is treated as a provisional-data error. */
   chain_link: { max_change_ratio: number };
@@ -101,7 +107,11 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   // market price is not counted against a market where India already supplies 10% or more — and a
   // new metric, India's sales (10 points), scores how much India already sells there; price headroom
   // 10 → 5 and market size 20 → 15 make room.
-  policy_version: 'demand-discovery-v5-policy-v8',
+  // v9 (10 Nov 2026, D-044): every market but an excluded one is ranked. A market without enough
+  // data ranks after every fully scored one, by its score with each measure that has no data
+  // counting as zero; a market with no recorded imports ranks last. The owner's words: "all
+  // countries should be ranked". Nothing else changes, so a fully scored market keeps its score.
+  policy_version: 'demand-discovery-v5-policy-v9',
   model_version: DEMAND_DISCOVERY_V5_MODEL,
   points: {
     market_size: 15, growth: 10, stability: 5,
@@ -189,7 +199,7 @@ export const DEMAND_DISCOVERY_V5_DEFAULT_POLICY: DemandDiscoveryV5Policy = {
   },
   risk: { grade_scores: { A1: 100, A2: 85, B1: 70, B2: 55, C1: 40, C2: 20, D: 0 }, restricted_group_i_cap: 40, restricted_group_ii_cap: 20 },
   volume: { full_share: 0.02, zero_share: 0.25, minimum_quantity_coverage: 0.8 },
-  ranking: { minimum_live_points: 60, required_metrics: ['market_size', 'growth'], handoff_count: 10 },
+  ranking: { minimum_live_points: 60, required_metrics: ['market_size', 'growth'], handoff_count: 10, rank_incomplete_last: true },
   confidence: { recency_decay_per_year: 0.8 },
   chain_link: { max_change_ratio: 10 },
   quality: { baci_market_reported: 1, baci_partner_only: 0.85, comtrade_fallback: 0.9, chain_linked: 0.95, duty_estimate: 0.5, logistics_lpi: 0.9, logistics_lsci_estimate: 0.5, official: 1, official_agent_recorded: 0.9, official_common_tariff: 0.8, official_schedule_read: 0.9 },
@@ -225,6 +235,7 @@ export function assertPolicy(policy: DemandDiscoveryV5Policy) {
   if (!(policy.chain_link.max_change_ratio > 1)) throw new Error('The chain-link change limit must exceed 1.');
   if (!(policy.ranking.minimum_live_points > 0 && policy.ranking.minimum_live_points <= 100)) throw new Error('Minimum live points must be in (0, 100].');
   if (policy.ranking.required_metrics.some((key) => !(key in policy.points))) throw new Error('Required metrics must be policy metrics.');
+  if (policy.ranking.rank_incomplete_last !== undefined && typeof policy.ranking.rank_incomplete_last !== 'boolean') throw new Error('ranking.rank_incomplete_last must be true or false.');
   if (!(policy.window_years >= 2)) throw new Error('The window needs at least two years.');
   if (!(policy.duty.official_minimum_confidence >= 0 && policy.duty.official_minimum_confidence <= 100)) throw new Error('The official duty confidence minimum must be a percentage.');
   if (typeof policy.duty.score_india_preference !== 'boolean') throw new Error('duty.score_india_preference must be true or false.');

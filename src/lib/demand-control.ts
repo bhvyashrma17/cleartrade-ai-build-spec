@@ -330,8 +330,9 @@ export const DEFAULT_DIRECTION: Record<SortKey, 'asc' | 'desc'> = {
 /**
  * Load every market in a run with its model rank and its current agent decision.
  *
- * Demand Discovery v5 stores its own rank (docs/36 §5.2): only `ranked` markets have one, and a
- * market shown with a partial score is not ranked however high that score is. For earlier engines
+ * Demand Discovery v5 stores its own rank (docs/36 §5.2). Before policy v9 only `ranked` markets
+ * had one, and a market shown with a partial score was not ranked however high that score was;
+ * from v9 (D-044) every market but an excluded one has one, the markets short of data last. For earlier engines
  * rank is computed the way the engine orders (`@@index([run_id, overall_score])`) and by counting
  * strictly-greater scores, so ties share a rank rather than inventing an order the model never
  * expressed — the same rule `agent-decisions.ts` freezes onto a decision.
@@ -341,7 +342,8 @@ export async function marketControlRows(runId: string, db: PrismaLike = prismaDe
     where: { run_id: runId },
     orderBy: [{ rank: { sort: 'asc', nulls: 'last' } }, { overall_score: { sort: 'desc', nulls: 'last' } }, { country_code: 'asc' }],
   });
-  const totalRanked = assessments.filter((assessment) => assessment.market_status === 'ranked').length;
+  // Every market holding a rank: from v5 policy v9 (D-044) that includes markets short of data.
+  const totalRanked = assessments.filter((assessment) => assessment.rank != null).length;
 
   const decisions = await db.agentDecision.findMany({
     where: { market_assessment_id: { in: assessments.map((a) => a.id) } },

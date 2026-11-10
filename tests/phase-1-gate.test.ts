@@ -64,8 +64,11 @@ function metricsFor(index: number, live: 'all' | 'risk_only'): MetricResult[] {
   });
 }
 
-/** One run's 218 markets as writeV5Results stores them: 1 excluded, 5 without demand, 4 not ranked, 208 ranked. */
-function storedMarkets(classificationId: string): GateMarketEvidence[] {
+/**
+ * One run's 218 markets as writeV5Results stores them: 1 excluded, 5 without demand, 4 without enough
+ * data, 208 fully scored. Under policy v9 (D-044) the 9 incomplete markets rank after the 208.
+ */
+function storedMarkets(classificationId: string, v5 = V5): GateMarketEvidence[] {
   const partnerOnly = (index: number) => index % 7 === 3;
   const inputs: MarketScoreInput[] = CODES.map((code, index) => ({
     market: code,
@@ -73,14 +76,14 @@ function storedMarkets(classificationId: string): GateMarketEvidence[] {
     metrics: index <= 5 ? [] : metricsFor(index, index <= 9 ? 'risk_only' : 'all'),
     data_year: index >= 6 && index <= 9 ? null : index % 9 === 0 ? 2023 : 2024,
   }));
-  return rankMarkets(inputs.map((input) => scoreMarket(input, V5)), V5).map((market, index) => {
+  return rankMarkets(inputs.map((input) => scoreMarket(input, v5)), v5).map((market, index) => {
     const scored = market.status === 'ranked' || market.status === 'not_enough_data';
     return {
       assessment_id: `${classificationId}-${market.market}`,
       country_code: market.market,
       model_version: DEMAND_DISCOVERY_V5_MODEL,
       classification_id: classificationId,
-      scoring_policy_hash: HASH,
+      scoring_policy_hash: policyHash(v5),
       market_status: market.status,
       rank: market.rank,
       overall_score: market.overall,
@@ -115,9 +118,10 @@ function calibrationFor(markets: GateMarketEvidence[]): GateCalibrationEvidence 
   };
 }
 
-function archetypeEvidence(key: string, hs6: string): GateArchetypeEvidence {
+function archetypeEvidence(key: string, hs6: string, v5 = V5): GateArchetypeEvidence {
   const classificationId = `${key}-classification`;
-  const markets = storedMarkets(classificationId);
+  const markets = storedMarkets(classificationId, v5);
+  const hash = policyHash(v5);
   return {
     archetype_key: key,
     selector: `product:${key}-product`,
@@ -131,9 +135,9 @@ function archetypeEvidence(key: string, hs6: string): GateArchetypeEvidence {
     run: {
       id: `${key}-run`, model_version: DEMAND_DISCOVERY_V5_MODEL, status: 'completed', trigger: 'classification_confirmed', classification_id: classificationId, input_hs6: hs6,
       job_id: `${key}-job`, job_status: 'completed', as_of_date: '2026-10-29T08:00:01.000Z', created_at: '2026-10-29T08:00:01.000Z', started_at: '2026-10-29T08:00:05.000Z',
-      completed_at: '2026-10-29T08:06:00.000Z', scoring_policy_hash: HASH, scoring_policy_snapshot: structuredClone(V5),
+      completed_at: '2026-10-29T08:06:00.000Z', scoring_policy_hash: hash, scoring_policy_snapshot: structuredClone(v5),
       frozen: {
-        schema_version: 'fixture-inputs', policy_version: V5.policy_version, policy_hash: HASH, universe_version: 'fixture-universe', universe_size: 218,
+        schema_version: 'fixture-inputs', policy_version: v5.policy_version, policy_hash: hash, universe_version: 'fixture-universe', universe_size: 218,
         baci_release_id: 'baci-hs22', base_years: [2019, 2020, 2021, 2022, 2023, 2024],
       },
       notes: [],
@@ -314,14 +318,38 @@ describe('evaluating v5 runs', () => {
   });
 
   test('coverage: every market of the frozen universe, once, for the run’s classification', () => {
-    // A market without demand leaves the ranking untouched, so only coverage notices it is gone.
-    const missing = evaluateRice((rice) => { rice.markets.splice(3, 1); });
+    // An excluded market holds no rank, so only coverage notices it is gone.
+    const missing = evaluateRice((rice) => { rice.markets.splice(0, 1); });
     expect(checkOf(missing, 'coverage.every_market').reasons).toEqual(['assessed_217_of_218_universe_markets', 'run_summary_counts_218_markets']);
     expect(missing.summary.failed_checks).toEqual(['rice:coverage.every_market']);
     const twice = evaluateRice((rice) => { rice.markets[3] = { ...rice.markets[4], assessment_id: 'copy' }; });
     expect(checkOf(twice, 'coverage.every_market').reasons).toEqual(['AE:assessed_2_times']);
     expect(checkOf(evaluateRice((rice) => { rice.markets[50].classification_id = 'another'; }), 'coverage.every_market').reasons).toEqual(['1_assessment(s)_for_another_classification']);
     expect(checkOf(evaluateRice((rice) => { rice.run!.frozen.universe_size = null; }), 'coverage.every_market').reasons).toEqual(['frozen_universe_size_unknown']);
+  });
+
+  test('rank rules follow the run’s own policy: from v9 every market but an excluded one holds a rank (D-044)', () => {
+    const rice = evaluate().archetypes[0];
+    const status = (code: string) => rice.markets.find((market) => market.country_code === code)!;
+    // The 9 incomplete markets rank 209–217, after the 208 fully scored; the excluded market has none.
+    expect(['AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ'].map((code) => status(code).rank).sort((a, b) => a! - b!)).toEqual([209, 210, 211, 212, 213, 214, 215, 216, 217]);
+    expect(status('AA').rank).toBeNull();
+    const broken = evaluateRice((run) => {
+      run.markets.find((market) => market.country_code === 'AG')!.rank = null;
+      run.markets.find((market) => market.country_code === 'AB')!.rank = null;
+      run.markets.find((market) => market.country_code === 'AA')!.rank = 300;
+    });
+    expect(checkOf(broken, 'evidence_labels.no_silent_zero').reasons).toEqual(expect.arrayContaining(['AG:not_enough_data_without_rank', 'AB:no_recorded_demand_without_rank', 'AA:excluded_market_ranked']));
+
+    // A run under v8 left them unranked, and still passes; a rank there is a fault.
+    const V8 = { ...structuredClone(V5), policy_version: 'demand-discovery-v5-policy-v8', ranking: { minimum_live_points: 60, required_metrics: [...V5.ranking.required_metrics], handoff_count: 10 } };
+    const v8Evidence = () => [archetypeEvidence('rice', '100630', V8), ...fullEvidence().slice(1)];
+    const v8 = evaluate({ evidence: v8Evidence() });
+    expect(v8.summary.failed_checks).toEqual([]);
+    expect(v8.archetypes[0].markets.filter((market) => market.rank != null)).toHaveLength(208);
+    const ranked = v8Evidence();
+    ranked[0].markets.find((market) => market.country_code === 'AG')!.rank = 209;
+    expect(checkOf(evaluate({ evidence: ranked }), 'evidence_labels.no_silent_zero').reasons).toContain('AG:unranked_market_has_rank');
   });
 
   test('fewer ranked markets than the policy needs fails, tallying why the rest are not ranked', () => {

@@ -39,6 +39,8 @@ export interface V5RunRow {
   created_at: Date;
   completed_at: Date | null;
   ranked: number | null;
+  /** v9 (D-044): markets ranked after the fully scored ones; null for runs that stored no count. */
+  ranked_last: number | null;
   top_markets: string[];
   notes: string[];
   /** E-042: how the run's top 10 compares with India's own top destinations; null before E-042. */
@@ -113,11 +115,12 @@ export async function demandDiscoveryV5Operations(actor: Principal) {
   })).map((product) => [product.id, product.name]));
 
   const runs: V5RunRow[] = recent.map((run) => {
-    const summary = (run.summary ?? {}) as { ranked?: number; handed_off?: { market: string }[]; notes?: string[] };
+    const summary = (run.summary ?? {}) as { ranked?: number; ranked_last?: number; handed_off?: { market: string }[]; notes?: string[] };
     return {
       id: run.id, status: run.status, trigger: run.trigger, product: run.product_id ? products.get(run.product_id) ?? null : null,
       exporter: run.exporter_org.display_name, created_at: run.created_at, completed_at: run.completed_at,
       ranked: typeof summary.ranked === 'number' ? summary.ranked : null,
+      ranked_last: typeof summary.ranked_last === 'number' ? summary.ranked_last : null,
       top_markets: (summary.handed_off ?? []).slice(0, 5).map((item) => item.market),
       notes: summary.notes ?? [],
       calibration: readRunCalibration(run.summary),

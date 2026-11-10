@@ -103,7 +103,7 @@ describe('the agent’s view of a v5 run', () => {
     expect(view!.top_markets.map((market) => market.country_code)).toEqual(['US', 'SA', 'GB', 'DE', 'VA']);
     const status = Object.fromEntries(view!.top_markets.map((market) => [market.country_code, market.status]));
     // The United States' line splits too, but its score used the official duty: no question is due.
-    expect(status).toEqual({ US: 'Handed on to buyer search', SA: 'Handed on to buyer search', GB: expect.stringMatching(/^Tariff line needs \d+ answers?$/), DE: 'Ranked', VA: 'Not ranked' });
+    expect(status).toEqual({ US: 'Handed on to buyer search', SA: 'Handed on to buyer search', GB: expect.stringMatching(/^Tariff line needs \d+ answers?$/), DE: 'Ranked', VA: 'Not enough data' });
     // A market the engine did not rank shows no score: its partial 93 is not an attractiveness.
     expect(view!.top_markets.find((market) => market.country_code === 'VA')!.attractiveness).toBeNull();
   });

@@ -79,7 +79,7 @@ describe('v5 assessment across every market', () => {
       US: 'ranked', DE: 'ranked', AE: 'ranked', NP: 'ranked', KP: 'excluded', TV: 'no_recorded_demand', BT: 'not_enough_data', MV: 'ranked',
     });
     expect(markets.get('KP')).toMatchObject({ excluded_reason: POLICY.excluded_markets.KP, metrics: [], labels: [] });
-    expect(markets.get('TV')!.reasons[0].text).toBe('No imports of this product were recorded in 2019–2024.');
+    expect(markets.get('TV')!.reasons[0].text).toBe('No imports of this product were recorded in 2019–2024, so it ranks after every market with imports.');
     expect(markets.get('BT')).toMatchObject({ source: 'none', live_points: 0, overall: null, confidence: null });
     expect(markets.get('BT')!.reasons[0].text).toMatch(/none of the measures has data/);
   });
@@ -168,9 +168,13 @@ describe('v5 assessment across every market', () => {
   test('the US leads, ranks are dense from 1, and the summary hands the ranked markets on in order', () => {
     const ranked = result.markets.filter((market) => market.rank != null).sort((a, b) => a.rank! - b.rank!);
     expect(ranked[0].market).toBe('US');
-    expect(ranked.map((market) => market.rank)).toEqual([1, 2, 3, 4, 5]);
-    expect(result.summary).toMatchObject({ markets: 8, ranked: 5, excluded: 1, no_recorded_demand: 1, not_enough_data: 1, flagged: 1, newest_data_year: 2025 });
-    expect(result.summary.handed_off.map((item) => item.market)).toEqual(ranked.map((market) => market.market));
+    expect(ranked.map((market) => market.rank)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    // D-044 (policy v9): Bhutan, short of data, and Tuvalu, with no recorded imports, rank after the
+    // five fully scored markets and are not handed on; North Korea is excluded and never ranked.
+    expect(ranked.slice(5).map((market) => [market.market, market.status, market.handed_off])).toEqual([['BT', 'not_enough_data', false], ['TV', 'no_recorded_demand', false]]);
+    expect(markets.get('KP')).toMatchObject({ rank: null, handed_off: false });
+    expect(result.summary).toMatchObject({ markets: 8, ranked: 5, ranked_last: 2, excluded: 1, no_recorded_demand: 1, not_enough_data: 1, flagged: 1, newest_data_year: 2025 });
+    expect(result.summary.handed_off.map((item) => item.market)).toEqual(ranked.slice(0, 5).map((market) => market.market));
     expect(result).toMatchObject({ model_version: 'market-opportunity-v5', policy_version: POLICY.policy_version, base_provider: 'cepii_baci', base_years: YEARS });
   });
 
@@ -215,7 +219,7 @@ function mulberry32(seed: number) {
 }
 
 describe('v5 property: a missing input never scores zero', () => {
-  test('across 300 random worlds, every dropped input leaves its metric unavailable and outside the overall', () => {
+  test('across 300 random worlds, every dropped input leaves its metric unavailable; the overall shares its points out, or, short of data, counts it as zero', () => {
     for (let seed = 1; seed <= 300; seed += 1) {
       const random = mulberry32(seed);
       const drop = { lpi: random() < 0.5, ecgc: random() < 0.5, duty: random() < 0.5, price: random() < 0.5, volume: random() < 0.5, quantities: random() < 0.4, coordinates: random() < 0.4, india: random() < 0.3 };
@@ -248,8 +252,12 @@ describe('v5 property: a missing input never scores zero', () => {
       const live = de.metrics.filter((result) => result.score != null);
       const livePoints = live.reduce((sum, result) => sum + POLICY.points[result.key], 0);
       expect(de.live_points, context).toBe(livePoints);
-      expect(de.overall_exact!, context).toBeCloseTo(live.reduce((sum, result) => sum + result.score! * POLICY.points[result.key], 0) / livePoints, 3);
       expect(de.status, context).toBe(livePoints >= 60 ? 'ranked' : 'not_enough_data');
+      // A fully scored market shares the missing points among the rest; from policy v9 (D-044) a
+      // market short of data counts each measure without data as zero in its overall, and ranks last.
+      const over = de.status === 'ranked' ? livePoints : 100;
+      expect(de.overall_exact!, context).toBeCloseTo(live.reduce((sum, result) => sum + result.score! * POLICY.points[result.key], 0) / over, 3);
+      expect(de.rank, context).not.toBeNull();
     }
   });
 });

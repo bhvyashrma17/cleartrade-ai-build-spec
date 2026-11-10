@@ -9,6 +9,8 @@ import { baciFlowsToTradeFlows, sortFlows } from '../src/lib/demand-discovery-v5
 import type { MarketYear } from '../src/lib/demand-discovery-v5/series';
 
 const OPEN: MarketGate = { excluded_reason: null, no_recorded_demand: false, flag_reasons: [] };
+/** Policy v8's ranking, before D-044: markets short of data and with no recorded imports stay unranked. */
+const V8 = { ...POLICY, policy_version: 'demand-discovery-v5-policy-v8', ranking: { minimum_live_points: 60, required_metrics: POLICY.ranking.required_metrics, handoff_count: 10 } };
 const ALL: MetricKey[] = ['market_size', 'growth', 'stability', 'india_foothold', 'india_sales', 'price_headroom', 'openness', 'duty', 'distance_fit', 'logistics', 'country_risk', 'price_fit', 'volume_fit'];
 
 const metric = (key: MetricKey, score: number | null, extra: Partial<MetricResult> = {}): MetricResult => ({ key, score, quality: score == null ? 0 : 1, reason: score == null ? 'missing' : null, inputs: {}, ...extra });
@@ -31,11 +33,18 @@ describe('v5 score', () => {
     expect(sparse.parts.find((part) => part.part === 'exporter_fit')).toEqual({ part: 'exporter_fit', points: 10, live_points: 0, score: null });
   });
 
-  test('ranking needs 60 live points and both size and growth; otherwise not_enough_data with its partial score', () => {
-    const short = scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: [metric('market_size', 80), metric('growth', 60), metric('duty', 100), metric('country_risk', 70), metric('openness', 50)] }, POLICY);
-    expect(short).toMatchObject({ status: 'not_enough_data', live_points: 50, overall: 75, shortfall: { live_points: 50, minimum_live_points: 60, missing_required: [] } });
+  test('ranking needs 60 live points and both size and growth; otherwise not_enough_data, its missing measures counting as zero (v9)', () => {
+    const shortMetrics = [metric('market_size', 80), metric('growth', 60), metric('duty', 100), metric('country_risk', 70), metric('openness', 50)];
+    // (80×15 + 60×10 + 100×10 + 70×10 + 50×5) = 3,750 over all 100 points (D-044); before v9, over the 50 live ones.
+    const short = scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: shortMetrics }, POLICY);
+    expect(short).toMatchObject({ status: 'not_enough_data', live_points: 50, overall_exact: 37.5, overall: 38, shortfall: { live_points: 50, minimum_live_points: 60, missing_required: [] } });
+    expect(scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: shortMetrics }, V8)).toMatchObject({ status: 'not_enough_data', live_points: 50, overall: 75 });
     const noGrowth = scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: ALL.map((key) => metric(key, key === 'growth' ? null : 70)) }, POLICY);
-    expect(noGrowth).toMatchObject({ status: 'not_enough_data', live_points: 90, overall: 70, shortfall: { missing_required: ['growth'] } });
+    expect(noGrowth).toMatchObject({ status: 'not_enough_data', live_points: 90, overall: 63, shortfall: { missing_required: ['growth'] } });
+    expect(scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: ALL.map((key) => metric(key, key === 'growth' ? null : 70)) }, V8)).toMatchObject({ overall: 70 });
+    // Each measure without data stays unavailable: only the overall counts it as zero.
+    expect(noGrowth.metrics.find((result) => result.key === 'growth')).toMatchObject({ score: null, reason: 'missing' });
+    expect(noGrowth.parts.find((part) => part.part === 'demand')).toMatchObject({ live_points: 20, score: 70 });
   });
 
   test('gates: excluded and no-recorded-demand markets are not scored; a flag leaves the score alone', () => {
@@ -64,12 +73,47 @@ describe('v5 score', () => {
 
   test('ranks by exact score, then confidence, then ISO code; hands the top N to regional discovery', () => {
     const at = (market: string, score: number, year = 2024) => scoreMarket({ market, gate: OPEN, metrics: allAt(score), data_year: year }, POLICY);
-    const ranked = rankMarkets([at('FR', 70), at('AE', 70), at('US', 80, 2025), at('NP', 70, 2025), scoreMarket({ market: 'TV', gate: { ...OPEN, no_recorded_demand: true }, metrics: [], data_year: null }, POLICY)], { ...POLICY, ranking: { ...POLICY.ranking, handoff_count: 2 } });
+    const tuvalu = scoreMarket({ market: 'TV', gate: { ...OPEN, no_recorded_demand: true }, metrics: [], data_year: null }, POLICY);
+    const ranked = rankMarkets([at('FR', 70), at('AE', 70), at('US', 80, 2025), at('NP', 70, 2025), tuvalu], { ...POLICY, ranking: { ...POLICY.ranking, handoff_count: 2 } });
     const order = [...ranked].filter((market) => market.rank != null).sort((a, b) => a.rank! - b.rank!).map((market) => market.market);
-    expect(order).toEqual(['US', 'NP', 'AE', 'FR']);
+    // D-044 (policy v9): Tuvalu, with no recorded imports, ranks last and unscored.
+    expect(order).toEqual(['US', 'NP', 'AE', 'FR', 'TV']);
     expect(ranked.filter((market) => market.handed_off).map((market) => market.market).sort()).toEqual(['NP', 'US']);
-    expect(ranked.find((market) => market.market === 'TV')).toMatchObject({ rank: null, lag: null, confidence: null });
-    expect(summarizeRun(ranked)).toMatchObject({ markets: 5, ranked: 4, no_recorded_demand: 1, newest_data_year: 2025, handed_off: [{ market: 'US', rank: 1, overall: 80 }, { market: 'NP', rank: 2, overall: 70 }] });
+    expect(ranked.find((market) => market.market === 'TV')).toMatchObject({ rank: 5, overall: null, lag: null, confidence: null, handed_off: false });
+    expect(summarizeRun(ranked)).toMatchObject({ markets: 5, ranked: 4, ranked_last: 1, no_recorded_demand: 1, newest_data_year: 2025, handed_off: [{ market: 'US', rank: 1, overall: 80 }, { market: 'NP', rank: 2, overall: 70 }] });
+    // Before v9 it stayed unranked.
+    expect(rankMarkets([at('FR', 70), tuvalu], V8).find((market) => market.market === 'TV')).toMatchObject({ rank: null });
+  });
+
+  test('v9 (D-044): every market but an excluded one is ranked — short of data after the fully scored, no recorded imports last; only the fully scored are handed on', () => {
+    const at = (market: string, score: number) => scoreMarket({ market, gate: OPEN, metrics: allAt(score), data_year: 2024 }, POLICY);
+    // Vatican City's shape on production: 93 on the 20 points that have data, 18.6 over all 100.
+    // The Faroe Islands' here: 52 on 70 points, without growth, 36.4.
+    const short = (market: string, score: number, keys: MetricKey[]) => scoreMarket({ market, gate: OPEN, data_year: 2024, metrics: ALL.map((key) => metric(key, keys.includes(key) ? score : null)) }, POLICY);
+    const markets = [
+      at('US', 85), at('GB', 40),
+      short('VA', 93, ['duty', 'country_risk']), short('FO', 52, ['market_size', 'stability', 'india_foothold', 'india_sales', 'duty', 'distance_fit', 'logistics', 'country_risk']), short('MQ', 92, ['duty', 'country_risk']),
+      scoreMarket({ market: 'BT', gate: OPEN, data_year: 2024, metrics: ALL.map((key) => metric(key, null)) }, POLICY),
+      scoreMarket({ market: 'TV', gate: { ...OPEN, no_recorded_demand: true }, metrics: [], data_year: 2024 }, POLICY),
+      scoreMarket({ market: 'AI', gate: { ...OPEN, no_recorded_demand: true }, metrics: [], data_year: 2024 }, POLICY),
+      scoreMarket({ market: 'KP', gate: { ...OPEN, excluded_reason: 'UN sanctions' }, metrics: allAt(90), data_year: 2024 }, POLICY),
+    ];
+    const ranked = rankMarkets(markets, { ...POLICY, ranking: { ...POLICY.ranking, handoff_count: 4 } });
+    const by = new Map(ranked.map((market) => [market.market, market]));
+    expect([...ranked].filter((market) => market.rank != null).sort((a, b) => a.rank! - b.rank!).map((market) => [market.market, market.rank, market.overall]))
+      .toEqual([['US', 1, 85], ['GB', 2, 40], ['FO', 3, 36], ['VA', 4, 19], ['MQ', 5, 18], ['BT', 6, null], ['AI', 7, null], ['TV', 8, null]]);
+    expect(by.get('KP')).toMatchObject({ status: 'excluded', rank: null, handed_off: false });
+    // A hand-off of four reaches past the fully scored markets, but only they are handed on.
+    expect(ranked.filter((market) => market.handed_off).map((market) => market.market)).toEqual(['US', 'GB']);
+    expect(by.get('VA')).toMatchObject({ status: 'not_enough_data', live_points: 20, overall_exact: 18.6 });
+    expect(summarizeRun(ranked)).toMatchObject({ ranked: 2, ranked_last: 6, not_enough_data: 4, no_recorded_demand: 2, excluded: 1 });
+    // The reasons say why each ranks where it does.
+    const facts5 = facts({ window: [2019, 2020, 2021, 2022, 2023, 2024] });
+    expect(marketReasons(by.get('VA')!, facts5, POLICY)[0].text).toBe('Ranked after the fully scored markets: market size and growth have no data, and each measure without data counts as zero.');
+    expect(marketReasons(by.get('BT')!, facts5, POLICY)).toEqual([{ metric: null, effect: 'status', text: 'Ranked last: none of the measures has data for this market.' }]);
+    expect(marketReasons(by.get('TV')!, facts5, POLICY)[0].text).toBe('No imports of this product were recorded in 2019–2024, so it ranks after every market with imports.');
+    const lowPoints = rankMarkets([scoreMarket({ market: 'DE', gate: OPEN, data_year: 2024, metrics: [metric('market_size', 80), metric('growth', 60), metric('duty', 100), metric('country_risk', 70), metric('openness', 50)] }, POLICY)], POLICY)[0]!;
+    expect(marketReasons(lowPoints, facts5, POLICY)[0].text).toBe('Ranked after the fully scored markets: only 50 of 100 points have data (a full score needs 60), and each measure without data counts as zero.');
   });
 });
 

@@ -32,13 +32,28 @@ const METRIC_NAMES: Record<string, string> = {
 };
 
 function StatusLine({ detail }: { detail: V5Detail }) {
-  if (detail.market_status === 'ranked') {
+  if (detail.rank != null) {
+    // v9 (D-044): a market short of data, or with no recorded imports, ranks after every fully scored one.
+    const last = detail.market_status === 'not_enough_data' ? 'Not enough data' : detail.market_status === 'no_recorded_demand' ? 'No recorded imports' : null;
     return (
-      <p className="text-sm text-[var(--color-text-secondary)]">
-        Ranked <span className="font-semibold text-primary">#{detail.rank}</span> of {detail.total_ranked} · {detail.overall_score}/100 · confidence {detail.confidence_score}%
-        {detail.data_year ? ` · data to ${detail.data_year}` : ''}
-        {detail.handed_off ? ' · goes on to buyer search' : ''}
-      </p>
+      <div className="space-y-2">
+        <p className="text-sm text-[var(--color-text-secondary)]">
+          Ranked <span className="font-semibold text-primary">#{detail.rank}</span> of {detail.total_ranked}
+          {detail.overall_score != null ? ` · ${detail.overall_score}/100 · confidence ${detail.confidence_score}%` : ''}
+          {detail.data_year ? ` · data to ${detail.data_year}` : ''}
+          {detail.handed_off ? ' · goes on to buyer search' : ''}
+        </p>
+        {last ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+            <StatusChip label={last} tone="neutral" icon="dot" size="sm" />
+            <span>
+              {detail.market_status === 'not_enough_data'
+                ? `Ranked after the fully scored markets: ${detail.live_points ?? 0} of 100 points have data, and each measure without data counts as zero.`
+                : 'Ranked after every market with recorded imports.'}
+            </span>
+          </div>
+        ) : null}
+      </div>
     );
   }
   const label = detail.market_status === 'excluded' ? 'Excluded' : detail.market_status === 'no_recorded_demand' ? 'No recorded imports' : 'Not ranked — not enough data';

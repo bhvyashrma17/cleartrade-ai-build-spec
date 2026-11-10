@@ -163,10 +163,24 @@ from 3 / 4 / 8 (rice, brassware, carpets) to 5 / 7 / 10; the staging rerun confi
 
 ### 5.2 Ranking and confidence
 
-- Ranked when live points ≥ `ranking.minimum_live_points` (60) and size and growth are both live.
-  Otherwise `not_enough_data`, shown with its partial score, never ranked. Ties on the exact
-  (unrounded) score go to the higher confidence, then to the ISO code, so the same inputs always give
-  the same order. A flagged market is ranked like any other; its flag is shown beside the rank.
+- Fully scored when live points ≥ `ranking.minimum_live_points` (60) and size and growth are both
+  live. Otherwise `not_enough_data`. Ties on the exact (unrounded) score go to the higher
+  confidence, then to the ISO code, so the same inputs always give the same order. A flagged market
+  is ranked like any other; its flag is shown beside the rank.
+- **Every market but an excluded one is ranked (policy v9, 10 Nov 2026, D-044).**
+  - The fully scored markets come first, in the order above.
+  - Markets with `not_enough_data` follow. Their score counts each measure without data as zero
+    (Σ score × points / 100), so Vatican City's 93 on 20 points becomes 19. The measures themselves
+    stay unavailable, each with its reason.
+  - Markets with no recorded imports come last, unscored, by ISO code. Excluded markets are never
+    ranked.
+  - Only fully scored markets are handed on (`handoff_count`).
+  - The reasons say why a market ranks last ("Ranked after the fully scored markets: market size and
+    growth have no data, and each measure without data counts as zero").
+  - Before v9, these markets were shown with a partial score over their live points and stayed
+    unranked. Runs stored then keep that, and the Phase 1 gate checks each run against its own
+    policy.
+  - The database allows a rank on these statuses from migration `20261110180000`.
 - Confidence = (live points / 100) × evidence quality × 0.8^lag. Evidence quality is the
   points-weighted mean of each live metric's quality: BACI where the market reported that year 1.0;
   BACI partner-only 0.85; Comtrade-reported fallback 0.9; chain-linked newest year 0.95; duty
@@ -213,7 +227,7 @@ Market-level fallback results carry "From the market's own customs reports".
 Reasons: three sentences per market from templates: the two metrics adding most points
 (`score × points`) and the one costing most (`(100 − score) × points`), each stating the observed
 value ("Imports averaged $32.0 million a year over the last three years"). A market that is not
-ranked leads with why; an excluded or no-demand market gets one status sentence. No sentence
+fully scored leads with why; an excluded or no-demand market gets one status sentence. No sentence
 projects earnings. The optional AI rationale (`RATIONALE_WRITER`) may rephrase; it never changes a
 number.
 
