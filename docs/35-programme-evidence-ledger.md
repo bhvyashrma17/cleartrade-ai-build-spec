@@ -2930,6 +2930,37 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - Agent workspace: `worker-dockerfile`, 4 tests pass. `tsc --noEmit` and ESLint: clean.
 - CI: builds and checks the worker image on every PR (`.github/workflows/ci.yml`).
 
+### E-073 · 2026-11-11 · The UAE's CEPA schedule is the Department of Commerce's own file; TARIC needs no login (R-50) (in review)
+
+**Owner (11 Nov).** On R-50: "we should move to the official copy". TARIC to be brought up to date.
+
+**Found.**
+- **The official copy.** India's Department of Commerce lists the India–UAE CEPA texts on its India–UAE CEPA page, read through the site's public page API.
+  - Its "Annex 2B – Schedule of Specific Tariff Commitments of United Arab Emirates (UAE) on Trade in Goods" is `https://www.commerce.gov.in/files/2025-04/Chapter-2-Annex-2B-Final-UAE-Revised-Market-Access-Offer-2118-Dec-18-2021.pdf`.
+  - It is 1,445,387 bytes with SHA-256 `b9cd37fdca216f5aa6864815b2fdd6a8193c19f85eb95c7dcd557dfbbb5cd475`, byte for byte the file the GCC release already holds (the Council for Leather Exports' copy).
+  - The ministry's older links (`/wp-content/uploads/…`) now answer 404, because the site moved in 2026.
+- **Nothing the product computes changes.** Every UAE CEPA rate already came from the official document.
+- **TARIC.** The Commission's CIRCABC group "TARIC and Quota data and information" says it "is public and not password-protected. No registration is mandatory."
+  - The November 2026 extraction (17 tables, 34.7 MB, uploaded 2 Nov) downloads without a login.
+  - The ledger (E-056, E-069) and docs/37 said an EU Login holder was needed. That was wrong.
+
+**Built.**
+- **`tariff-schedule-sources.ts`.** The GCC release names the Department's file (`UAE_CEPA_ANNEX_2B_URL`) and says where it is published. The file's pinned name, checksum and size are unchanged, so the release active on production stays readable before and after this change.
+- **`tests/tariff-schedule-official-urls.test.ts`** (2 tests):
+  - Every file of every tariff-schedule release is fetched from a government website; the old `leatherindia.org` URL fails it.
+  - The GCC pins are unchanged.
+- **docs/37.** The GCC row, and TARIC's monthly steps without EU Login, with the download and listing URLs.
+
+**Production.**
+- **TARIC November 2026.** A prompt went to the owner's Claude Code: download the 17 files from CIRCABC, zip them, import, qualify, activate. The result will be recorded here.
+- **The GCC release on production** keeps its stored manifest, which names the Council's URL for the same bytes, until it is rebuilt. Two options for the owner:
+  - Rebuild it now from the official files: the same lines, a stored provenance naming the Department's URL, and one re-run of recent runs after activation.
+  - Or rebuild it with the next GCC edition.
+
+**Checks run (agent workspace).**
+- `tariff-schedule-official-urls` (2 new), `tariff-schedule-pack` (16), `tariff-source-directory` (6), `source-recheck` (4): 28 pass.
+- `tsc --noEmit` and ESLint: clean.
+
 ## Risk register
 
 
@@ -2984,5 +3015,5 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
 | R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |
 | R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067). Releases #66 and #68 built first time. The owner chose the lighter worker build (11 Nov): `Dockerfile.worker` skips `next build` (E-072), rolled out staging first | The worker builds from `Dockerfile.worker` on staging and production, and the website builds first time for five releases in a row |
-| R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Open; the owner decides (E-071) | The same PDF found on commerce.gov.in (or the UAE's own site) with the same SHA-256, and the release pointed there; or a new release from the official copy |
+| R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Closed (E-073): the Department of Commerce publishes the same PDF (same SHA-256) on commerce.gov.in, and the release definition names it. The production release's stored manifest still names the Council's URL for the same bytes until it is rebuilt (the owner's choice, E-073) | — |
 | R-51 | Some markets with a connected live source still score an estimate because the look-up finds no single rated line: the UK for 0910.30 (no declarable commodity found under the HS6) and the US for 7418.10 (no in-scope row with a stated General rate). Each says `classification_resolution: unavailable`, and the exporter sees only "(estimated)" | Open (E-071): the US "Free" case is fixed; these two need the sources' own responses checked | Both look-ups give an official rate on production, and a run says why when a source answers without a usable line |
