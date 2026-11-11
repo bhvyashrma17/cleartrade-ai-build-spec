@@ -194,4 +194,14 @@ delete that bucket copy in Railway.
   settings are the service's own, matching `deploy/railway/*.railway.json`, and no service reads a
   config file, on staging and production. Change them in each service's Settings from now on.
 - Done 9 Nov 2026 (E-054): `tmp/rw/production.env` deleted on the owner's machine.
+- The worker's image (R-49, E-072): `Dockerfile.worker`, the website's image without `next build`,
+  which the worker never uses. Staging first, by the owner:
+  1. When it reaches `staging/railway`: staging `cleartrade-worker` → Settings → Build →
+     *Dockerfile Path* `Dockerfile.worker` → Deploy. Then the agent checks that the build log has
+     no `next build`, the deployment is active, `/ops` shows the worker's heartbeat and a job
+     completes.
+  2. When a release carries it to `master`: the same on `cleartrade-worker-production`, then the
+     same checks. Setting the path before the file is on `master` fails the build, and Railway
+     keeps the running worker.
+  3. To back out, set the path to `Dockerfile` and deploy.
 - Support from day one: `docs/40-support-guide.md`.

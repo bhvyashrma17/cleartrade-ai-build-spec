@@ -2891,6 +2891,43 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - `demand-discovery-v5-metrics`: 1 new test for the duty sentence.
 - `tsc --noEmit` and ESLint: clean.
 
+**On production (release #68, 11 Nov).**
+- **Release #68** (#67) was merged by the owner at 03:22 UTC as `38f5187`. Both services built first time, as with #66 (R-49).
+- **Turmeric, as Lappu.** A new run at 03:33 UTC (`cmwbkcekj0001p90e6pl336ib`) shows the United States, ranked first, as "Low duty for India" with no "(estimated)": the official 0% read from USITC's "Free".
+- **Still estimated.** The UK (R-51) and Malaysia (no automatable source, docs/37).
+- **The run's check against India's own markets:** pass, with 6 of India's top 10 in its top 10.
+
+### E-072 · 2026-11-11 · The worker builds without `next build` (R-49) (in review)
+
+**Why.** Two of the eight service builds of the last four releases failed with exit code 1 during `next build` and printed nothing: #60's website and #62's worker (R-49). Each built cleanly when the owner redeployed. The worker serves no pages, yet it built the whole Next.js app. On 11 Nov the owner chose the lighter worker build, "only if no consequences".
+
+**Built.**
+- **`Dockerfile.worker`.** It is `Dockerfile` without `npm run build`, the `.next` copy, `PORT`, `EXPOSE` and the web health check, and its command is `npm run worker:platform`. Everything else is the same: the base image, the packages, `npm ci`, `prisma generate`, `npm prune --omit=dev` and the copied files.
+- **`deploy/railway/worker.railway.json`** names it.
+- **`tests/worker-dockerfile.test.ts`** (4 tests):
+  - The two Dockerfiles stay in step: a change to `Dockerfile` that the worker's file does not mirror fails the test. Checked by adding a package to `Dockerfile`, which failed it.
+  - The worker's start and pre-deploy commands need only `tsx` and `prisma`, which are runtime dependencies and survive the prune.
+  - No file under `src/` or `scripts/` reads `.next`.
+- **Docs.** docs/33 §1 and docs/39 §8, with the rollout and the way back.
+
+**Why it has no consequences (checked).**
+- **Merging changes nothing.** Railway builds each worker from `Dockerfile` until that service's Dockerfile Path is set. Staging's worker reads "Dockerfile" today and production's has none set (read-only check of both services' settings).
+- **The worker never reads the website's build.** It runs `scripts/worker.ts` under `tsx`, and no source or script refers to `.next`. Its pre-deploy runs `tsx scripts/database-identity-check.ts` and `prisma migrate deploy`, both from `node_modules`, which is built the same way as before.
+- **Port and health check.** Nothing the worker runs reads `PORT`. The worker has no health check (docs/33 §1), and Railway does not use a Dockerfile `HEALTHCHECK`.
+- **Simulated image.** The agent copied the image's contents (pruned `node_modules`, `prisma`, `public`, `scripts`, `src`, no `.next`) and ran them with `NODE_ENV=production` against the local database:
+  - The identity check passed.
+  - `npm run worker:platform -- --once` started, checked input freshness and stopped cleanly (exit 0).
+  - Its only warnings were the local database's missing import account.
+- **The Docker build itself could not run here** (Docker Hub is blocked from the workspace). Staging's build is the first real build, so the rollout starts on staging.
+- **One thing changes.** `next build` also type-checked the code during the worker's build, and `tsx` does not. CI's `tsc --noEmit` still gates every PR, and the website's build still type-checks every release.
+- **Way back.** Set the Dockerfile Path back to `Dockerfile` and deploy.
+
+**Rollout (owner, then agent checks), docs/39 §8.**
+1. After this PR reaches `staging/railway`: staging `cleartrade-worker` → Settings → Build → Dockerfile Path `Dockerfile.worker` → Deploy. The agent then checks the build log (no `next build`), the active deployment, the worker's heartbeat on `/ops` and a completed job.
+2. After the next release reaches `master`: the same on `cleartrade-worker-production`, then the same checks.
+
+**Checks run (agent workspace).** `worker-dockerfile`: 4 tests pass. `tsc --noEmit` and ESLint: clean.
+
 ## Risk register
 
 
@@ -2944,6 +2981,6 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
 | R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |
-| R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067) | Five releases in a row build first time, or the owner chooses a lighter worker build (it would skip `next build`) |
+| R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067). Releases #66 and #68 built first time. The owner chose the lighter worker build (11 Nov): `Dockerfile.worker` skips `next build` (E-072), rolled out staging first | The worker builds from `Dockerfile.worker` on staging and production, and the website builds first time for five releases in a row |
 | R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Open; the owner decides (E-071) | The same PDF found on commerce.gov.in (or the UAE's own site) with the same SHA-256, and the release pointed there; or a new release from the official copy |
 | R-51 | Some markets with a connected live source still score an estimate because the look-up finds no single rated line: the UK for 0910.30 (no declarable commodity found under the HS6) and the US for 7418.10 (no in-scope row with a stated General rate). Each says `classification_resolution: unavailable`, and the exporter sees only "(estimated)" | Open (E-071): the US "Free" case is fixed; these two need the sources' own responses checked | Both look-ups give an official rate on production, and a run says why when a source answers without a usable line |
