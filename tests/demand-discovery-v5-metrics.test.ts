@@ -242,6 +242,10 @@ describe('v5 access, risk and exporter-fit metrics', () => {
     expect(metricSentence(scored)).toBe("Duty on Indian goods is 2.5% at India's preferential rate (standard rate 11.2%); claiming it needs proof of Indian origin.");
     const free = scoreDuty({ kind: 'official', duty_percent: 0, source: 'Japan Customs', preference: { ...preference, duty_expression: 'Free', percent: 0 }, rate_basis: 'india_preference', standard: { duty_percent: null, expression: '10 yen/kg' } }, POLICY, duty);
     expect(metricSentence(free)).toBe("Indian goods enter duty-free at India's preferential rate (standard rate 10 yen/kg); claiming it needs proof of Indian origin.");
+    // E-071: Singapore's rice is duty-free for every origin; there is no preference to claim.
+    const everyone = scoreDuty({ kind: 'official', duty_percent: 0, source: 'Singapore Statutes Online 10063030', preference: { ...preference, duty_expression: '0%', percent: 0 }, rate_basis: 'india_preference', standard: { duty_percent: 0, expression: '0%' } }, POLICY, duty);
+    expect(everyone.score).toBe(100);
+    expect(metricSentence(everyone)).toBe('Indian goods enter duty-free.');
     const quota = scoreDuty({ kind: 'official', duty_percent: 10, source: 'Japan Customs', preference: { ...preference, duty_expression: '0%', percent: 0, quota: true } }, POLICY, duty);
     expect(quota.inputs).toMatchObject({ duty_percent: 10, preference_quota: 'yes' });
     expect(quota.inputs.rate).toBeUndefined();

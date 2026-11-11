@@ -2858,6 +2858,39 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
   - `hs-finder-route` (3) and `hs-finder-screen` (4) pass.
 - `tsc --noEmit` and ESLint: clean.
 
+### E-071 · 2026-11-11 · Production checks after release #66; duty-free US lines read as official (in review)
+
+**On production (release #66, 11 Nov).**
+- **Release #66.** Both services built first time.
+- **Singapore.** The worker's restart re-ran Lappu's basmati at 01:09 UTC. Singapore's duty now reads "Official tariff: Attorney-General's Chambers of Singapore — Singapore Statutes Online 10063030, in force on 11 Nov 2026", duty-free. The run before it said "No official tariff release is saved yet for SG" (E-067).
+- **GCC and UEMOA.** The owner's Claude Code re-checked both as unchanged, using today's files from the URLs `--list` names:
+  - GCC: `IntegratedCustomsTariff.pdf` and `Schedule-of-UAE.pdf`.
+  - UEMOA: `UEMOA_TEC2022_V4.pdf`.
+  - `/ops/discovery` now reads "1 input needs refreshing" (TARIC; E-069).
+- **Two non-rice products, end to end as Lappu.** Each used the code finder, Add product with a price and a capacity, and the first run:
+  - **Turmeric (0910.30)** at ₹160/kg and 20 t a month: the finder gave exactly 0910.30; 217 of 218 markets were ranked.
+  - **Brass pooja thali (7418.10)** at ₹700/kg and 2 t a month: the finder gave 7418.10 ("Copper or brass" taken into account); 217 of 218 ranked.
+  - Both first runs scored "Fit with your business" (E-068). The US page shows the states table (regional hand-off).
+  - The owner ticked each classification confirmation himself; the auto-mode classifier blocks the agent from that attestation.
+
+**Found (read-only, `scripts/explain-official-duty.ts`, run by the owner's Claude Code on production).**
+- **Turmeric, US.** USITC publishes 0910.30.00 as "Free". The shared parser could not read "Free", so the run marked the duty `unusable` and scored a 2.5% World Bank estimate. Every duty-free US line was affected. Canada, Japan, Australia and New Zealand read "Free" in their own parsers.
+- **Turmeric, UK.** `classification_resolution: unavailable`: the UK look-up found no declarable commodity under 0910.30, so it has no ordinary duty (R-51).
+- **Brass, US.** Also `unavailable`: no in-scope HTS row with a stated General rate for 7418.10 (R-51).
+- **Malaysia.** Not looked up: its source is researched and not automatable (docs/37), so its estimate is expected.
+- **Brass, UK.** Official 0% on three lines with one duty (D-045). The sentence offered a preference to claim although the standard rate is also 0%.
+
+**Built.**
+- **`parseDutyExpression`** reads "Free", and "Free (programmes)", as 0%. Duty-free US lines become official on their next run.
+- **Duty sentence.** A preference no lower than the standard rate no longer mentions proof of origin ("Indian goods enter duty-free.").
+- **`scripts/explain-official-duty.ts --product-id --markets`** (read-only). For a product's newest run, it prints each market's look-up outcome, its frozen official duty with the reason, the stored evidence, and what a selection at the run's tariff clock admits or rejects.
+
+**Checks run (agent workspace).**
+- 38 tariff and authority-pack suites, plus `-metrics` and `-run`: 503 tests pass. One expectation was updated: a US India preference published as "Free" is now noted at 0%.
+- `us-hts-free-duty`: 2 new tests. A US line published as "Free" gives an official 0% ordinary duty.
+- `demand-discovery-v5-metrics`: 1 new test for the duty sentence.
+- `tsc --noEmit` and ESLint: clean.
+
 ## Risk register
 
 
@@ -2912,3 +2945,5 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
 | R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |
 | R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067) | Five releases in a row build first time, or the owner chooses a lighter worker build (it would skip `next build`) |
+| R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Open; the owner decides (E-071) | The same PDF found on commerce.gov.in (or the UAE's own site) with the same SHA-256, and the release pointed there; or a new release from the official copy |
+| R-51 | Some markets with a connected live source still score an estimate because the look-up finds no single rated line: the UK for 0910.30 (no declarable commodity found under the HS6) and the US for 7418.10 (no in-scope row with a stated General rate). Each says `classification_resolution: unavailable`, and the exporter sees only "(estimated)" | Open (E-071): the US "Free" case is fixed; these two need the sources' own responses checked | Both look-ups give an official rate on production, and a run says why when a source answers without a usable line |
