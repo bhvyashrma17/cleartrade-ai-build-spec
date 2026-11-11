@@ -191,9 +191,12 @@ export function metricSentence(result: MetricResult, effect: 'adds' | 'costs' = 
           : inputs.line_choice === 'description_and_answers' ? ' on the tariff line the description and the answers about the goods point to'
             : inputs.line_choice === 'one_duty' ? ', the same on every tariff line under this code' : '';
       const read = `${source}${line}`;
-      // D-026: the scored rate is India's preference; the ordinary rate stays beside it.
-      if (inputs.rate === 'india_preference') {
-        const standardPercent = num(inputs.standard_percent);
+      // D-026: the scored rate is India's preference; the ordinary rate stays beside it. A preference no
+      // lower than the standard rate is not worth claiming (Singapore's rice is duty-free for every
+      // origin), so no proof of origin is mentioned and the ordinary sentence below is used (E-071).
+      const standardPercent = num(inputs.standard_percent);
+      const nothingToClaim = standardPercent != null && standardPercent <= duty;
+      if (inputs.rate === 'india_preference' && !nothingToClaim) {
         const standard = standardPercent != null ? formatPercent(standardPercent) : typeof inputs.standard_duty === 'string' && inputs.standard_duty ? inputs.standard_duty : null;
         const preferential = duty === 0 ? "Indian goods enter duty-free at India's preferential rate" : `Duty on Indian goods is ${specific ? 'about ' : ''}${formatPercent(duty)}${specific} at India's preferential rate`;
         return `${preferential}${read}${standard ? ` (standard rate ${standard})` : ''}; claiming it needs proof of Indian origin.`;
