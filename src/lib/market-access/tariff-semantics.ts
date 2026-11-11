@@ -63,6 +63,10 @@ function empty(expression: string, kind: DutyKind, note: string | null = null): 
 export function parseDutyExpression(raw: string | null | undefined): ParsedDuty {
   const expression = (raw ?? '').trim();
   if (!expression) return empty('', 'none', 'The source published no duty expression.');
+  // "Free" is how most schedules publish a zero duty: the US HTS General column (a live look-up, so
+  // until E-071 every duty-free US line fell back to an estimate), Canada, Japan, Australia, New
+  // Zealand. A programme list after it ("Free (A+,AU,BH)") names who gets the rate; it is still 0%.
+  if (/^free(?:\s*\([^)]*\))?$/i.test(expression)) return { ...empty(expression, 'ad_valorem'), ad_valorem_rate_percent: 0 };
 
   const adValorem = AD_VALOREM.exec(expression);
   if (adValorem) {

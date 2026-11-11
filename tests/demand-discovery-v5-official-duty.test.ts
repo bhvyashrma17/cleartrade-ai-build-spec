@@ -39,7 +39,8 @@ describe('official duty on Indian goods (v5)', () => {
     ]);
     expect(resolution).toEqual({
       status: 'percent', duty_percent: 11.2, source: 'USITC HTS 1006304010', national_line: '1006304010',
-      preference: { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: 'Free', percent: null }, basis: 'standard',
+      // E-071: "Free" is read as 0% (it was unreadable before), so the noted preference has its rate.
+      preference: { applicability: 'potentially_applicable_requires_origin_proof', duty_expression: 'Free', percent: 0 }, basis: 'standard',
       fact_ids: ['market_access_tariff:us-mfn', 'market_access_tariff:us-pref'], snapshot_ids: ['snap-1'],
     });
   });
