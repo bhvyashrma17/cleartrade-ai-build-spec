@@ -2770,6 +2770,94 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 
 **Order (production).** The worker must run reader v2 before the release is imported: it re-reads the bundle at every look-up, and v1 stops at the blank dutiable lines. So: merge, release, deploy. Then the owner's Claude Code runs `build-singapore-saved-bundle.ts` on the saved folder and imports with `--activate` (`railway run --environment production --service cleartrade-worker-production`). The new release then re-runs products on the hourly refresh.
 
+**On production, 11 Nov.**
+- **Release #62.** The website deployed first time. The worker's first build failed with exit code 1 during `next build` and printed no error (as #60's website build did, R-49). The owner's redeploy built cleanly, and both services run #62.
+- **The owner's Claude Code** ran the builder on the six saved pages, with no request to any Singapore site:
+  - 11,423 lines, 10,722 not dutiable, 107 without an official rate;
+  - all six qualification checks pass;
+  - SHA-256 `217284d1…6b634e19fd83aecb2787a7cea9d481`.
+- **Import.** It imported through the worker's production variables with `--activate`:
+  - database fingerprint `6317e339e3e2`;
+  - release `cmwbe3r470001uebececevwt4` (`sso-saved-2026-11-11`), `NEW_RELEASE`, active;
+  - the repeat import was `UNCHANGED`.
+- **`/ops/discovery`** shows "in use: sso-saved-2026-11-11 (SSO as at 11 Nov 2026)". The nightly refresh stays off, and the 9 Nov 403 is still shown as its last attempt.
+
+### E-068 · 2026-11-11 · A product's first run can use its price and capacity (in review)
+
+**Found.** Price fit and volume fit (docs/36 §4 #11, #12) carry 10 of the 100 points. A run freezes the product's facts when it starts, and confirming the code on Add product starts it. Add product asked for no price or capacity, so every product's first run scored without them; the figures could only be entered afterwards, on the product's details page, for later runs. (Earlier in this session I told the owner they could not be entered at all. That was wrong: the details page has both.)
+
+**Built.**
+- **Add product** (`/app/markets`) has an optional "Your price and capacity" group: FOB price per kg (INR, USD or EUR) and monthly capacity (tonnes or kg). Blank means "add later". Thousands separators are dropped ("1,25,000"), and anything that is not a number above zero is named beside its field before anything is sent.
+- **`POST /api/v1/products`** takes `fob_price_per_kg {amount, currency}` and `monthly_capacity {value, unit}`. They are checked before anything is written, so a bad figure saves nothing; errors name `fob_price_per_kg.amount` and the like. They are written through `declareProductOperationalFacts` (so they stay `exporter_declared`, with its audit event) before the code is confirmed, so the first run freezes them. Stored as price per `kg`, `FOB`, and capacity per `month`, which is exactly what `exporterUsdPerKg` and `exporterYearlyKg` read.
+- **Fixed in `declareProductOperationalFacts`:** a capacity period sent with production capacity alone was dropped; it was written only alongside available capacity. The details form always sends both, so it was not affected. Available capacity without a period still clears the period, as before.
+
+**Checks run (agent workspace).**
+- `products-create-route`: 5 tests, 3 new. The facts are on the product when confirmation runs (95.50 INR/kg FOB; 20 tonnes a month, read as 240,000 kg a year); either one alone is fine; a zero price, a word, a unit in cartons or an extra key is refused with the field named and no product saved; the capacity period is kept, cleared or left alone as described.
+- `exporter-facts-authorization`, `phase-1h-operational-pillars`, `demand-discovery-v5-metrics` and `-run` pass: 72 tests across 5 files.
+- `tsc --noEmit` and ESLint: clean.
+- The form rendered with the app's own CSS at 900 px and 375 px: no horizontal scroll; the group sits under the code confirmation.
+
+### E-069 · 2026-11-11 · A tariff source with no publishing rhythm can be re-checked, not only re-imported (in review)
+
+**Found (the owner asked to clear the GCC, UEMOA and TARIC reminders, E-066).**
+- A source with no recorded rhythm is due a year after its edition's date. The GCC tariff (Dubai Customs' update of 23 Jul 2025) and the UEMOA edition of the ECOWAS tariff (TEC 2022 V4) were both overdue on `/ops/discovery`.
+- Research on 10–11 Nov found no newer edition of either. The GCC's 2026 notice (CN 2/2026) only extends the transition to 8-digit codes; `IntegratedCustomsTariffv4.pdf` on Dubai Customs' site is a presentation, not a tariff. UEMOA's TEC 2022 V4 is still the newest.
+- Nothing could record that. Importing the same edition again finds the existing release (UNCHANGED) and keeps its edition date, so the row would have stayed overdue for good.
+- TARIC is different: it is published monthly, needs an EU Login holder to download, and a re-check of an old month does not make it current. Its monthly steps are now written down in docs/37 §8.
+
+**Built.**
+- **`src/lib/market-access/source-recheck.ts`.**
+  - The official files of a release are its manifest without what ClearTrade derived (normalized lines, acquisition manifest).
+  - `compareWithRelease` says "unchanged" only when every file fetched today matches one of the release's files by SHA-256 and every official file was supplied. Otherwise it names the differing and missing files.
+  - `recordSourceRecheck` records an unchanged re-check as an audit event on the release (`authority_source_rechecked`, `authority_release`), for operations staff and admins only.
+- **`scripts/recheck-authority-source.ts --source-family=…`.** `--list` prints the files to fetch, with their URLs. With `--file=…` for each and `--actor-email`, it records an unchanged re-check, or names the changed files, records nothing and exits 1. It checks the database identity first.
+- **Freshness.** A source with no publishing rhythm is due a year after its newest unchanged re-check, when that is later than the edition's date. A source with a rhythm (TARIC monthly, China yearly) is not reset this way. The ops page shows "re-checked {date}" beside the release, and the default rule's refresh text names the script.
+- **Docs:** docs/40 §5, the yearly row; docs/37 §8, the re-check and TARIC's monthly steps.
+
+**Checks run (agent workspace).**
+- `source-recheck`: 4 tests, all new. Derived files are excluded; unchanged needs every file; a new edition and a missing file are named; GCC goes from overdue (due 23 Jul 2026) to fresh (due 11 Nov 2027) after a re-check on 11 Nov 2026, while TARIC stays overdue; an exporter account is refused; the loader reads the newest re-check.
+- `demand-discovery-v5-input-freshness` (9) and `-national-line` (11) pass.
+- `tsc --noEmit` and ESLint: clean.
+- The script, end to end, on a throwaway local database with an active GCC release built from two test files:
+  - `--list` named both files and their URLs;
+  - one file only: "changed or incomplete — nothing recorded", the missing file named, exit 1;
+  - an exporter account: refused, exit 1;
+  - both files: "unchanged — re-check recorded", one audit event with `checked_on` 2026-11-11, exit 0;
+  - an amended file: named as differing, nothing recorded, exit 1.
+
+**Next (production, after release).** The owner's Claude Code runs `--list` for `GCC_UNIFIED_TARIFF` and `ECOWAS_CET_UEMOA_TEC` on production, fetches the files it names from their official URLs, and runs the re-check with them. Unchanged clears the reminder; changed means a new edition to import.
+
+### E-070 · 2026-11-11 · The code finder's five misses from the production probe (in review)
+
+**Found.** I probed production's code finder with 20 everyday products on 10 Nov. Fifteen were right and five were wrong:
+- **"stainless steel utensils"** gave only 7204.21, stainless steel scrap. CEPII's list says "Steel, stainless: table, kitchen …" where the HS says "… of stainless steel". So 7323.93 was read as "iron or other steel", and the exporter's "stainless" narrowed it away. For "kitchen utensils", the answer "Stainless steel" matched nothing. The tests used the HS wording, so they passed.
+- **"mango pulp"** gave fresh mangoes, vigna mungo beans (a one-letter slip from "mango") and beet-pulp waste.
+- **"bedsheets"** gave nothing. Everyday names were matched letter for letter, so "bedsheets" missed "bedsheet".
+- **"cotton bedsheets"** gave cotton seeds, then asked "Which kind of rice?", because the seeds are "whether or not broken".
+- **"green coffee beans"** gave green tea first.
+
+**Built (still no AI, as the owner chose in E-043).**
+- **Stainless.** "Steel, stainless" now reads as stainless. Bare "steel" means stainless only beside household words (utensils, thali, bottle, tiffin and the like), the usual Indian meaning. For pipes, bars or scrap, the finder asks the grade instead of assuming it. "SS" reads as stainless steel.
+- **Rice.** The kind-of-rice question applies only to heading 10.06.
+- **Everyday names.**
+  - They match with plural "s" ignored.
+  - A name inside a longer name of another entry that also matched no longer counts: "mango pulp" is not "mango". Synonyms in one entry still add up, as before.
+  - A word an everyday name explains is not slip-matched, and does not bring in codes that share only that word, so no wood pulp for "mango pulp".
+- **One-letter slips.** A slip prefers a word with a letter added at the end ("mangoe", from "mangoes") over a changed letter ("mungo").
+- **Waste and scrap.** These codes rank at a quarter of their score unless the exporter says "waste" or "scrap". A code's own exclusions do not count: "yarn (other than yarn spun from silk waste)" is not waste.
+- **New names.** Mango pulp and fruit pulp (2007.99, 2008.99); green coffee (0901.11, 0901.12); instant coffee (2101.11, 2101.12); green tea (0902.10, 0902.20); castings (7325.10, 7325.99); steel bottle (7323.93; 9617.00 if insulated).
+- **Corrected code.** Surgical gloves pointed at 4015.11, which HS 2022 deleted, so the name was silently dropped. It now points at 4015.12.
+
+**Checks run (agent workspace).**
+- **CEPII's real list** (`product_codes_HS22_V202601.csv`, 5,609 rows, 5,608 offered):
+  - The five misses now give: 7323.93 first; 2007.99 and 2008.99; the three bed-linen codes; the two cotton bed-linen codes, then "Is it printed?"; 0901.11 and 0901.12.
+  - Of 38 everyday queries, 18 changed, all for the better. For example: "instant coffee" was photographic film, now 2101.11; "mango" no longer offers mungo beans; "cotton towels" and "cotton t-shirts" find towels and T-shirts; castor oil and roasted coffee no longer ask about rice. The other 20 (turmeric, basmati rice, cumin, black tea, frozen shrimp, granite, ceramic tiles and so on) are unchanged.
+  - All 146 everyday names put one of their own codes in the top three. Before, 127 of 128 did; surgical gloves was the miss. Every code in the names list exists in the HS 2022 list.
+- **Tests.**
+  - `hs-finder`: 11 tests. The 4 new ones are on CEPII's own wording, and each fails on the old finder.
+  - `hs-finder-route` (3) and `hs-finder-screen` (4) pass.
+- `tsc --noEmit` and ESLint: clean.
+
 ## Risk register
 
 
@@ -2817,9 +2905,10 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-40 | In-app bug reports are stored but nobody is shown or told about them | Closed (E-050): `/ops/support`, and an in-app notification to admins and ops supervisors | — |
 | R-41 | Railway ends config-as-code on 1 Dec 2026: web and the scanner, which take their build, start, pre-deploy, health check and restart from `deploy/railway/*.railway.json`, would fall back to bare service settings (Railpack, no start command, no health check, no identity-checked pre-deploy) | Closed (E-054): all six services (web, worker, scanner on staging and production) take their settings from the service itself and read no config file; production's deploy ran the identity-checked pre-deploy and passed its health check | — |
 | R-42 | On production's stored data, v5's top 10 holds fewer than half of India's own ten largest destinations for 6 of India's top 100 export products (293399 4/10, 853710 4/10, 321590 3/10, 090931 3/10, 300410 3/10, 854143 2/10); the markets missed most often across the 100 are BR, IT, BD and CA. The Phase 1 gate's archetypes all pass (E-048) | Accepted as a known limit (E-054); not a launch blocker | A calibration change for these products, checked by `dd5-health-check.ts` against the same 100 |
-| R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window. On 11 Nov SSO refused the owner's machine too (HTTP 403 at 03:33 SGT); the owner saved the six pages in a browser instead, and the reader now reads SSO's real layout from a saved copy (E-067, in review) | E-067 released; the saved copy imported and active on production (then staging) with the same SHA-256 |
+| R-43 | Singapore Statutes Online refuses the nightly refresh from Railway with HTTP 403: staging every night, production's first window (9 Nov, three attempts) too. No Singapore release is active in either environment | Open, decided (D-040): refresh off; one load from the owner's machine in the 11 Nov SGT window. On 11 Nov SSO refused the owner's machine too (HTTP 403 at 03:33 SGT); the owner saved the six pages in a browser instead, and the reader now reads SSO's real layout from a saved copy (E-067, released in #62). 11 Nov: imported and active on production (release `sso-saved-2026-11-11`, SHA-256 `217284d1…`); staging not yet | The same bundle imported and active on staging; a production run reads Singapore's official duty |
 | R-44 | Three active tariff releases on production (EU TARIC, Japan, Korea) have rows but no stored file in production's bucket, so v5 estimates the duty for 31 markets, among them Germany, France, Italy, the Netherlands, Japan and Korea | Closed (E-057): 98 of 98 restored by SHA-256, 223 of 223 active releases present; production's new basmati run carries the official EU and Korean duties and completes | — |
 | R-45 | Production has no Canadian Importers Database list, so Canada shows no importer count and no regional view | Deferred by the owner's scope (D-041); the Buyers page no longer implies the list was searched (E-056) | CC imports staging's edition into production; Canada's market page shows the count |
 | R-46 | Quota duties on farm goods: Korea's reader scores rice's in-quota 5% though out-of-quota rice pays 513%, and Japan's 1006.30 lines disagree (state-traded rice free, private imports ¥341/kg), so v5 falls back to a 3.6% World Bank average. Both understate the duty for rice and other tariffied farm goods; China already scores the out-of-quota rate | Closed (E-060): on production, the basmati run reads Korea 513% and Japan 341 yen/kg (about 263%) outside the quota, each with the quota's rate said | — |
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
 | R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |
+| R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067) | Five releases in a row build first time, or the owner chooses a lighter worker build (it would skip `next build`) |

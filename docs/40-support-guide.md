@@ -54,6 +54,9 @@ and each market page says the same. Contacts arrive through the agent.
 
 ### 3.2 "The product code is wrong"
 - The product code finder opens under every HS code field and asks the separating question.
+- When it misses an everyday name, add the name and its HS 2022 codes to
+  `src/lib/hs-finder/everyday-names.ts`, with a test on CEPII's own wording (E-070). Check every code
+  against the loaded HS 2022 list: a code the list does not have is silently ignored.
 - An agent, ops supervisor or admin confirms the classification; confirming a different code starts a
   new run automatically (D-018). The earlier run stays as history.
 - Disagreements go to the ops supervisor, with the rationale written on the classification.
@@ -142,7 +145,7 @@ and each market page says the same. Contacts arrive through the agent.
 | Daily, automatic | World Bank indicators and Comtrade's reporting lists (`reference_auto_import_actor_email` set); re-runs on new data (hourly, at most 100 a day); sanctions refresh (every 12 h); Singapore's tariff (nightly, in the window) | Worker. Check `/ops/discovery` and `/ops/sanctions` (§2) |
 | Monthly | Sanctions programmes curated check (stale after 31 days, R-21); HMRC importer list (R-31); TARIC and Brazil's CAMEX workbook (stale after 45 days, R-29); published duty rules near their `review_by` (R-22); spot-check agent-entered tariff lines (R-23) | Ops supervisor with an operator: the source's own importer (docs/36 §10, docs/37); each import twice, the second UNCHANGED |
 | Every six months | India's trade agreements; ECGC country risk (stale after 182 days; take ECGC's newest list) | Curated update, then `import-reference-dataset.ts` |
-| Yearly | BACI's new release (due 1 January, overdue 1 March); currency pegs; the EAC Gazette (1 July, R-27); China's tariff (late December, R-29); the UAE CEPA year (R-29); directory links (R-22) | Operator import; the ledger records each |
+| Yearly | BACI's new release (due 1 January, overdue 1 March); currency pegs; the EAC Gazette (1 July, R-27); China's tariff (late December, R-29); the UAE CEPA year (R-29); directory links (R-22); tariff sources with no publishing rhythm, such as the GCC tariff and the UEMOA edition of the ECOWAS tariff (`scripts/recheck-authority-source.ts --list`, then fetch the files it names and run it with them: unchanged records the re-check, changed names the files to import, E-069) | Operator import or re-check; the ledger records each |
 
 ## 6. Incidents
 

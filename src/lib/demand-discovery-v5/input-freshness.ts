@@ -20,6 +20,7 @@ import { CURRENCY_PEGS_KEY } from '@/lib/reference-datasets/currency-pegs';
 import { ECGC_COUNTRY_RISK_KEY, GEO_CEPII_KEY } from '@/lib/reference-datasets/registry';
 import { SANCTIONS_PROGRAMMES_KEY } from '@/lib/reference-datasets/sanctions-programmes';
 import { BACI_PROVIDER } from '@/lib/trade-datasets/baci';
+import { latestSourceRechecks } from '@/lib/market-access/source-recheck';
 import type { DemandDiscoveryV5Policy } from './policy';
 
 export type FreshnessStatus = 'fresh' | 'due_soon' | 'overdue' | 'missing' | 'automatic' | 'static';
@@ -33,8 +34,8 @@ export interface InputFreshnessRow {
   key: string;
   group: FreshnessGroup;
   label: string;
-  /** The release in use: its version, the date it is as of, and when it was retrieved. */
-  current: { version: string; dated: string | null; retrieved_at: string | null } | null;
+  /** The release in use: its version, the date it is as of, when it was retrieved and, for a tariff, when it was last re-checked unchanged. */
+  current: { version: string; dated: string | null; retrieved_at: string | null; rechecked_on?: string | null } | null;
   /** From when the release in use is out of date; null when nothing makes it go out of date. */
   due_at: string | null;
   status: FreshnessStatus;
@@ -50,9 +51,10 @@ export interface FreshnessState {
   reference: ReadonlyMap<string, { version: string; retrieved_at: Date }>;
   /**
    * Active tariff releases (`AuthorityRelease`). `valid_until` is the last day the release states
-   * measures for, when its reader records one (`validation.valid_until`).
+   * measures for, when its reader records one (`validation.valid_until`); `rechecked_on`, the newest
+   * re-check that found the official files unchanged (E-069).
    */
-  tariffs: { source_family: string; authority: string; label: string; release_identifier: string; reference_date: Date; retrieved_at: Date; valid_until?: Date | null }[];
+  tariffs: { source_family: string; authority: string; label: string; release_identifier: string; reference_date: Date; retrieved_at: Date; valid_until?: Date | null; rechecked_on?: Date | null }[];
   rule_rates: DemandDiscoveryV5Policy['rule_rates'];
   latest_usd_observation: Date | null;
   singapore_refresh_enabled: boolean;
@@ -115,7 +117,7 @@ const TARIFF_RULES: Record<string, TariffRule> = {
 const DEFAULT_TARIFF_RULE: TariffRule = {
   kind: 'max_age_days', days: 365,
   basis: 'No publishing rhythm is recorded for this source: re-checked yearly, like the source directory (docs/37).',
-  refresh: 'Re-check the official source and import a newer release if it changed.',
+  refresh: 'Re-check the official source: fetch its files and run scripts/recheck-authority-source.ts, which records an unchanged edition (the next re-check falls a year later) or names the files that changed, to import as a newer release (E-069).',
 };
 
 // ---------------------------------------------------------------------------
@@ -204,11 +206,14 @@ export function assessInputFreshness(state: FreshnessState, now: Date): InputFre
     const own = TARIFF_RULES[release.source_family] ?? DEFAULT_TARIFF_RULE;
     // Singapore's nightly rule holds only while its refresh is on; otherwise the release ages like any other.
     const rule = own.kind === 'nightly' && !state.singapore_refresh_enabled ? DEFAULT_TARIFF_RULE : own;
-    const dueAt = tariffDueAt(rule, release);
+    // A source with no publishing rhythm is re-checked yearly: from its edition's date, or from the
+    // newest re-check that found the same files (E-069). A rhythm-bound source is not reset that way.
+    const recheckBase = rule === DEFAULT_TARIFF_RULE && release.rechecked_on && release.rechecked_on > release.reference_date ? release.rechecked_on : null;
+    const dueAt = tariffDueAt(rule, recheckBase ? { ...release, reference_date: recheckBase } : release);
     const status = statusFor(dueAt, now);
     rows.push({
       key: `tariff:${release.source_family}:${release.authority}`, group: 'tariff', label: release.label,
-      current: { version: release.release_identifier, dated: iso(release.reference_date), retrieved_at: iso(release.retrieved_at) },
+      current: { version: release.release_identifier, dated: iso(release.reference_date), retrieved_at: iso(release.retrieved_at), rechecked_on: iso(release.rechecked_on ?? null) },
       due_at: dueAt.toISOString(), status: rule.kind === 'nightly' && status !== 'overdue' ? 'automatic' : status, rule: rule.basis, refresh: rule.refresh,
     });
   }
@@ -255,16 +260,17 @@ export async function loadInputFreshness(now = new Date()): Promise<InputFreshne
     prisma.referenceDatasetRelease.findMany({ where: { environment, status: 'active' }, select: { dataset_key: true, version: true, retrieved_at: true } }),
     prisma.authorityRelease.findMany({
       where: { status: AuthorityReleaseStatus.active },
-      select: { source_family: true, authority: true, label: true, release_identifier: true, reference_date: true, retrieved_at: true, validation: true },
+      select: { id: true, source_family: true, authority: true, label: true, release_identifier: true, reference_date: true, retrieved_at: true, validation: true },
     }),
     prisma.authoritativeFxObservation.findFirst({ where: { environment, base_currency: 'EUR', quote_currency: 'USD' }, orderBy: { observation_date: 'desc' }, select: { observation_date: true } }),
   ]);
+  const rechecks = await latestSourceRechecks(tariffs.map((release) => release.id));
   // Ordered newest first, so the first release of each revision is the one runs choose from.
   const newestPerRevision = baci.filter((release, index) => baci.findIndex((other) => other.hs_revision === release.hs_revision) === index);
   return assessInputFreshness({
     baci: newestPerRevision,
     reference: new Map(reference.map((release) => [release.dataset_key, { version: release.version, retrieved_at: release.retrieved_at }])),
-    tariffs: tariffs.map(({ validation, ...release }) => ({ ...release, valid_until: statedValidUntil(validation) })),
+    tariffs: tariffs.map(({ id, validation, ...release }) => ({ ...release, valid_until: statedValidUntil(validation), rechecked_on: rechecks.get(id) ?? null })),
     rule_rates: config.policy.rule_rates,
     latest_usd_observation: usd?.observation_date ?? null,
     singapore_refresh_enabled: refresh.singapore.enabled,
