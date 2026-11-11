@@ -140,7 +140,7 @@ serve. Four releases, each pinned to the official files read on 19 Oct 2026
 
 | Release | Markets | Read as | Lines | Not scored automatically |
 |---|---|---|---|---|
-| GCC unified customs tariff, 12-digit edition of Dubai Customs (23 Jul 2025), with the UAE's CEPA schedule (Annex 2B) | AE, BH | Common tariff (D-028, quality 0.8) | 13,449; India's CEPA rate stated for the UAE on 11,650 lines, by year from 1 May 2022 | 117 PROHIBITED or special-goods lines; 3 lines with no printed rate; 88 lines excluded from the UAE's CEPA concessions carry no India rate |
+| GCC unified customs tariff, 12-digit edition of Dubai Customs (23 Jul 2025), with the UAE's CEPA schedule (Annex 2B, from India's Department of Commerce, R-50) | AE, BH | Common tariff (D-028, quality 0.8) | 13,449; India's CEPA rate stated for the UAE on 11,650 lines, by year from 1 May 2022 | 117 PROHIBITED or special-goods lines; 3 lines with no printed rate; 88 lines excluded from the UAE's CEPA concessions carry no India rate |
 | Mercosur common external tariff (Annex I of Gecex Resolution 272/2021, CAMEX workbook of 5 Oct 2026) | AR, PY, UY | Common tariff (D-028, quality 0.8) | 10,516 NCM lines | 1,618 capital-goods (BK) and IT (BIT) lines, which each member applies under its own regime |
 | China's 2026 customs tariff with Annex 1 (provisional rates) of the 2026 adjustment plan | CN | Own tariff (D-031, quality 0.9) | 8,972 lines; 600 whole-line provisional rates replace MFN; the Asia-Pacific Trade Agreement rate is India's preference on 2,440 lines (needs origin proof); 31 duties per kilogram or square metre and 3 "the lower of" duties kept with every operand | Tariff-rate quotas (the out-of-quota rate is scored and the quota said); 335 provisional rates for part of a line (said, not scored); nothing after 31 Dec 2026 until the 2027 tariff is imported |
 | Brazil's applied tariff (Annexes I–X of Gecex Resolution 272/2021, same workbook) | BR | Own tariff (D-031, quality 0.9) | 10,516 lines: Annex II's applied rate where listed (9,404), else the TEC; whole-line rates of the LETEC, LEBIT/BK and temporary-increase lists replace it while in force (1,517 lines) | A line with two different exception rates in force on the day; ex-tarifários, quotas and the automotive list (261 lines say them) |
@@ -515,9 +515,13 @@ minutes; outside the window the sweep reads nothing):
   `--file=<path>` for each and `--actor-email=<ops supervisor or admin>`. Unchanged records the
   re-check, and the next one falls a year later. Changed names the files, records nothing, and the
   new edition is imported as its own release.
-- EU TARIC is published monthly and is stale after 45 days. An EU Login holder downloads the monthly
-  extraction from the Commission's CIRCABC group for TARIC database extractions (its layout is in
-  docs/18), then, in order: `import-retained-authority-release.ts
+- EU TARIC is published monthly and is stale after 45 days. The monthly extraction is public: the
+  Commission's CIRCABC group "TARIC and Quota data and information" is "public and not
+  password-protected", so no EU Login is needed. Its Library → TARIC data → year → month folder holds
+  the 17 xlsx tables (layout in docs/18). It also holds a separate `Taric measures <date>.xlsx`, which
+  the importer refuses. Each file downloads from `https://circabc.europa.eu/rest/download/<file id>`,
+  and the group's public API lists a folder's files with their ids and sizes
+  (`/service/circabc/spaces/<folder id>/children?guest=true`). Zip the 17 tables flat, then, in order: `import-retained-authority-release.ts
   --family=EU_TARIC --file=<extraction.zip> --expect-sha256=<sha> --reference-month=YYYY-MM
   --actor-email=<ops>` (no `--activate`: a bulk family is qualified first), `qualify-bulk-release.ts
   --family=EU_TARIC --release-id=<id>`, then `activate-authority-release.ts --release-id=<id>

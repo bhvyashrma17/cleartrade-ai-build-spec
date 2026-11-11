@@ -100,6 +100,8 @@ const NUMERIC = /^\d+(?:[.,]\d+)?$/;
 // --- the four releases ----------------------------------------------------------------------------
 
 const GCC_NOTE = 'The GCC unified customs tariff as Dubai Customs publishes it; this market’s own exemptions, trade remedies and other national measures are not modelled.';
+/** India's Department of Commerce, India–UAE CEPA page: "Annex 2B – Schedule of Specific Tariff Commitments of United Arab Emirates (UAE) on Trade in Goods" (R-50). */
+export const UAE_CEPA_ANNEX_2B_URL = 'https://www.commerce.gov.in/files/2025-04/Chapter-2-Annex-2B-Final-UAE-Revised-Market-Access-Offer-2118-Dec-18-2021.pdf';
 const MERCOSUR_NOTE = (country: string) => `The Mercosur common external tariff (Annex I of Gecex Resolution 272/2021, as Brazil publishes it); ${country}’s national exception lists, capital-goods and IT regimes and trade remedies are not modelled.`;
 const SCHEDULE_NOTE = 'Read from the official tariff; trade remedies (anti-dumping, countervailing and safeguard duties) and temporary measures outside it are not checked.';
 const RETAINED = 'ClearTrade retains the official files as provenance and uses their tariff facts only; it claims no right in website presentation, software or any original compilation arrangement.';
@@ -132,10 +134,12 @@ export const TARIFF_SCHEDULE_SOURCES: Readonly<Record<TariffScheduleKey, TariffS
       source_url: 'https://www.dubaicustoms.gov.ae/en/PoliciesAndNotices/Documents/IntegratedCustomsTariff.pdf',
       files: [
         { name: 'IntegratedCustomsTariff.pdf', role: 'official_common_tariff', url: 'https://www.dubaicustoms.gov.ae/en/PoliciesAndNotices/Documents/IntegratedCustomsTariff.pdf', sha256: 'f1be90978149db7964713eff9d963745374637014ca00e50fa0fb9d625b5d5eb', size_bytes: 13_777_457 },
-        { name: 'Schedule-of-UAE.pdf', role: 'official_preference_schedule', url: 'https://leatherindia.org/wp-content/uploads/2026/02/Schedule-of-UAE.pdf', sha256: 'b9cd37fdca216f5aa6864815b2fdd6a8193c19f85eb95c7dcd557dfbbb5cd475', size_bytes: 1_445_387 },
+        // R-50: the Department of Commerce's own file. The name is the one the first release was built
+        // with; a bundle is read by these names, so renaming it would make the active release unreadable.
+        { name: 'Schedule-of-UAE.pdf', role: 'official_preference_schedule', url: UAE_CEPA_ANNEX_2B_URL, sha256: 'b9cd37fdca216f5aa6864815b2fdd6a8193c19f85eb95c7dcd557dfbbb5cd475', size_bytes: 1_445_387 },
       ],
       line_count: 13_449,
-      provenance: 'Both files retrieved 19 Oct 2026 through the owner’s browser. The tariff is the GCC unified customs tariff list (2022 nomenclature, 12-digit codes) issued by Dubai Customs on 23 Jul 2025 with its notice 10/2025 (12-digit codes from 1 Aug 2025). The CEPA schedule is the Ministry of Commerce and Industry’s “Schedule of Specific Tariff Commitments of the UAE” (Annex 2B, PDF of 3 Mar 2022), as circulated by the Council for Leather Exports (circular of 29 Mar 2022); the ministry’s own page no longer resolves.',
+      provenance: 'Both files retrieved 19 Oct 2026 through the owner’s browser. The tariff is the GCC unified customs tariff list (2022 nomenclature, 12-digit codes) issued by Dubai Customs on 23 Jul 2025 with its notice 10/2025 (12-digit codes from 1 Aug 2025). The CEPA schedule is the Department of Commerce’s “Annex 2B – Schedule of Specific Tariff Commitments of United Arab Emirates (UAE) on Trade in Goods” (PDF of 3 Mar 2022), published on its India–UAE CEPA page. The copy first retrieved on 19 Oct 2026 was the Council for Leather Exports’ circulation of it; on 11 Nov 2026 it matched the Department’s own file byte for byte (SHA-256).',
       rights: `UAE Federal Decree-Law No. 38 of 2021, Article 3(2), excludes official documents — texts of laws, regulations, resolutions and international conventions — from copyright protection; the GCC unified tariff and the UAE’s schedule under the India–UAE CEPA are such documents. ${RETAINED} Dubai Customs’ own website terms of use were not located (ledger E-025).`,
     },
   },
