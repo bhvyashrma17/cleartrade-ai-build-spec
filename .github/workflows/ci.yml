@@ -55,3 +55,10 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: docker build -t cleartrade:${{ github.sha }} .
+      # R-49, E-072: the worker's image, built as Railway builds it once the worker's Dockerfile Path is
+      # Dockerfile.worker. It must hold what the worker's commands run, and no website build.
+      - run: docker build -f Dockerfile.worker -t cleartrade-worker:${{ github.sha }} .
+      - run: >-
+          docker run --rm cleartrade-worker:${{ github.sha }} sh -c
+          'test ! -e .next && test -f scripts/worker.ts && test -f scripts/database-identity-check.ts
+          && test -x node_modules/.bin/prisma && node_modules/.bin/tsx --version'

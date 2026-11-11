@@ -2918,7 +2918,7 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
   - The identity check passed.
   - `npm run worker:platform -- --once` started, checked input freshness and stopped cleanly (exit 0).
   - Its only warnings were the local database's missing import account.
-- **The Docker build itself could not run here** (Docker Hub is blocked from the workspace). Staging's build is the first real build, so the rollout starts on staging.
+- **The Docker build.** It could not run in the agent's workspace, where Docker Hub is blocked. So CI now builds `Dockerfile.worker` on every PR and checks the image: no `.next`, the worker's scripts present, `tsx` and `prisma` runnable. The rollout still starts on staging.
 - **One thing changes.** `next build` also type-checked the code during the worker's build, and `tsx` does not. CI's `tsc --noEmit` still gates every PR, and the website's build still type-checks every release.
 - **Way back.** Set the Dockerfile Path back to `Dockerfile` and deploy.
 
@@ -2926,7 +2926,9 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 1. After this PR reaches `staging/railway`: staging `cleartrade-worker` → Settings → Build → Dockerfile Path `Dockerfile.worker` → Deploy. The agent then checks the build log (no `next build`), the active deployment, the worker's heartbeat on `/ops` and a completed job.
 2. After the next release reaches `master`: the same on `cleartrade-worker-production`, then the same checks.
 
-**Checks run (agent workspace).** `worker-dockerfile`: 4 tests pass. `tsc --noEmit` and ESLint: clean.
+**Checks run.**
+- Agent workspace: `worker-dockerfile`, 4 tests pass. `tsc --noEmit` and ESLint: clean.
+- CI: builds and checks the worker image on every PR (`.github/workflows/ci.yml`).
 
 ## Risk register
 
