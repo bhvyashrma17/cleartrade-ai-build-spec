@@ -3,6 +3,8 @@
  * may fall under (E-043). They only lift those codes in the finder's search, and where one name covers
  * codes that differ by material or form, the finder asks. They never decide a code: the exporter picks
  * from official descriptions and an agent confirms. A code missing from the loaded list is ignored.
+ * Names match the exporter's words with plural "s" ignored ("bedsheets" finds "bedsheet"), and a name
+ * inside a longer name of another entry that also matched does not count ("mango pulp" is not "mango").
  */
 export interface EverydayName {
   names: string[];
@@ -28,6 +30,11 @@ export const EVERYDAY_NAMES: readonly EverydayName[] = [
   { names: ['lehsun', 'garlic'], hs6: ['070320'] },
   { names: ['aloo', 'potato'], hs6: ['070190'] },
   { names: ['aam', 'mango'], hs6: ['080450'] },
+  // Cooked fruit purée (2007.99) or fruit otherwise prepared (2008.99); not fresh fruit (E-070).
+  { names: ['mango pulp', 'mango puree', 'fruit pulp'], hs6: ['200799', '200899'] },
+  { names: ['green coffee', 'raw coffee', 'unroasted coffee'], hs6: ['090111', '090112'] },
+  { names: ['instant coffee', 'soluble coffee', 'coffee extract'], hs6: ['210111', '210112'] },
+  { names: ['green tea'], hs6: ['090210', '090220'] },
   { names: ['kela', 'banana'], hs6: ['080390'] },
   { names: ['angoor', 'grapes'], hs6: ['080610'] },
   { names: ['cheeni', 'sugar'], hs6: ['170199'] },
@@ -43,6 +50,8 @@ export const EVERYDAY_NAMES: readonly EverydayName[] = [
   { names: ['bartan', 'utensils', 'kitchenware'], hs6: ['741810', '732393', '761510', '691110', '691200'] },
   { names: ['murti', 'idol', 'statue', 'statuette'], hs6: ['830629', '442011', '442019', '680291', '691310', '691390'] },
   { names: ['copper bottle'], hs6: ['741810'] },
+  // A plain stainless bottle is a household article (7323.93); an insulated one is a vacuum flask (9617).
+  { names: ['steel bottle', 'steel water bottle', 'vacuum flask', 'vacuum bottle'], hs6: ['732393', '961700'] },
   { names: ['bangles', 'chudi'], hs6: ['711790', '711719', '711319'] },
   { names: ['imitation jewellery', 'artificial jewellery'], hs6: ['711719', '711790'] },
   { names: ['gold jewellery'], hs6: ['711319'] },
@@ -65,9 +74,10 @@ export const EVERYDAY_NAMES: readonly EverydayName[] = [
   { names: ['marble'], hs6: ['680291', '251512'] },
   // Engineering, pharma and other
   { names: ['dawa', 'medicine', 'medicines', 'tablets'], hs6: ['300490'] },
-  { names: ['surgical gloves'], hs6: ['401511'] },
+  { names: ['surgical gloves'], hs6: ['401512'] }, // HS 2022 replaced 4015.11 with 4015.12 (medical, surgical, dental or veterinary)
   { names: ['mobile phone', 'smartphone'], hs6: ['851713'] },
   { names: ['auto parts', 'car parts'], hs6: ['870899'] },
+  { names: ['castings', 'iron castings', 'ci castings', 'steel castings'], hs6: ['732510', '732599'] },
   { names: ['pump', 'pumps', 'water pump'], hs6: ['841370'] },
   { names: ['bicycle parts', 'cycle parts'], hs6: ['871499'] },
   { names: ['football', 'footballs'], hs6: ['950662'] },

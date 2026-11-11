@@ -42,7 +42,16 @@ interface Dimension {
   values: { key: string; label: string; pattern: RegExp; hint?: RegExp }[];
   /** A more specific value hides a general one it implies. */
   hides?: Record<string, string[]>;
+  /** Only codes under these headings carry the detail ("broken" rice, not cotton seeds "whether or not broken"). */
+  only?: RegExp;
 }
+
+/**
+ * Household goods, where Indian usage says "steel" for stainless steel ("steel thali", "steel bottle").
+ * Elsewhere ("steel pipes", "steel scrap") bare "steel" says nothing about the grade, so it is asked.
+ */
+const HOUSEHOLD = String.raw`(?:utensils?|thalis?|bartans?|kitchen\w*|cookware|tableware|tiffins?|lunch ?box(?:es)?|bottles?|tumblers?|bowls?|cutlery|spoons?|dinner ?sets?|household)`;
+const STAINLESS_HINT = new RegExp(String.raw`stainless|\bss\b|\bsteel\b(?=.*\b${HOUSEHOLD}\b)|\b${HOUSEHOLD}\b.*\bsteel\b`);
 
 export const DIMENSIONS: readonly Dimension[] = [
   {
@@ -62,7 +71,8 @@ export const DIMENSIONS: readonly Dimension[] = [
       { key: 'porcelain', label: 'Porcelain or china', pattern: /porcelain|\bchina\b/, hint: /porcelain|bone china/ },
       { key: 'ceramic', label: 'Other ceramic (earthenware, stoneware)', pattern: /ceramic/, hint: /ceramic|terracotta|\bclay\b|pottery|earthenware|stoneware/ },
       { key: 'stone', label: 'Stone, marble or granite', pattern: /\bstone\b|\bmarble\b|\bgranite\b|travertine|alabaster/, hint: /\bstone\b|marble|granite|sandstone|soapstone/ },
-      { key: 'stainless', label: 'Stainless steel', pattern: /stainless steel/, hint: /stainless|\bsteel\b/ },
+      // CEPII's list says "Steel, stainless: …" where the HS says "… of stainless steel".
+      { key: 'stainless', label: 'Stainless steel', pattern: /stainless steel|steel, stainless/, hint: STAINLESS_HINT },
       { key: 'iron_steel', label: 'Iron or other steel', pattern: /\biron\b|\bsteel\b/, hint: /\biron\b/ },
       { key: 'copper', label: 'Copper or brass', pattern: /\bcopper\b|\bbrass\b/, hint: /\bcopper\b|\bbrass\b|\bpital\b|\btamba\b/ },
       { key: 'aluminium', label: 'Aluminium', pattern: /aluminium/, hint: /alumin(i)?um/ },
@@ -89,7 +99,7 @@ export const DIMENSIONS: readonly Dimension[] = [
   {
     key: 'roasting', text: 'Is it roasted?', strip_negations: false,
     values: [
-      { key: 'not_roasted', label: 'Not roasted', pattern: /not roasted/, hint: /not roasted|unroasted|\braw\b/ },
+      { key: 'not_roasted', label: 'Not roasted', pattern: /not roasted/, hint: /not roasted|unroasted|\braw\b|green coffee/ },
       { key: 'roasted', label: 'Roasted', pattern: /(?<!not )roasted/ },
     ],
   },
@@ -101,7 +111,7 @@ export const DIMENSIONS: readonly Dimension[] = [
     ],
   },
   {
-    key: 'rice', text: 'Which kind of rice?', strip_negations: false,
+    key: 'rice', text: 'Which kind of rice?', strip_negations: false, only: /^1006/,
     values: [
       { key: 'milled', label: 'Milled (white), whether or not polished', pattern: /semi-milled or wholly milled/, hint: /white rice|\bpolished\b|\bmilled\b/ },
       { key: 'husked', label: 'Husked (brown)', pattern: /\bhusked\b|\bbrown\b/, hint: /brown rice|\bhusked\b/ },
@@ -150,7 +160,12 @@ const STOPWORDS = new Set(['a', 'an', 'and', 'or', 'of', 'the', 'for', 'in', 'on
 const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const stem = (word: string) => (word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word);
 export const tokenize = (text: string) => normalize(text).split(' ').filter((word) => word.length > 1 && !STOPWORDS.has(word)).map(stem);
+/** Words with their plural "s" removed, kept in order: how everyday names meet the exporter's words. */
+const stemmed = (text: string) => normalize(text).split(' ').filter(Boolean).map(stem).join(' ');
 const stripNegations = (text: string) => text.replace(/\b(other than|not|excluding|except)\b[^;,]*/g, ' ');
+/** Waste and scrap are what an exporter sells only when they say so; otherwise those codes rank lower. */
+const WASTE = /\b(?:waste|scrap)\b/;
+const WASTE_FACTOR = 0.25;
 /** "(not printed, knitted or crocheted)" negates each item: read as "(not printed, not knitted or crocheted)". */
 const distributeNegations = (text: string) => text.replace(/\(not ([^)]*)\)/g, (_match, list: string) => `(${list.split(', ').map((item) => (item.startsWith('not ') ? item : `not ${item}`)).join(', ')})`);
 
@@ -171,14 +186,22 @@ interface IndexedCode { hs6: string; description: string; values: Map<string, Se
 export interface HsIndex {
   codes: Map<string, IndexedCode>;
   postings: Map<string, string[]>;
-  names: { phrase: string; hs6: string[] }[];
+  /** `entry`: which everyday-name entry the phrase belongs to; synonyms share one. */
+  names: { phrase: string; hs6: string[]; entry: number }[];
 }
 
-function valuesOf(description: string): Map<string, Set<string>> {
+/** Trade shorthand read as the words the list uses: "SS pipes" are stainless steel pipes. */
+const expandShorthand = (text: string) => text.replace(/\bss\b/gi, 'stainless steel');
+
+function valuesOf(hs6: string, description: string): Map<string, Set<string>> {
   const lower = distributeNegations(description.toLowerCase());
   const stripped = stripNegations(lower);
   const result = new Map<string, Set<string>>();
   for (const dimension of DIMENSIONS) {
+    if (dimension.only && !dimension.only.test(hs6)) {
+      result.set(dimension.key, new Set());
+      continue;
+    }
     const text = dimension.strip_negations ? stripped : lower;
     const found = new Set(dimension.values.filter((value) => value.pattern.test(text)).map((value) => value.key));
     for (const [specific, general] of Object.entries(dimension.hides ?? {})) if (found.has(specific)) for (const key of general) found.delete(key);
@@ -201,41 +224,63 @@ export function buildHsIndex(rows: readonly HsCodeRow[], names: readonly Everyda
   const postings = new Map<string, string[]>();
   for (const row of rows) {
     if (!isHsChapterCode(row.hs6)) continue;
-    codes.set(row.hs6, { hs6: row.hs6, description: row.description, values: valuesOf(row.description) });
+    codes.set(row.hs6, { hs6: row.hs6, description: row.description, values: valuesOf(row.hs6, row.description) });
     for (const token of new Set(tokenize(row.description))) {
       const list = postings.get(token);
       if (list) list.push(row.hs6);
       else postings.set(token, [row.hs6]);
     }
   }
-  const phrases = names.flatMap((entry) => entry.names.map((name) => ({ phrase: normalize(name), hs6: entry.hs6.filter((code) => codes.has(code)) }))).filter((entry) => entry.phrase && entry.hs6.length);
+  const phrases = names
+    .flatMap((entry, number) => entry.names.map((name) => ({ phrase: stemmed(name), hs6: entry.hs6.filter((code) => codes.has(code)), entry: number })))
+    .filter((entry) => entry.phrase && entry.hs6.length);
   return { codes, postings, names: phrases };
 }
 
-function search(index: HsIndex, description: string): { hs6: string; score: number; matched: Set<string> }[] {
-  const scores = new Map<string, { score: number; matched: Set<string> }>();
-  const add = (hs6: string, points: number, why: string) => {
-    const entry = scores.get(hs6) ?? { score: 0, matched: new Set<string>() };
+function search(index: HsIndex, exporterWords: string): { hs6: string; score: number; matched: Set<string> }[] {
+  const description = expandShorthand(exporterWords);
+  // `named`: lifted by an everyday name. `beyond`: matched a word no matched everyday name explains.
+  const scores = new Map<string, { score: number; matched: Set<string>; named: boolean; beyond: boolean }>();
+  const add = (hs6: string, points: number, why: string, kind: 'name' | 'explained_word' | 'word') => {
+    const entry = scores.get(hs6) ?? { score: 0, matched: new Set<string>(), named: false, beyond: false };
     entry.score += points;
     entry.matched.add(why);
+    if (kind === 'name') entry.named = true;
+    if (kind === 'word') entry.beyond = true;
     scores.set(hs6, entry);
   };
-  const query = ` ${normalize(description)} `;
-  for (const name of index.names) if (query.includes(` ${name.phrase} `)) for (const hs6 of name.hs6) add(hs6, NAME_WEIGHT, name.phrase);
+  const query = ` ${stemmed(description)} `;
+  // A name inside a longer name of another entry that also matched does not count: "mango pulp" is not
+  // "mango". Synonyms in one entry ("pooja thali", "thali") still add up, as they always have.
+  const said = index.names.filter((name) => query.includes(` ${name.phrase} `));
+  const counted = said.filter((name) => !said.some((other) => other.entry !== name.entry && other.phrase !== name.phrase && ` ${other.phrase} `.includes(` ${name.phrase} `)));
+  for (const name of counted) for (const hs6 of name.hs6) add(hs6, NAME_WEIGHT, name.phrase, 'name');
+  const explained = new Set(counted.flatMap((name) => name.phrase.split(' ')));
   const total = index.codes.size;
   for (const token of new Set(tokenize(description))) {
     let codes = index.postings.get(token);
     let word = token;
-    if (!codes && token.length >= 5) {
-      // A one-letter slip ("tumeric") matches the closest word the list uses.
-      const near = [...index.postings.keys()].find((candidate) => candidate[0] === token[0] && withinOneEdit(candidate, token));
-      if (near) { codes = index.postings.get(near); word = near; }
+    // A one-letter slip ("tumeric") matches the closest word the list uses, a letter added at the end
+    // first ("mango" → "mangoe", from "mangoes", before "mungo"). Not for a word an everyday name explains.
+    if (!codes && token.length >= 5 && !explained.has(token)) {
+      const near = [...index.postings.keys()].filter((candidate) => candidate[0] === token[0] && withinOneEdit(candidate, token));
+      const pick = near.find((candidate) => candidate.startsWith(token)) ?? near[0];
+      if (pick) { codes = index.postings.get(pick); word = pick; }
     }
     if (!codes) continue;
     const rarity = Math.log(1 + total / codes.length);
-    for (const hs6 of codes) add(hs6, rarity, word);
+    for (const hs6 of codes) add(hs6, rarity, word, explained.has(token) ? 'explained_word' : 'word');
   }
-  return [...scores.entries()].map(([hs6, entry]) => ({ hs6, ...entry })).sort((a, b) => b.score - a.score || a.hs6.localeCompare(b.hs6));
+  const wantsWaste = WASTE.test(query);
+  return [...scores.entries()]
+    // Where everyday names explain the words, a code sharing only those words is no candidate:
+    // "mango pulp" does not offer wood pulp.
+    .filter(([, entry]) => !counted.length || entry.named || entry.beyond)
+    .map(([hs6, entry]) => {
+      const waste = !wantsWaste && WASTE.test(stripNegations(index.codes.get(hs6)!.description.toLowerCase()));
+      return { hs6, score: waste ? entry.score * WASTE_FACTOR : entry.score, matched: entry.matched };
+    })
+    .sort((a, b) => b.score - a.score || a.hs6.localeCompare(b.hs6));
 }
 
 /** Codes keeping an answer: those with that value; for "other", those with none of the dimension's values. */
