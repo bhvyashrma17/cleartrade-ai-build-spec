@@ -23,7 +23,8 @@ import type { MarketAccessIngestResult, MarketAccessLineRecord } from './contrac
 
 const BASE = 'https://hts.usitc.gov/reststop';
 export const US_HTS_AUTHORITY = 'United States International Trade Commission — Harmonized Tariff Schedule';
-export const US_HTS_PARSER_VERSION = 'us-hts-v1';
+// v2 (R-51): the export starts at the HS6 itself, so an eight-digit line ending .00 is read.
+export const US_HTS_PARSER_VERSION = 'us-hts-v2';
 /** 19 CFR 101.1 defines the US customs territory as the States, DC and Puerto Rico. */
 export const US_HTS_DESTINATIONS: readonly string[] = ['US', 'PR'];
 
@@ -64,7 +65,10 @@ export async function fetchUsMarketAccess(hs6: string, options: UsHtsFetchOption
   if (!US_HTS_DESTINATIONS.includes(destination)) throw new Error(`${destination} is outside the customs territory of the United States.`);
   const now = options.now ?? new Date();
   const dotted = `${hs6.slice(0, 4)}.${hs6.slice(4, 6)}`;
-  const url = `${BASE}/exportList?from=${dotted}.00.00&to=${dotted}.99.99&format=JSON&styles=false`;
+  // R-51: start at the HS6 itself. The export orders "7418.10.00" (brass household articles, the
+  // only line with a rate) before "7418.10.00.00", so a range from "7418.10.00.00" returned only the
+  // statistical breakouts, which carry no rate, and the US duty fell back to an estimate.
+  const url = `${BASE}/exportList?from=${dotted}&to=${dotted}.99.99&format=JSON&styles=false`;
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`USITC HTS returned ${response.status} for ${dotted}.`);
   const text = await response.text();

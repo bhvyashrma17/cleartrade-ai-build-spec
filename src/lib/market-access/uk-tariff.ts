@@ -27,7 +27,8 @@ import type { MarketAccessIngestResult, MarketAccessLineRecord, MarketAccessRequ
 
 const BASE = 'https://www.trade-tariff.service.gov.uk/uk/api';
 export const UK_TARIFF_AUTHORITY = 'HM Revenue & Customs — UK Integrated Online Tariff';
-export const UK_TARIFF_PARSER_VERSION = 'uk-tariff-v2';
+// v3 (R-51): an HS6 that is itself a declarable line is read too.
+export const UK_TARIFF_PARSER_VERSION = 'uk-tariff-v3';
 /**
  * The 2019 UK–Crown Dependencies customs arrangements require each Crown Dependency to apply
  * the same external Customs Tariff as the UK. VAT, excise and domestic controls do not thereby
@@ -87,8 +88,12 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
   if (!entry?.endpoint || !entry.id) throw new Error(`UK tariff has no exact entry for HS ${hs6}.`);
   const treeUrl = `${BASE}/${entry.endpoint}/${entry.id}`;
   const tree = await getJson(treeUrl);
+  const documents = new Map<string, Document>([[treeUrl, tree]]);
 
-  const declarable = (tree.included ?? [])
+  // R-51: an HS6 that is itself a declarable line (0910.30, turmeric) is answered with that
+  // commodity, and its document carries it as `data`, not among `included`. Reading `included`
+  // alone found no declarable line, so the UK duty fell back to an estimate.
+  const declarable = [...(tree.data ? [tree.data] : []), ...(tree.included ?? [])]
     .filter((resource) => resource.type === 'commodity' && resource.attributes.declarable === true && String(resource.attributes.goods_nomenclature_item_id).startsWith(hs6))
     .reduce<Map<string, Resource>>((map, resource) => map.set(String(resource.attributes.goods_nomenclature_item_id), resource), new Map());
 
@@ -112,7 +117,7 @@ export async function fetchUkMarketAccess(hs6: string, options: UkTariffFetchOpt
 
   for (const [code, commodity] of [...declarable.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const url = `${BASE}/commodities/${code}`;
-    const document = await getJson(url);
+    const document = documents.get(url) ?? await getJson(url);
     const resources = document.included ?? [];
     const index = new Map(resources.map((resource) => [key(resource), resource]));
     responses.push({ commodity_code: code, url, sha256: createHash('sha256').update(JSON.stringify(document)).digest('hex') });

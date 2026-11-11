@@ -2961,6 +2961,39 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - `tariff-schedule-official-urls` (2 new), `tariff-schedule-pack` (16), `tariff-source-directory` (6), `source-recheck` (4): 28 pass.
 - `tsc --noEmit` and ESLint: clean.
 
+### E-074 · 2026-11-11 · The UK and US look-ups read the lines they missed, among them India's shrimp and T-shirts to the US (R-51) (in review)
+
+**Found.** Read from the sources' own APIs in the owner's browser on 11 Nov.
+- **UK, turmeric 0910.30.**
+  - The search answers with the commodity `0910300000` itself ("Turmeric (curcuma)", declarable).
+  - Its document carries that line as `data`. The adapter read only `included`, which holds no commodity, so it found "no declarable commodity" and the run used an estimate.
+  - The published third-country duty is 0.00%.
+- **US, brass 7418.10.**
+  - The only rated line is `7418.10.00`: General 3%, Special "Free (A*, AU, …)", Column 2 40%.
+  - The adapter's export range started at `7418.10.00.00`, and USITC orders `7418.10.00` before it. Only the statistical breakouts came back, none with a rate.
+- **The US gap was wider than brass.** Of 20 common Indian export codes checked, 4 had no rated row under the old range and have one now:
+  - 0306.17 (frozen shrimps and prawns);
+  - 6109.10 (cotton T-shirts);
+  - 6302.60 (terry towels);
+  - 7418.10.
+
+  None of the 20 lost a rated row.
+
+**Built.**
+- **`uk-tariff.ts`** (parser `uk-tariff-v3`) reads the declarable line the search names, from the document already fetched.
+- **`us-hts.ts`** (parser `us-hts-v2`) starts the export at the HS6 (`from=7418.10`).
+- **`tests/tariff-lookup-lines-r51.test.ts`** (3 tests, response shapes taken from the sources). Without the fixes, the first and third fail.
+  - Turmeric's UK line reads 0% from two requests.
+  - An HS6 answered with a subheading still reads the lines beneath it.
+  - Brass's US line reads 3% from a range starting at the HS6.
+
+**Effect.** From each product's next run, those markets' duty is official. Earlier runs keep their estimate until they are run again.
+
+**Checks run (agent workspace).**
+- The 3 new tests pass.
+- 9 market-access and v5 suites pass: 186 tests.
+- `tsc --noEmit` and ESLint: clean.
+
 ## Risk register
 
 
@@ -3016,4 +3049,4 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |
 | R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067). Releases #66 and #68 built first time. The owner chose the lighter worker build (11 Nov): `Dockerfile.worker` skips `next build` (E-072), rolled out staging first | The worker builds from `Dockerfile.worker` on staging and production, and the website builds first time for five releases in a row |
 | R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Closed (E-073): the Department of Commerce publishes the same PDF (same SHA-256) on commerce.gov.in, and the release definition names it. The production release's stored manifest still names the Council's URL for the same bytes until it is rebuilt (the owner's choice, E-073) | — |
-| R-51 | Some markets with a connected live source still score an estimate because the look-up finds no single rated line: the UK for 0910.30 (no declarable commodity found under the HS6) and the US for 7418.10 (no in-scope row with a stated General rate). Each says `classification_resolution: unavailable`, and the exporter sees only "(estimated)" | Open (E-071): the US "Free" case is fixed; these two need the sources' own responses checked | Both look-ups give an official rate on production, and a run says why when a source answers without a usable line |
+| R-51 | Some markets with a connected live source still score an estimate because the look-up finds no single rated line: the UK for 0910.30 (no declarable commodity found under the HS6) and the US for 7418.10 (no in-scope row with a stated General rate). Each says `classification_resolution: unavailable`, and the exporter sees only "(estimated)" | Open: the US "Free" case is fixed (E-071); both causes found and fixed in code (E-074), which also gives US duties to 0306.17, 6109.10 and 6302.60; waiting for production runs | Both look-ups give an official rate on production, and a run says why when a source answers without a usable line |
