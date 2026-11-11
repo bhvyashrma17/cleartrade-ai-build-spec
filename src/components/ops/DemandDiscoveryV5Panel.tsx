@@ -54,7 +54,7 @@ function DataFreshness({ rows }: { rows: InputFreshnessRow[] }) {
           {ordered.map((row) => (
             <tr key={row.key} className="border-t border-[var(--color-border)] align-top">
               <td className="py-1.5 pr-3 text-primary">{row.label}<div className="text-xs text-[var(--color-text-muted)]">{row.rule}</div></td>
-              <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{row.current ? `${row.current.version}${row.current.retrieved_at ? ` · read ${at(row.current.retrieved_at)}` : row.current.dated ? ` · ${at(row.current.dated)}` : ''}` : '—'}</td>
+              <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{row.current ? `${row.current.version}${row.current.retrieved_at ? ` · read ${at(row.current.retrieved_at)}` : row.current.dated ? ` · ${at(row.current.dated)}` : ''}${row.current.rechecked_on ? ` · re-checked ${at(row.current.rechecked_on)}` : ''}` : '—'}</td>
               <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{at(row.due_at)}</td>
               <td className="py-1.5 pr-3"><StatusChip label={FRESHNESS_CHIP[row.status].label} tone={FRESHNESS_CHIP[row.status].tone} icon={FRESHNESS_CHIP[row.status].icon} size="sm" /></td>
               <td className="py-1.5 text-xs text-[var(--color-text-secondary)]">{row.refresh}</td>

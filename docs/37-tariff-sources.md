@@ -508,3 +508,17 @@ minutes; outside the window the sweep reads nothing):
   be imported when the Customs Tariff Commission publishes it (late December); the CAMEX workbook
   changes with most months' Gecex resolutions, so Brazil's and Mercosur's releases are re-read when it
   is updated; a new GCC edition or CEPA schedule is a new release with its own pins.
+- Sources with no publishing rhythm (the GCC tariff, the UEMOA edition, and any other source without a
+  rule of its own) are due a year after their edition, or after their newest unchanged re-check (E-069).
+  `scripts/recheck-authority-source.ts --source-family=<family> --list` names the official files and
+  their URLs; fetch each from the source as it is published today and run the script again with
+  `--file=<path>` for each and `--actor-email=<ops supervisor or admin>`. Unchanged records the
+  re-check, and the next one falls a year later. Changed names the files, records nothing, and the
+  new edition is imported as its own release.
+- EU TARIC is published monthly and is stale after 45 days. An EU Login holder downloads the monthly
+  extraction from the Commission's CIRCABC group for TARIC database extractions (its layout is in
+  docs/18), then, in order: `import-retained-authority-release.ts
+  --family=EU_TARIC --file=<extraction.zip> --expect-sha256=<sha> --reference-month=YYYY-MM
+  --actor-email=<ops>` (no `--activate`: a bulk family is qualified first), `qualify-bulk-release.ts
+  --family=EU_TARIC --release-id=<id>`, then `activate-authority-release.ts --release-id=<id>
+  --actor-email=<ops>`. Re-checking an old month does not make it current.
