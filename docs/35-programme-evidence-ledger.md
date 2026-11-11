@@ -56,6 +56,8 @@ as such — never rounded up to a pass. No secret values, personal data or raw b
 | D-043 | 2026-11-10 | Korea's applied rate (R-47): read Korea's rate priority (Customs Act Art. 50) from the stored rows, so the WTO rate applies where it is lower than the basic rate; to be done right after the quota release. Owner's answer: "Yes, right after (Recommended)" | Owner | E-058 |
 | D-044 | 2026-11-10 | Rank every market (policy v9). Markets without enough data rank after every fully scored market, by a score in which each measure without data counts as zero; markets with no recorded imports rank last. North Korea stays excluded (UN sanctions), and only fully scored markets are handed on. Owner's words: "Countries, all countries should be ranked. If there is an issue, we should fix that." Answer: "Rank them last (Recommended)" | Owner | E-062 |
 | D-045 | 2026-11-10 | A code that splits into national lines with different duties: use the line the product's own description names; otherwise the exporter or agent answers a question, and the next run uses the official duty. Answers on file come before the description, and a duty is settled only when every line still in scope carries it. Owner's answer: "Description, then a question (Recommended)" | Owner | E-063 |
+| D-046 | 2026-11-11 | Until launch, nothing runs on Railway and nothing is deployed anywhere: every service's running deployment is removed (production's website, worker and scanner; all of staging), with services, variables and storage kept, so launch is one release. The outstanding Railway invoice is paid within about three weeks, because Railway can delete stored data on lapsed accounts after 30 days. Work is built and checked locally (the agent's workspace, CI, and the owner's Claude Code on his machine), then deployed and checked on production at launch. Owner's words: "we stop the services and I pay the bill a few weeks later"; "not deploy anywhere" | Owner | Railway (all services), docs/39 §8, R-49's rollout, E-075 |
+| D-047 | 2026-11-11 | Demand Discovery is finished for this stage; the next work is Regional Demand Discovery, then Real Buyer Discovery (supersedes D-041's "no new regional or buyer work"). Each is built first and deployed and checked at launch. Owner's words: "we shall start working on regional for now on"; "build first, then deploy and check" | Owner | docs/38, D-041 |
 
 Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); the meaning of
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
@@ -3032,6 +3034,14 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
   - **Usage since 1 Nov:** compute 48.85 of the Free plan's 100 CU-hours a month; storage 266.56 MB of 1 GB; network 368.42 MB of 5 GB.
   - **The risk is the compute cap, not a charge.** The worker asks the database for work every second (`worker_poll_interval_ms: 1000`), so the compute never reaches its five-minute scale-to-zero. At the smallest size, 0.25 CU, that is 6 CU-hours a day, so the allowance runs out around 19–20 Nov.
   - **What happens then.** Neon suspends the compute until the next period (1 Dec), and production cannot reach its database.
+
+**Everything stopped (owner's decision D-046, done by the agent at about 14:30 UTC).**
+- **Removed in the Railway dashboard** (Deployments → ⋯ → Remove), with services, variables, domains and storage kept:
+  - production: `cleartrade-ai-build-spec` (website), `cleartrade-worker-production`, `cleartrade-scanner`;
+  - staging: the website, `cleartrade-worker`, `cleartrade-scanner`, `Postgres` (its volume is kept).
+- **After:** Railway's deployment list for the project shows nothing running. `www.cleartrade.in` is offline until launch.
+- **Neon.** With no worker, Neon can scale to zero, so the Free plan's compute hours stop being used up.
+- **At launch:** pay the invoice and choose a plan, then do one release (#69–#71 are waiting on `staging/railway`). Redeploy the services in docs/39 order, refresh Singapore and TARIC, then run the production checks.
 
 ## Risk register
 
