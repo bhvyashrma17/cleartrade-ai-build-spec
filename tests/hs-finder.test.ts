@@ -103,3 +103,97 @@ describe('finding a product code', () => {
     expect(tokenize('Pot scourers, of the kind used')).toEqual(['pot', 'scourer']);
   });
 });
+
+/**
+ * E-070: the production probe of 20 everyday products (10 Nov 2026) missed five. These rows are CEPII's
+ * own wording, copied from product_codes_HS22_V202601.csv, which the fixture above does not use: the
+ * list says "Steel, stainless: …" where the HS says "… of stainless steel".
+ */
+const CEPII_ROWS = [
+  { hs6: '720421', description: 'Ferrous waste and scrap: of stainless steel' },
+  { hs6: '720429', description: 'Ferrous waste and scrap: of alloy steel (excluding stainless)' },
+  { hs6: '732393', description: 'Steel, stainless: table, kitchen and other household articles and parts thereof' },
+  { hs6: '732399', description: 'Iron or steel: table, kitchen and other household articles and parts thereof, of iron or steel n.e.c. in heading no. 7323' },
+  { hs6: '741810', description: 'Copper: table, kitchen or other household articles and parts thereof: pot scourers and scouring or polishing pads, gloves and the like' },
+  { hs6: '761510', description: 'Aluminium: table, kitchen or other household articles and parts thereof: pot scourers and scouring or polishing pads, gloves and the like' },
+  { hs6: '730411', description: 'Iron or steel (excluding cast iron): seamless, line pipe of a kind used for oil or gas pipelines, of stainless steel' },
+  { hs6: '730419', description: 'Iron or steel (excluding cast iron or stainless steel): seamless, line pipe of a kind used for oil or gas pipelines' },
+  { hs6: '071331', description: 'Vegetables, leguminous: beans of the species vigna mungo (l.) hepper or vigna radiata (l.) wilczek, shelled, whether or not skinned or split, dried' },
+  { hs6: '080450', description: 'Fruit, edible: guavas, mangoes and mangosteens, fresh or dried' },
+  { hs6: '230320', description: 'Beet-pulp, bagasse and other waste of sugar manufacture: whether or not in the form of pellets' },
+  { hs6: '470100', description: 'Wood pulp: mechanical wood pulp' },
+  { hs6: '200799', description: 'Jams, fruit jellies, marmalades, purees and pastes: of fruit or nuts n.e.c. in heading no. 2007, cooked preparations (excluding homogenised), whether or not containing added sugar or other sweetening matter' },
+  { hs6: '200899', description: 'Fruit, nuts and other edible parts of plants: prepared or preserved, whether or not containing added sugar, other sweetening matter or spirit, n.e.c. in heading no. 2008' },
+  { hs6: '630221', description: 'Bed linen: of cotton, printed, not knitted or crocheted' },
+  { hs6: '630231', description: 'Bed linen: of cotton (not printed, knitted or crocheted)' },
+  { hs6: '630232', description: 'Bed linen: of man-made fibres (not printed, knitted or crocheted)' },
+  { hs6: '120721', description: 'Oil seeds: cotton seeds, seed, whether or not broken' },
+  { hs6: '120729', description: 'Oil seeds: cotton seeds, other than seed, whether or not broken' },
+  { hs6: '140420', description: 'Vegetable products: cotton linters' },
+  { hs6: '120730', description: 'Oil seeds: castor oil seeds, whether or not broken' },
+  { hs6: '151530', description: 'Vegetable oils: castor oil and its fractions, whether or not refined, but not chemically modified' },
+  { hs6: '100620', description: 'Cereals: husked (brown) rice' },
+  { hs6: '100630', description: 'Cereals: rice, semi-milled or wholly milled, whether or not polished or glazed' },
+  { hs6: '100640', description: 'Cereals: rice, broken' },
+  { hs6: '090111', description: 'Coffee: not roasted or decaffeinated' },
+  { hs6: '090112', description: 'Coffee: decaffeinated, not roasted' },
+  { hs6: '090121', description: 'Coffee: roasted, not decaffeinated' },
+  { hs6: '090122', description: 'Coffee: roasted, decaffeinated' },
+  { hs6: '090210', description: 'Tea, green: (not fermented), in immediate packings of a content not exceeding 3kg' },
+  { hs6: '090220', description: 'Tea, green: (not fermented), in immediate packings of a content exceeding 3kg' },
+  { hs6: '210111', description: 'Extracts, essences and concentrates: of coffee, and preparations with a basis of these extracts, essences or concentrates or with a basis of coffee' },
+  { hs6: '370120', description: 'Photographic plates and film: instant print film, in the flat, sensitised, unexposed, whether or not in packs' },
+];
+const cepii = buildHsIndex(CEPII_ROWS);
+
+describe('E-070: the five misses from the production probe, on CEPII\'s own wording', () => {
+  test('stainless steel utensils, mango pulp, bedsheets, cotton bedsheets and green coffee beans find their codes', () => {
+    // Was 720421, ferrous scrap: "Steel, stainless: …" was not read as stainless, so 7323.93 was narrowed away.
+    const utensils = findHsCodes(cepii, { description: 'stainless steel utensils' });
+    expect(codes(utensils)[0]).toBe('732393');
+    expect(codes(utensils)).not.toContain('720421');
+    // Was fresh mangoes, vigna mungo beans (a one-letter slip) and beet-pulp waste.
+    expect(codes(findHsCodes(cepii, { description: 'mango pulp' }))).toEqual(['200799', '200899']);
+    // Was nothing: "bedsheets" did not meet the everyday name "bedsheet".
+    expect(codes(findHsCodes(cepii, { description: 'bedsheets' }))).toEqual(['630221', '630231', '630232']);
+    // Was cotton seeds, then "Which kind of rice?" because the seeds are "whether or not broken".
+    const cotton = findHsCodes(cepii, { description: 'cotton bedsheets' });
+    expect(codes(cotton)).toEqual(['630221', '630231']);
+    expect(cotton.question).toMatchObject({ dimension: 'printing' });
+    // Was green tea first.
+    expect(codes(findHsCodes(cepii, { description: 'green coffee beans' }))).toEqual(['090111', '090112']);
+  });
+
+  test('rice is asked about only for rice; waste and scrap only when the exporter says so', () => {
+    // Castor seeds are "whether or not broken" and castor oil is not: that used to ask "Which kind of rice?".
+    const castor = findHsCodes(cepii, { description: 'castor' });
+    expect(codes(castor)).toEqual(['120730', '151530']);
+    expect(castor.question).toBeNull();
+    expect(findHsCodes(cepii, { description: 'rice' }).question).toMatchObject({ dimension: 'rice' });
+    expect(codes(findHsCodes(cepii, { description: 'broken rice' }))).toEqual(['100640']);
+    const scrap = findHsCodes(cepii, { description: 'stainless steel scrap' });
+    expect(codes(scrap)[0]).toBe('720421');
+  });
+
+  test('"steel" is stainless for household goods only; "SS" is stainless steel', () => {
+    expect(codes(findHsCodes(cepii, { description: 'steel utensils' }))).toEqual(['732393']);
+    // Pipes and scrap come in every grade: bare "steel" no longer narrows them to stainless.
+    const pipes = findHsCodes(cepii, { description: 'steel pipes' });
+    expect(pipes.understood).toEqual([]);
+    expect(codes(pipes)).toEqual(expect.arrayContaining(['730411', '730419']));
+    expect(codes(findHsCodes(cepii, { description: 'steel scrap' }))).toEqual(expect.arrayContaining(['720421', '720429']));
+    expect(codes(findHsCodes(cepii, { description: 'SS utensils' }))[0]).toBe('732393');
+  });
+
+  test('a name inside a longer one does not count; an explained word offers nothing else; a slip prefers an added letter', () => {
+    // "mango pulp" is not "mango", and wood pulp shares only a word the name already explains.
+    expect(codes(findHsCodes(cepii, { description: 'mango pulp' }))).not.toContain('470100');
+    // "mango" is an everyday name, so no slip is looked for ("mungo").
+    expect(codes(findHsCodes(cepii, { description: 'mango' }))).toEqual(['080450']);
+    // Not a name: "mango" alone in other words still meets "mangoes" (stem "mangoe") before "mungo".
+    const withoutNames = buildHsIndex(CEPII_ROWS, []);
+    expect(codes(findHsCodes(withoutNames, { description: 'mango' }))[0]).toBe('080450');
+    expect(codes(findHsCodes(cepii, { description: 'instant coffee' }))).toEqual(['210111']);
+    expect(codes(findHsCodes(cepii, { description: 'green tea' }))).toEqual(['090210', '090220']);
+  });
+});

@@ -2785,6 +2785,37 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - `tsc --noEmit` and ESLint: clean.
 - The form rendered with the app's own CSS at 900 px and 375 px: no horizontal scroll; the group sits under the code confirmation.
 
+### E-070 · 2026-11-11 · The code finder's five misses from the production probe (in review)
+
+**Found.** I probed production's code finder with 20 everyday products on 10 Nov. Fifteen were right and five were wrong:
+- **"stainless steel utensils"** gave only 7204.21, stainless steel scrap. CEPII's list says "Steel, stainless: table, kitchen …" where the HS says "… of stainless steel". So 7323.93 was read as "iron or other steel", and the exporter's "stainless" narrowed it away. For "kitchen utensils", the answer "Stainless steel" matched nothing. The tests used the HS wording, so they passed.
+- **"mango pulp"** gave fresh mangoes, vigna mungo beans (a one-letter slip from "mango") and beet-pulp waste.
+- **"bedsheets"** gave nothing. Everyday names were matched letter for letter, so "bedsheets" missed "bedsheet".
+- **"cotton bedsheets"** gave cotton seeds, then asked "Which kind of rice?", because the seeds are "whether or not broken".
+- **"green coffee beans"** gave green tea first.
+
+**Built (still no AI, as the owner chose in E-043).**
+- **Stainless.** "Steel, stainless" now reads as stainless. Bare "steel" means stainless only beside household words (utensils, thali, bottle, tiffin and the like), the usual Indian meaning. For pipes, bars or scrap, the finder asks the grade instead of assuming it. "SS" reads as stainless steel.
+- **Rice.** The kind-of-rice question applies only to heading 10.06.
+- **Everyday names.**
+  - They match with plural "s" ignored.
+  - A name inside a longer name of another entry that also matched no longer counts: "mango pulp" is not "mango". Synonyms in one entry still add up, as before.
+  - A word an everyday name explains is not slip-matched, and does not bring in codes that share only that word, so no wood pulp for "mango pulp".
+- **One-letter slips.** A slip prefers a word with a letter added at the end ("mangoe", from "mangoes") over a changed letter ("mungo").
+- **Waste and scrap.** These codes rank at a quarter of their score unless the exporter says "waste" or "scrap". A code's own exclusions do not count: "yarn (other than yarn spun from silk waste)" is not waste.
+- **New names.** Mango pulp and fruit pulp (2007.99, 2008.99); green coffee (0901.11, 0901.12); instant coffee (2101.11, 2101.12); green tea (0902.10, 0902.20); castings (7325.10, 7325.99); steel bottle (7323.93; 9617.00 if insulated).
+- **Corrected code.** Surgical gloves pointed at 4015.11, which HS 2022 deleted, so the name was silently dropped. It now points at 4015.12.
+
+**Checks run (agent workspace).**
+- **CEPII's real list** (`product_codes_HS22_V202601.csv`, 5,609 rows, 5,608 offered):
+  - The five misses now give: 7323.93 first; 2007.99 and 2008.99; the three bed-linen codes; the two cotton bed-linen codes, then "Is it printed?"; 0901.11 and 0901.12.
+  - Of 38 everyday queries, 18 changed, all for the better. For example: "instant coffee" was photographic film, now 2101.11; "mango" no longer offers mungo beans; "cotton towels" and "cotton t-shirts" find towels and T-shirts; castor oil and roasted coffee no longer ask about rice. The other 20 (turmeric, basmati rice, cumin, black tea, frozen shrimp, granite, ceramic tiles and so on) are unchanged.
+  - All 146 everyday names put one of their own codes in the top three. Before, 127 of 128 did; surgical gloves was the miss. Every code in the names list exists in the HS 2022 list.
+- **Tests.**
+  - `hs-finder`: 11 tests. The 4 new ones are on CEPII's own wording, and each fails on the old finder.
+  - `hs-finder-route` (3) and `hs-finder-screen` (4) pass.
+- `tsc --noEmit` and ESLint: clean.
+
 ## Risk register
 
 

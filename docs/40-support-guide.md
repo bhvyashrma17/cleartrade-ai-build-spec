@@ -54,6 +54,9 @@ and each market page says the same. Contacts arrive through the agent.
 
 ### 3.2 "The product code is wrong"
 - The product code finder opens under every HS code field and asks the separating question.
+- When it misses an everyday name, add the name and its HS 2022 codes to
+  `src/lib/hs-finder/everyday-names.ts`, with a test on CEPII's own wording (E-070). Check every code
+  against the loaded HS 2022 list: a code the list does not have is silently ignored.
 - An agent, ops supervisor or admin confirms the classification; confirming a different code starts a
   new run automatically (D-018). The earlier run stays as history.
 - Disagreements go to the ops supervisor, with the rationale written on the classification.
