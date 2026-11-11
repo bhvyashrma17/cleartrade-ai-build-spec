@@ -3027,7 +3027,11 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
   - Production worker $6.4 (0.64 GB).
   - Production website $2.6.
   - Staging website, worker and database $5.8.
-- **Neon.** The worker asks the database for work every second (`worker_poll_interval_ms: 1000`), so production's Neon compute never reaches its five-minute scale-to-zero. At Neon Launch prices ($0.106 per CU-hour) the smallest compute held all month is about $19. The owner's Neon bill was not read.
+- **Neon (read in the Neon console, 11 Nov).**
+  - **Plan.** The project `ClearTrade` (`icy-brook-34399022`, Singapore, 2 branches) is on Neon's Free plan, so it is never billed. An earlier estimate of about $19 a month assumed the paid Launch plan and was wrong.
+  - **Usage since 1 Nov:** compute 48.85 of the Free plan's 100 CU-hours a month; storage 266.56 MB of 1 GB; network 368.42 MB of 5 GB.
+  - **The risk is the compute cap, not a charge.** The worker asks the database for work every second (`worker_poll_interval_ms: 1000`), so the compute never reaches its five-minute scale-to-zero. At the smallest size, 0.25 CU, that is 6 CU-hours a day, so the allowance runs out around 19–20 Nov.
+  - **What happens then.** Neon suspends the compute until the next period (1 Dec), and production cannot reach its database.
 
 ## Risk register
 
