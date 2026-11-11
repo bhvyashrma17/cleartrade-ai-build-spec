@@ -3043,6 +3043,15 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - **Neon.** With no worker, Neon can scale to zero, so the Free plan's compute hours stop being used up.
 - **At launch:** pay the invoice and choose a plan, then do one release (#69–#71 are waiting on `staging/railway`). Redeploy the services in docs/39 order, refresh Singapore and TARIC, then run the production checks.
 
+**Backup of production's data (owner's Claude Code, 11 Nov, read-only).** Everything went to `~/ClearTrade-backup/` on the owner's Mac (1.7 GB).
+- **Bucket.** Every object in production's bucket (`cleartrade-staging`) was copied to `bucket-2026-11-11/` with its key as the path:
+  - 1,282 objects (`objects/` 226, `trade-datasets/` 1,056) and 1,799,283,419 bytes;
+  - each file's size was checked against the bucket's listing as it was copied;
+  - `MANIFEST.json` records each file's SHA-256.
+- **Database.** `neon-production-2026-11-11.dump` was made with pg_dump 18.4 in custom format: 25,489,529 bytes, and `pg_restore --list` reads 1,064 entries.
+- **What changed:** nothing on Railway, Neon or the bucket. No secret was printed.
+- **At launch.** If Railway has deleted the bucket by then, upload the copy with the same keys to the bucket production uses. Restore the dump only if Neon's data is lost.
+
 ## Risk register
 
 
