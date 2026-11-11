@@ -2952,8 +2952,8 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - **docs/37.** The GCC row, and TARIC's monthly steps without EU Login, with the download and listing URLs.
 
 **Production.**
-- **TARIC November 2026.** A prompt went to the owner's Claude Code: download the 17 files from CIRCABC, zip them, import, qualify, activate. The result will be recorded here.
-- **The GCC release on production** keeps its stored manifest, which names the Council's URL for the same bytes, until it is rebuilt. Two options for the owner:
+- **TARIC November 2026.** A prompt went to the owner's Claude Code: download the 17 files from CIRCABC, zip them, import, qualify, activate. Imported and active (E-075).
+- **The GCC release on production** kept its stored manifest, which named the Council's URL for the same bytes, until it was rebuilt. The owner chose to rebuild it now, which was done on 11 Nov (E-075). The options were:
   - Rebuild it now from the official files: the same lines, a stored provenance naming the Department's URL, and one re-run of recent runs after activation.
   - Or rebuild it with the next GCC edition.
 
@@ -2993,6 +2993,41 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - The 3 new tests pass.
 - 9 market-access and v5 suites pass: 186 tests.
 - `tsc --noEmit` and ESLint: clean.
+
+### E-075 · 2026-11-11 · TARIC November and the official GCC copy live on production; Railway stops deploying; what the Railway bill pays for (in review)
+
+**TARIC November 2026 (owner's Claude Code, 13:18 UTC).** The source is the Commission's public CIRCABC group (E-073), downloaded with no login.
+- **Files.** All 17 tables matched their listed sizes (34,684,851 bytes); `Taric measures 20261104.xlsx` was left out. Zipped flat: SHA-256 `20369959d7c05378556f2b727b81dc7ba7731280d64f4595770c1a9ed276190d`.
+- **Import.** Release `cmwc5920t0001ue4tdlb8x6d6`, "TARIC 2026-11": `NEW_RELEASE`, then `UNCHANGED` on the repeat. Stored as `objects/a6fce285…`.
+- **Qualification: PASSED.**
+  - 456,644 rows from 28 MB (33 MB decompressed).
+  - Peak memory 450 MB, 43.9% of the worker limit (ceiling 717 MB, warning 614 MB).
+  - It took 3.5 s.
+- **Activated** at 13:18:07 UTC. TARIC is no longer overdue.
+
+**GCC rebuilt from the official files (owner's choice, 11 Nov).**
+- **Files.** Fetched from the Department of Commerce (`commerce.gov.in`, Annex 2B) and Dubai Customs. Both matched their pins: `b9cd37fd…cd475` (1,445,387 bytes) and `f1be9097…d5eb` (13,777,457 bytes).
+- **Build.** On `9a1d08f`: 13,449 lines (13,329 ad valorem, 120 unparsed), 11,650 India preferences, bundle SHA-256 `11b943d9d6e72ee1c08a78c3f312824f7962509bf2ee1ff863a56ee836d91e58`. These are the same lines as before.
+- **Import.** Release `cmwc6a8he0001uewdxa0ia8dh`: `CHANGED` (same identifier, new manifest), active, retrieved 2026-11-11. The repeat import came back `UNCHANGED`.
+- **Production's record.** `recheck-authority-source --list` on production now gives the Department's URL for the UAE schedule. R-50 is fully closed.
+
+**Railway stops deploying.**
+- #69, #70 and #71 were merged into `staging/railway` at 13:15–13:16 UTC, but no service built them.
+- The dashboard says the subscription is unpaid: "Limited Access: Your trial has expired … Upgrade your plan to continue deploying."
+- Staging still runs `0301a18` and production `38f5187` (#68). Both are up.
+
+**What the Railway bill pays for.** Read from Railway's usage API for 12 Oct – 11 Nov.
+- **Memory: about $24.2.** Railway charges $10 per GB-month for RAM a service holds, used or not. CPU, disk and network together came to about $0.30.
+- **By service:**
+  - Staging scanner $11.3, production scanner $3.1. ClamAV holds its signature database, about 1.07 GB, around the clock.
+  - The rest of staging $6.4.
+  - Production website and worker $3.4.
+- **At the last 24 hours' rate, about $36 a month:**
+  - Each scanner $10.7.
+  - Production worker $6.4 (0.64 GB).
+  - Production website $2.6.
+  - Staging website, worker and database $5.8.
+- **Neon.** The worker asks the database for work every second (`worker_poll_interval_ms: 1000`), so production's Neon compute never reaches its five-minute scale-to-zero. At Neon Launch prices ($0.106 per CU-hour) the smallest compute held all month is about $19. The owner's Neon bill was not read.
 
 ## Risk register
 
@@ -3048,5 +3083,5 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 | R-47 | Korea's applied rate: the reader scores the basic rate (`A`) for every item outside the farm quotas, but Customs Act Art. 50 applies the WTO rate (`C`) where it is lower (3,178 of 9,943 items with both, in the 2026-02-11 release), a provisional rate (`B`) ahead of `A`, and quota tariffs (`P`) under their own conditions, so Korea's duty may be overstated for many goods | Released (E-060), checked by tests on the release's own rows (E-059) | A production run on a product where `C` is below `A` shows the standard rate from Art. 50 |
 | R-48 | The first run after a deploy can lose a live tariff look-up. On 10 Nov the UK look-up failed while the worker read retained releases from cold, and the next run, two minutes later, completed. A lost look-up leaves that market on its estimate and the run "Ranked, with gaps" | Mitigated (E-064, released in #58): a look-up that fails or times out is asked once more, after a 3-second pause, before the run settles for the estimate. The first production run after #58's deploy lost no look-up (E-065) | A week of production runs without a lost look-up, then close |
 | R-49 | Railway builds can fail without an error: 2 of the last 4 service builds of a release (#60's website, #62's worker) exited 1 during `next build` and printed nothing; each built cleanly when the owner redeployed. Web and worker build the same image at the same time, and the worker builds the whole Next.js app though it serves no pages | Open: after each release, both services are checked and a failed build is redeployed by the owner (E-067). Releases #66 and #68 built first time. The owner chose the lighter worker build (11 Nov): `Dockerfile.worker` skips `next build` (E-072), rolled out staging first | The worker builds from `Dockerfile.worker` on staging and production, and the website builds first time for five releases in a row |
-| R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Closed (E-073): the Department of Commerce publishes the same PDF (same SHA-256) on commerce.gov.in, and the release definition names it. The production release's stored manifest still names the Council's URL for the same bytes until it is rebuilt (the owner's choice, E-073) | — |
+| R-50 | The GCC release's second file, the UAE's tariff schedule for Indian goods under the India–UAE CEPA (`Schedule-of-UAE.pdf`), is stored from `leatherindia.org` (Council for Leather Exports), not a government domain. Its bytes are unchanged since 19 Oct (E-069), which proves the copy has not changed, not that it is the official text | Closed (E-073): the Department of Commerce publishes the same PDF (same SHA-256) on commerce.gov.in, and the release definition names it. Production's release was rebuilt from the official files on 11 Nov, so its stored record names the Department's URL too (E-075) | — |
 | R-51 | Some markets with a connected live source still score an estimate because the look-up finds no single rated line: the UK for 0910.30 (no declarable commodity found under the HS6) and the US for 7418.10 (no in-scope row with a stated General rate). Each says `classification_resolution: unavailable`, and the exporter sees only "(estimated)" | Open: the US "Free" case is fixed (E-071); both causes found and fixed in code (E-074), which also gives US duties to 0306.17, 6109.10 and 6302.60; waiting for production runs | Both look-ups give an official rate on production, and a run says why when a source answers without a usable line |
