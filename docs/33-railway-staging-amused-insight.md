@@ -12,7 +12,7 @@ project: no staging service reads a production variable, database or bucket.
 | Service | `production` | `staging` |
 |---|---|---|
 | `cleartrade-ai-build-spec` (web/API) | `master`, untouched | `staging/railway`, `Dockerfile`, `npm start`, pre-deploy `npm run migrate:deploy`, health `/api/health/ready` (120 s), 2 GB / 2 vCPU |
-| `cleartrade-worker` | — (does not exist) | `staging/railway`, `Dockerfile`, `npm run worker:platform`, pre-deploy `npm run migrate:deploy`, 2 GB / 2 vCPU |
+| `cleartrade-worker` | — (does not exist) | `staging/railway`, `Dockerfile.worker` (the website's image without `next build`, E-072; `Dockerfile` until the owner sets the Dockerfile Path), `npm run worker:platform`, pre-deploy `npm run migrate:deploy`, 2 GB / 2 vCPU |
 | `cleartrade-scanner` | `master`, untouched | `staging/railway`, `deploy/scanner/Dockerfile` (ClamAV), health `/health/ready` (300 s), 4 GB / 2 vCPU |
 | `Postgres` | — (production DB is external) | staging-only Railway Postgres; app uses the private network, operators use the TCP proxy |
 | Bucket | production bucket | `cleartrade-staging-env-*` (staging only) |

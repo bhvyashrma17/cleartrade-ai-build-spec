@@ -1,0 +1,36 @@
+# The worker's image (R-49, E-072). The same base, packages and source as `Dockerfile`, without
+# `next build`: the worker runs `npm run worker:platform` (tsx scripts/worker.ts) and its pre-deploy
+# `npm run migrate:deploy` (tsx and prisma), and neither reads the website's build output. Skipping
+# it removes the step that failed without an error on two release builds (#60's website, #62's
+# worker), and the worker no longer builds a website it never serves.
+#
+# Railway builds the worker from this file when the worker service's Settings → Build →
+# Dockerfile Path is `Dockerfile.worker` (recorded in deploy/railway/worker.railway.json).
+# Setting it back to `Dockerfile` returns the worker to the website's image.
+# Keep the two files in step: tests/worker-dockerfile.test.ts fails when they drift.
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npx prisma generate && npm prune --omit=dev
+
+FROM node:22-bookworm-slim AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN groupadd --system cleartrade && useradd --system --gid cleartrade --home /app cleartrade
+# Everything `Dockerfile` puts in the runtime image except `.next`, so nothing the worker reads moves.
+COPY --from=build --chown=cleartrade:cleartrade /app/node_modules ./node_modules
+COPY --from=build --chown=cleartrade:cleartrade /app/public ./public
+COPY --from=build --chown=cleartrade:cleartrade /app/prisma ./prisma
+COPY --from=build --chown=cleartrade:cleartrade /app/scripts ./scripts
+COPY --from=build --chown=cleartrade:cleartrade /app/src ./src
+COPY --from=build --chown=cleartrade:cleartrade /app/package.json /app/next.config.js /app/tsconfig.json ./
+USER cleartrade
+CMD ["npm","run","worker:platform"]
