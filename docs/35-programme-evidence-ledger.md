@@ -3135,6 +3135,33 @@ So the Bangladesh checker stopped before any finding, and no challenger ran. The
 
 **Effect.** None in the product.
 
+### E-079 · 2026-11-12 · Regional view v2: top 10, the 80% marked, evidence labels, and an estimate for every market (D-048) (in review)
+
+**Built** (PR 3, stacked on #75).
+- **`src/lib/regional-demand/view.ts`** (`regional-view-v2`).
+  - A stored run as the page shows it: the 10 largest areas, the rest summed, and the smallest set of the largest areas holding 80% marked.
+  - Ranked by imports from all origins where every area has them, else by India's.
+  - Lists of importers rank by importers.
+  - The six evidence labels of D-048. Each source maps to one; a source without one is refused.
+  - Stored runs are not rewritten. Runs stored before v2 (top 15 by India, the rest summed) keep India's order and are cut to 10.
+- **`src/lib/regional-demand/estimate.ts`.** The labelled estimate for every market without an official source, from the regional geography: no request and no job.
+  - Hub and gateway: the main cities by population.
+  - Regions: the regions by the population of their cities of 300,000 or more.
+  - One place: "Not needed", still with its main city and gateways.
+  - It names the geography's version and checksum, and says it ranks city size, not imports, and is the same for every product.
+- **Readers.** The Census and importer-list readers store every area, not the top 15.
+- **The market view.** `regionalDemandView` adds the evidence label and, for other markets, the estimate; its other fields are unchanged.
+- **Tests.**
+  - `tests/regional-view-v2.test.ts` (11 tests).
+  - The regional-demand suite: the US view ranked by all origins; Germany's estimate with no run created.
+- **docs/38 §1.3.**
+
+**Open for the owner.** These are built as recommended, in docs/38 §1.3.
+1. Ranking by all origins, which D-048 (2) reads as "the product's imports". The US view used to rank by India.
+2. Estimates use city size and gateways for now. The regional economy D-048 (4) names cannot be downloaded from this workspace (E-078).
+
+**Effect.** None until merged; nothing deployed (D-046). The market page shows the new fields in PR 4.
+
 ## Risk register
 
 

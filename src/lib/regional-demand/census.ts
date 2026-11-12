@@ -177,7 +177,10 @@ export interface RegionalView {
   measure?: 'value';
   title: string;
   areas: RegionalArea[];
-  /** Everything after the top areas, summed, so the table still adds up. */
+  /**
+   * Everything after the top areas, summed, so the table still adds up. Null when every area is listed,
+   * as every run stores since the v2 view (docs/38 §1.3), which takes its own top 10 when it is read.
+   */
   others: { count: number; india_value_usd: number; world_value_usd: number | null } | null;
 }
 
@@ -283,9 +286,10 @@ export function buildUsRegionalResult(args: {
   world: { state: CensusRow[] | null; port: CensusRow[] | null };
   retrieved_at: Date;
   requests: string[];
+  /** How many areas to keep before summing the rest. Default: all (the v2 view takes its top 10 when read). */
   top?: number;
 }): RegionalDemandResultV1 | null {
-  const top = args.top ?? 15;
+  const top = args.top ?? Number.POSITIVE_INFINITY;
   const months = windowMonths([...args.india.state, ...args.india.port, ...(args.world.state ?? []), ...(args.world.port ?? [])]);
   if (months.length === 0) return null;
   const window = new Set(months);

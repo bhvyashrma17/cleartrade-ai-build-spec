@@ -145,7 +145,17 @@ describe('Reading the Census Bureau', () => {
     expect(view.supported).toBe(true);
     expect(view.shown?.id).toBe(run.id);
     expect(view.latest?.status).toBe(RegionalDemandStatus.completed);
-    expect(await regionalDemandView(ids.de!, 'DE')).toEqual({ supported: false, publisher: null, latest: null, shown: null });
+    // v2 (docs/38 §1.3): the run stored every state, so the view ranks them by imports from all origins.
+    expect(view.evidence).toMatchObject({ key: 'your_product', label: 'Your product' });
+    expect(view.shown?.result).toMatchObject({ view_version: 'regional-view-v2', evidence: 'your_product' });
+    expect(view.shown?.result.views[0]).toMatchObject({ ranked_by: 'all_origins_value', total: 1100, core: { count: 1 }, others: null });
+    expect(view.estimate).toBeNull();
+
+    // A market with no official source still has a view: its labelled estimate, with no run and no job.
+    const germany = await regionalDemandView(ids.de!, 'DE');
+    expect(germany).toMatchObject({ supported: false, publisher: null, latest: null, shown: null, evidence: { key: 'estimate', label: 'Estimate' } });
+    expect(germany.estimate).toMatchObject({ country_code: 'DE', shape: 'regions', ranked_by: 'city_population' });
+    expect(await prisma.regionalDemandRun.count({ where: { market_assessment_id: ids.de! } })).toBe(0);
   });
 
   test('without a key, or with a refused one, the run is unavailable with the reason and the job completes', async () => {
@@ -198,7 +208,7 @@ describe('Hand-off and the market page', () => {
     expect(html).toContain('New York');
     expect(html).toContain('This product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau.');
     expect(html).toContain('$700 of this product came from India in Sep 2025 – Aug 2026.');
-    const empty = renderToStaticMarkup(createElement(RegionalDemand, { assessmentId: ids.de!, countryName: 'Germany', initial: { supported: false, publisher: null, latest: null, shown: null }, canRequest: true }));
+    const empty = renderToStaticMarkup(createElement(RegionalDemand, { assessmentId: ids.de!, countryName: 'Germany', initial: await regionalDemandView(ids.de!, 'DE'), canRequest: true }));
     expect(empty).toContain('Regional figures for Germany are not connected yet.');
   });
 });
