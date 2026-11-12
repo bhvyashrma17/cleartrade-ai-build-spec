@@ -3199,6 +3199,21 @@ So the Bangladesh checker stopped before any finding, and no challenger ran. The
 
 **Effect.** None until merged; nothing deployed.
 
+### E-082 · 2026-11-12 · The top-30 review kit, committed so another session can run the review (D-048) (in review)
+
+**Why.** The agent's cloud workspace cannot read official sites (E-078, R-52). The owner will run the review from a session where web reading works.
+
+**Built** (#79, based on `staging/railway` and independent of #75–#78).
+- **`docs/regional-review/checker.md` and `challenger.md`.** The pilot's instructions, plus D-049's excluded divisions.
+- **`docs/regional-review/markets/NN-XX.json`.** What the registry says today about each of the 30 markets (79.9% of India's 2024 non-fuel exports, E-076). Each file carries registry `regional-geography-v1`, checksum `e1e8cb3b…`.
+- **`docs/regional-review/README.md`.** The owner's rules: WebFetch and WebSearch only, refusals noted, Bangladesh first, the three pilot criteria, the other 29 as one workflow, workflows only for this review.
+- **`scripts/regional-review-inputs.ts`.** Regenerates the inputs; `--check` reports stale ones.
+- **Tests.** `tests/regional-review-inputs.test.ts` (4 tests). The inputs must equal the registry, so stale data fails.
+
+**Checks.** `npm test` 186 files, 2,461 tests pass, 5 skipped; `tsc --noEmit` and ESLint clean.
+
+**Next.** The review replies go in `docs/regional-review/results/`. PR 2 carries the 30-row table and the registry changes.
+
 ## Risk register
 
 
