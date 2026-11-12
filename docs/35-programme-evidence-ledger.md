@@ -64,7 +64,8 @@ Open owner decisions: approval of every `phase-1-gate-v1` value (docs/34 §2); t
 "1E Live Country Truth Reconciliation" (not found anywhere in the repository); all later decisions in
 roadmap §26; how the seven licence-pending sources and the 45 ranked markets with no tariff online are
 covered once the researched sources are done (D-030; the replies from
-UNCTAD and the WTO bear on both).
+UNCTAD and the WTO bear on both); which markets' regional views may show Crimea, Sevastopol, Azad Kashmir
+and Gilgit-Baltistan (E-077, docs/38 §3.3; proposed default: none).
 
 ## Entries
 
@@ -3071,6 +3072,52 @@ For Lappu Exports' product, the next run reads parboiled = yes, Basmati = yes an
 - North Korea is excluded from Demand Discovery (`excluded_markets`), so it never reaches a regional view. Iran and Cuba carry comprehensive sanctions flags, Russia, Belarus and Venezuela sectoral ones; none has a regional source in the plan.
 
 **What changed.** Nothing in code, data or production. The plan, its sources and the full 218-market table are in the owner's doc.
+
+### E-077 · 2026-11-12 · The regional geography of all 218 markets, built from Natural Earth (D-048) (in review)
+
+**Found.**
+- **The shape rule reproduces the plan.** E-076's analysis script was not kept, so the rule was rebuilt from its description and checked against the plan's 218-market table. It matches every shape: one place 127, hub and gateway 51, regions 40, with Nepal, Egypt and the Philippines set by hand. The rule alone gives 128, 48 and 42.
+  - Three details make it match. Places merge greedily into the largest within 30 km. Places of exactly 300,000 count. Distance is great-circle.
+  - Four centre counts differ from the table: Japan 40 (41), Mexico 39 (40; Tlaxcala is 29.96 km from Puebla), Russia 66 (68; see the territory point below), the United States 112 (111; San Juan).
+  - The sensitivity matches at 50 km (Belgium, the Netherlands, North Korea move) and in the 32 markets near a line. At 20 km only the UAE moves, not Benin: Porto-Novo is 14 km from Cotonou.
+- **Natural Earth's divisions need care.**
+  - 60 codes are drawn in several pieces: a province in two parts, a city drawn apart from its province (Cebu City, Metro Manila's 17 cities), Bosnia's cantons under its Federation's code.
+  - Some pieces are coding errors that join two divisions: Bogotá under Cundinamarca, Alborz under Tehran, two Croatian counties.
+  - 108 divisions carry Natural Earth's placeholder codes (`HK-X01~`).
+  - Some lists predate reforms: Nepal's 14 zones, Vietnam's 63 provinces.
+- **Natural Earth's own country fields disagree in five divisions.**
+  - Sint Maarten, Martinique and Tokelau are their own markets.
+  - Crimea and Sevastopol are drawn in Russia; their ISO 3166-2 codes (UA-43, UA-40) are Ukraine's.
+  - It also draws Azad Kashmir and Gilgit-Baltistan in Pakistan. Its worldview fields mark Gilgit-Baltistan "Unrecognized" for India, but not Azad Kashmir, so they cannot settle it.
+- **Natural Earth v5.1.2 and the repository's head on 12 Nov are byte-identical** for the four layers used. Its 10m files are reachable from the agent workspace through GitHub. UN statistics, Nepal customs and the Philippine statistics site are refused by the workspace's network policy, which PR 1 does not need.
+
+**Built.**
+- **`src/lib/regional-geography/`.**
+  - `source.ts`: the four files pinned by commit and sha256.
+  - `derive.ts` and `geometry.ts`: placement by division, merging by code.
+  - `snapshot.ts`: schema and canonical form.
+  - `shape.ts`: `regional-shape-rule-v1`.
+  - `registry.ts`: the three hand-set shapes and the territory list, each with its reason.
+  - `market-geography.ts`: `marketGeography(iso2)`, `regionalGeography()`.
+- **`scripts/build-regional-geography.ts`** writes `reference/natural-earth-geography.json` (742 KB): 1,362 places, 4,345 divisions, 1,054 ports, 820 civil airports. Every place and gateway is placed in a division. A rebuild from the same files gives the same bytes.
+- **`tests/regional-geography.test.ts`** (17 tests).
+  - The snapshot: sha256, canonical form, the 218 markets against the default universe.
+  - The rule's edges.
+  - The approved counts and the 20 and 50 km sensitivity.
+  - The hand-set shapes, the UAE and the US, the territory list.
+  - The build on small shapes.
+- **docs/38 §3:** the source, the rule, the territory question and the known limits.
+
+**Decision asked.** Which market, if any, may show Crimea, Sevastopol, Azad Kashmir and Gilgit-Baltistan as regions, hubs or gateways (docs/38 §3.3). The build's default is none, each with its reason. The alternatives are ISO 3166-2's lists (Crimea in Ukraine, the two Kashmir areas in Pakistan) or Natural Earth's drawing.
+
+**Effect.** None yet in the product: nothing reads the registry until the regional view, market page and buyer discovery card are built on it. Nothing deployed (D-046).
+
+**Checks run (agent workspace, Node 22, PostgreSQL 16).**
+- The 17 new tests pass.
+- `npm test`: 185 files, 2,457 tests pass, 5 skipped (213 s).
+- `tsc --noEmit` and ESLint over the whole repository (`--max-warnings=0`): clean.
+- A rebuild from the pinned files writes the same bytes (sha256 `8ddfd307…`).
+- Not run here: `next build`. Nothing under `app/` imports the module, and the fonts host is blocked in this workspace (E-001). CI runs it on the PR.
 
 ## Risk register
 
