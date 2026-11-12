@@ -115,3 +115,109 @@ A component the list does not publish is left out and the score is shared over t
 the share of components scored. The agent's Buyer Discovery control shows these components, the place
 (town, postcode, region), the reason ("Imported 5701.10.10 and 5701.10.90 in Aug 2026 (HMRC importer
 list).") and the address as published.
+
+## 3. The regional geography of every market (D-048)
+
+The base of the regional plan (D-048, E-076, E-077). Each of the 218 v5 markets gets a shape, its
+centres (the hubs buyer discovery searches), its first-level regions with their ISO 3166-2 codes, and
+its gateways. All of it comes from open data, so every market has named places to search before any
+official regional figures exist. Code: `src/lib/regional-geography/`. Nothing in the product reads it
+yet; the regional view, the market page and the buyer discovery card come next.
+
+`marketGeography('AE')` → hub and gateway; centres Dubai (with Sharjah), Abu Dhabi, Al Ain; the seven
+emirates as regions, each with its hubs; Dubai's port and the DXB, SHJ and AUH airports as gateways.
+
+### 3.1 Source and build
+
+Natural Earth v5.1.2, public domain: populated places, admin-1 states and provinces, ports and
+airports, pinned by commit and sha256 in `source.ts`. `scripts/build-regional-geography.ts
+--source-dir=<folder>` writes `reference/natural-earth-geography.json` (742 KB, one item per line).
+It needs no network and no database, refuses a file whose sha256 differs, and writes the same bytes
+from the same files. The tests pin the snapshot's sha256 (`GEOGRAPHY_SNAPSHOT_SHA256`), its canonical
+form, and its 218 markets against the default screening universe.
+
+The snapshot keeps facts only: per market, its places of 300,000 people or more (1,362), its
+divisions (4,345), and its ports (1,054) and civil airports (820), each placed in a division.
+
+- **Divisions** belong to the market of their geounit, else their country, else the country their
+  ISO code names. Sint Maarten and Martinique are their own markets; Puerto Rico is the United
+  States', as Comtrade counts it.
+- **Places, ports and airports** belong to the division that contains them, or the nearest within
+  25 km. Every kept place and gateway is placed. One place moves market this way: San Juan, into the US.
+- **Pieces sharing a code** are one division (60 codes), because no buyer source can tell them
+  apart: Cebu City inside Cebu, Metro Manila's 17 cities, Bosnia's 10 cantons as its Federation. A
+  merged division takes its largest piece's name, or its ISO name where no piece names the whole.
+
+### 3.2 Shape (`regional-shape-rule-v1`)
+
+1. **Centres.** Places of 300,000 or more, largest first. Each starts a centre and takes in every
+   smaller place within 30 km of it. A centre's size is its largest place's.
+2. **Shape.** No centre or one → **one place**. Otherwise the effective number of centres,
+   1 / Σ sᵢ² over the centres' shares sᵢ, decides: 3 or more → **regions**, fewer → **hub and gateway**.
+
+The rule alone gives one place 128, hub and gateway 48, regions 42. Three shapes are set by hand
+(`SHAPE_OVERRIDES`, each with its reason), giving the approved 127, 51 and 40:
+
+| Market | The rule | Set by hand | Reason |
+|---|---|---|---|
+| Nepal | One place (Kathmandu) | Hub and gateway | Goods from India enter at border customs offices such as Birgunj and Bhairahawa |
+| Egypt | Regions (3.32 effective) | Hub and gateway | Greater Cairo and the port of Alexandria; the rule counts governorate capitals of about 600,000 |
+| Philippines | Regions (3.21) | Hub and gateway | Metro Manila; the rule counts cities under 1.5 million |
+
+Merging at 20 km instead of 30 moves one market (the UAE); at 50 km, three (Belgium, the Netherlands,
+North Korea). The tests hold both.
+
+Against the table in the owner's plan (E-076) every shape is the same. Four centre counts differ:
+
+- **Japan:** 40, not 41.
+- **Mexico:** 39, not 40. Tlaxcala is 29.96 km from Puebla and merges.
+- **Russia:** 66, not 68. Sevastopol and Simferopol are left out (§3.3).
+- **United States:** 112, not 111. San Juan is added.
+
+E-076 also said 20 km moves Benin. It does not here: Porto-Novo is 14 km from Cotonou and merges at
+both distances.
+
+### 3.3 Territory no market offers
+
+Natural Earth draws Crimea and Sevastopol (UA-43, UA-40) in Russia, while ISO 3166-2 lists them in
+Ukraine; both are under comprehensive US, EU and UK trade sanctions. It draws Azad Kashmir and
+Gilgit-Baltistan (PK-JK, PK-GB) in Pakistan; India's official map shows them as part of Jammu and
+Kashmir and of Ladakh.
+
+`EXCLUDED_DIVISIONS` keeps all four out of every market's regions, centres and gateways, each with
+its reason. The snapshot still records them. **This is a proposed default; the owner decides.** The
+alternatives are to follow ISO 3166-2, which puts Crimea in Ukraine and the two Kashmir areas in
+Pakistan, or to follow Natural Earth's drawing.
+
+### 3.4 What each market gives
+
+| Field | Meaning |
+|---|---|
+| `shape` | `one_place`, `hub_and_gateway` or `regions`, with `rule` (the rule's answer, centres, effective centres) and `override` (reason, decision) beside it |
+| `centres` | Name, the places merged into it, population (Natural Earth's estimate, of varying years), coordinates, region code |
+| `regions` | Every first-level division: code, English and local name, type, whether the code is ISO 3166-2, and the centres inside it |
+| `gateways` | Ports and civil airports: name, IATA code, region code, Natural Earth's map rank (drawing order, not cargo) |
+| `excluded_divisions` | §3.3 entries that applied to this market |
+
+The registry's `checksum` covers every market and the versions, so a stored regional view can name
+the geography it used.
+
+### 3.5 Known limits, for the reviews
+
+The top-30 review (D-048) checks each of these against official sources, market by market. The
+cluster reviews cover the rest.
+
+- **Out of date.** Some divisions predate reforms: Nepal's 14 zones (7 provinces since 2015),
+  Vietnam's 63 provinces (34 since 2025), Madagascar's six ISO provinces (22 regions since 2009).
+- **A different level from the statistics office.** The UK has 232 councils where HMRC uses 12
+  regions. France is listed by département, Italy and Spain by province.
+- **Wrong codes in Natural Earth, merged with a neighbour.** Bogotá under Cundinamarca, Alborz under
+  Tehran, Almaty city and region, Lima's capital district and region, two Croatian counties, East
+  and South Darfur, Vientiane prefecture and province, Malé and Meemu, five Latvian city and
+  municipality pairs.
+- **Placeholder codes.** 108 divisions carry Natural Earth's own codes (`HK-X01~`), among them Hong
+  Kong's 18 districts; no buyer source filters by them.
+- **Gateways.** Natural Earth's ports and airports only: no land border posts (Benapole, Birgunj,
+  Phuentsholing), and 15 markets with none at all, among them Bhutan, Tajikistan and South Sudan.
+  Some names carry Natural Earth's spelling errors ("Sheremtyevo").
+- **Places.** 70 markets have no place of 300,000 or more: they are one search area, the whole market.
