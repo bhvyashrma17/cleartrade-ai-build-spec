@@ -1,0 +1,34 @@
+{
+ "rank": 24,
+ "iso2": "NP",
+ "name": "Nepal",
+ "exports_2024_usd_m": 4761,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "hub_and_gateway",
+  "rule": {"shape":"one_place","centres":1,"effective_centres":1},
+  "override": {"shape":"hub_and_gateway","reason":"Kathmandu is the market, and goods from India enter at border customs offices such as Birgunj and Bhairahawa, so its gateways matter as much as its hub; the rule sees one centre."},
+  "hubs": [
+   {"name":"Kathmandu","merged":["Lalitpur"],"population":895000,"region":"NP-BA"}
+  ],
+  "regions": [
+   {"code":"NP-BA","name":"Bagmati Zone","local_name":"Bagmati","type":"District","hubs":["Kathmandu"]},
+   {"code":"NP-BH","name":"Bheri Zone","local_name":"Bheri","type":"District","hubs":[]},
+   {"code":"NP-DH","name":"Dhaulagiri Zone","local_name":"Dhawalagiri","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-GA","name":"Gandaki Zone","local_name":"Gandaki","type":"District","hubs":[]},
+   {"code":"NP-JA","name":"Janakpur Zone","local_name":"Janakpur","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-KA","name":"Karnali Zone","local_name":"Karnali","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-KO","name":"Bhojpur","type":"District","hubs":[]},
+   {"code":"NP-LU","name":"Lumbini Zone","local_name":"Lumbini","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-MA","name":"Mahakali Zone","local_name":"Mahakali","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-ME","name":"Mechi Zone","local_name":"Mechi","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-NA","name":"Narayani Zone","local_name":"Narayani","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-RA","name":"Rapti Zone","local_name":"Rapti","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-SA","name":"Sagarmatha Zone","local_name":"Sagarmatha","type":"Administrative Zone","hubs":[]},
+   {"code":"NP-SE","name":"Seti Zone","local_name":"Seti","type":"District","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Tribhuvan Int'l","iata":"KTM","region":"NP-BA"}
+  ]
+ }
+}

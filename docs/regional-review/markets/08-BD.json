@@ -1,0 +1,36 @@
+{
+ "rank": 8,
+ "iso2": "BD",
+ "name": "Bangladesh",
+ "exports_2024_usd_m": 8928,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "hub_and_gateway",
+  "rule": {"shape":"hub_and_gateway","centres":6,"effective_centres":2.22},
+  "override": null,
+  "hubs": [
+   {"name":"Dhaka","merged":[],"population":12797394,"region":"BD-C"},
+   {"name":"Chattogram","merged":[],"population":4529000,"region":"BD-B"},
+   {"name":"Khulna","merged":[],"population":1553000,"region":"BD-D"},
+   {"name":"Rajshahi","merged":[],"population":810000,"region":"BD-E"},
+   {"name":"Comilla","merged":[],"population":389411,"region":"BD-B"},
+   {"name":"Mymensingh","merged":[],"population":330126,"region":"BD-C"}
+  ],
+  "regions": [
+   {"code":"BD-A","name":"Barisal","type":"Division","hubs":[]},
+   {"code":"BD-B","name":"Chattogram","local_name":"Chittagong","type":"Division","hubs":["Chattogram","Comilla"]},
+   {"code":"BD-C","name":"Dhaka","type":"Division","hubs":["Dhaka","Mymensingh"]},
+   {"code":"BD-D","name":"Khulna","type":"Division","hubs":["Khulna"]},
+   {"code":"BD-E","name":"Rajshahi","type":"Division","hubs":["Rajshahi"]},
+   {"code":"BD-F","name":"Rangpur","type":"Division","hubs":[]},
+   {"code":"BD-G","name":"Sylhet","type":"Division","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Chittagong","iata":"CGP","region":"BD-B"},
+   {"kind":"airport","name":"Zia Int'l Dhaka","iata":"DAC","region":"BD-C"},
+   {"kind":"airport","name":"Shah Makhdum","iata":"RJH","region":"BD-E"},
+   {"kind":"port","name":"Chittagong","region":"BD-B"},
+   {"kind":"port","name":"Mongla","region":"BD-D"}
+  ]
+ }
+}

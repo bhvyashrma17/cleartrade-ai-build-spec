@@ -1,0 +1,47 @@
+{
+ "rank": 7,
+ "iso2": "NL",
+ "name": "Netherlands",
+ "exports_2024_usd_m": 9311,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "regions",
+  "rule": {"shape":"regions","centres":4,"effective_centres":3.35},
+  "override": null,
+  "hubs": [
+   {"name":"The Hague","merged":["Rotterdam"],"population":1406000,"region":"NL-ZH"},
+   {"name":"Amsterdam","merged":["Haarlem"],"population":1031000,"region":"NL-NH"},
+   {"name":"Utrecht","merged":[],"population":640000,"region":"NL-UT"},
+   {"name":"Eindhoven","merged":[],"population":398053,"region":"NL-NB"}
+  ],
+  "regions": [
+   {"code":"NL-BQ1","name":"Bonaire","type":"Special Municipality","hubs":[]},
+   {"code":"NL-BQ2","name":"Saba","type":"Special Municipality","hubs":[]},
+   {"code":"NL-BQ3","name":"Sint Eustatius","local_name":"St. Eustatius","type":"Special Municipality","hubs":[]},
+   {"code":"NL-DR","name":"Drenthe","type":"Province","hubs":[]},
+   {"code":"NL-FL","name":"Flevoland","type":"Province","hubs":[]},
+   {"code":"NL-FR","name":"Friesland","type":"Province","hubs":[]},
+   {"code":"NL-GE","name":"Gelderland","type":"Province","hubs":[]},
+   {"code":"NL-GR","name":"Groningen","type":"Province","hubs":[]},
+   {"code":"NL-LI","name":"Limburg","type":"Province","hubs":[]},
+   {"code":"NL-NB","name":"North Brabant","local_name":"Noord-Brabant","type":"Province","hubs":["Eindhoven"]},
+   {"code":"NL-NH","name":"North Holland","local_name":"Noord-Holland","type":"Province","hubs":["Amsterdam"]},
+   {"code":"NL-OV","name":"Overijssel","type":"Province","hubs":[]},
+   {"code":"NL-UT","name":"Utrecht","type":"Province","hubs":["Utrecht"]},
+   {"code":"NL-ZE","name":"Zeeland","type":"Province","hubs":[]},
+   {"code":"NL-ZH","name":"South Holland","local_name":"Zuid-Holland","type":"Province","hubs":["The Hague"]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Schiphol","iata":"AMS","region":"NL-NH"},
+   {"kind":"airport","name":"Rotterdam The Hague","iata":"RTM","region":"NL-ZH"},
+   {"kind":"port","name":"Amsterdam","region":"NL-NH"},
+   {"kind":"port","name":"Kralendijk, Bonaire","region":"NL-BQ1"},
+   {"kind":"port","name":"Rotterdam","region":"NL-ZH"},
+   {"kind":"port","name":"Europoort","region":"NL-ZH"},
+   {"kind":"port","name":"Groningen","region":"NL-GR"},
+   {"kind":"port","name":"Delfzijl","region":"NL-GR"},
+   {"kind":"port","name":"Den Helder","region":"NL-NH"},
+   {"kind":"port","name":"Dordrecht","region":"NL-ZH"}
+  ]
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "rank": 29,
+ "iso2": "LK",
+ "name": "Sri Lanka",
+ "exports_2024_usd_m": 3649,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "one_place",
+  "rule": {"shape":"one_place","centres":0,"effective_centres":0},
+  "override": null,
+  "hubs": [],
+  "regions": [
+   {"code":"LK-11","name":"Colombo","local_name":"Kŏḷamba","type":"District","hubs":[]},
+   {"code":"LK-12","name":"Gampaha","type":"District","hubs":[]},
+   {"code":"LK-13","name":"Kalutara","local_name":"Kaḷutara","type":"District","hubs":[]},
+   {"code":"LK-21","name":"Kandy","local_name":"Mahanuvara","type":"District","hubs":[]},
+   {"code":"LK-22","name":"Matale","local_name":"Mātale","type":"District","hubs":[]},
+   {"code":"LK-23","name":"Nuwara Eliya","local_name":"Nuvara Ĕliya","type":"District","hubs":[]},
+   {"code":"LK-31","name":"Galle","local_name":"Gālla","type":"District","hubs":[]},
+   {"code":"LK-32","name":"Matara","local_name":"Mātara","type":"District","hubs":[]},
+   {"code":"LK-33","name":"Hambantota","local_name":"Hambantŏṭa","type":"District","hubs":[]},
+   {"code":"LK-41","name":"Jaffna","local_name":"Yāpanaya","type":"District","hubs":[]},
+   {"code":"LK-42","name":"Kilinochchi","local_name":"Kilinŏchchi","type":"District","hubs":[]},
+   {"code":"LK-43","name":"Mannar","local_name":"Mannārama","type":"District","hubs":[]},
+   {"code":"LK-44","name":"Vavuniya","local_name":"Vavuniyāva","type":"District","hubs":[]},
+   {"code":"LK-45","name":"Mullaitivu","local_name":"Mulativ","type":"District","hubs":[]},
+   {"code":"LK-51","name":"Batticaloa","local_name":"Maḍakalapuva","type":"District","hubs":[]},
+   {"code":"LK-52","name":"Ampara","local_name":"Ampāra","type":"District","hubs":[]},
+   {"code":"LK-53","name":"Trincomalee","local_name":"Trikuṇāmalaya","type":"District","hubs":[]},
+   {"code":"LK-61","name":"Kurunegala","local_name":"Kuruṇægala","type":"District","hubs":[]},
+   {"code":"LK-62","name":"Puttalam","local_name":"Puttalama","type":"District","hubs":[]},
+   {"code":"LK-71","name":"Anuradhapura","local_name":"Anurādhapura","type":"District","hubs":[]},
+   {"code":"LK-72","name":"Polonnaruwa","local_name":"Pŏḷŏnnaruva","type":"District","hubs":[]},
+   {"code":"LK-81","name":"Badulla","type":"District","hubs":[]},
+   {"code":"LK-82","name":"Monaragala","local_name":"Mŏṇarāgala","type":"District","hubs":[]},
+   {"code":"LK-91","name":"Ratnapura","type":"District","hubs":[]},
+   {"code":"LK-92","name":"Kegalle","local_name":"Kægalla","type":"District","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Katunayake Int'l","iata":"CMB","region":"LK-12"},
+   {"kind":"port","name":"Colombo","region":"LK-11"},
+   {"kind":"port","name":"Trincomalee","region":"LK-53"},
+   {"kind":"port","name":"Galle","region":"LK-31"}
+  ]
+ }
+}

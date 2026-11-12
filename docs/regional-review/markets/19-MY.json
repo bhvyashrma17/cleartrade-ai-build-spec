@@ -1,0 +1,61 @@
+{
+ "rank": 19,
+ "iso2": "MY",
+ "name": "Malaysia",
+ "exports_2024_usd_m": 5070,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "regions",
+  "rule": {"shape":"regions","centres":15,"effective_centres":9.02},
+  "override": null,
+  "hubs": [
+   {"name":"George Town","merged":["Butterworth"],"population":2500000,"region":"MY-07"},
+   {"name":"Kuala Lumpur","merged":["Kelang","Shah Alam"],"population":1448000,"region":"MY-14"},
+   {"name":"Johor Bahru","merged":[],"population":875000,"region":"MY-01"},
+   {"name":"Malacca","merged":[],"population":788706,"region":"MY-04"},
+   {"name":"Ipoh","merged":[],"population":673318,"region":"MY-08"},
+   {"name":"Kuching","merged":[],"population":570407,"region":"MY-13"},
+   {"name":"Kota Kinabalu","merged":[],"population":527671,"region":"MY-12"},
+   {"name":"Kota Baharu","merged":[],"population":505583,"region":"MY-03"},
+   {"name":"Sandakan","merged":[],"population":392288,"region":"MY-12"},
+   {"name":"Seremban","merged":[],"population":372917,"region":"MY-05"},
+   {"name":"Kuantan","merged":[],"population":366229,"region":"MY-06"},
+   {"name":"Sungai Petani","merged":[],"population":358499,"region":"MY-02"},
+   {"name":"Kuala Terengganu","merged":[],"population":350210,"region":"MY-11"},
+   {"name":"Alor Setar","merged":[],"population":336475,"region":"MY-02"},
+   {"name":"Tawau","merged":[],"population":306462,"region":"MY-12"}
+  ],
+  "regions": [
+   {"code":"MY-01","name":"Johor","type":"State","hubs":["Johor Bahru"]},
+   {"code":"MY-02","name":"Kedah","type":"State","hubs":["Sungai Petani","Alor Setar"]},
+   {"code":"MY-03","name":"Kelantan","type":"State","hubs":["Kota Baharu"]},
+   {"code":"MY-04","name":"Melaka","type":"State","hubs":["Malacca"]},
+   {"code":"MY-05","name":"Negeri Sembilan","type":"State","hubs":["Seremban"]},
+   {"code":"MY-06","name":"Pahang","type":"State","hubs":["Kuantan"]},
+   {"code":"MY-07","name":"Penang","local_name":"Pulau Pinang","type":"State","hubs":["George Town"]},
+   {"code":"MY-08","name":"Perak","type":"State","hubs":["Ipoh"]},
+   {"code":"MY-09","name":"Perlis","type":"State","hubs":[]},
+   {"code":"MY-10","name":"Selangor","type":"State","hubs":[]},
+   {"code":"MY-11","name":"Terengganu","type":"State","hubs":["Kuala Terengganu"]},
+   {"code":"MY-12","name":"Sabah","type":"State","hubs":["Kota Kinabalu","Sandakan","Tawau"]},
+   {"code":"MY-13","name":"Sarawak","type":"State","hubs":["Kuching"]},
+   {"code":"MY-14","name":"Kuala Lumpur","type":"Federal Territory","hubs":["Kuala Lumpur"]},
+   {"code":"MY-15","name":"Labuan","type":"Federal Territory","hubs":[]},
+   {"code":"MY-16","name":"Putrajaya","type":"Federal Territory","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Kuala Lumpur Int'l","iata":"KUL","region":"MY-10"},
+   {"kind":"airport","name":"Kota Kinabalu Int'l","iata":"BKI","region":"MY-12"},
+   {"kind":"airport","name":"Kuching Int'l","iata":"KCH","region":"MY-13"},
+   {"kind":"airport","name":"Penang Int'l","iata":"PEN","region":"MY-07"},
+   {"kind":"port","name":"Kota Kinabalu","region":"MY-12"},
+   {"kind":"port","name":"Kuching","region":"MY-13"},
+   {"kind":"port","name":"Malacca","region":"MY-04"},
+   {"kind":"port","name":"Miri","region":"MY-13"},
+   {"kind":"port","name":"Pelabuhan Sandakan","region":"MY-12"},
+   {"kind":"port","name":"Port Dickson","region":"MY-05"},
+   {"kind":"port","name":"Pulau Pinang","region":"MY-07"},
+   {"kind":"port","name":"Kemaman","region":"MY-11"}
+  ]
+ }
+}

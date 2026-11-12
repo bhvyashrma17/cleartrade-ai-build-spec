@@ -1,0 +1,42 @@
+{
+ "rank": 13,
+ "iso2": "BE",
+ "name": "Belgium",
+ "exports_2024_usd_m": 6171,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "regions",
+  "rule": {"shape":"regions","centres":5,"effective_centres":3.71},
+  "override": null,
+  "hubs": [
+   {"name":"Brussels","merged":[],"population":1743000,"region":"BE-BRU"},
+   {"name":"Antwerpen","merged":[],"population":920000,"region":"BE-VAN"},
+   {"name":"Liège","merged":[],"population":749110,"region":"BE-WLG"},
+   {"name":"Gent","merged":[],"population":444336,"region":"BE-VOV"},
+   {"name":"Charleroi","merged":[],"population":345367,"region":"BE-WHT"}
+  ],
+  "regions": [
+   {"code":"BE-BRU","name":"Brussels Capital","local_name":"Brussels","type":"Capital Region","hubs":["Brussels"]},
+   {"code":"BE-VAN","name":"Antwerp","type":"Province","hubs":["Antwerpen"]},
+   {"code":"BE-VBR","name":"Flemish Brabant","type":"Province","hubs":[]},
+   {"code":"BE-VLI","name":"Limburg","type":"Province","hubs":[]},
+   {"code":"BE-VOV","name":"East Flanders","type":"Province","hubs":["Gent"]},
+   {"code":"BE-VWV","name":"West Flanders","type":"Province","hubs":[]},
+   {"code":"BE-WBR","name":"Walloon Brabant","type":"Province","hubs":[]},
+   {"code":"BE-WHT","name":"Hainaut","type":"Province","hubs":["Charleroi"]},
+   {"code":"BE-WLG","name":"Liège","local_name":"Liege","type":"Province","hubs":["Liège"]},
+   {"code":"BE-WLX","name":"Luxembourg","type":"Province","hubs":[]},
+   {"code":"BE-WNA","name":"Namur","type":"Province","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Gosselies","iata":"CRL","region":"BE-WHT"},
+   {"kind":"airport","name":"Brussels","iata":"BRU","region":"BE-VBR"},
+   {"kind":"airport","name":"Deurne","iata":"ANR","region":"BE-VAN"},
+   {"kind":"port","name":"Antwerpen","region":"BE-VOV"},
+   {"kind":"port","name":"Brussel (Bruxelles)","region":"BE-BRU"},
+   {"kind":"port","name":"Gent (Ghent)","region":"BE-VOV"},
+   {"kind":"port","name":"Oostende (Ostend)","region":"BE-VWV"},
+   {"kind":"port","name":"Zeebrugge","region":"BE-VWV"}
+  ]
+ }
+}

@@ -1,0 +1,63 @@
+{
+ "rank": 20,
+ "iso2": "KR",
+ "name": "South Korea",
+ "exports_2024_usd_m": 4855,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "regions",
+  "rule": {"shape":"regions","centres":14,"effective_centres":5.65},
+  "override": null,
+  "hubs": [
+   {"name":"Seoul","merged":["Songnam","Goyang","Bucheon","Ansan"],"population":9796000,"region":"KR-11"},
+   {"name":"Busan","merged":[],"population":3480000,"region":"KR-26"},
+   {"name":"Incheon","merged":[],"population":2550000,"region":"KR-28"},
+   {"name":"Daegu","merged":[],"population":2460000,"region":"KR-27"},
+   {"name":"Daejeon","merged":[],"population":1468000,"region":"KR-30"},
+   {"name":"Gwangju","merged":[],"population":1440000,"region":"KR-29"},
+   {"name":"Changwon","merged":[],"population":1081499,"region":"KR-48"},
+   {"name":"Suwon","merged":[],"population":1078000,"region":"KR-41"},
+   {"name":"Ulsan","merged":[],"population":1061000,"region":"KR-31"},
+   {"name":"Cheongju","merged":[],"population":775096,"region":"KR-43"},
+   {"name":"Jeonju","merged":[],"population":711424,"region":"KR-45"},
+   {"name":"Pohang","merged":[],"population":435266,"region":"KR-47"},
+   {"name":"Jeju","merged":[],"population":408364,"region":"KR-49"},
+   {"name":"Yeosu","merged":[],"population":341994,"region":"KR-46"}
+  ],
+  "regions": [
+   {"code":"KR-11","name":"Seoul","type":"Capital Metropolitan City","hubs":["Seoul"]},
+   {"code":"KR-26","name":"Busan","type":"Metropolitan City","hubs":["Busan"]},
+   {"code":"KR-27","name":"Daegu","type":"Metropolitan City","hubs":["Daegu"]},
+   {"code":"KR-28","name":"Incheon","type":"Metropolitan City","hubs":["Incheon"]},
+   {"code":"KR-29","name":"Gwangju","type":"Metropolitan City","hubs":["Gwangju"]},
+   {"code":"KR-30","name":"Daejeon","type":"Metropolitan City","hubs":["Daejeon"]},
+   {"code":"KR-31","name":"Ulsan","type":"Metropolitan City","hubs":["Ulsan"]},
+   {"code":"KR-41","name":"Gyeonggi","type":"Province","hubs":["Suwon"]},
+   {"code":"KR-42","name":"Gangwon","type":"Province","hubs":[]},
+   {"code":"KR-43","name":"North Chungcheong","type":"Province","hubs":["Cheongju"]},
+   {"code":"KR-44","name":"South Chungcheong","type":"Province","hubs":[]},
+   {"code":"KR-45","name":"North Jeolla","type":"Province","hubs":["Jeonju"]},
+   {"code":"KR-46","name":"South Jeolla","type":"Metropolitan City","hubs":["Yeosu"]},
+   {"code":"KR-47","name":"North Gyeongsang","type":"Metropolitan City","hubs":["Pohang"]},
+   {"code":"KR-48","name":"South Gyeongsang","type":"Province","hubs":["Changwon"]},
+   {"code":"KR-49","name":"Jeju","type":"Province","hubs":["Jeju"]},
+   {"code":"KR-50","name":"Sejong","type":"Special self-governing city","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Gimpo Int'l","iata":"GMP","region":"KR-11"},
+   {"kind":"airport","name":"Incheon Int'l","iata":"ICN","region":"KR-28"},
+   {"kind":"airport","name":"Jeju Int'l","iata":"CJU","region":"KR-49"},
+   {"kind":"airport","name":"Kimhae Int'l","iata":"PUS","region":"KR-48"},
+   {"kind":"airport","name":"Yangyang Int'l","iata":"YNY","region":"KR-42"},
+   {"kind":"airport","name":"Cheongju Int'l","iata":"CJJ","region":"KR-43"},
+   {"kind":"airport","name":"Daegu Int'l","iata":"TAE","region":"KR-27"},
+   {"kind":"airport","name":"Gwangju","iata":"KWJ","region":"KR-46"},
+   {"kind":"airport","name":"Ulsan","iata":"USN","region":"KR-31"},
+   {"kind":"port","name":"Gunsan","region":"KR-45"},
+   {"kind":"port","name":"Pohang","region":"KR-47"},
+   {"kind":"port","name":"Samcheok","region":"KR-42"},
+   {"kind":"port","name":"Sokcho","region":"KR-42"},
+   {"kind":"port","name":"Ulsan","region":"KR-31"}
+  ]
+ }
+}

@@ -221,3 +221,14 @@ cluster reviews cover the rest.
   Phuentsholing), and 15 markets with none at all, among them Bhutan, Tajikistan and South Sudan.
   Some names carry Natural Earth's spelling errors ("Sheremtyevo").
 - **Places.** 70 markets have no place of 300,000 or more: they are one search area, the whole market.
+
+### 3.6 The top-30 review kit
+
+`docs/regional-review/` holds what the D-048 top-30 review needs:
+- the checker's and challenger's instructions (`checker.md`, `challenger.md`);
+- one input file per market with what the registry says today (`markets/NN-XX.json`, written by
+  `scripts/regional-review-inputs.ts`; the tests fail while a file differs from the registry);
+- a README with the owner's rules for running it.
+
+The agent's cloud workspace cannot read official sites (E-078, R-52), so the review runs from a
+session that can.

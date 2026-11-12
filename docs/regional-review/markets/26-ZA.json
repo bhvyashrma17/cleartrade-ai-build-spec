@@ -1,0 +1,51 @@
+{
+ "rank": 26,
+ "iso2": "ZA",
+ "name": "South Africa",
+ "exports_2024_usd_m": 4548,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "regions",
+  "rule": {"shape":"regions","centres":12,"effective_centres":7.52},
+  "override": null,
+  "hubs": [
+   {"name":"Johannesburg","merged":[],"population":3435000,"region":"ZA-GT"},
+   {"name":"Cape Town","merged":[],"population":3215000,"region":"ZA-WC"},
+   {"name":"Benoni","merged":[],"population":2986000,"region":"ZA-GT"},
+   {"name":"Durban","merged":[],"population":2729000,"region":"ZA-NL"},
+   {"name":"Pretoria","merged":[],"population":1338000,"region":"ZA-GT"},
+   {"name":"Vereeniging","merged":[],"population":1074000,"region":"ZA-GT"},
+   {"name":"Port Elizabeth","merged":[],"population":1021000,"region":"ZA-EC"},
+   {"name":"Pietermaritzburg","merged":[],"population":750845,"region":"ZA-NL"},
+   {"name":"Bloemfontein","merged":[],"population":463064,"region":"ZA-FS"},
+   {"name":"Welkom","merged":[],"population":431944,"region":"ZA-FS"},
+   {"name":"Mbombela","merged":[],"population":348138,"region":"ZA-MP"},
+   {"name":"East London","merged":[],"population":338627,"region":"ZA-EC"}
+  ],
+  "regions": [
+   {"code":"ZA-EC","name":"Eastern Cape","type":"Province","hubs":["Port Elizabeth","East London"]},
+   {"code":"ZA-FS","name":"Free State","type":"Province","hubs":["Bloemfontein","Welkom"]},
+   {"code":"ZA-GT","name":"Gauteng","type":"Province","hubs":["Johannesburg","Benoni","Pretoria","Vereeniging"]},
+   {"code":"ZA-LP","name":"Limpopo","type":"Province","hubs":[]},
+   {"code":"ZA-MP","name":"Mpumalanga","type":"Province","hubs":["Mbombela"]},
+   {"code":"ZA-NC","name":"Northern Cape","type":"Province","hubs":[]},
+   {"code":"ZA-NL","name":"KwaZulu-Natal","type":"Province","hubs":["Durban","Pietermaritzburg"]},
+   {"code":"ZA-NW","name":"North West","type":"Province","hubs":[]},
+   {"code":"ZA-WC","name":"Western Cape","type":"Province","hubs":["Cape Town"]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Cape Town Int'l","iata":"CPT","region":"ZA-WC"},
+   {"kind":"airport","name":"OR Tambo Int'l","iata":"JNB","region":"ZA-GT"},
+   {"kind":"airport","name":"H F Verwoerd","iata":"PLZ","region":"ZA-EC"},
+   {"kind":"airport","name":"Louis Botha","iata":"DUR","region":"ZA-NL"},
+   {"kind":"airport","name":"Polokwane Int'l","iata":"PTG","region":"ZA-LP"},
+   {"kind":"port","name":"Cape Town","region":"ZA-WC"},
+   {"kind":"port","name":"Durban","region":"ZA-NL"},
+   {"kind":"port","name":"Port Elizabeth","region":"ZA-EC"},
+   {"kind":"port","name":"Port Elizabeth","region":"ZA-EC"},
+   {"kind":"port","name":"East London","region":"ZA-EC"},
+   {"kind":"port","name":"Mossel Bay","region":"ZA-WC"},
+   {"kind":"port","name":"Richards Bay","region":"ZA-NL"}
+  ]
+ }
+}

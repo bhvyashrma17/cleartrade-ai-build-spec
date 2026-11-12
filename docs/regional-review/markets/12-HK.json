@@ -1,0 +1,39 @@
+{
+ "rank": 12,
+ "iso2": "HK",
+ "name": "Hong Kong",
+ "exports_2024_usd_m": 6287,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "one_place",
+  "rule": {"shape":"one_place","centres":1,"effective_centres":1},
+  "override": null,
+  "hubs": [
+   {"name":"Hong Kong","merged":[],"population":7206000,"region":"HK-X06~"}
+  ],
+  "regions": [
+   {"code":"HK-X01~","name":"Central and Western District","local_name":"Central and Western","type":null,"hubs":[]},
+   {"code":"HK-X02~","name":"Wan Chai","type":null,"hubs":[]},
+   {"code":"HK-X03~","name":"Siu Ma Shan","local_name":"Eastern","type":null,"hubs":[]},
+   {"code":"HK-X04~","name":"Southern District","local_name":"Southern","type":null,"hubs":[]},
+   {"code":"HK-X05~","name":"Yau Tsim Mong","type":null,"hubs":[]},
+   {"code":"HK-X06~","name":"Kowloon City","type":null,"hubs":["Hong Kong"]},
+   {"code":"HK-X07~","name":"Sham Shui Po","type":null,"hubs":[]},
+   {"code":"HK-X08~","name":"Wong Tai Sin District","local_name":"Wong Tai Sin","type":null,"hubs":[]},
+   {"code":"HK-X09~","name":"Kwun Tong","type":null,"hubs":[]},
+   {"code":"HK-X10~","name":"Sai Kung","type":null,"hubs":[]},
+   {"code":"HK-X11~","name":"Sha Tin","type":null,"hubs":[]},
+   {"code":"HK-X12~","name":"Kwai Tsing","type":null,"hubs":[]},
+   {"code":"HK-X13~","name":"Tsuen Wan","type":null,"hubs":[]},
+   {"code":"HK-X14~","name":"Tuen Mun","type":null,"hubs":[]},
+   {"code":"HK-X15~","name":"Yuen Long","type":null,"hubs":[]},
+   {"code":"HK-X16~","name":"North District","local_name":"North","type":null,"hubs":[]},
+   {"code":"HK-X17~","name":"Tai Po","type":null,"hubs":[]},
+   {"code":"HK-X18~","name":"Lantau Island","local_name":"Islands","type":null,"hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Hong Kong Int'l","iata":"HKG","region":"HK-X18~"},
+   {"kind":"port","name":"Hong Kong","region":"HK-X07~"}
+  ]
+ }
+}

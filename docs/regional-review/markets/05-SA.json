@@ -1,0 +1,51 @@
+{
+ "rank": 5,
+ "iso2": "SA",
+ "name": "Saudi Arabia",
+ "exports_2024_usd_m": 11672,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "regions",
+  "rule": {"shape":"regions","centres":12,"effective_centres":6.32},
+  "override": null,
+  "hubs": [
+   {"name":"Riyadh","merged":[],"population":4465000,"region":"SA-01"},
+   {"name":"Jeddah","merged":[],"population":3012000,"region":"SA-02"},
+   {"name":"Dammam","merged":["Al-Qatif"],"population":2054710,"region":"SA-04"},
+   {"name":"Makkah","merged":[],"population":1385000,"region":"SA-02"},
+   {"name":"Medina","merged":[],"population":1010000,"region":"SA-03"},
+   {"name":"At Taif","merged":[],"population":657282,"region":"SA-02"},
+   {"name":"Hofuf","merged":[],"population":637389,"region":"SA-04"},
+   {"name":"Al Hillah","merged":[],"population":594605,"region":"SA-01"},
+   {"name":"Tabuk","merged":[],"population":547957,"region":"SA-07"},
+   {"name":"Buraydah","merged":[],"population":398581,"region":"SA-05"},
+   {"name":"Hail","merged":[],"population":385257,"region":"SA-06"},
+   {"name":"Najran","merged":[],"population":369609,"region":"SA-10"}
+  ],
+  "regions": [
+   {"code":"SA-01","name":"Riyadh","local_name":"Ar Riyad","type":"Region","hubs":["Riyadh","Al Hillah"]},
+   {"code":"SA-02","name":"Makkah","type":"Region","hubs":["Jeddah","Makkah","At Taif"]},
+   {"code":"SA-03","name":"Al Madinah","type":"Region","hubs":["Medina"]},
+   {"code":"SA-04","name":"Eastern","local_name":"Ash Sharqiyah","type":"Region","hubs":["Dammam","Hofuf"]},
+   {"code":"SA-05","name":"Al-Qassim","local_name":"Al Quassim","type":"Region","hubs":["Buraydah"]},
+   {"code":"SA-06","name":"Ha'il","type":"Region","hubs":["Hail"]},
+   {"code":"SA-07","name":"Tabuk","type":"Region","hubs":["Tabuk"]},
+   {"code":"SA-08","name":"Northern Borders","local_name":"Al Hudud ash Shamaliyah","type":"Region","hubs":[]},
+   {"code":"SA-09","name":"Jazan","local_name":"Jizan","type":"Region","hubs":[]},
+   {"code":"SA-10","name":"Najran","type":"Region","hubs":["Najran"]},
+   {"code":"SA-11","name":"Al-Baha","local_name":"Al Bahah","type":"Region","hubs":[]},
+   {"code":"SA-12","name":"Al-Jowf","local_name":"Al Jawf","type":"Region","hubs":[]},
+   {"code":"SA-14","name":"'Asir","local_name":"`Asir","type":"Region","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"King Khalid Int'l","iata":"RUH","region":"SA-01"},
+   {"kind":"airport","name":"King Abdul Aziz Int'l","iata":"JED","region":"SA-02"},
+   {"kind":"airport","name":"Madinah Int'l","iata":"MED","region":"SA-03"},
+   {"kind":"port","name":"Jeddah","region":"SA-02"},
+   {"kind":"port","name":"Jizan","region":"SA-09"},
+   {"kind":"port","name":"Jubail","region":"SA-04"},
+   {"kind":"port","name":"Jubail","region":"SA-04"},
+   {"kind":"port","name":"Ras al Khafji","region":"SA-04"}
+  ]
+ }
+}
