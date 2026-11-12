@@ -95,6 +95,13 @@ regional geography (§3).
 The estimate names the geography it used (version and checksum). It says that it ranks city size,
 not imports, and that it is the same for every product.
 
+**On the market page** (`RegionalDemand.tsx`):
+- **Evidence label first.** Every market shows its label (text and icon, never colour alone) with what it means.
+- **Official views** show the 10 areas with each one's share and the rest summed. A caption says what the view is ranked by and how many areas it takes to reach 80%; those areas are marked "In the 80%" in words.
+- **Estimate markets** show the ranked cities or regions, their gateways, the notes and the source.
+- **One-place markets** say "One search area", with the main city and gateways.
+- **Section title.** It claims imports only where official figures exist: "Where in X it is imported". Otherwise it reads "Where in X buyers are likely to be" or, for one place, "Where in X to look for buyers".
+
 **Open for the owner.**
 1. **Ranking by all origins.** D-048 (2) marks "the product's imports", so v2 ranks by imports from
    all origins and shows India's beside them. The US view used to rank by India's value. Ranking by
