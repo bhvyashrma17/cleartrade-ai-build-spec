@@ -111,6 +111,30 @@ not imports, and that it is the same for every product.
    (E-078), so estimates use city size and gateways now. Recommended and built: add the regional
    economy when its data can be read. The alternative is to hold estimates until then.
 
+### 1.4 Where to search: the hand-off card (D-048)
+
+`src/lib/regional-demand/search-cards.ts` (`buyer-search-card-v1`), shown as "Where to search" on the
+agent's Exporter 360, Buyer Discovery tab (`BuyerSearchCards.tsx`). It covers every market handed off
+to buyer discovery: the handed-off markets of each product's newest completed v5 run. The loader checks
+that the principal may see the exporter before it reads anything.
+
+Each market gets a whole-market card, then one card per region or city in the order of its regional
+view (§1.3). The cards for the areas that together hold 80% say "Start here". Every card carries:
+- **Name, official code and cities.** The code is ISO 3166-1 or ISO 3166-2, or the source's own code
+  where the geography has no matching region (HMRC's ITL1 codes). The cities are the hubs and the
+  places merged into them.
+- **Search terms.**
+  - The codes a buyer source can filter by; Natural Earth's placeholder codes are left out.
+  - The city names.
+  - Postcode prefixes where recorded: the UK's postcode areas for each ITL1 region (D-033).
+    Elsewhere the card says they are not recorded yet.
+- **Gateways.** The ports and airports in that region. For India's land neighbours (Bangladesh,
+  Bhutan, China, Myanmar, Nepal, Pakistan) it notes that land border posts are not recorded yet.
+- **The market's evidence label and its source.**
+
+If a market's official figures have not been read yet, it gets its whole-market card only. The cards
+never fall back to an estimate silently.
+
 ## 2. Real buyers
 
 Buyer discovery is agent-curated (docs/11 §7): agents assigned to the exporter and ops start it, from

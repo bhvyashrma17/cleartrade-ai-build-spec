@@ -3180,6 +3180,25 @@ So the Bangladesh checker stopped before any finding, and no challenger ran. The
 
 **Effect.** None until merged; nothing deployed.
 
+### E-081 · 2026-11-12 · The hand-off card for buyer discovery: hubs, search terms, gateways, evidence (D-048) (in review)
+
+**Built** (PR 5, stacked on PR 4).
+- **`src/lib/regional-demand/search-cards.ts`** (`buyer-search-card-v1`).
+  - Each market gets a whole-market card, then a card per region or city in its regional view's order. Those holding 80% say "Start here".
+  - Each card carries the name, official code and cities (hubs with the places merged into them).
+  - Its search terms: ISO codes the geography holds (placeholders left out), city names, and postcode prefixes. Only the UK has prefixes, its postcode areas by ITL1 region; elsewhere the card says "not recorded yet".
+  - Its gateways: ports and airports in that region. India's land neighbours get a note that border posts are not recorded yet.
+  - The market's evidence label and source.
+  - Official figures not read yet: the whole-market card only, never an estimate in their place.
+- **`exporterSearchMarkets`.** The handed-off markets of each product's newest completed v5 run, in rank order. It checks org access first.
+- **`BuyerSearchCards.tsx`** on the agent's Exporter 360, Buyer Discovery tab ("Where to search").
+- **Tests.** `tests/buyer-search-cards.test.ts` (9 tests): the UAE, Singapore and Bangladesh cards; US states as ISO regions with their cities and gateways; UK postcode areas; unread official figures; the loader's newest-run, handed-off-only and rank order; another tenant refused; the panel.
+- **docs/38 §1.4.**
+
+**Not checked in a browser:** the tab needs an agent session and a v5 run on a running app.
+
+**Effect.** None until merged; nothing deployed.
+
 ## Risk register
 
 

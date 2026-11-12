@@ -22,6 +22,8 @@ import {ProductClassificationForm} from '@/components/agent/ProductClassificatio
 import { Card, MetricCard, PageHeader, StatusChip } from '@/components/ui';
 import { BuyerDiscoveryControl } from '@/components/agent/BuyerDiscoveryControl';
 import { FindBuyersForm, type FindBuyersMarket } from '@/components/agent/FindBuyersForm';
+import { BuyerSearchCards } from '@/components/agent/BuyerSearchCards';
+import { exporterSearchMarkets } from '@/lib/regional-demand/search-cards';
 import { activeImporterLists } from '@/lib/buyer-discovery/importer-list-service';
 import { IMPORTER_LIST_SOURCES } from '@/lib/buyer-discovery/importer-lists';
 import { CountryTruthWork } from '@/components/agent/CountryTruthWork';
@@ -174,6 +176,8 @@ export default async function ExporterAccountPage({
     .filter((p) => p.hs_classification_status === 'confirmed' && p.hs_code && /^\d{6}$/.test(p.hs_code))
     .map((p) => ({ id: p.id, name: p.name, hs6: p.hs_code! }));
   const visibleBuyerRows = showAll ? buyerRows : activeOnlyCandidates(buyerRows);
+  // D-048: where to search in each handed-off market (docs/38 §1.4). The loader checks org access itself.
+  const searchMarkets = activeTab === 'buyers' ? await exporterSearchMarkets(principal, exporterOrgId) : [];
 
   return (
     <div className="space-y-4 py-4 md:py-6">
@@ -237,6 +241,9 @@ export default async function ExporterAccountPage({
               <FindBuyersForm exporterOrgId={org.id} products={buyerProducts} markets={buyerMarkets} />
             </div>
           ) : null}
+          <div className="mt-4">
+            <BuyerSearchCards markets={searchMarkets} />
+          </div>
           <div className="mt-4">
             <BuyerDiscoveryControl
               rows={visibleBuyerRows}
