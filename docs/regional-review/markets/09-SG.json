@@ -1,0 +1,26 @@
+{
+ "rank": 9,
+ "iso2": "SG",
+ "name": "Singapore",
+ "exports_2024_usd_m": 8857,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "one_place",
+  "rule": {"shape":"one_place","centres":1,"effective_centres":1},
+  "override": null,
+  "hubs": [
+   {"name":"Singapore","merged":[],"population":5183700,"region":"SG-01"}
+  ],
+  "regions": [
+   {"code":"SG-01","name":"Central Singapore Community Development Council","local_name":"Central Singapore","type":null,"hubs":["Singapore"]},
+   {"code":"SG-02","name":"North East Community Development Council","local_name":"North East","type":null,"hubs":[]},
+   {"code":"SG-03","name":"North West","type":null,"hubs":[]},
+   {"code":"SG-04","name":"South East Community Development Council","local_name":"South East","type":null,"hubs":[]},
+   {"code":"SG-05","name":"South West Community Development Council","local_name":"South West","type":null,"hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Singapore Changi","iata":"SIN","region":"SG-04"},
+   {"kind":"port","name":"Singapore","region":"SG-05"}
+  ]
+ }
+}

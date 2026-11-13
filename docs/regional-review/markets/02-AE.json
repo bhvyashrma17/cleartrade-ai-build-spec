@@ -1,0 +1,36 @@
+{
+ "rank": 2,
+ "iso2": "AE",
+ "name": "United Arab Emirates",
+ "exports_2024_usd_m": 28488,
+ "registry": {"version":"regional-geography-v1","rule_version":"regional-shape-rule-v1","checksum":"e1e8cb3be2036334a49c4cc94b814d3d5dc0e40bcb16432c901e7ce80eb67dd8"},
+ "current": {
+  "shape": "hub_and_gateway",
+  "rule": {"shape":"hub_and_gateway","centres":3,"effective_centres":2.35},
+  "override": null,
+  "hubs": [
+   {"name":"Dubai","merged":["Sharjah"],"population":1379000,"region":"AE-DU"},
+   {"name":"Abu Dhabi","merged":[],"population":603492,"region":"AE-AZ"},
+   {"name":"Al Ayn","merged":[],"population":408733,"region":"AE-AZ"}
+  ],
+  "regions": [
+   {"code":"AE-AJ","name":"Emirate of Ajman","local_name":"Ajman","type":"Emirate","hubs":[]},
+   {"code":"AE-AZ","name":"Emirate of Abu Dhabi","local_name":"Abu Dhabi","type":"Emirate","hubs":["Abu Dhabi","Al Ayn"]},
+   {"code":"AE-DU","name":"Emirate of Dubai","local_name":"Dubay","type":"Emirate","hubs":["Dubai"]},
+   {"code":"AE-FU","name":"Emirate of Fujairah","local_name":"Fujayrah","type":"Emirate","hubs":[]},
+   {"code":"AE-RK","name":"Emirate of Ras Al Khaimah","local_name":"Ras Al Khaymah","type":"Emirate","hubs":[]},
+   {"code":"AE-SH","name":"Emirate of Sharjah","local_name":"Sharjah","type":"Emirate","hubs":[]},
+   {"code":"AE-UQ","name":"Emirate of Umm Al Quwain","local_name":"Umm Al Qaywayn","type":"Emirate","hubs":[]},
+   {"code":"AE-X01~","name":"Fujairah","local_name":"Neutral Zone","type":"Emirate","hubs":[]},
+   {"code":"AE-X02~","name":"Sayh Mudayrah","local_name":"Neutral Zone","type":"Emirate","hubs":[]}
+  ],
+  "gateways": [
+   {"kind":"airport","name":"Dubai Int'l","iata":"DXB","region":"AE-DU"},
+   {"kind":"airport","name":"Sharjah Int'l","iata":"SHJ","region":"AE-SH"},
+   {"kind":"airport","name":"Abu Dhabi Int'l","iata":"AUH","region":"AE-AZ"},
+   {"kind":"port","name":"Dubai","region":"AE-DU"},
+   {"kind":"port","name":"Abu Dhabi","region":"AE-AZ"},
+   {"kind":"port","name":"Al Fujayrah","region":"AE-FU"}
+  ]
+ }
+}
