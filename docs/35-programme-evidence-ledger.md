@@ -3180,6 +3180,40 @@ So the Bangladesh checker stopped before any finding, and no challenger ran. The
 
 **Effect.** None until merged; nothing deployed.
 
+### E-081 · 2026-11-12 · The hand-off card for buyer discovery: hubs, search terms, gateways, evidence (D-048) (in review)
+
+**Built** (PR 5, stacked on PR 4).
+- **`src/lib/regional-demand/search-cards.ts`** (`buyer-search-card-v1`).
+  - Each market gets a whole-market card, then a card per region or city in its regional view's order. Those holding 80% say "Start here".
+  - Each card carries the name, official code and cities (hubs with the places merged into them).
+  - Its search terms: ISO codes the geography holds (placeholders left out), city names, and postcode prefixes. Only the UK has prefixes, its postcode areas by ITL1 region; elsewhere the card says "not recorded yet".
+  - Its gateways: ports and airports in that region. India's land neighbours get a note that border posts are not recorded yet.
+  - The market's evidence label and source.
+  - Official figures not read yet: the whole-market card only, never an estimate in their place.
+- **`exporterSearchMarkets`.** The handed-off markets of each product's newest completed v5 run, in rank order. It checks org access first.
+- **`BuyerSearchCards.tsx`** on the agent's Exporter 360, Buyer Discovery tab ("Where to search").
+- **Tests.** `tests/buyer-search-cards.test.ts` (9 tests): the UAE, Singapore and Bangladesh cards; US states as ISO regions with their cities and gateways; UK postcode areas; unread official figures; the loader's newest-run, handed-off-only and rank order; another tenant refused; the panel.
+- **docs/38 §1.4.**
+
+**Not checked in a browser:** the tab needs an agent session and a v5 run on a running app.
+
+**Effect.** None until merged; nothing deployed.
+
+### E-082 · 2026-11-12 · The top-30 review kit, committed so another session can run the review (D-048) (in review)
+
+**Why.** The agent's cloud workspace cannot read official sites (E-078, R-52). The owner will run the review from a session where web reading works.
+
+**Built** (#79, based on `staging/railway` and independent of #75–#78).
+- **`docs/regional-review/checker.md` and `challenger.md`.** The pilot's instructions, plus D-049's excluded divisions.
+- **`docs/regional-review/markets/NN-XX.json`.** What the registry says today about each of the 30 markets (79.9% of India's 2024 non-fuel exports, E-076). Each file carries registry `regional-geography-v1`, checksum `e1e8cb3b…`.
+- **`docs/regional-review/README.md`.** The owner's rules: WebFetch and WebSearch only, refusals noted, Bangladesh first, the three pilot criteria, the other 29 as one workflow, workflows only for this review.
+- **`scripts/regional-review-inputs.ts`.** Regenerates the inputs; `--check` reports stale ones.
+- **Tests.** `tests/regional-review-inputs.test.ts` (4 tests). The inputs must equal the registry, so stale data fails.
+
+**Checks.** `npm test` 186 files, 2,461 tests pass, 5 skipped; `tsc --noEmit` and ESLint clean.
+
+**Next.** The review replies go in `docs/regional-review/results/`. PR 2 carries the 30-row table and the registry changes.
+
 ## Risk register
 
 
