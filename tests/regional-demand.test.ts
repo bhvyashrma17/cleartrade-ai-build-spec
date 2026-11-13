@@ -208,7 +208,20 @@ describe('Hand-off and the market page', () => {
     expect(html).toContain('New York');
     expect(html).toContain('This product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau.');
     expect(html).toContain('$700 of this product came from India in Sep 2025 – Aug 2026.');
-    const empty = renderToStaticMarkup(createElement(RegionalDemand, { assessmentId: ids.de!, countryName: 'Germany', initial: await regionalDemandView(ids.de!, 'DE'), canRequest: true }));
-    expect(empty).toContain('Regional figures for Germany are not connected yet.');
+    // v2 (docs/38 §1.3): the evidence label, what the view is ranked by, and the 80% marked in words.
+    expect(html).toContain('Your product');
+    expect(html).toContain('Ranked by imports from all origins.');
+    expect(html).toContain('The first one holds 80% or more of the product’s imports, marked “In the 80%”.');
+    expect(html).toContain('In the 80%');
+
+    // A market with no official source shows its labelled estimate instead of "not connected yet".
+    const germany = renderToStaticMarkup(createElement(RegionalDemand, { assessmentId: ids.de!, countryName: 'Germany', initial: await regionalDemandView(ids.de!, 'DE'), canRequest: true }));
+    expect(germany).toContain('Estimate');
+    expect(germany).toContain('Regions, by the size of their main cities');
+    expect(germany).toContain('Ranked by the population of the main cities, not by imports.');
+    expect(germany).toContain('Baden-Württemberg');
+    expect(germany).toContain('5 more regions have no city of 300,000 or more and are not ranked.');
+    expect(germany).not.toContain('not connected yet');
+    expect(germany).not.toContain('Show where in');
   });
 });

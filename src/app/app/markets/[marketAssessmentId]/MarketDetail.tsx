@@ -96,7 +96,7 @@ export function MarketDetail({
 
       {regional ? (
         <section className="mt-6">
-          <SectionTitle>Where in {countryName(assessment.country_code)} it is imported</SectionTitle>
+          <SectionTitle>{regionalTitle(regional, countryName(assessment.country_code))}</SectionTitle>
           <RegionalDemand assessmentId={assessment.id} countryName={countryName(assessment.country_code)} initial={regional} canRequest={canRequestRegional} />
         </section>
       ) : null}
@@ -163,6 +163,12 @@ export function MarketDetail({
       </section>
     </div>
   );
+}
+
+/** Official figures say where it is imported; an estimate only where buyers are likely to be (docs/38 §1.3). */
+export function regionalTitle(regional: RegionalDemandView, name: string): string {
+  if (regional.supported) return `Where in ${name} it is imported`;
+  return regional.evidence?.key === 'not_needed' ? `Where in ${name} to look for buyers` : `Where in ${name} buyers are likely to be`;
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {

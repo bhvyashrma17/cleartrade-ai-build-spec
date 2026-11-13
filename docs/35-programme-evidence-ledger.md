@@ -3162,6 +3162,24 @@ So the Bangladesh checker stopped before any finding, and no challenger ran. The
 
 **Effect.** None until merged; nothing deployed (D-046). The market page shows the new fields in PR 4.
 
+### E-080 · 2026-11-12 · The market page shows the regional view v2 for every market (D-048) (in review)
+
+**Built** (PR 4, stacked on PR 3).
+- **`RegionalDemand.tsx`.**
+  - The evidence label (text and icon) and its meaning.
+  - Official views: 10 areas with their shares, a caption naming the ranking and how many areas reach 80%, those marked "In the 80%" in words, the rest summed.
+  - Estimates: the ranked cities or regions, gateways, notes and source.
+  - "Not needed": one search area, with the main city and gateways.
+- **`MarketDetail.tsx`.** The section title claims imports only where official figures exist (`regionalTitle`).
+- **Tests.**
+  - `tests/regional-market-page.test.ts` (4 tests): Singapore not needed; the UAE estimate with two areas marked; the titles; the 80% sentences.
+  - The regional-demand panel test: the US label, caption and marker; Germany's estimate in place of "not connected yet".
+- **docs/38 §1.3.**
+
+**Not checked in a browser:** the page needs a paid session and a v5 run on a running app. The new marks use no alpha-modifier tints (AGENTS.md), only existing tokens.
+
+**Effect.** None until merged; nothing deployed.
+
 ## Risk register
 
 
