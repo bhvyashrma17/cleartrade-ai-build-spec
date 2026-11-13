@@ -51,8 +51,8 @@ export interface DivisionExclusion {
 }
 
 /**
- * Territory no market offers as a region, hub or gateway. Proposed default with the registry's
- * first build; the owner's decision is recorded in docs/38 §3 once taken.
+ * Territory no market offers as a region, hub or gateway: the owner's decision of 12 Nov 2026
+ * (D-049), over following ISO 3166-2's lists or Natural Earth's drawing.
  */
 export const EXCLUDED_DIVISIONS: readonly DivisionExclusion[] = [
   {

@@ -185,9 +185,9 @@ Gilgit-Baltistan (PK-JK, PK-GB) in Pakistan; India's official map shows them as 
 Kashmir and of Ladakh.
 
 `EXCLUDED_DIVISIONS` keeps all four out of every market's regions, centres and gateways, each with
-its reason. The snapshot still records them. **This is a proposed default; the owner decides.** The
-alternatives are to follow ISO 3166-2, which puts Crimea in Ukraine and the two Kashmir areas in
-Pakistan, or to follow Natural Earth's drawing.
+its reason. The snapshot still records them. The owner decided this on 12 Nov 2026 (D-049), over the
+two alternatives: following ISO 3166-2 (Crimea in Ukraine, the two Kashmir areas in Pakistan) or
+Natural Earth's drawing.
 
 ### 3.4 What each market gives
 
