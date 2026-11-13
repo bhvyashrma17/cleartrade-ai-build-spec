@@ -18,6 +18,8 @@ import { assertCan, assertOrgAccess } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import type { Principal } from '@/types';
 import { US_REGIONAL_SOURCE, type RegionalDemandResultV1 } from './census';
+import { regionalEstimate, type RegionalEstimate } from './estimate';
+import { REGIONAL_EVIDENCE, SOURCE_EVIDENCE, presentRegionalResult, type PresentedRegionalResult, type RegionalEvidence } from './view';
 
 export interface RegionalSource {
   key: string;
@@ -133,14 +135,27 @@ export interface RegionalRunView {
   completed_at: string | null;
 }
 
+export interface RegionalEvidenceInfo {
+  key: RegionalEvidence;
+  label: string;
+  meaning: string;
+}
+
 export interface RegionalDemandView {
+  /** The market has an official regional source that can be read for the product. */
   supported: boolean;
   publisher: string | null;
   /** The newest run of any status: what is happening now. */
   latest: RegionalRunView | null;
-  /** The newest completed run and its figures: what the page shows. */
-  shown: (RegionalRunView & { result: RegionalDemandResultV1 }) | null;
+  /** The newest completed run, as the v2 view shows it: top 10, the 80% marked, the rest summed. */
+  shown: (RegionalRunView & { result: PresentedRegionalResult }) | null;
+  /** The market's evidence label (docs/38 §1.3); null only for a code outside the 218 markets. */
+  evidence: RegionalEvidenceInfo | null;
+  /** For a market with no official source: the labelled estimate (or "Not needed"). */
+  estimate: RegionalEstimate | null;
 }
+
+const evidenceInfo = (key: RegionalEvidence): RegionalEvidenceInfo => ({ key, ...REGIONAL_EVIDENCE[key] });
 
 const runView = (run: RegionalDemandRun): RegionalRunView => ({
   id: run.id, status: run.status, trigger: run.trigger, reason: run.reason,
@@ -150,15 +165,23 @@ const runView = (run: RegionalDemandRun): RegionalRunView => ({
 /** What the market page needs. Callers must already have checked access to the market. */
 export async function regionalDemandView(marketAssessmentId: string, countryCode: string, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<RegionalDemandView> {
   const source = regionalSourceFor(countryCode);
-  if (!source) return { supported: false, publisher: null, latest: null, shown: null };
+  if (!source) {
+    // No official figures: every one of the 218 markets still has a view, the labelled estimate (D-048 (4)).
+    const estimate = regionalEstimate(countryCode);
+    return { supported: false, publisher: null, latest: null, shown: null, evidence: estimate ? evidenceInfo(estimate.evidence) : null, estimate };
+  }
   const [latest, shown] = await Promise.all([
     db.regionalDemandRun.findFirst({ where: { market_assessment_id: marketAssessmentId }, orderBy: { created_at: 'desc' } }),
     db.regionalDemandRun.findFirst({ where: { market_assessment_id: marketAssessmentId, status: RegionalDemandStatus.completed }, orderBy: { completed_at: 'desc' } }),
   ]);
+  const evidence = SOURCE_EVIDENCE[source.key];
+  if (!evidence) throw new Error(`The regional source ${source.key} has no evidence label.`);
   return {
     supported: true,
     publisher: source.publisher,
     latest: latest ? runView(latest) : null,
-    shown: shown && shown.result ? { ...runView(shown), result: shown.result as unknown as RegionalDemandResultV1 } : null,
+    shown: shown && shown.result ? { ...runView(shown), result: presentRegionalResult(shown.result as unknown as RegionalDemandResultV1) } : null,
+    evidence: evidenceInfo(evidence),
+    estimate: null,
   };
 }

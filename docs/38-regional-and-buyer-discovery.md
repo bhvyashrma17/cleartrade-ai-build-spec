@@ -60,6 +60,50 @@ areas cross a boundary) or by province (Canada), with the most common towns. No 
 no list imported the run is `unavailable` and says so. The notice "Contains public sector information
 licensed under the Open Government Licence v3.0." is shown under the UK figures.
 
+### 1.3 The regional view, v2 (D-048)
+
+`src/lib/regional-demand/view.ts` and `estimate.ts` (`regional-view-v2`). Every one of the 218 markets
+has a regional view, under one of six evidence labels:
+
+| Label | What is counted | Markets today |
+|---|---|---|
+| Your product | Imports of the exact product code, by region | United States (Census Bureau, states and ports) |
+| Product group | Imports of the wider group the product sits in | None yet (later clusters) |
+| Traders | Importers or wholesalers counted by region | United Kingdom (HMRC), Canada (once its list is imported) |
+| All goods | A region's or port's total imports | None yet (later clusters) |
+| Estimate | Nothing official: the main cities, ranked by size | The other 88 hub-and-gateway and regions markets |
+| Not needed | One search area: the whole market | The 127 one-place markets |
+
+**Rules.** These are applied when a run is read, so stored runs are never rewritten.
+- **Top 10.** A view lists its 10 largest areas and sums the rest.
+- **The 80% mark.** It marks the smallest set of the largest areas that together hold 80%. When that
+  set runs past the 10 listed, the view says how many it takes.
+- **Ranking.** A view of values ranks by the product's imports from all origins where every area has
+  them, with India's figures beside. Otherwise it ranks by imports from India: when the all-countries
+  figures could not be read, or for a run stored before v2, which kept only its top 15 by India's
+  value and summed the rest.
+- **Lists of importers** rank by the number of importers.
+- **The US view** is cut from 15 to 10. Readers now store every area; the view takes its own top 10.
+
+**Estimates.** A market without an official source needs no run and no job: its view comes from the
+regional geography (§3).
+- **One place:** "Not needed". It still lists its main city and gateways.
+- **Hub and gateway:** the main cities, ranked by population.
+- **Regions:** the regions, ranked by the population of their cities of 300,000 or more. Regions with
+  no such city are counted, not ranked.
+
+The estimate names the geography it used (version and checksum). It says that it ranks city size,
+not imports, and that it is the same for every product.
+
+**Open for the owner.**
+1. **Ranking by all origins.** D-048 (2) marks "the product's imports", so v2 ranks by imports from
+   all origins and shows India's beside them. The US view used to rank by India's value. Ranking by
+   India again is one line.
+2. **The regional economy in estimates.** D-048 (4) names city size, regional economy and gateways.
+   The regional economy (Kummu and others, CC BY 4.0) cannot be downloaded from the agent workspace
+   (E-078), so estimates use city size and gateways now. Recommended and built: add the regional
+   economy when its data can be read. The alternative is to hold estimates until then.
+
 ## 2. Real buyers
 
 Buyer discovery is agent-curated (docs/11 §7): agents assigned to the exporter and ops start it, from

@@ -37,7 +37,8 @@ export async function readImporterRegions(args: { source_key: ImporterListSource
     const town = entry.town?.trim().toUpperCase();
     if (town) area.townCounts.set(town, (area.townCounts.get(town) ?? 0) + 1);
   }
-  const top = args.top ?? 15;
+  // Every region is stored; the v2 view takes its top 10 when it is read (docs/38 §1.3).
+  const top = args.top ?? Number.POSITIVE_INFINITY;
   const areas = [...byRegion.values()]
     .map(({ townCounts, ...area }) => ({ ...area, towns: [...townCounts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 3).map(([town]) => town) }))
     .sort((a, b) => b.importer_count - a.importer_count || a.name.localeCompare(b.name));
